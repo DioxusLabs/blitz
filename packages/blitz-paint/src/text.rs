@@ -656,12 +656,11 @@ pub(crate) fn stroke_text<'a>(
                     .unwrap_or_else(|| stack.last().map(|e| e.fill_color).unwrap_or(Color::BLACK));
 
                 // Approximates macOS font smoothing (stem dilation). The amounts are in device
-                // pixels per side, fitted to Safari's ink at 9-72px and 1x-3x scale (about 0.55x
-                // Pathfinder's factors). Safari keeps dilating at large sizes, so there is no
-                // ppem cutoff.
+                // pixels per side, fitted to Safari's ink at 9-72px and 1x-3x scale. Safari keeps
+                // dilating at large sizes, so there is no ppem cutoff.
                 let embolden = if FONT_EMBOLDEN_ENABLED {
-                    let fs = font_size as f64;
-                    kurbo::Vec2::new((0.00666 * fs).min(0.35), (0.00832 * fs).min(0.35))
+                    let fs = font_size as f64 * embolden_scale(fill_color);
+                    kurbo::Vec2::new((0.0121 * fs).min(0.35), (0.015125 * fs).min(0.35))
                 } else {
                     kurbo::Vec2::default()
                 };
@@ -766,4 +765,23 @@ pub(crate) fn draw_text_selection(
         let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
         scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
     });
+}
+
+/// Scales Pathfinder's stem-darkening factors by the text's relative luminance. CoreText
+/// dilates light text more than dark text; the points are fitted to Safari's ink for text
+/// colours from black to white on black and white backgrounds.
+fn embolden_scale(color: Color) -> f64 {
+    const POINTS: [(f64, f64); 4] = [(0.1, 0.5), (0.125, 0.72), (0.35, 0.72), (1.0, 1.3)];
+    let lum = color.discard_alpha().relative_luminance() as f64;
+    let mut prev = POINTS[0];
+    if lum <= prev.0 {
+        return prev.1;
+    }
+    for point in &POINTS[1..] {
+        if lum <= point.0 {
+            return prev.1 + (point.1 - prev.1) * (lum - prev.0) / (point.0 - prev.0);
+        }
+        prev = *point;
+    }
+    prev.1
 }
