@@ -2372,7 +2372,6 @@ fn does_not_use_placeholder_as_name_when_title_provides_the_name() -> TestResult
 #[case::time("time")]
 #[case::month("month")]
 #[case::week("week")]
-#[case::file("file")]
 #[case::image("image")]
 #[case::button("button")]
 #[case::submit("submit")]
@@ -2391,6 +2390,28 @@ fn does_not_use_placeholder_as_name_of_input_of_type_which_does_not_support_it(
             matches_pattern!(AccessKitNode {
                 html_tag(): some(eq("input")),
                 label(): none(),
+            })
+        ))
+    )
+}
+
+// With the feature `file-input`, the document creates a button and a label inside a file input,
+// and the name of the input is computed from their text. Without it, there is no name. Building
+// the whole workspace enables the feature, but building only this crate does not, so the test
+// only checks that the placeholder is not the name.
+#[test]
+fn does_not_use_placeholder_as_name_of_file_input() -> TestResult<()> {
+    let tree_update = tree_of(
+        r#"<html><input type="file" placeholder="Arbitrary placeholder" aria-placeholder="Arbitrary placeholder"></html>"#,
+    );
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): not(some(eq("Arbitrary placeholder"))),
             })
         ))
     )
