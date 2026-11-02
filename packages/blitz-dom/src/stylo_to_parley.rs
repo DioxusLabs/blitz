@@ -107,26 +107,20 @@ pub(crate) fn font_variations(
     font_size: f32,
 ) -> Vec<parley::FontVariation> {
     const OPSZ: parley::Tag = parley::Tag::new(b"opsz");
-    let mut variations: Vec<parley::FontVariation> = font_styles
-        .font_variation_settings
-        .0
-        .iter()
-        .map(|v| parley::FontVariation {
-            tag: parley::Tag::from_bytes(v.tag.0.to_be_bytes()),
-            value: v.value,
-        })
-        .collect();
+    let settings = &font_styles.font_variation_settings.0;
+    let mut variations = Vec::with_capacity(settings.len() + 1);
     if font_styles.font_optical_sizing == stylo::FontOpticalSizing::Auto
-        && !variations.iter().any(|v| v.tag == OPSZ)
+        && !settings.iter().any(|v| v.tag.0.to_be_bytes() == *b"opsz")
     {
-        variations.insert(
-            0,
-            parley::FontVariation {
-                tag: OPSZ,
-                value: font_size,
-            },
-        );
+        variations.push(parley::FontVariation {
+            tag: OPSZ,
+            value: font_size,
+        });
     }
+    variations.extend(settings.iter().map(|v| parley::FontVariation {
+        tag: parley::Tag::from_bytes(v.tag.0.to_be_bytes()),
+        value: v.value,
+    }));
     variations
 }
 
