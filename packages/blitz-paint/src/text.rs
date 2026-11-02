@@ -655,9 +655,11 @@ pub(crate) fn stroke_text<'a>(
                 let fill_color = brush_override
                     .unwrap_or_else(|| stack.last().map(|e| e.fill_color).unwrap_or(Color::BLACK));
 
-                let embolden = if FONT_EMBOLDEN_ENABLED {
-                    let fs = font_size as f64 / scale;
-                    kurbo::Vec2::new((0.015125 * fs).min(0.3), (0.0121 * fs).min(0.3))
+                // Approximates macOS font smoothing (stem dilation), using Pathfinder's factors.
+                // The amounts are in device pixels, and smoothing is skipped above 72ppem.
+                let embolden = if FONT_EMBOLDEN_ENABLED && font_size <= 72.0 {
+                    let fs = font_size as f64;
+                    kurbo::Vec2::new((0.0121 * fs).min(0.3), (0.015125 * fs).min(0.3))
                 } else {
                     kurbo::Vec2::default()
                 };
