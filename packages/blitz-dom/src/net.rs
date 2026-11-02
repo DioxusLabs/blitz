@@ -206,7 +206,12 @@ impl ServoStylesheetLoader for StylesheetLoader {
         supports: Option<ImportSupportsCondition>,
         layer: ImportLayer,
     ) -> ServoArc<Locked<ImportRule>> {
-        if self.import_depth >= MAX_IMPORT_DEPTH || !supports.as_ref().is_none_or(|s| s.enabled) {
+        // An unresolvable URL (a relative URL against a base that cannot be one, or an invalid
+        // absolute URL) is ignored, as in browsers (CSS Cascade 4 section 9.2).
+        if self.import_depth >= MAX_IMPORT_DEPTH
+            || !supports.as_ref().is_none_or(|s| s.enabled)
+            || url.url().is_none()
+        {
             return ServoArc::new(lock.wrap(ImportRule {
                 url,
                 stylesheet: ImportSheet::new_refused(),
