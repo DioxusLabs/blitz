@@ -655,11 +655,13 @@ pub(crate) fn stroke_text<'a>(
                 let fill_color = brush_override
                     .unwrap_or_else(|| stack.last().map(|e| e.fill_color).unwrap_or(Color::BLACK));
 
-                // Approximates macOS font smoothing (stem dilation), using Pathfinder's factors.
-                // The amounts are in device pixels, and smoothing is skipped above 72ppem.
-                let embolden = if FONT_EMBOLDEN_ENABLED && font_size <= 72.0 {
+                // Approximates macOS font smoothing (stem dilation). The amounts are in device
+                // pixels per side, fitted to Safari's ink at 9-72px and 1x-3x scale (about 0.55x
+                // Pathfinder's factors). Safari keeps dilating at large sizes, so there is no
+                // ppem cutoff.
+                let embolden = if FONT_EMBOLDEN_ENABLED {
                     let fs = font_size as f64;
-                    kurbo::Vec2::new((0.0121 * fs).min(0.3), (0.015125 * fs).min(0.3))
+                    kurbo::Vec2::new((0.00666 * fs).min(0.35), (0.00832 * fs).min(0.35))
                 } else {
                     kurbo::Vec2::default()
                 };
