@@ -2342,7 +2342,6 @@ fn falls_back_to_the_placeholder_when_other_name_source_is_empty(
 }
 
 #[test]
-#[ignore = "title for name not yet implemented"]
 fn does_not_use_placeholder_as_name_when_title_provides_the_name() -> TestResult<()> {
     let tree_update = tree_of(
         r#"<html><input title="Arbitrary title" placeholder="Arbitrary placeholder"></html>"#,
@@ -2355,6 +2354,7 @@ fn does_not_use_placeholder_as_name_when_title_provides_the_name() -> TestResult
             matches_pattern!(AccessKitNode {
                 html_tag(): some(eq("input")),
                 label(): none(),
+                tooltip(): some(eq("Arbitrary title")),
                 description(): none(),
                 placeholder(): some(eq("Arbitrary placeholder")),
             })
@@ -2468,6 +2468,399 @@ fn uses_placeholder_as_name_of_input_whatever_its_role() -> TestResult<()> {
             matches_pattern!(AccessKitNode {
                 role(): eq(Role::Button),
                 label(): some(eq("Arbitrary placeholder")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_placeholder_as_name_when_title_is_blank() -> TestResult<()> {
+    let tree_update =
+        tree_of(r#"<html><input title="   " placeholder="Arbitrary placeholder"></html>"#);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): some(eq("Arbitrary placeholder")),
+                tooltip(): none(),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::text_input(r#"<html><input title="Arbitrary title"></html>"#, "input")]
+#[case::textarea(
+    r#"<html><textarea title="Arbitrary title"></textarea></html>"#,
+    "textarea"
+)]
+#[case::select(
+    r#"<html><select title="Arbitrary title"><option>One</option></select></html>"#,
+    "select"
+)]
+#[case::checkbox_input(
+    r#"<html><input type="checkbox" title="Arbitrary title"></html>"#,
+    "input"
+)]
+#[case::radio_input(
+    r#"<html><input type="radio" title="Arbitrary title"></html>"#,
+    "input"
+)]
+#[case::button_input(
+    r#"<html><input type="button" title="Arbitrary title"></html>"#,
+    "input"
+)]
+#[case::image_input(
+    r#"<html><input type="image" title="Arbitrary title"></html>"#,
+    "input"
+)]
+#[case::input_with_overridden_role(
+    r#"<html><input role="button" title="Arbitrary title"></html>"#,
+    "input"
+)]
+#[case::button_without_content(
+    r#"<html><button title="Arbitrary title"></button></html>"#,
+    "button"
+)]
+#[case::link_without_content(r##"<html><a href="#" title="Arbitrary title"></a></html>"##, "a")]
+#[case::heading_without_content(r#"<html><h1 title="Arbitrary title"></h1></html>"#, "h1")]
+#[case::img_without_alt(r#"<html><img title="Arbitrary title"></html>"#, "img")]
+#[case::iframe(r#"<html><iframe title="Arbitrary title"></iframe></html>"#, "iframe")]
+#[case::fieldset_without_legend(
+    r#"<html><fieldset title="Arbitrary title"></fieldset></html>"#,
+    "fieldset"
+)]
+#[case::table_without_caption(
+    r#"<html><table title="Arbitrary title"><tr><td>Cell</td></tr></table></html>"#,
+    "table"
+)]
+#[case::summary_without_content(
+    r#"<html><details><summary title="Arbitrary title"></summary></details></html>"#,
+    "summary"
+)]
+#[case::figure(
+    r#"<html><figure title="Arbitrary title"><p>Content</p></figure></html>"#,
+    "figure"
+)]
+#[case::navigation(
+    r##"<html><nav title="Arbitrary title"><a href="#">Link</a></nav></html>"##,
+    "nav"
+)]
+#[case::section(
+    r#"<html><section title="Arbitrary title"><p>Content</p></section></html>"#,
+    "section"
+)]
+#[case::button_role_without_content(
+    r#"<html><div role="button" title="Arbitrary title"></div></html>"#,
+    "div"
+)]
+#[case::textbox_role(
+    r#"<html><div role="textbox" title="Arbitrary title"></div></html>"#,
+    "div"
+)]
+fn uses_title_as_tooltip_of_element_without_other_name(
+    #[case] html: &str,
+    #[case] html_tag: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq(html_tag)),
+                label(): none(),
+                tooltip(): some(eq("Arbitrary title")),
+                description(): none(),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::cell(
+    r#"<html><table><tr><td title="Arbitrary title">Cell</td></tr></table></html>"#,
+    "td"
+)]
+#[case::header_cell(
+    r#"<html><table><tr><th title="Arbitrary title">Header</th></tr></table></html>"#,
+    "th"
+)]
+#[case::row(
+    r#"<html><table><tr title="Arbitrary title"><td>Cell</td></tr></table></html>"#,
+    "tr"
+)]
+fn uses_title_as_tooltip_of_table_element_named_from_title_only(
+    #[case] html: &str,
+    #[case] html_tag: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq(html_tag)),
+                label(): none(),
+                tooltip(): some(eq("Arbitrary title")),
+                description(): none(),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::aria_label(
+    r#"<html><input aria-label="Aria label" title="Arbitrary title"></html>"#,
+    "input",
+    "Aria label"
+)]
+#[case::aria_labelledby(
+    r#"<html><span id="arbitrary-element">Labelled by</span><input aria-labelledby="arbitrary-element" title="Arbitrary title"></html>"#,
+    "input",
+    "Labelled by"
+)]
+#[case::label_element(
+    r#"<html><label for="arbitrary-input">Label element</label><input id="arbitrary-input" title="Arbitrary title"></html>"#,
+    "input",
+    "Label element"
+)]
+#[case::button_content(
+    r#"<html><button title="Arbitrary title">Save</button></html>"#,
+    "button",
+    "Save"
+)]
+#[case::link_content(
+    r##"<html><a href="#" title="Arbitrary title">Home</a></html>"##,
+    "a",
+    "Home"
+)]
+#[case::heading_content(
+    r#"<html><h1 title="Arbitrary title">Heading</h1></html>"#,
+    "h1",
+    "Heading"
+)]
+#[case::summary_content(
+    r#"<html><details><summary title="Arbitrary title">Summary</summary></details></html>"#,
+    "summary",
+    "Summary"
+)]
+#[case::img_alt(
+    r#"<html><img alt="Alt text" title="Arbitrary title"></html>"#,
+    "img",
+    "Alt text"
+)]
+#[case::image_input_alt(
+    r#"<html><input type="image" alt="Alt text" title="Arbitrary title"></html>"#,
+    "input",
+    "Alt text"
+)]
+#[case::button_input_value(
+    r#"<html><input type="button" value="Go" title="Arbitrary title"></html>"#,
+    "input",
+    "Go"
+)]
+#[case::fieldset_legend(
+    r#"<html><fieldset title="Arbitrary title"><legend>Legend</legend></fieldset></html>"#,
+    "fieldset",
+    "Legend"
+)]
+#[case::table_caption(
+    r#"<html><table title="Arbitrary title"><caption>Caption</caption><tr><td>Cell</td></tr></table></html>"#,
+    "table",
+    "Caption"
+)]
+#[case::button_role_content(
+    r#"<html><div role="button" title="Arbitrary title">Press</div></html>"#,
+    "div",
+    "Press"
+)]
+fn does_not_use_title_as_tooltip_when_other_source_provides_the_name(
+    #[case] html: &str,
+    #[case] html_tag: &str,
+    #[case] expected_label: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq(html_tag)),
+                label(): some(eq(expected_label)),
+                tooltip(): none(),
+                description(): some(eq("Arbitrary title")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::blank_aria_label(r#"<html><input aria-label="   " title="Arbitrary title"></html>"#)]
+#[case::aria_labelledby_without_matching_element(
+    r#"<html><input aria-labelledby="missing-element" title="Arbitrary title"></html>"#
+)]
+#[case::aria_labelledby_with_blank_element(
+    r#"<html><span id="blank-element">   </span><input aria-labelledby="blank-element" title="Arbitrary title"></html>"#
+)]
+#[case::label_element_without_text(
+    r#"<html><label for="arbitrary-input">   </label><input id="arbitrary-input" title="Arbitrary title"></html>"#
+)]
+#[case::button_input_with_blank_value(
+    r#"<html><input type="button" value="   " title="Arbitrary title"></html>"#
+)]
+fn uses_title_as_tooltip_when_other_name_source_is_empty(#[case] html: &str) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): none(),
+                tooltip(): some(eq("Arbitrary title")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::div(r#"<html><div title="Arbitrary title">Text</div></html>"#, "div")]
+#[case::span(r#"<html><span title="Arbitrary title">Text</span></html>"#, "span")]
+#[case::paragraph(r#"<html><p title="Arbitrary title">Text</p></html>"#, "p")]
+fn does_not_use_title_as_tooltip_of_element_whose_role_prohibits_naming(
+    #[case] html: &str,
+    #[case] html_tag: &str,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq(html_tag)),
+                label(): none(),
+                tooltip(): none(),
+                description(): some(eq("Arbitrary title")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn does_not_use_title_as_tooltip_of_img_with_empty_alt() -> TestResult<()> {
+    let tree_update = tree_of(r#"<html><img alt="" title="Arbitrary title"></html>"#);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("img")),
+                label(): none(),
+                tooltip(): none(),
+                description(): some(eq("Arbitrary title")),
+            })
+        ))
+    )
+}
+
+#[test]
+fn uses_title_as_tooltip_of_img_in_figure_with_figcaption() -> TestResult<()> {
+    let tree_update = tree_of(
+        r#"<html><figure><img title="Arbitrary title"><figcaption>Caption</figcaption></figure></html>"#,
+    );
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("img")),
+                label(): none(),
+                tooltip(): some(eq("Arbitrary title")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::empty(r#"<html><input title=""></html>"#, "input")]
+#[case::spaces(r#"<html><input title="   "></html>"#, "input")]
+#[case::tab_and_line_feed(r#"<html><input title="&#9;&#10;"></html>"#, "input")]
+#[case::button(r#"<html><button title="   "></button></html>"#, "button")]
+fn ignores_blank_title_as_name(#[case] html: &str, #[case] html_tag: &str) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq(html_tag)),
+                label(): none(),
+                tooltip(): none(),
+                description(): none(),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::spaces(r#"<html><input title="  Arbitrary   title  "></html>"#)]
+#[case::tab(r#"<html><input title="Arbitrary&#9;title"></html>"#)]
+#[case::line_feed(r#"<html><input title="Arbitrary&#10;title"></html>"#)]
+fn normalizes_the_title_used_as_name(#[case] html: &str) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                tooltip(): some(eq("Arbitrary title")),
+            })
+        ))
+    )
+}
+
+#[rstest]
+#[case::aria_description(
+    r#"<html><input title="Arbitrary title" aria-description="Arbitrary description"></html>"#,
+    Some("Arbitrary description")
+)]
+#[case::aria_describedby(
+    r#"<html><span id="arbitrary-element">Arbitrary description</span><input title="Arbitrary title" aria-describedby="arbitrary-element"></html>"#,
+    Some("Arbitrary description")
+)]
+#[case::blank_aria_description(
+    r#"<html><input title="Arbitrary title" aria-description="   "></html>"#,
+    None
+)]
+fn uses_title_as_tooltip_alongside_description_from_other_source(
+    #[case] html: &str,
+    #[case] expected_description: Option<&str>,
+) -> TestResult<()> {
+    let tree_update = tree_of(html);
+
+    verify_that!(
+        tree_update.nodes,
+        contains((
+            anything(),
+            matches_pattern!(AccessKitNode {
+                html_tag(): some(eq("input")),
+                label(): none(),
+                tooltip(): some(eq("Arbitrary title")),
+                description(): eq(expected_description),
             })
         ))
     )

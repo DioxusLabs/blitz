@@ -133,6 +133,7 @@ impl<'doc> TreeBuilder<'doc> {
             accesskit_node.set_children(children);
             self.resolve_name(node_id, node, &mut accesskit_node);
             self.resolve_description(node_id, node, &mut accesskit_node);
+            node.resolve_accesskit_node_tooltip_and_label_from_placeholder(&mut accesskit_node);
             nodes.push((to_accesskit_node_id(node_id), accesskit_node));
         });
         nodes

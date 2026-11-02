@@ -138,6 +138,41 @@ impl Node {
         )
     }
 
+    /// The `title` attribute provides the name of the element when nothing else does. AccessKit
+    /// expects such a name in the property `tooltip` rather than `label`. The description is empty
+    /// in this case, since the `title` is the name.
+    ///
+    /// <https://www.w3.org/TR/accname-1.2/#step2I>
+    /// <https://www.w3.org/TR/html-aam-1.0/#accessible-name-and-description-computation>
+    pub(super) fn resolve_accesskit_node_tooltip_and_label_from_placeholder(
+        &self,
+        accesskit_node: &mut accesskit::Node,
+    ) {
+        if accesskit_node.label().is_some() {
+            return;
+        }
+
+        let Some(element_data) = self.element_data() else {
+            return;
+        };
+
+        // https://www.w3.org/TR/html-aam-1.0/#img-element-accessible-name-computation
+        if self.is_element_named(local_name!("img"))
+            && element_data
+                .attr(local_name!("alt"))
+                .is_some_and(str::is_empty)
+        {
+            accesskit_node.clear_tooltip();
+        } else if !role_prohibits_naming(accesskit_node.role())
+            && let Some(tooltip) = element_data.attr(local_name!("title"))
+            && let Some(normalized_tooltip) = normalize(tooltip)
+        {
+            accesskit_node.set_tooltip(normalized_tooltip);
+        } else if let Some(placeholder) = accesskit_node.placeholder() {
+            accesskit_node.set_label(placeholder.to_string());
+        }
+    }
+
     /// Sets the label in the given [accesskit::Node] to the accessible name computed from this
     /// node, its subtree and, for images, the enclosing `figure`. It does not take into account
     /// the nodes which refer to this node. [TreeBuilder](super::tree_builder::TreeBuilder) handles
@@ -161,8 +196,6 @@ impl Node {
             && let Some(content) = self.text_alternative(None)
         {
             accesskit_node.set_label(content);
-        } else if let Some(placeholder) = accesskit_node.placeholder() {
-            accesskit_node.set_label(placeholder.to_string());
         }
     }
 
@@ -184,10 +217,7 @@ impl Node {
             && let Some(normalized_description) = normalize(aria_description)
         {
             accesskit_node.set_description(normalized_description);
-            return;
-        }
-
-        if let Some(title) = element_data.attr(local_name!("title"))
+        } else if let Some(title) = element_data.attr(local_name!("title"))
             && let Some(normalized_title) = normalize(title)
             && (accesskit_node.label().is_some()
                 || role_prohibits_naming(accesskit_node.role())
