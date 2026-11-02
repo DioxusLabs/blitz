@@ -635,12 +635,18 @@ impl DocumentMutator<'_> {
                     | local_name!("srcdoc")
                     | local_name!("span")
             );
+        // A table's `cellpadding` is a presentational hint on its cells, not on the table.
+        let restyles_cells = *attr == local_name!("cellpadding")
+            && node.data.is_element_with_tag_name(&local_name!("table"));
         if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
             data.hint |= if is_style {
                 RestyleHint::RESTYLE_STYLE_ATTRIBUTE
             } else {
                 RestyleHint::RESTYLE_SELF
             };
+            if restyles_cells {
+                data.hint |= RestyleHint::RESTYLE_DESCENDANTS;
+            }
             if read_by_layout {
                 data.damage.insert(ALL_DAMAGE);
             }

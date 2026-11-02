@@ -1229,6 +1229,18 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+            if *name == local_name!("cellspacing") && *tag == local_name!("table") {
+                if let Ok(px) = style::servo::attr::parse_unsigned_integer(value.chars()) {
+                    use style::values::specified::{BorderSpacing, NonNegativeLength};
+                    let spacing = NonNegativeLength::from_px(px as f32);
+                    push_style(PropertyDeclaration::BorderSpacing(BorderSpacing::new(
+                        spacing.clone(),
+                        spacing,
+                    )));
+                }
+            }
+
             if *name == local_name!("bgcolor") {
                 use style::values::specified::Color;
                 if let Some((r, g, b, a)) = parse_color_attr(value) {
@@ -1241,6 +1253,44 @@ impl<'a> TElement for BlitzNode<'a> {
             if *name == local_name!("hidden") {
                 use style::values::specified::Display;
                 push_style(PropertyDeclaration::Display(Display::None));
+            }
+        }
+
+        // A table's `cellpadding` attribute maps to the padding of its cells (not
+        // those of nested tables), as a pixel length. The table is the first
+        // ancestor that isn't a row or row group.
+        // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+        if *tag == local_name!("td") || *tag == local_name!("th") {
+            let mut ancestor = self.parent_node();
+            let mut cellpadding = None;
+            while let Some(node) = ancestor {
+                let Some(elem) = node.data.downcast_element() else {
+                    break;
+                };
+                let name = &elem.name.local;
+                let is_table_internal = *name == local_name!("tr")
+                    || *name == local_name!("tbody")
+                    || *name == local_name!("thead")
+                    || *name == local_name!("tfoot");
+                if !is_table_internal {
+                    if *name == local_name!("table") {
+                        cellpadding = elem.attr(local_name!("cellpadding")).and_then(|value| {
+                            style::servo::attr::parse_unsigned_integer(value.chars()).ok()
+                        });
+                    }
+                    break;
+                }
+                ancestor = node.parent_node();
+            }
+            if let Some(px) = cellpadding {
+                use style::values::generics::NonNegative;
+                use style::values::specified::{LengthPercentage, NoCalcLength};
+                let padding =
+                    NonNegative(LengthPercentage::Length(NoCalcLength::from_px(px as f32)));
+                push_style(PropertyDeclaration::PaddingTop(padding.clone()));
+                push_style(PropertyDeclaration::PaddingRight(padding.clone()));
+                push_style(PropertyDeclaration::PaddingBottom(padding.clone()));
+                push_style(PropertyDeclaration::PaddingLeft(padding));
             }
         }
 
