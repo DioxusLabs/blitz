@@ -230,6 +230,19 @@ impl CssBox {
         path
     }
 
+    /// Construct a bezpath for clipping the contents of a text input: the content box
+    /// horizontally (so scrolled text doesn't paint over the inline padding) and the
+    /// padding box vertically (so glyphs overflowing a short line box aren't cut off).
+    pub fn text_input_clip_path(&self) -> BezPath {
+        Rect::new(
+            self.content_box.x0,
+            self.padding_box.y0,
+            self.content_box.x1,
+            self.padding_box.y1,
+        )
+        .to_path(0.1)
+    }
+
     /// Whether the border box is a full ellipse (which includes a circle): every
     /// corner radius equals half the box in that axis, i.e. `border-radius: 50%`.
     /// Such a border is a single continuous curve with no straight edges; it is best
