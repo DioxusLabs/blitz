@@ -108,10 +108,10 @@ pub(crate) fn font_variations(
 ) -> Vec<parley::FontVariation> {
     const OPSZ: parley::Tag = parley::Tag::new(b"opsz");
     let settings = &font_styles.font_variation_settings.0;
-    let mut variations = Vec::with_capacity(settings.len() + 1);
-    if font_styles.font_optical_sizing == stylo::FontOpticalSizing::Auto
-        && !settings.iter().any(|v| v.tag.0.to_be_bytes() == *b"opsz")
-    {
+    let auto_opsz = font_styles.font_optical_sizing == stylo::FontOpticalSizing::Auto
+        && !settings.iter().any(|v| v.tag.0.to_be_bytes() == *b"opsz");
+    let mut variations = Vec::with_capacity(settings.len() + usize::from(auto_opsz));
+    if auto_opsz {
         variations.push(parley::FontVariation {
             tag: OPSZ,
             value: font_size,
