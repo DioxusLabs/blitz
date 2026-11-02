@@ -22,11 +22,11 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::OverflowWrap;
     pub(crate) use style::values::computed::WordBreak;
     pub(crate) use style::values::computed::font::FontFeatureSettings;
+    pub(crate) use style::values::computed::font::FontOpticalSizing;
     pub(crate) use style::values::computed::font::FontStyle;
     pub(crate) use style::values::computed::font::FontVariantEastAsian;
     pub(crate) use style::values::computed::font::FontVariantLigatures;
     pub(crate) use style::values::computed::font::FontVariantNumeric;
-    pub(crate) use style::values::computed::font::FontVariationSettings;
     pub(crate) use style::values::computed::font::FontWeight;
     pub(crate) use style::values::computed::font::FontWidth;
     pub(crate) use style::values::computed::font::GenericFontFamily;
@@ -100,15 +100,34 @@ pub(crate) fn font_style(input: stylo::FontStyle) -> parley::FontStyle {
     }
 }
 
-pub(crate) fn font_variations(input: &stylo::FontVariationSettings) -> Vec<parley::FontVariation> {
-    input
+/// Converts `font-variation-settings`, adding an `opsz` axis value equal to the font size in CSS
+/// pixels when `font-optical-sizing` is `auto` (as browsers do), unless `opsz` is set explicitly.
+pub(crate) fn font_variations(
+    font_styles: &stylo::Font,
+    font_size: f32,
+) -> Vec<parley::FontVariation> {
+    const OPSZ: parley::Tag = parley::Tag::new(b"opsz");
+    let mut variations: Vec<parley::FontVariation> = font_styles
+        .font_variation_settings
         .0
         .iter()
         .map(|v| parley::FontVariation {
             tag: parley::Tag::from_bytes(v.tag.0.to_be_bytes()),
             value: v.value,
         })
-        .collect()
+        .collect();
+    if font_styles.font_optical_sizing == stylo::FontOpticalSizing::Auto
+        && !variations.iter().any(|v| v.tag == OPSZ)
+    {
+        variations.insert(
+            0,
+            parley::FontVariation {
+                tag: OPSZ,
+                value: font_size,
+            },
+        );
+    }
+    variations
 }
 
 #[inline]
@@ -440,7 +459,7 @@ pub(crate) fn style(
     let font_weight = self::font_weight(font_styles.font_weight);
     let font_style = self::font_style(font_styles.font_style);
     let font_width = self::font_width(font_styles.font_width);
-    let font_variations = self::font_variations(&font_styles.font_variation_settings);
+    let font_variations = self::font_variations(font_styles, font_size);
     let font_features = self::font_features(font_styles);
 
     // Convert font family
