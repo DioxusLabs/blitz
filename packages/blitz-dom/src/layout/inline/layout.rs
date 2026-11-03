@@ -82,7 +82,62 @@ fn inline_box_inputs(
     inputs
 }
 
+/// A float met mid-line, laid out but not yet placed in the block formatting context
+#[cfg(feature = "floats")]
+struct PendingFloat {
+    node_id: NodeId,
+    output: LayoutOutput,
+    margin: taffy::Rect<f32>,
+    direction: taffy::FloatDirection,
+    clear: Clear,
+}
+
 impl LayoutPassState<'_> {
+    /// Place a float laid out by inline layout at or below `min_y` (content-box relative)
+    #[cfg(feature = "floats")]
+    fn place_inline_float(
+        &mut self,
+        block_ctx: &mut BlockContext,
+        float: PendingFloat,
+        min_y: f32,
+        container_pb: taffy::Rect<f32>,
+        oof_candidates: &mut OofCandidates,
+    ) {
+        let PendingFloat {
+            node_id,
+            mut output,
+            margin,
+            direction,
+            clear,
+        } = float;
+
+        // Note: `pos` is content-box relative
+        let pos = block_ctx.place_floated_box(
+            crate::taffy_node_id(node_id).into(),
+            output.size + margin.sum_axes(),
+            min_y,
+            direction,
+            clear,
+            false,
+        );
+
+        let location = taffy::Point {
+            x: pos.x + margin.left + container_pb.left,
+            y: pos.y + margin.top + container_pb.top,
+        };
+        let layout = self.nodes[node_id].unrounded_layout_mut();
+        layout.size = output.size;
+        layout.location = location;
+        layout.margin = margin;
+
+        // Translate anchors from item-relative to container-relative
+        // coordinates and collect candidates bubbled from the float's subtree
+        if !output.oof_candidates.is_empty() {
+            output.oof_candidates.translate(location);
+            oof_candidates.append(&mut output.oof_candidates);
+        }
+    }
+
     pub(crate) fn compute_inline_layout(
         &mut self,
         node_id: NodeId,
@@ -684,6 +739,7 @@ impl LayoutPassState<'_> {
             let mut breaker = inline_layout.layout.break_lines();
             let initial_slot = block_ctx.find_content_slot(0.0, 0.0, Clear::None, None);
             let mut has_active_floats = initial_slot.segment_id.is_some();
+            let mut pending_floats: Vec<PendingFloat> = Vec::new();
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
             state.set_line_max_advance(initial_slot.width * scale);
@@ -701,6 +757,20 @@ impl LayoutPassState<'_> {
                 match yield_data {
                     YieldData::LineBreak(_line_break_data) => {
                         let state = breaker.state_mut();
+
+                        if !pending_floats.is_empty() {
+                            let min_y = state.line_y() as f32 / scale;
+                            for float in pending_floats.drain(..) {
+                                self.place_inline_float(
+                                    &mut block_ctx,
+                                    float,
+                                    min_y,
+                                    container_pb,
+                                    &mut oof_candidates,
+                                );
+                            }
+                            has_active_floats = true;
+                        }
 
                         if has_active_floats {
                             // TODO: revert state and retry layout if a line doesn't fit
@@ -746,51 +816,47 @@ impl LayoutPassState<'_> {
                             )
                         };
 
-                        let margin_sum = margin.sum_axes();
-
-                        let mut output = self.compute_child_layout(
+                        let output = self.compute_child_layout(
                             crate::taffy_node_id(node_id),
                             float_child_inputs,
                         );
-                        let min_y = state.line_y() as f32 / scale;
-
-                        // Note: `pos` is content-box relative
-                        let pos = block_ctx.place_floated_box(
-                            crate::taffy_node_id(node_id).into(),
-                            output.size + margin_sum,
-                            min_y,
+                        let float_width = (output.size.width + margin.left + margin.right) * scale;
+                        let float = PendingFloat {
+                            node_id,
+                            output,
+                            margin,
                             direction,
                             clear,
-                            false,
-                        );
-
-                        let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
-                        let next_slot =
-                            block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
-                        has_active_floats = next_slot.segment_id.is_some();
-
-                        state.set_line_max_advance(next_slot.width * scale);
-                        state.set_line_x(next_slot.x * scale);
-                        state.set_line_y((next_slot.y * scale) as f64);
-
-                        let location = taffy::Point {
-                            x: pos.x + margin.left + container_pb.left,
-                            y: pos.y + margin.top + container_pb.top,
                         };
-                        let layout = self.nodes[node_id].unrounded_layout_mut();
-                        layout.size = output.size;
-                        layout.location = location;
-                        layout.margin = margin;
 
-                        // Translate anchors from item-relative to container-relative
-                        // coordinates and collect candidates bubbled from the float's subtree
-                        if !output.oof_candidates.is_empty() {
-                            output.oof_candidates.translate(location);
-                            oof_candidates.append(&mut output.oof_candidates);
+                        // A float that doesn't fit beside the content already on the line is
+                        // placed below the line (CSS 2.1 §9.5.1), as are any floats after it
+                        // (a float may not be higher than an earlier float).
+                        let fits_on_line = pending_floats.is_empty()
+                            && (box_break_data.advance <= 0.0
+                                || box_break_data.advance + float_width
+                                    <= state.line_max_advance() + 0.001 * scale);
+                        if !fits_on_line {
+                            pending_floats.push(float);
+                        } else {
+                            let min_y = state.line_y() as f32 / scale;
+                            self.place_inline_float(
+                                &mut block_ctx,
+                                float,
+                                min_y,
+                                container_pb,
+                                &mut oof_candidates,
+                            );
+
+                            let min_y = state.line_y() / scale as f64;
+                            let next_slot =
+                                block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
+                            has_active_floats = next_slot.segment_id.is_some();
+
+                            state.set_line_max_advance(next_slot.width * scale);
+                            state.set_line_x(next_slot.x * scale);
+                            state.set_line_y((next_slot.y * scale) as f64);
                         }
-
-                        // dbg!(&layout.size);
-                        // dbg!(&layout.location);
 
                         // Floats are out-of-flow and must not contribute to the line's height.
                         state.append_inline_box_to_line(
