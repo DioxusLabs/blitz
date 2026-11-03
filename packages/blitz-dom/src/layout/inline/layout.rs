@@ -679,7 +679,7 @@ impl LayoutPassState<'_> {
         #[cfg(feature = "floats")]
         {
             let mut breaker = inline_layout.layout.break_lines();
-            let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
+            let initial_slot = block_ctx.find_content_slot(0.0, 0.0, Clear::None, None);
             let mut has_active_floats = initial_slot.segment_id.is_some();
             let state = breaker.state_mut();
             state.set_layout_max_advance(width);
@@ -705,7 +705,7 @@ impl LayoutPassState<'_> {
 
                             let min_y = state.line_y() / scale as f64;
                             let next_slot =
-                                block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+                                block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
                             has_active_floats = next_slot.segment_id.is_some();
 
                             state.set_line_max_advance(next_slot.width * scale);
@@ -763,7 +763,7 @@ impl LayoutPassState<'_> {
 
                         let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
                         let next_slot =
-                            block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+                            block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
                         has_active_floats = next_slot.segment_id.is_some();
 
                         state.set_line_max_advance(next_slot.width * scale);
