@@ -733,6 +733,10 @@ impl LayoutPassState<'_> {
         // These are laid out by the out-of-flow positioning pass (`compute_oof_layout`).
         let mut oof_candidates = OofCandidates::new();
 
+        // The bottom of each line box, including any space skipped to move it down past floats.
+        #[cfg(feature = "floats")]
+        let mut line_bottoms: Vec<f64> = Vec::new();
+
         // Perform inline layout
         #[cfg(feature = "floats")]
         {
@@ -755,7 +759,8 @@ impl LayoutPassState<'_> {
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
-                    YieldData::LineBreak(_line_break_data) => {
+                    YieldData::LineBreak(line_break_data) => {
+                        line_bottoms.push(line_break_data.line_y_end);
                         let state = breaker.state_mut();
 
                         if !pending_floats.is_empty() {
@@ -934,6 +939,24 @@ impl LayoutPassState<'_> {
         {
             height -= last_line.metrics().line_height;
             trailing_empty_line = Some(line_count - 1);
+        }
+
+        // Parley's height is the sum of the line heights, which misses the space skipped when a
+        // line is moved down past floats, so extend it to the bottom of the last counted line
+        // (Parley doesn't count an empty last line either).
+        #[cfg(feature = "floats")]
+        {
+            let counted_lines = match inline_layout.layout.get(line_count.wrapping_sub(1)) {
+                Some(last_line) if last_line.is_empty() => line_count - 1,
+                _ => trailing_empty_line.unwrap_or(line_count),
+            };
+            if has_inline_content
+                && let Some(&bottom) = counted_lines
+                    .checked_sub(1)
+                    .and_then(|last| line_bottoms.get(last))
+            {
+                height = height.max(bottom as f32);
+            }
         }
 
         #[cfg(feature = "floats")]
