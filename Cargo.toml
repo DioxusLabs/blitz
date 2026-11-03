@@ -294,6 +294,21 @@ wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
 
+# Local testing branch: anyrender main + glifo 0.4.0 with the unhinted embolden fix.
+[patch.crates-io]
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-unhinted-embolden" }
+vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-unhinted-embolden" }
+vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-unhinted-embolden" }
+vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-unhinted-embolden" }
+
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
