@@ -44,6 +44,10 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
                 continue;
             };
+            // A `display: contents` element generates no box to paint a background for
+            if styles.clone_display().is_contents() {
+                continue;
+            }
 
             let current_color = styles.clone_color();
             let bg_color = styles
@@ -599,6 +603,7 @@ pub(crate) fn stroke_text<'a>(
     stack.clear();
     path_scratch.clear();
     deco_boxes.clear();
+    let inline_root_parent_id = doc.get_node(inline_root_id).and_then(|node| node.parent);
 
     // Persistent stack mirroring the ancestor path (inline root -> current run's
     // node) as we walk the runs. The `text-decoration-*` properties are *not*
@@ -639,6 +644,11 @@ pub(crate) fn stroke_text<'a>(
                         break;
                     }
                     walk_id = doc.get_node(node_id).and_then(|node| node.parent);
+                    // Text hoisted out of a `display: contents` element into an anonymous inline
+                    // root reaches the anonymous box's parent without passing through the box
+                    if walk_id.is_some() && walk_id == inline_root_parent_id {
+                        walk_id = Some(inline_root_id);
+                    }
                 }
                 path_scratch.reverse();
 

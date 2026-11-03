@@ -97,6 +97,26 @@ pub(crate) fn build_inline_layout_into(
         );
     }
     for child_id in root_node.children.iter().copied() {
+        // Text hoisted out of a `display: contents` element into an anonymous box (e.g. an
+        // anonymous table cell) takes its style from that element, not from the anonymous box
+        if let Some(contents_style) =
+            hoisted_text_parent_style(nodes, inline_context_root_node_id, child_id)
+        {
+            let contents_id = nodes[child_id].parent.unwrap();
+            // Only inherited properties pass through to the text: `vertical-align` is not inherited
+            let mut span_style = stylo_to_parley::style(contents_id, &contents_style);
+            span_style.vertical_align = Default::default();
+            builder.push_style_span(span_style);
+            build_inline_layout_recursive(
+                &mut builder,
+                &mut text_transformer,
+                nodes,
+                child_id,
+                &CaseTransform::from_style(&contents_style),
+            );
+            builder.pop_style_span();
+            continue;
+        }
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
@@ -117,6 +137,25 @@ pub(crate) fn build_inline_layout_into(
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
     return;
+
+    /// The style of the `display: contents` element a text child of the inline root was hoisted
+    /// out of, if it was
+    fn hoisted_text_parent_style(
+        nodes: &crate::NodeTree,
+        root_id: NodeId,
+        child_id: NodeId,
+    ) -> Option<style::servo_arc::Arc<style::properties::ComputedValues>> {
+        let child = &nodes[child_id];
+        if !matches!(child.data, NodeData::Text(_)) {
+            return None;
+        }
+        let parent_id = child.parent.filter(|&id| id != root_id)?;
+        let parent = &nodes[parent_id];
+        if parent.display_style()?.inside() != DisplayInside::Contents {
+            return None;
+        }
+        parent.primary_styles().map(|s| (*s).clone())
+    }
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
