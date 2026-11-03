@@ -2524,6 +2524,49 @@ mod test {
 
     const HIDDEN_CSS: &str = "div { height: 10px; width: 100px } .hidden { display: none }";
 
+    /// `html > table > [cell; 2]`, ids `[table, cells..]`: the cells get an anonymous row.
+    fn table_with_anonymous_row(doc: &mut BaseDocument, css: &str) -> Vec<NodeId> {
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(css));
+        let root_id = doc.root_node().id;
+        let mut m = doc.mutate();
+        let html = m.create_element(qual_name!("html"), vec![]);
+        m.append_children(root_id, &[html]);
+        let table = div(&mut m, &[("class", "t")]);
+        let cells: Vec<NodeId> = (0..2).map(|_| div(&mut m, &[("class", "c")])).collect();
+        m.append_children(table, &cells);
+        m.append_children(html, &[table]);
+        std::iter::once(table).chain(cells).collect()
+    }
+
+    #[test]
+    fn restyling_a_table_keeps_its_anonymous_row() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let ids = table_with_anonymous_row(
+            &mut doc,
+            ".t { display: table } .c { display: table-cell; width: 10px; height: 10px }",
+        );
+        doc.resolve(0.0);
+        let table = ids[0];
+        let rows = doc.nodes[table].anonymous_blocks.clone();
+        assert_eq!(rows.len(), 1);
+
+        doc.mutate()
+            .set_attribute(table, qual_name!("style"), "color: red");
+        doc.resolve(0.0);
+
+        assert_eq!(
+            doc.nodes[table].anonymous_blocks, rows,
+            "a style change that does not affect the box tree must not rebuild the table"
+        );
+        assert_eq!(
+            doc.nodes[rows[0]].display_style().unwrap().inside(),
+            style::values::specified::box_::DisplayInside::TableRow
+        );
+    }
+
     fn unhide(m: &mut DocumentMutator<'_>, ids: &[NodeId]) {
         m.clear_attribute(ids[0], qual_name!("class"));
     }
