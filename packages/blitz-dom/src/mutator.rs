@@ -715,6 +715,7 @@ impl DocumentMutator<'_> {
                     | local_name!("height")
                     | local_name!("colspan")
                     | local_name!("rowspan")
+                    | local_name!("span")
                     | local_name!("rows")
                     | local_name!("cols")
                     | local_name!("start")

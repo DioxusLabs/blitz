@@ -1199,6 +1199,9 @@ impl Node {
                     flags |= stylo_taffy::StyleFlags::COLLAPSED_BORDERS;
                 }
             }
+            DisplayInside::TableColumn | DisplayInside::TableColumnGroup => {
+                spans = Some((crate::layout::table::column_span_of(self), 1));
+            }
             DisplayInside::Table if collapsed_borders => {
                 // The collapsed cell borders replace the border spacing, and the table's own
                 // border when the cells have a border to collapse with

@@ -1375,7 +1375,9 @@ impl ElementCx<'_, '_> {
                 taffy::Display::Table
                 | taffy::Display::TableRowGroup
                 | taffy::Display::TableRow
-                | taffy::Display::TableCell => Color::new([1.0, 0.0, 1.0, 1.0]),
+                | taffy::Display::TableCell
+                | taffy::Display::TableColumnGroup
+                | taffy::Display::TableColumn => Color::new([1.0, 0.0, 1.0, 1.0]),
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 

@@ -617,6 +617,14 @@ fn collect_layout_children_with_wrap(
         {
             collect_table_children(doc, container_node_id, out, TableRole::Row);
         }
+        DisplayInside::TableColumnGroup
+            if matches!(
+                table_parent_role(doc, container_node_id),
+                Some(TableRole::Other)
+            ) =>
+        {
+            collect_table_children(doc, container_node_id, out, TableRole::ColumnGroup);
+        }
 
         // Flow, FlowRoot and TableCell, plus internal table displays (row,
         // row group, column, ...) occurring outside of a table. Blitz does
@@ -760,12 +768,12 @@ fn for_each_table_child(
     }
 }
 
-/// Collect the layout children of a table (`container_role` `Other`), row group or row,
-/// generating the anonymous boxes the CSS table model requires (CSS 2.1 §17.2.1): cells
+/// Collect the layout children of a table (`container_role` `Other`), row group, row or column
+/// group, generating the anonymous boxes the CSS table model requires (CSS 2.1 §17.2.1): cells
 /// directly inside a table or row group are wrapped in an anonymous row, and content other
-/// than cells inside a row is wrapped in an anonymous cell. Columns, column groups and
-/// captions generate no layout box. Taffy's table algorithm takes care of the anonymous row
-/// group around rows that sit directly in the table.
+/// than cells inside a row is wrapped in an anonymous cell. Columns and column groups are
+/// laid out by the table; captions generate no layout box yet. Taffy's table algorithm takes
+/// care of the anonymous row group around rows that sit directly in the table.
 fn collect_table_children(
     doc: &mut BaseDocument,
     container_node_id: NodeId,
@@ -817,12 +825,8 @@ fn collect_table_children(
             } else {
                 TableRole::Other
             };
-            let is_column = matches!(
-                display.inside(),
-                DisplayInside::TableColumn | DisplayInside::TableColumnGroup
-            );
             let is_caption = display.outside() == DisplayOutside::TableCaption;
-            if is_column || is_caption {
+            if is_caption {
                 // TODO: lay out captions
                 doc.nodes[child_id]
                     .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
@@ -830,9 +834,17 @@ fn collect_table_children(
             }
 
             match (container_role, role) {
-                // Row groups and rows directly in the table, rows in a row group, cells in a row
-                (TableRole::Other, TableRole::RowGroup | TableRole::Row)
+                // Row groups, rows, column groups and columns directly in the table, rows in a
+                // row group, columns in a column group, cells in a row
+                (
+                    TableRole::Other,
+                    TableRole::RowGroup
+                    | TableRole::Row
+                    | TableRole::ColumnGroup
+                    | TableRole::Column,
+                )
                 | (TableRole::RowGroup, TableRole::Row)
+                | (TableRole::ColumnGroup, TableRole::Column)
                 | (TableRole::Row, TableRole::Cell) => out.push(child_id, doc),
                 // Anything else in a table or row group is wrapped in an anonymous row (and,
                 // if it is not a cell, in an anonymous cell when that row is constructed)
@@ -849,6 +861,10 @@ fn collect_table_children(
                     doc,
                     PseudoElement::ServoAnonymousTableCell,
                 ),
+                // Anything but a column inside a column group, and anything inside a column,
+                // generates no box
+                (TableRole::ColumnGroup | TableRole::Column, _) => doc.nodes[child_id]
+                    .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC),
                 (TableRole::Cell, _) => unreachable!("cells are flow containers"),
             }
         });
