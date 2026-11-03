@@ -526,7 +526,10 @@ impl ElementCx<'_, '_> {
         let outer_border_style = self.style.get_border();
 
         let info = blitz_dom::table_layout_info(self.context.dom, self.node.id);
-        let (cols, rows) = (&info.column_tracks, &info.row_tracks);
+        // Column tracks are in column order, which runs right to left in an rtl table
+        let mut cols = info.column_tracks.clone();
+        cols.sort_by(|a, b| a.start.total_cmp(&b.start));
+        let (cols, rows) = (&cols, &info.row_tracks);
         let (Some(first_col), Some(last_col), Some(first_row), Some(last_row)) =
             (cols.first(), cols.last(), rows.first(), rows.last())
         else {
