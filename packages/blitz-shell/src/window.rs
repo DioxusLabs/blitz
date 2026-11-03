@@ -118,6 +118,14 @@ pub struct View<Rend: WindowRenderer> {
     // See https://github.com/rust-windowing/winit/issues/3406
     #[cfg(target_os = "ios")]
     pub ios_request_redraw: std::cell::Cell<bool>,
+
+    /// When to draw the next frame of a running animation: at the display's next refresh rather
+    /// than at once (see `redraw`). Taken by the application's `about_to_wait`.
+    #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+    pub(crate) next_animation_frame: Option<Instant>,
+    /// The time between two refreshes of the window's display, once looked up.
+    #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+    frame_interval: Option<std::time::Duration>,
 }
 
 impl<Rend: WindowRenderer> Drop for View<Rend> {
@@ -233,6 +241,10 @@ impl<Rend: WindowRenderer> View<Rend> {
 
             #[cfg(target_os = "ios")]
             ios_request_redraw: std::cell::Cell::new(false),
+            #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+            next_animation_frame: None,
+            #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+            frame_interval: None,
         }
     }
 
@@ -401,6 +413,8 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn redraw(&mut self) {
         #[cfg(target_os = "ios")]
         self.ios_request_redraw.set(false);
+        #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+        let frame_started = Instant::now();
         let animation_time = self.current_animation_time();
         let is_visible = self.is_visible;
 
@@ -435,9 +449,32 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         drop(inner);
 
+        #[cfg(any(target_os = "ios", target_arch = "wasm32"))]
         if !is_blocked && is_visible && is_animating {
             self.request_redraw();
         }
+        // The next frame of an animation is due a display refresh after this one started.
+        // Requesting it at once would draw as fast as the CPU allows wherever presenting a frame
+        // doesn't wait for the display (the CPU renderers): hundreds of frames a second.
+        #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+        {
+            self.next_animation_frame = (!is_blocked && is_visible && is_animating)
+                .then(|| frame_started + self.frame_interval());
+        }
+    }
+
+    /// The time between two refreshes of the window's display: 60 Hz when it doesn't say.
+    #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+    fn frame_interval(&mut self) -> std::time::Duration {
+        *self.frame_interval.get_or_insert_with(|| {
+            let millihertz = self
+                .window
+                .current_monitor()
+                .and_then(|monitor| monitor.current_video_mode())
+                .and_then(|mode| mode.refresh_rate_millihertz())
+                .map_or(60_000, |rate| rate.get());
+            std::time::Duration::from_secs_f64(1000.0 / f64::from(millihertz))
+        })
     }
 
     pub fn pointer_coords(&self, position: PhysicalPosition<f64>) -> PointerCoords {
@@ -598,7 +635,13 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::RedrawRequested => {
                 self.redraw();
             }
-            WindowEvent::Moved(_) => {}
+            WindowEvent::Moved(_) => {
+                // Possibly onto another display, with another refresh rate.
+                #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+                {
+                    self.frame_interval = None;
+                }
+            }
             WindowEvent::Occluded(is_occluded) => {
                 self.is_visible = !is_occluded;
                 if self.is_visible {
