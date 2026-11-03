@@ -1149,13 +1149,8 @@ impl BaseDocument {
         node
     }
 
-    pub(crate) fn resolve_url(&self, raw: &str) -> url::Url {
-        self.url.resolve_relative(raw).unwrap_or_else(|| {
-            panic!(
-                "to be able to resolve {raw} with the base_url: {:?}",
-                *self.url
-            )
-        })
+    pub(crate) fn resolve_url(&self, raw: &str) -> Option<url::Url> {
+        self.url.resolve_relative(raw)
     }
 
     pub fn print_tree(&self) {
@@ -1176,8 +1171,9 @@ impl BaseDocument {
             if element.name.local == local_name!("link") {
                 if let Some(href) = element.attr(local_name!("href")) {
                     // println!("Node {node_id} {href} {href_to_reload} {} {}", resolved_href.as_str(), resolved_href.as_str() == url_to_reload);
-                    if href == href_to_reload {
-                        let resolved_href = self.resolve_url(href);
+                    if href == href_to_reload
+                        && let Some(resolved_href) = self.resolve_url(href)
+                    {
                         self.net_provider.fetch(
                             self.id(),
                             self.build_request(resolved_href.clone()),
