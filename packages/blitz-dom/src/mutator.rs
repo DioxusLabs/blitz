@@ -1290,8 +1290,9 @@ impl<'doc> DocumentMutator<'doc> {
     fn load_image(&mut self, target_id: NodeId) {
         let node = &self.doc.nodes[target_id];
         if let Some(raw_src) = node.attr(local_name!("src")) {
-            if !raw_src.is_empty() {
-                let src = self.doc.resolve_url(raw_src);
+            if !raw_src.is_empty()
+                && let Some(src) = self.doc.resolve_url(raw_src)
+            {
                 let src_string = src.as_str();
 
                 // Check cache first
@@ -1502,6 +1503,38 @@ mod test {
 
     use super::{DocumentMutator, NodeId};
     use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
+
+    #[test]
+    fn unresolvable_relative_urls_are_skipped() {
+        // Without a base url, relative urls cannot be resolved against the default
+        // `data:` document url. Loading such resources should be skipped, not panic.
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+        let attr = |name, value: &str| Attribute {
+            name,
+            value: value.to_string(),
+        };
+
+        let mut mutator = document.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let img = mutator.create_element(
+            qual_name!("img"),
+            vec![attr(qual_name!("src"), "image.png")],
+        );
+        let link = mutator.create_element(
+            qual_name!("link"),
+            vec![
+                attr(qual_name!("rel"), "stylesheet"),
+                attr(qual_name!("href"), "style.css"),
+            ],
+        );
+        mutator.append_children(html, &[img, link]);
+        mutator.append_children(root_id, &[html]);
+        mutator.set_attribute(img, qual_name!("src"), "other.png");
+        drop(mutator);
+
+        document.resolve(0.0);
+    }
 
     #[cfg(feature = "custom-widget")]
     #[test]
