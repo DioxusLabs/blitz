@@ -56,62 +56,6 @@ use taffy::Layout;
 /// element's own content.
 pub(super) const ALMOST_OPAQUE: f32 = 1.0 - f32::EPSILON;
 
-/// A view of the track positions reported by taffy in physical (left-to-right /
-/// top-to-bottom) order. Taffy reports tracks in logical order, which for RTL grid
-/// containers is physically reversed.
-#[derive(Clone, Copy)]
-pub(crate) struct PhysicalTracks<'a> {
-    positions: &'a [taffy::Line<f32>],
-    reversed: bool,
-}
-
-impl<'a> PhysicalTracks<'a> {
-    pub(crate) fn from_tracks<S: taffy::CheapCloneStr>(
-        tracks: &'a taffy::DetailedGridTracksInfo<S>,
-    ) -> Self {
-        let positions = tracks.positions.as_slice();
-        let reversed = positions
-            .first()
-            .zip(positions.last())
-            .is_some_and(|(first, last)| first.start > last.start);
-        Self {
-            positions,
-            reversed,
-        }
-    }
-
-    fn get(self, index: usize) -> taffy::Line<f32> {
-        if self.reversed {
-            self.positions[self.positions.len() - 1 - index]
-        } else {
-            self.positions[index]
-        }
-    }
-
-    /// Iterate track positions in physical order
-    pub(crate) fn iter(self) -> impl ExactSizeIterator<Item = taffy::Line<f32>> + 'a {
-        (0..self.positions.len()).map(move |index| self.get(index))
-    }
-
-    /// The physical start position of the first track
-    pub(crate) fn origin(self) -> f32 {
-        if self.positions.is_empty() {
-            0.0
-        } else {
-            self.get(0).start
-        }
-    }
-
-    /// Total distance from the start of the first track to the end of the last track
-    pub(crate) fn span(self) -> f32 {
-        if self.positions.is_empty() {
-            0.0
-        } else {
-            self.get(self.positions.len() - 1).end - self.get(0).start
-        }
-    }
-}
-
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
 pub struct BlitzDomPainter<'dom, 'a> {
@@ -311,8 +255,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 && display.inside() != DisplayInside::TableCell;
             !display.is_inline_flow() && !is_internal_table_box_other_than_cell
         };
+        // `overflow` does not apply to internal table boxes other than cells (rows and row
+        // groups are not block containers), so they never clip their content
+        let is_internal_table_box_other_than_cell = {
+            let display = styles.clone_display();
+            display.outside() == DisplayOutside::InternalTable
+                && display.inside() != DisplayInside::TableCell
+        };
         let element = node.element_data();
         self.root_element_id != Some(node.id)
+            && !is_internal_table_box_other_than_cell
             && (element.and_then(|e| e.raster_image_data()).is_some()
                 || element.and_then(|e| e.sub_doc_data()).is_some()
                 || element.and_then(|e| e.text_input_data()).is_some()
@@ -583,7 +535,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             None,
         );
 
-        let paints_own_box = !node.is_inline_with_only_block_children();
+        // Internal table boxes other than cells (rows, row groups) have their backgrounds
+        // painted under their cells by the table, and no borders of their own.
+        let display = styles.clone_display();
+        let is_internal_table_box_other_than_cell = display.outside()
+            == DisplayOutside::InternalTable
+            && display.inside() != DisplayInside::TableCell;
+        let paints_own_box =
+            !node.is_inline_with_only_block_children() && !is_internal_table_box_other_than_cell;
 
         cx.draw_outline(scene);
         if paints_own_box {
@@ -1413,6 +1372,10 @@ impl ElementCx<'_, '_> {
                 }
                 taffy::Display::Flex => Color::new([0.0, 1.0, 0.0, 1.0]),
                 taffy::Display::Grid => Color::new([0.0, 0.0, 1.0, 1.0]),
+                taffy::Display::Table
+                | taffy::Display::TableRowGroup
+                | taffy::Display::TableRow
+                | taffy::Display::TableCell => Color::new([1.0, 0.0, 1.0, 1.0]),
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 

@@ -1180,16 +1180,56 @@ impl Node {
             }
         }
 
+        // In the collapsed borders model the borders of the table and its cells are laid out
+        // by the table as gutters between the cells, so contribute nothing to their own boxes
+        let display_inside = styles.clone_display().inside();
+        let is_table_part = matches!(
+            display_inside,
+            DisplayInside::Table | DisplayInside::TableCell
+        );
+        let collapsed_borders = is_table_part
+            && styles.clone_border_collapse()
+                == style::computed_values::border_collapse::T::Collapse;
+        let mut collapsed_border_spacing = None;
+        let mut spans = None;
+        match display_inside {
+            DisplayInside::TableCell => {
+                spans = Some(crate::layout::table::cell_spans_of(self));
+                if collapsed_borders {
+                    flags |= stylo_taffy::StyleFlags::COLLAPSED_BORDERS;
+                }
+            }
+            DisplayInside::Table if collapsed_borders => {
+                // The collapsed cell borders replace the border spacing, and the table's own
+                // border when the cells have a border to collapse with
+                let gutter = match self.element_data().map(|el| &el.special_data) {
+                    Some(crate::node::SpecialElementData::TableRoot(ctx)) => {
+                        if ctx.border_style.is_some() {
+                            flags |= stylo_taffy::StyleFlags::COLLAPSED_BORDERS;
+                        }
+                        ctx.collapsed_gutter
+                    }
+                    _ => taffy::Size::ZERO,
+                };
+                collapsed_border_spacing = Some(gutter);
+            }
+            _ => {}
+        }
+
         #[cfg(feature = "writing-mode")]
-        {
+        let mut style = {
             // Own-layout_wm by default: the node's own algorithm reads its style in its own axes
             let layout_wm = styles.writing_mode;
             stylo_taffy::TaffyStyloStyle::new_in(styles, flags, layout_wm)
-        }
+        };
         #[cfg(not(feature = "writing-mode"))]
-        {
-            stylo_taffy::TaffyStyloStyle::new(styles, flags)
+        let mut style = stylo_taffy::TaffyStyloStyle::new(styles, flags);
+        if let Some((colspan, rowspan)) = spans {
+            style.colspan = colspan;
+            style.rowspan = rowspan;
         }
+        style.collapsed_border_spacing = collapsed_border_spacing;
+        style
     }
 
     /// The node's style for Taffy, expressed in the axes of the writing mode `layout_wm` (the writing

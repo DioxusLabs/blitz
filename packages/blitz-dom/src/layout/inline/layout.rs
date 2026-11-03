@@ -347,6 +347,7 @@ impl LayoutPassState<'_> {
             parent_size,
             available_space,
             sizing_mode,
+            content_offset_y,
             ..
         } = inputs;
 
@@ -498,6 +499,7 @@ impl LayoutPassState<'_> {
             // Atomic inlines (e.g. inline-block) establish independent formatting
             // contexts: their margins never collapse with their children's margins.
             vertical_margins_are_collapsible: taffy::Line::FALSE,
+            content_offset_y: 0.0,
             ..inputs
         };
         #[cfg(feature = "floats")]
@@ -1090,8 +1092,10 @@ impl LayoutPassState<'_> {
         // the block axis. Floats are positioned relative to the formatting context and are not
         // moved. The offset is stored on the text layout for painting and hit-testing.
         let align_content = BlockContainerStyle::align_content(&self.nodes[node_id].layout_style());
+        // `content_offset_y` is the shift a table cell's content receives from its row's
+        // baseline alignment.
         let block_offset = if align_content.keyword() == taffy::AlignContentKeyword::Normal {
-            0.0
+            content_offset_y
         } else {
             let free_space =
                 final_size.height - content_box_inset.vertical_axis_sum() - measured_size.height;
