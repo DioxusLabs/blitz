@@ -424,6 +424,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::TableItemStyle for TaffyStyloStyl
     fn visibility(&self) -> taffy::Visibility {
         convert::visibility(self.style.clone_visibility())
     }
+
+    #[inline]
+    fn caption_side(&self) -> taffy::CaptionSide {
+        convert::caption_side(self.style.get_inherited_table().caption_side)
+    }
 }
 
 // BlockContainerStyle impl

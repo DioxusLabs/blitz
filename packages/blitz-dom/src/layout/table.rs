@@ -8,6 +8,7 @@ use markup5ever::local_name;
 use style::computed_values::border_collapse::T as BorderCollapse;
 use style::properties::style_structs::Border;
 use style::servo_arc::Arc as ServoArc;
+use style::values::computed::table::CaptionSide;
 use style::values::computed::{BorderStyle, Display};
 use style::values::specified::box_::DisplayInside;
 use taffy::TableRole;
@@ -280,6 +281,37 @@ fn collect_columns(doc: &BaseDocument, node_id: NodeId, columns: &mut Vec<TableC
     }
 }
 
+/// How far the table box sits inside the table's layout box: the height the captions take
+/// above (`caption-side: top`) and below (`bottom`) it. There is no table wrapper box, so the
+/// table's own layout box holds the captions and the table box, and its border, padding and
+/// background belong to the table box alone.
+pub fn table_box_insets(doc: &BaseDocument, table_root_node_id: NodeId) -> taffy::Line<f32> {
+    let mut insets = taffy::Line {
+        start: 0.0,
+        end: 0.0,
+    };
+    let children = doc.nodes[table_root_node_id].layout_children.borrow();
+    let Some(children) = children.as_deref() else {
+        return insets;
+    };
+    for &child_id in children {
+        let node = &doc.nodes[child_id];
+        if node.is_out_of_flow() || table_role(doc, child_id) != TableRole::Caption {
+            continue;
+        }
+        let Some(style) = node.primary_styles() else {
+            continue;
+        };
+        let layout = node.final_layout();
+        let outer_height = layout.size.height + layout.margin.top + layout.margin.bottom;
+        match style.get_inherited_table().caption_side {
+            CaptionSide::Top => insets.start += outer_height,
+            CaptionSide::Bottom => insets.end += outer_height,
+        }
+    }
+    insets
+}
+
 /// Derive the geometry of the laid out table rooted at `table_root_node_id` from the final
 /// layouts of its row groups, rows and cells
 pub fn table_layout_info(doc: &BaseDocument, table_root_node_id: NodeId) -> TableLayoutInfo {
@@ -364,8 +396,8 @@ pub fn table_layout_info(doc: &BaseDocument, table_root_node_id: NodeId) -> Tabl
                     );
                 }
             }
-            // Columns and column groups hold no cells
-            TableRole::Column | TableRole::ColumnGroup => {}
+            // Columns, column groups and captions hold no cells
+            TableRole::Column | TableRole::ColumnGroup | TableRole::Caption => {}
             _ => push_row(&mut info, &mut cursor, child_id, None, taffy::Point::ZERO),
         }
     }
