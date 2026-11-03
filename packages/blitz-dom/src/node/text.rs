@@ -33,6 +33,10 @@ pub struct TextLayout {
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
     pub span_cb_flags: stylo_taffy::StyleFlags,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 impl TextLayout {
@@ -72,6 +76,10 @@ pub struct TextInputData {
     /// vertical offset. It is kept up to date so that the caret remains visible within the
     /// input's content box.
     pub scroll_offset: f32,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 // FIXME: Implement Clone for PlainEditor
@@ -88,6 +96,7 @@ impl TextInputData {
             editor,
             is_multiline,
             scroll_offset: 0.0,
+            content_box_subpixel_offset: taffy::Point::ZERO,
         }
     }
 

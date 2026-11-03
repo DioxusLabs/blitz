@@ -954,6 +954,10 @@ impl std::fmt::Debug for SpecialElementData {
 pub struct ListItemLayout {
     pub marker: Marker,
     pub position: ListItemLayoutPosition,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 //We seperate chars from strings in order to optimise rendering - ie not needing to
