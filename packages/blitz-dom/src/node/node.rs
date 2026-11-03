@@ -1203,6 +1203,7 @@ impl Node {
                 spans = Some((crate::layout::table::column_span_of(self), 1));
             }
             DisplayInside::Table if collapsed_borders => {
+                flags |= stylo_taffy::StyleFlags::COLLAPSED_BORDER_TABLE;
                 // The collapsed cell borders replace the border spacing, and the table's own
                 // border when the cells have a border to collapse with
                 let gutter = match self.element_data().map(|el| &el.special_data) {

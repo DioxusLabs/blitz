@@ -37,6 +37,9 @@ bitflags! {
         /// Whether the node's borders are laid out by its table as collapsed-border gutters
         /// (`border-collapse: collapse`), so contribute nothing to the node's own box
         const COLLAPSED_BORDERS = 1 << 5;
+        /// The box is a table laid out with the collapsing border model, which has no padding
+        /// (CSS 2.1 §17.6.2)
+        const COLLAPSED_BORDER_TABLE = 1 << 6;
     }
 }
 
@@ -318,6 +321,9 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn padding(&self) -> taffy::Rect<taffy::LengthPercentage> {
+        if self.flags.contains(StyleFlags::COLLAPSED_BORDER_TABLE) {
+            return taffy::Rect::ZERO.map(taffy::LengthPercentage::length);
+        }
         let padding_styles = self.style.get_padding();
         if let Some(basis) = self.percent_basis() {
             let resolve = |value: &stylo::LengthPercentage| {
