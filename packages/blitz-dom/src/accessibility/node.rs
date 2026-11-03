@@ -35,8 +35,6 @@ impl Node {
         } else if let Some(element_data) = self.element_data() {
             accesskit_node.set_html_tag(element_data.name.local.as_str());
 
-            // TODO: The roles of elements with strong native semantics cannot be overridden; see
-            // https://www.w3.org/TR/wai-aria-1.2/#host_general_conflict.
             let role = element_role(element_data);
             accesskit_node.set_role(role);
 
