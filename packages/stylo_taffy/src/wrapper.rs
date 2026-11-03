@@ -413,6 +413,11 @@ impl<T: Deref<Target = ComputedValues>> taffy::TableItemStyle for TaffyStyloStyl
     fn rowspan(&self) -> u16 {
         self.rowspan
     }
+
+    #[inline]
+    fn visibility(&self) -> taffy::Visibility {
+        convert::visibility(self.style.clone_visibility())
+    }
 }
 
 // BlockContainerStyle impl
