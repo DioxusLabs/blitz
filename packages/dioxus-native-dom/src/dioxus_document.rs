@@ -8,7 +8,7 @@ use crate::mutation_writer::DioxusState;
 use crate::qual_name;
 use blitz_dom::{
     Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
-    EventHandler, Node,
+    EventHandler, Node, UiEventOutcome,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
@@ -251,13 +251,13 @@ impl Document for DioxusDocument {
         true
     }
 
-    fn handle_ui_event(&mut self, event: UiEvent) {
+    fn handle_ui_event(&mut self, event: UiEvent) -> UiEventOutcome {
         let handler = DioxusEventHandler {
             vdom: &mut self.vdom,
             vdom_state: &mut self.vdom_state,
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
-        driver.handle_ui_event(event);
+        driver.handle_ui_event(event)
     }
 }
 

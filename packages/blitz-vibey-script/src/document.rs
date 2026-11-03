@@ -6,7 +6,9 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Waker};
 
-use blitz_dom::{BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver};
+use blitz_dom::{
+    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, UiEventOutcome,
+};
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
 use blitz_traits::events::{DomEvent, UiEvent};
 use url::Url;
@@ -408,16 +410,17 @@ impl Document for ScriptDocument {
         DocGuardMut::RefCell(self.inner.borrow_mut())
     }
 
-    fn handle_ui_event(&mut self, event: UiEvent) {
+    fn handle_ui_event(&mut self, event: UiEvent) -> UiEventOutcome {
         let handler = ScriptEventHandler {
             runtime: &mut self.runtime,
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
-        driver.handle_ui_event(event);
+        let outcome = driver.handle_ui_event(event);
 
         // JS may have mutated the DOM or scheduled timers
         self.request_redraw();
         self.arm_timer_thread();
+        outcome
     }
 
     fn poll(&mut self, task_context: Option<TaskContext>) -> bool {

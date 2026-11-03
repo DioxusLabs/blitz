@@ -15,6 +15,22 @@ use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_point
 
 use crate::{BaseDocument, events::pointer::handle_wheel};
 
+/// The result of handling a [`UiEvent`], for a document which embeds this one as a
+/// sub-document.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiEventOutcome {
+    /// The part of a wheel event's delta which no scroller in the document could consume.
+    pub unconsumed_wheel_delta: Point<f64>,
+}
+
+impl Default for UiEventOutcome {
+    fn default() -> Self {
+        Self {
+            unconsumed_wheel_delta: Point::ZERO,
+        }
+    }
+}
+
 fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
     offset: Point<f32>,
@@ -103,7 +119,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
     mut dispatch_event: F,
-) {
+) -> Point<f64> {
     let target_node_id = event.target;
     let node = &mut doc.nodes[target_node_id];
     let pos = node.absolute_position(0.0, 0.0);
@@ -130,22 +146,23 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
-        let is_wheel = matches!(ui_event, Some(UiEvent::Wheel(_)));
-
-        if let Some(ui_event) = ui_event {
-            sub_doc.inner_mut().unconsumed_wheel_delta = Point::ZERO;
-            sub_doc.handle_ui_event(ui_event);
-        }
+        let outcome = ui_event
+            .map(|ui_event| sub_doc.handle_ui_event(ui_event))
+            .unwrap_or_default();
 
         // Scroll the sub-document could not consume chains to the scrollers around it.
-        if is_wheel {
-            let remainder =
-                std::mem::replace(&mut sub_doc.inner_mut().unconsumed_wheel_delta, Point::ZERO);
-            if remainder != Point::ZERO {
-                let parent_id = doc.nodes[target_node_id].parent;
-                if doc.scroll_chain_by(parent_id, remainder.x, remainder.y, &mut dispatch_event) {
-                    doc.shell_provider.request_redraw();
-                }
+        let mut unconsumed_wheel_delta = outcome.unconsumed_wheel_delta;
+        if unconsumed_wheel_delta != Point::ZERO {
+            let parent_id = doc.nodes[target_node_id].parent;
+            let has_changed;
+            (has_changed, unconsumed_wheel_delta) = doc.scroll_chain_by_with_remainder(
+                parent_id,
+                unconsumed_wheel_delta.x,
+                unconsumed_wheel_delta.y,
+                &mut dispatch_event,
+            );
+            if has_changed {
+                doc.shell_provider.request_redraw();
             }
         }
 
@@ -159,7 +176,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             );
         }
 
-        return;
+        return unconsumed_wheel_delta;
     }
 
     // Handle event forwarding for custom widget
@@ -189,7 +206,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             );
         }
 
-        return;
+        return Point::ZERO;
     }
 
     match &event.data {
@@ -302,7 +319,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Handled elsewhere
         }
         DomEventData::Wheel(event) => {
-            handle_wheel(doc, target_node_id, event.clone(), dispatch_event);
+            return handle_wheel(doc, target_node_id, event.clone(), dispatch_event);
         }
         DomEventData::Focus(_) => {
             // Do nothing (no default action)
@@ -326,4 +343,6 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             doc.clamp_text_input_scroll(focus_id);
         }
     }
+
+    Point::ZERO
 }

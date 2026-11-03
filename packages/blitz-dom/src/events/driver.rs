@@ -1,4 +1,5 @@
 use crate::Document;
+use crate::events::UiEventOutcome;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, Point, PointerCoords,
     UiEvent,
@@ -165,7 +166,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
     }
 
-    pub fn handle_ui_event(&mut self, event: UiEvent) {
+    pub fn handle_ui_event(&mut self, event: UiEvent) -> UiEventOutcome {
         let doc = self.doc.inner();
 
         // A non-hovering pointer (finger) ends hover once it is lifted or cancelled
@@ -177,6 +178,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         // A document the pointer has left has no say over the cursor
         let is_leave = matches!(event, UiEvent::PointerLeave(_));
+        let mut outcome = UiEventOutcome::default();
 
         // Update document input state (hover, focus, active, etc)
         match &event {
@@ -231,7 +233,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         // empty iframe sub-document) has no event target, so there is nothing to do.
         let Some(target) = target.or_else(|| self.doc.inner().try_root_element().map(|el| el.id))
         else {
-            return;
+            return outcome;
         };
 
         match event {
@@ -276,7 +278,12 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             // Out/leave events were dispatched by `handle_pointer_leave`
             UiEvent::PointerLeave(_) => {}
             UiEvent::Wheel(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
+                let mut dom_event = DomEvent::new(target, DomEventData::Wheel(data));
+                let event_state = self.run_handler_event(&mut dom_event, EventState::default());
+                if !event_state.is_cancelled() {
+                    outcome.unconsumed_wheel_delta = self.run_default_action(&mut dom_event);
+                }
+                self.process_queue();
             }
             UiEvent::KeyUp(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::KeyUp(data)))
@@ -314,6 +321,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         if !is_leave && doc.hover_state() != prev_hover {
             doc.update_cursor();
         }
+
+        outcome
     }
 
     pub fn handle_dom_event(&mut self, event: DomEvent) {
@@ -429,8 +438,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         event_state
     }
 
-    fn run_default_action(&mut self, event: &mut DomEvent) {
+    /// Returns the part of a wheel event's delta which no scroller could consume.
+    fn run_default_action(&mut self, event: &mut DomEvent) -> crate::util::Point<f64> {
         let mut doc = self.doc.inner_mut();
-        doc.handle_dom_event(event, |new_evt| self.queue.push_back(new_evt));
+        doc.handle_dom_event(event, |new_evt| self.queue.push_back(new_evt))
     }
 }

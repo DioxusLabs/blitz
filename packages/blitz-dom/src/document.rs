@@ -1,5 +1,5 @@
 use crate::NodeTree;
-use crate::events::{DragMode, handle_dom_event};
+use crate::events::{DragMode, UiEventOutcome, handle_dom_event};
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
@@ -218,10 +218,10 @@ pub trait Document: Any + 'static {
     fn inner_mut(&mut self) -> DocGuardMut<'_>;
 
     /// Update the [`Document`] in response to a [`UiEvent`] (click, keypress, etc)
-    fn handle_ui_event(&mut self, event: UiEvent) {
+    fn handle_ui_event(&mut self, event: UiEvent) -> UiEventOutcome {
         let mut doc = self.inner_mut();
         let mut driver = EventDriver::new(&mut *doc, NoopEventHandler);
-        driver.handle_ui_event(event);
+        driver.handle_ui_event(event)
     }
 
     /// Poll any pending async operations, and flush changes to the underlying [`BaseDocument`]
@@ -368,9 +368,6 @@ pub struct BaseDocument {
     pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
-    /// The part of the last wheel event's delta which no scroller in this document could
-    /// consume. A parent document scrolls it when this document is a sub-document.
-    pub(crate) unconsumed_wheel_delta: crate::util::Point<f64>,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -574,7 +571,6 @@ impl BaseDocument {
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
-            unconsumed_wheel_delta: crate::util::Point::ZERO,
             text_selection: TextSelection::default(),
         };
 
@@ -689,7 +685,7 @@ impl BaseDocument {
         &mut self,
         event: &mut DomEvent,
         dispatch_event: F,
-    ) {
+    ) -> crate::util::Point<f64> {
         handle_dom_event(self, event, dispatch_event)
     }
 

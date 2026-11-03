@@ -832,7 +832,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     _: NodeId,
     event: BlitzWheelEvent,
     mut dispatch_event: F,
-) {
+) -> crate::util::Point<f64> {
     let (scroll_x, scroll_y) = match event.delta {
         BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
         BlitzWheelDelta::Pixels(x, y) => (x, y),
@@ -844,8 +844,8 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         scroll_y,
         &mut dispatch_event,
     );
-    doc.unconsumed_wheel_delta = remainder;
     if has_changed {
         doc.shell_provider.request_redraw();
     }
+    remainder
 }
