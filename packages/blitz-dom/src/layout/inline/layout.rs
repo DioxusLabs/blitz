@@ -94,10 +94,6 @@ struct PendingFloat {
     clear: Clear,
 }
 
-/// The number of times a line is retried to avoid floats before it is accepted as is
-#[cfg(feature = "floats")]
-const MAX_LINE_RETRIES: usize = 64;
-
 /// Tolerance (in CSS px) for content fitting into a slot
 #[cfg(feature = "floats")]
 const FIT_TOLERANCE: f32 = 0.001;
@@ -810,13 +806,11 @@ impl LayoutPassState<'_> {
             // `None` if the line can't be retried (no floats beside it, or a float was placed
             // part way through it).
             let mut line_start_state = has_active_floats.then(|| breaker.state().clone());
-            let mut line_retries = 0;
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
                     YieldData::LineBreak(line_break_data) => {
                         if let Some(saved_state) = line_start_state.take()
-                            && line_retries < MAX_LINE_RETRIES
                             && let Some(retry_slot) = retry_line_slot(
                                 &block_ctx,
                                 &line_slot,
@@ -827,7 +821,6 @@ impl LayoutPassState<'_> {
                         {
                             // Floats queued during this line attempt will be encountered again
                             pending_floats.clear();
-                            line_retries += 1;
                             line_slot = retry_slot;
                             has_active_floats = line_slot.segment_id.is_some();
                             breaker.revert_to(saved_state);
@@ -835,7 +828,6 @@ impl LayoutPassState<'_> {
                             line_start_state = has_active_floats.then(|| breaker.state().clone());
                             continue;
                         }
-                        line_retries = 0;
                         line_bottoms.push(line_break_data.line_y_end);
 
                         let state = breaker.state_mut();
