@@ -63,6 +63,7 @@ pub(crate) fn build_inline_layout_into(
     if let Some(ListItemLayout {
         marker,
         position: ListItemLayoutPosition::Inside,
+        ..
     }) = root_node
         .element_data()
         .and_then(|el| el.list_item_data.as_deref())

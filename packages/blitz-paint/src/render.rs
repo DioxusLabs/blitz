@@ -685,16 +685,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_custom_widget(scene);
                                 cx.draw_sub_document(scene);
                                 cx.draw_input(scene);
-                                // Text is placed from the unrounded content box origin; only
-                                // box edges are snapped to whole pixels.
-                                let subpixel_offset = node.content_box_subpixel_offset();
-                                let text_position = Point {
-                                    x: content_position.x + subpixel_offset.x as f64,
-                                    y: content_position.y + subpixel_offset.y as f64,
-                                };
-                                cx.draw_text_input_text(scene, text_position);
-                                cx.draw_inline_layout(scene, text_position);
-                                cx.draw_marker(scene, text_position);
+                                cx.draw_text_input_text(scene, content_position);
+                                cx.draw_inline_layout(scene, content_position);
+                                cx.draw_marker(scene, content_position);
                                 cx.draw_children(scene, cx.transform, child_clip_rect);
                             },
                         );
@@ -983,9 +976,11 @@ impl ElementCx<'_, '_> {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
                 });
 
+            // Text keeps its unrounded position; only box edges are snapped to whole pixels.
+            let subpixel_offset = text_layout.content_box_subpixel_offset;
             let pos = Point {
-                x: pos.x,
-                y: pos.y + text_layout.block_offset as f64,
+                x: pos.x + subpixel_offset.x as f64,
+                y: pos.y + subpixel_offset.y as f64 + text_layout.block_offset as f64,
             };
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
@@ -1034,9 +1029,10 @@ impl ElementCx<'_, '_> {
             // For single-line inputs, add an offset to vertically center the text input layout
             // within the content box of it's node.
             let y_offset = self.node.text_input_v_centering_offset(self.scale);
+            let subpixel_offset = input_data.content_box_subpixel_offset;
             let pos = Point {
-                x: pos.x,
-                y: pos.y + y_offset,
+                x: pos.x + subpixel_offset.x as f64,
+                y: pos.y + subpixel_offset.y as f64 + y_offset,
             };
 
             // Apply the scroll offset (stored in CSS pixels, scaled here to device pixels) so
@@ -1101,6 +1097,7 @@ impl ElementCx<'_, '_> {
         if let Some(ListItemLayout {
             marker,
             position: ListItemLayoutPosition::Outside(layout),
+            content_box_subpixel_offset,
         }) = self.list_item
         {
             // Right align and pad the bullet when rendering outside
@@ -1132,8 +1129,8 @@ impl ElementCx<'_, '_> {
             };
 
             let pos = Point {
-                x: pos.x + x_offset as f64,
-                y: pos.y + y_offset as f64,
+                x: pos.x + (content_box_subpixel_offset.x + x_offset) as f64,
+                y: pos.y + (content_box_subpixel_offset.y + y_offset) as f64,
             };
 
             let transform =

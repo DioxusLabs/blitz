@@ -143,11 +143,6 @@ pub struct LayoutData {
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
     pub scrollable_overflow: KurboRect,
-    /// How far the unrounded content box origin lies from the rounded one in `final_layout`, in
-    /// physical CSS pixels. Paint draws text from the unrounded origin so that sub-pixel layout
-    /// positions are kept, while box edges stay snapped. Only set by the `writing-mode` layout
-    /// pass; zero otherwise.
-    pub content_box_subpixel_offset: crate::Point<f32>,
     /// The writing mode this node's layout algorithm ran in (the root takes it from `<body>`),
     /// recorded by the layout pass for CSSOM geometry lookups.
     #[cfg(feature = "writing-mode")]
@@ -162,7 +157,6 @@ impl LayoutData {
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
             scrollable_overflow: KurboRect::ZERO,
-            content_box_subpixel_offset: crate::Point { x: 0.0, y: 0.0 },
             #[cfg(feature = "writing-mode")]
             writing_mode: stylo_taffy::WritingMode::empty(),
         }
@@ -960,6 +954,10 @@ impl std::fmt::Debug for SpecialElementData {
 pub struct ListItemLayout {
     pub marker: Marker,
     pub position: ListItemLayoutPosition,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 //We seperate chars from strings in order to optimise rendering - ie not needing to
