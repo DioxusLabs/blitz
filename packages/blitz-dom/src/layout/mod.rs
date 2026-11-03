@@ -9,18 +9,17 @@ use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
 use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::CopyStyleGetters;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
-    FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
-    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_oof_layout, prelude::*,
+    BlockContext, CoreStyle as _, DetailedLayoutInfo, FlexDirection, LayoutContainingBlock,
+    LayoutPartialTree, MaybeMath as _, NodeId, ResolveOrZero, RoundTree, RunMode,
+    TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
+    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, compute_oof_layout,
+    compute_table_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -37,7 +36,6 @@ pub(crate) mod writing_mode;
 use self::replaced::{
     IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
 };
-use self::table::TableTreeWrapper;
 
 /// The default object size for replaced elements
 /// (https://drafts.csswg.org/css-images/#default-object-size).
@@ -503,85 +501,6 @@ impl LayoutPassState<'_> {
                     );
                 }
 
-                if node.flags.is_table_root() {
-                    // The space available to an absolutely positioned table never exceeds
-                    // the size of its containing block (less the table's margins), even
-                    // when negative insets would otherwise add to it
-                    // (https://drafts.csswg.org/css-tables-3/#abspos).
-                    let mut inputs = inputs;
-                    if self.nodes[dom_node_id(node_id)].is_out_of_flow() {
-                        let margin = self.nodes[dom_node_id(node_id)]
-                            .layout_style()
-                            .margin()
-                            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
-                        let max_available_space = inputs
-                            .parent_size
-                            .maybe_sub(margin.sum_axes())
-                            .maybe_max(taffy::Size::ZERO);
-                        inputs.available_space =
-                            inputs.available_space.maybe_min(max_available_space);
-                    }
-
-                    let SpecialElementData::TableRoot(context) = &self.nodes[dom_node_id(node_id)]
-                        .data
-                        .downcast_element()
-                        .unwrap()
-                        .special_data
-                    else {
-                        panic!("Node marked as table root but doesn't have TableContext");
-                    };
-                    let context = Arc::clone(context);
-
-                    let mut table_wrapper = TableTreeWrapper {
-                        doc: self,
-                        ctx: context,
-                    };
-                    let mut output = compute_grid_layout(&mut table_wrapper, node_id, inputs);
-
-                    // Absolutely positioned children take no part in the table grid. Their
-                    // static position is the top-left of the table's content box.
-                    let context = table_wrapper.ctx;
-                    if inputs.run_mode == RunMode::PerformLayout && !context.oof_children.is_empty()
-                    {
-                        let style = &context.style;
-                        let parent_width = inputs.parent_size.width;
-                        let padding = style
-                            .padding
-                            .resolve_or_zero(parent_width, resolve_calc_value);
-                        let border = style
-                            .border
-                            .resolve_or_zero(parent_width, resolve_calc_value);
-                        let static_position = taffy::Point {
-                            x: padding.left + border.left,
-                            y: padding.top + border.top,
-                        }
-                        .map(|pos| AxisStaticPosition::from_edge(pos, AxisStaticEdge::Start));
-                        let in_flow_count = context.cells.len();
-                        for (idx, (child_id, position)) in context.oof_children.iter().enumerate() {
-                            output.oof_candidates.push(OofCandidate {
-                                node: taffy_node_id(*child_id),
-                                order: (in_flow_count + idx) as u32,
-                                position: *position,
-                                static_position,
-                            });
-                        }
-                    }
-
-                    // HACK: Cap scrollable overflow at node size to prevent scrolling
-                    let overflow = output.scrollable_overflow_rect;
-                    output.scrollable_overflow_rect = taffy::ScrollableOverflow::new(
-                        taffy::Rect {
-                            left: 0.0,
-                            top: 0.0,
-                            right: overflow.right().min(output.size.width),
-                            bottom: overflow.bottom().min(output.size.height),
-                        },
-                        output.scrollable_overflow_rect.is_reversed(),
-                    );
-
-                    return output;
-                }
-
                 if node.flags.is_inline_root() {
                     return self.compute_inline_layout(dom_node_id(node_id), inputs, block_ctx);
                 }
@@ -590,6 +509,44 @@ impl LayoutPassState<'_> {
                 match node.taffy_display() {
                     Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
                     Display::FlowRoot => compute_block_layout(self, node_id, inputs, None),
+                    // Cells, and rows and row groups outside of a table, are block containers
+                    Display::TableCell | Display::TableRow | Display::TableRowGroup => {
+                        compute_block_layout(self, node_id, inputs, None)
+                    }
+                    Display::Table => {
+                        // The space available to an absolutely positioned table never exceeds
+                        // the size of its containing block (less the table's margins), even
+                        // when negative insets would otherwise add to it
+                        // (https://drafts.csswg.org/css-tables-3/#abspos).
+                        let mut inputs = inputs;
+                        if self.nodes[dom_node_id(node_id)].is_out_of_flow() {
+                            let margin = self.nodes[dom_node_id(node_id)]
+                                .layout_style()
+                                .margin()
+                                .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+                            let max_available_space = inputs
+                                .parent_size
+                                .maybe_sub(margin.sum_axes())
+                                .maybe_max(taffy::Size::ZERO);
+                            inputs.available_space =
+                                inputs.available_space.maybe_min(max_available_space);
+                        }
+
+                        let mut output = compute_table_layout(self, node_id, inputs);
+
+                        // HACK: Cap scrollable overflow at node size to prevent scrolling
+                        let overflow = output.scrollable_overflow_rect;
+                        output.scrollable_overflow_rect = taffy::ScrollableOverflow::new(
+                            taffy::Rect {
+                                left: 0.0,
+                                top: 0.0,
+                                right: overflow.right().min(output.size.width),
+                                bottom: overflow.bottom().min(output.size.height),
+                            },
+                            output.scrollable_overflow_rect.is_reversed(),
+                        );
+                        output
+                    }
                     Display::Flex => {
                         #[cfg(feature = "writing-mode")]
                         {
@@ -795,6 +752,26 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
     }
 }
 
+impl taffy::LayoutTableContainer for LayoutPassState<'_> {
+    type TableContainerStyle<'a>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
+    where
+        Self: 'a;
+
+    type TableItemStyle<'a>
+        = TaffyStyloStyle<ComputedStyleRef<'a>>
+    where
+        Self: 'a;
+
+    fn get_table_container_style(&self, node_id: NodeId) -> Self::TableContainerStyle<'_> {
+        self.get_core_container_style(node_id)
+    }
+
+    fn get_table_child_style(&self, child_node_id: NodeId) -> Self::TableItemStyle<'_> {
+        self.child_layout_style(self.node_from_id(child_node_id))
+    }
+}
+
 impl taffy::LayoutFlexboxContainer for LayoutPassState<'_> {
     type FlexboxContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
@@ -931,6 +908,10 @@ impl PrintTree for TaffyDebugTree<'_> {
                         FlexDirection::Column | FlexDirection::ColumnReverse => "FLEX COL",
                     },
                     Display::Grid => "GRID",
+                    Display::Table => "TABLE",
+                    Display::TableRowGroup => "TABLE ROW GROUP",
+                    Display::TableRow => "TABLE ROW",
+                    Display::TableCell => "TABLE CELL",
                     Display::Block => "BLOCK",
                     Display::FlowRoot => "FLOW ROOT",
                     Display::None => "NONE",

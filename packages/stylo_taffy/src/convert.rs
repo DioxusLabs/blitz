@@ -35,6 +35,8 @@ pub(crate) mod stylo {
 
     pub(crate) type Gap = GenericLengthPercentageOrNormal<NonNegative<LengthPercentage>>;
 
+    #[cfg(feature = "table")]
+    pub(crate) use style::computed_values::table_layout::T as TableLayout;
     #[cfg(feature = "floats")]
     pub(crate) use style::values::computed::{Clear, Float};
 
@@ -233,11 +235,20 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         stylo::DisplayInside::Flow => taffy::Display::Block,
         #[cfg(feature = "block")]
         stylo::DisplayInside::FlowRoot => taffy::Display::FlowRoot,
-        #[cfg(feature = "block")]
+        #[cfg(feature = "table")]
+        stylo::DisplayInside::Table => taffy::Display::Table,
+        #[cfg(feature = "table")]
+        stylo::DisplayInside::TableRowGroup
+        | stylo::DisplayInside::TableHeaderGroup
+        | stylo::DisplayInside::TableFooterGroup => taffy::Display::TableRowGroup,
+        #[cfg(feature = "table")]
+        stylo::DisplayInside::TableRow => taffy::Display::TableRow,
+        #[cfg(feature = "table")]
+        stylo::DisplayInside::TableCell => taffy::Display::TableCell,
+        #[cfg(all(feature = "block", not(feature = "table")))]
         stylo::DisplayInside::TableCell => taffy::Display::Block,
         // TODO: Support display:contents in Taffy
-        // TODO: Support table layout in Taffy
-        #[cfg(feature = "grid")]
+        #[cfg(all(feature = "grid", not(feature = "table")))]
         stylo::DisplayInside::Table => taffy::Display::Grid,
         _ => {
             // println!("FALLBACK {:?} {:?}", input.inside(), input.outside());
@@ -496,6 +507,29 @@ pub fn content_alignment(
         align.safety = taffy::AlignmentSafety::Safe;
     }
     align
+}
+
+/// The role a box plays in table layout, derived from its `display` value
+#[cfg(feature = "table")]
+#[inline]
+pub fn table_role(input: stylo::Display) -> taffy::TableRole {
+    match input.inside() {
+        stylo::DisplayInside::TableCell => taffy::TableRole::Cell,
+        stylo::DisplayInside::TableRow => taffy::TableRole::Row,
+        stylo::DisplayInside::TableRowGroup
+        | stylo::DisplayInside::TableHeaderGroup
+        | stylo::DisplayInside::TableFooterGroup => taffy::TableRole::RowGroup,
+        _ => taffy::TableRole::Other,
+    }
+}
+
+#[cfg(feature = "table")]
+#[inline]
+pub fn table_layout(input: stylo::TableLayout) -> taffy::TableLayout {
+    match input {
+        stylo::TableLayout::Auto => taffy::TableLayout::Auto,
+        stylo::TableLayout::Fixed => taffy::TableLayout::Fixed,
+    }
 }
 
 /// The `align-content` value that a table cell's `vertical-align` is equivalent to when the
@@ -967,6 +1001,20 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         display: self::display(display),
         box_sizing: self::box_sizing(style.clone_box_sizing()),
         item_is_table: display.inside() == stylo::DisplayInside::Table,
+        #[cfg(feature = "table")]
+        table_layout: self::table_layout(style.clone_table_layout()),
+        #[cfg(feature = "table")]
+        border_spacing: {
+            let spacing = &style.get_inherited_table().border_spacing.0;
+            taffy::Size {
+                width: taffy::LengthPercentage::length(spacing.width.px()),
+                height: taffy::LengthPercentage::length(spacing.height.px()),
+            }
+        },
+        #[cfg(feature = "table")]
+        colspan: 1,
+        #[cfg(feature = "table")]
+        rowspan: 1,
         item_is_replaced: false,
         item_is_compressible_replaced: false,
         position: self::position(style.clone_position()),

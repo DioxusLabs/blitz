@@ -34,6 +34,9 @@ bitflags! {
         const IS_BUTTON = 1 << 3;
         /// Whether the node is a button-type input whose label always uses block layout
         const IS_BUTTON_INPUT = 1 << 4;
+        /// Whether the node's borders are laid out by its table as collapsed-border gutters
+        /// (`border-collapse: collapse`), so contribute nothing to the node's own box
+        const COLLAPSED_BORDERS = 1 << 5;
     }
 }
 
@@ -58,6 +61,16 @@ pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>> {
     /// `parent_size.width`, i.e. the containing block's block size.
     #[cfg(feature = "writing-mode")]
     pub percent_basis: Option<f32>,
+    /// The number of columns a table cell spans (HTML `colspan`)
+    #[cfg(feature = "table")]
+    pub colspan: u16,
+    /// The number of rows a table cell spans (HTML `rowspan`)
+    #[cfg(feature = "table")]
+    pub rowspan: u16,
+    /// The gutter between the cells of a `border-collapse: collapse` table, in place of its
+    /// `border-spacing`
+    #[cfg(feature = "table")]
+    pub collapsed_border_spacing: Option<taffy::Size<f32>>,
 }
 
 impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
@@ -86,6 +99,12 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
             align_axis_is_inline: false,
             #[cfg(feature = "writing-mode")]
             percent_basis: None,
+            #[cfg(feature = "table")]
+            colspan: 1,
+            #[cfg(feature = "table")]
+            rowspan: 1,
+            #[cfg(feature = "table")]
+            collapsed_border_spacing: None,
         }
     }
 
@@ -102,6 +121,12 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
             align_axis_is_inline: false,
             #[cfg(feature = "writing-mode")]
             percent_basis: None,
+            #[cfg(feature = "table")]
+            colspan: 1,
+            #[cfg(feature = "table")]
+            rowspan: 1,
+            #[cfg(feature = "table")]
+            collapsed_border_spacing: None,
         }
     }
 
@@ -318,6 +343,9 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn border(&self) -> taffy::Rect<taffy::LengthPercentage> {
+        if self.flags.contains(StyleFlags::COLLAPSED_BORDERS) {
+            return taffy::Rect::ZERO.map(taffy::LengthPercentage::length);
+        }
         let border_styles = self.style.get_border();
         self.rect(taffy::Rect {
             left: convert::border(
@@ -337,6 +365,53 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
                 border_styles.border_bottom_style,
             ),
         })
+    }
+}
+
+// Table style impls
+#[cfg(feature = "table")]
+impl<T: Deref<Target = ComputedValues>> taffy::TableContainerStyle for TaffyStyloStyle<T> {
+    #[inline]
+    fn border_spacing(&self) -> taffy::Size<taffy::LengthPercentage> {
+        let spacing = match self.collapsed_border_spacing {
+            Some(spacing) => spacing,
+            None => {
+                let spacing = &self.style.get_inherited_table().border_spacing.0;
+                taffy::Size {
+                    width: spacing.width.px(),
+                    height: spacing.height.px(),
+                }
+            }
+        };
+        self.size(spacing).map(taffy::LengthPercentage::length)
+    }
+
+    #[inline]
+    fn table_layout(&self) -> taffy::TableLayout {
+        convert::table_layout(self.style.clone_table_layout())
+    }
+}
+
+#[cfg(feature = "table")]
+impl<T: Deref<Target = ComputedValues>> taffy::TableItemStyle for TaffyStyloStyle<T> {
+    #[inline]
+    fn table_role(&self) -> taffy::TableRole {
+        convert::table_role(self.style.clone_display())
+    }
+
+    #[inline]
+    fn align_content(&self) -> taffy::AlignContent {
+        taffy::BlockContainerStyle::align_content(self)
+    }
+
+    #[inline]
+    fn colspan(&self) -> u16 {
+        self.colspan
+    }
+
+    #[inline]
+    fn rowspan(&self) -> u16 {
+        self.rowspan
     }
 }
 
