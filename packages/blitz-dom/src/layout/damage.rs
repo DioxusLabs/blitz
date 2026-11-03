@@ -3,6 +3,7 @@ use blitz_traits::node_id::NodeId;
 use markup5ever::local_name;
 use stylo_taffy::CopyStyleGetters;
 
+use crate::layout::construct::anonymous_box_style;
 use crate::net::ResourceHandler;
 use crate::node::{Node, NodeFlags};
 use crate::tree::NodeTree;
@@ -13,8 +14,10 @@ use style::matching::StyleChange;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::{PseudoElement, RestyleDamage};
+use style::servo_arc::Arc;
 use style::shared_lock::StylesheetGuards;
 use style::url::ComputedUrl;
+use style::values::computed::Display;
 use style::values::generics::image::Image as StyloImage;
 use style::values::specified::align::AlignFlags;
 use style::values::specified::box_::DisplayInside;
@@ -202,26 +205,52 @@ impl BaseDocument {
             return RestyleDamage::empty();
         }
 
-        // Cascade once from the owner, sharing the result across its anonymous boxes.
-        let style = {
+        // Cascade once from the owner per kind of anonymous box (a block, or a table, row or
+        // cell wrapper, each styled as the pseudo-element it was created as), sharing the result
+        // across the boxes of that kind.
+        let anonymous_blocks = std::mem::take(&mut self.nodes[node_id].anonymous_blocks);
+        let kinds: Vec<Option<AnonymousBoxKind>> = anonymous_blocks
+            .iter()
+            .map(|&anonymous_id| {
+                let style = self.nodes.get(anonymous_id)?.primary_styles()?;
+                Some(AnonymousBoxKind::of(&style))
+            })
+            .collect();
+        let styles: Vec<Option<Arc<ComputedValues>>> = {
             let Some(parent_style) = self.nodes[node_id].primary_styles() else {
+                self.nodes[node_id].anonymous_blocks = anonymous_blocks;
                 return RestyleDamage::empty();
             };
             let read_guard = self.guard.read();
             let guards = StylesheetGuards::same(&read_guard);
-            self.stylist.style_for_anonymous::<&Node>(
-                &guards,
-                &PseudoElement::ServoAnonymousBox,
-                &parent_style,
-            )
+            let mut cascaded: Vec<(AnonymousBoxKind, Arc<ComputedValues>)> = Vec::new();
+            kinds
+                .iter()
+                .map(|kind| {
+                    let kind = (*kind)?;
+                    if let Some((_, style)) = cascaded.iter().find(|(k, _)| *k == kind) {
+                        return Some(style.clone());
+                    }
+                    let style = anonymous_box_style(
+                        &self.stylist,
+                        &guards,
+                        &kind.pseudo,
+                        &parent_style,
+                        kind.display,
+                    );
+                    cascaded.push((kind, style.clone()));
+                    Some(style)
+                })
+                .collect()
         };
 
-        // Take the ownership list so we can mutate nodes without copying it.
-        let anonymous_blocks = std::mem::take(&mut self.nodes[node_id].anonymous_blocks);
         let mut damage_for_parent = RestyleDamage::empty();
-        for &anonymous_id in &anonymous_blocks {
+        for (&anonymous_id, style) in anonymous_blocks.iter().zip(styles) {
+            // Skip boxes whose node or previous style is unavailable.
+            let Some(style) = style else {
+                continue;
+            };
             let (mut damage, changed) = {
-                // Skip boxes whose node, style data, or previous style is unavailable.
                 let Some(node) = self.nodes.get_mut(anonymous_id) else {
                     continue;
                 };
@@ -237,7 +266,7 @@ impl BaseDocument {
                 let diff = RestyleDamage::compute_style_difference::<&Node>(old_style, &style);
                 let changed = matches!(diff.change, StyleChange::Changed { .. });
                 if changed {
-                    data.styles.primary = Some(style.clone());
+                    data.styles.primary = Some(style);
                     data.set_restyled();
                 }
                 (data.damage | diff.damage, changed)
@@ -497,6 +526,24 @@ pub(crate) fn sort_layout_children_by_order(
         return;
     }
     layout_children.sort_by_cached_key(|id| nodes[*id].order());
+}
+
+/// What an anonymous box was created as: the pseudo-element it is styled as, and the `display`
+/// that replaced the UA sheet's (an anonymous table inside inline content is an inline-table)
+#[derive(Clone, Copy, PartialEq)]
+struct AnonymousBoxKind {
+    pseudo: PseudoElement,
+    display: Option<Display>,
+}
+
+impl AnonymousBoxKind {
+    fn of(style: &ComputedValues) -> Self {
+        let pseudo = style.pseudo().unwrap_or(PseudoElement::ServoAnonymousBox);
+        let display = (pseudo == PseudoElement::ServoAnonymousTable
+            && style.clone_display() == Display::InlineTable)
+            .then_some(Display::InlineTable);
+        Self { pseudo, display }
+    }
 }
 
 impl BaseDocument {
