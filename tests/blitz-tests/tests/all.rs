@@ -14,6 +14,7 @@ mod autofocus_attribute;
 mod background_size;
 mod br_trailing_line;
 mod button_alignment;
+mod checkbox_appearance;
 mod checked_attribute;
 mod clipboard;
 mod comment_layout;

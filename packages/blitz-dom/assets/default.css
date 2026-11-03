@@ -54,6 +54,14 @@ input {
     display: inline-block;
 }
 
+/* https://html.spec.whatwg.org/multipage/rendering.html#form-controls */
+input,
+select,
+button,
+textarea {
+    appearance: auto;
+}
+
 /* https://html.spec.whatwg.org/#hidden-elements */
 input[type="hidden" i] {
     display: none !important;
