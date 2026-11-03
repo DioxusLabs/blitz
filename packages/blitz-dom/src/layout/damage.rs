@@ -484,7 +484,9 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
                 | DisplayInside::TableCell
         ) && (old.get_position() != new.get_position()
             || old.get_padding() != new.get_padding()
-            || old.get_border() != new.get_border())
+            || old.get_border() != new.get_border()
+            // The collapsed-border gutter and paint data are built with the table context
+            || old.clone_border_collapse() != new.clone_border_collapse())
     };
 
     #[allow(
