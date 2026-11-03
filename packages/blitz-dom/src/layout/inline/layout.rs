@@ -783,9 +783,13 @@ impl LayoutPassState<'_> {
         // These are laid out by the out-of-flow positioning pass (`compute_oof_layout`).
         let mut oof_candidates = OofCandidates::new();
 
-        // The bottom of each line box, including any space skipped to move it down past floats.
+        // The bottoms of the last two line boxes (indexed by line index % 2), including any
+        // space skipped to move them down past floats. Only the last counted line is read, which
+        // is at most one line before the last.
         #[cfg(feature = "floats")]
-        let mut line_bottoms: Vec<f64> = Vec::new();
+        let mut line_bottoms = [0.0f64; 2];
+        #[cfg(feature = "floats")]
+        let mut line_count_so_far = 0usize;
 
         // Perform inline layout
         #[cfg(feature = "floats")]
@@ -828,7 +832,8 @@ impl LayoutPassState<'_> {
                             line_start_state = has_active_floats.then(|| breaker.state().clone());
                             continue;
                         }
-                        line_bottoms.push(line_break_data.line_y_end);
+                        line_bottoms[line_count_so_far % 2] = line_break_data.line_y_end;
+                        line_count_so_far += 1;
 
                         let state = breaker.state_mut();
 
@@ -1015,9 +1020,10 @@ impl LayoutPassState<'_> {
                 _ => trailing_empty_line.unwrap_or(line_count),
             };
             if has_inline_content
-                && let Some(&bottom) = counted_lines
+                && let Some(bottom) = counted_lines
                     .checked_sub(1)
-                    .and_then(|last| line_bottoms.get(last))
+                    .filter(|&last| last < line_count_so_far && last + 2 >= line_count_so_far)
+                    .map(|last| line_bottoms[last % 2])
             {
                 height = height.max(bottom as f32);
             }
