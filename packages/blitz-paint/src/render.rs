@@ -715,12 +715,25 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let scale = self.scale;
 
+        let element = node.element_data().unwrap();
+
+        // A table's layout box holds its captions as well as the table box; the table's border,
+        // padding and background belong to the table box, below the top captions and above the
+        // bottom ones
+        let box_insets = match element.special_data {
+            blitz_dom::node::SpecialElementData::TableRoot(_) => {
+                blitz_dom::table_box_insets(self.dom, node.id)
+            }
+            _ => taffy::Line {
+                start: 0.0,
+                end: 0.0,
+            },
+        };
+
         // todo: maybe cache this so we don't need to constantly be figuring it out
         // It is quite a bit of math to calculate during render/traverse
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
-        let frame = create_css_rect(&style, &layout, scale);
-
-        let element = node.element_data().unwrap();
+        let frame = create_css_rect(&style, &layout, box_insets, scale);
 
         ElementCx {
             context: self,
@@ -1377,7 +1390,8 @@ impl ElementCx<'_, '_> {
                 | taffy::Display::TableRow
                 | taffy::Display::TableCell
                 | taffy::Display::TableColumnGroup
-                | taffy::Display::TableColumn => Color::new([1.0, 0.0, 1.0, 1.0]),
+                | taffy::Display::TableColumn
+                | taffy::Display::TableCaption => Color::new([1.0, 0.0, 1.0, 1.0]),
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 
@@ -1402,19 +1416,28 @@ fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
 }
 
 /// Convert Stylo and Taffy types into Kurbo types
-fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBox {
+/// The CSS boxes of an element, from its layout. `box_insets` moves the border box's top and
+/// bottom edges in from the layout box's (a table's captions lie outside its table box).
+fn create_css_rect(
+    style: &ComputedValues,
+    layout: &Layout,
+    box_insets: taffy::Line<f32>,
+    scale: f64,
+) -> CssBox {
     // Resolve and rescale
     // We have to scale since document pixels are not same same as rendered pixels
     let width: f64 = layout.size.width as f64;
     let height: f64 = layout.size.height as f64;
-    let border_box = Rect::new(0.0, 0.0, width * scale, height * scale);
+    let top = box_insets.start as f64;
+    let bottom = (height - box_insets.end as f64).max(top);
+    let border_box = Rect::new(0.0, top * scale, width * scale, bottom * scale);
     let border = insets_from_taffy_rect(layout.border.map(|p| p as f64 * scale));
     let padding = insets_from_taffy_rect(layout.padding.map(|p| p as f64 * scale));
     let outline_width = style.get_outline().outline_width.0.to_f64_px() * scale;
 
     // Resolve the radii to a length. need to downscale since the radii are in document pixels
     let resolve_w = CSSPixelLength::new(width as _);
-    let resolve_h = CSSPixelLength::new(height as _);
+    let resolve_h = CSSPixelLength::new((bottom - top) as _);
     let resolve_radii = |radius: &BorderCornerRadius| -> Vec2 {
         Vec2 {
             x: scale * radius.0.width.0.resolve(resolve_w).px() as f64,

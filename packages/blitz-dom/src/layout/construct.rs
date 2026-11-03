@@ -398,10 +398,8 @@ fn classify_flow_children(
             classification.all_out_of_flow = false;
             match display.outside() {
                 DisplayOutside::None => {}
-                DisplayOutside::Block | DisplayOutside::TableCaption => {
-                    classification.all_inline = false
-                }
-                DisplayOutside::InternalTable => {
+                DisplayOutside::Block => classification.all_inline = false,
+                DisplayOutside::InternalTable | DisplayOutside::TableCaption => {
                     classification.all_inline = false;
                     classification.has_internal_table = true;
                 }
@@ -771,9 +769,9 @@ fn for_each_table_child(
 /// Collect the layout children of a table (`container_role` `Other`), row group, row or column
 /// group, generating the anonymous boxes the CSS table model requires (CSS 2.1 §17.2.1): cells
 /// directly inside a table or row group are wrapped in an anonymous row, and content other
-/// than cells inside a row is wrapped in an anonymous cell. Columns and column groups are
-/// laid out by the table; captions generate no layout box yet. Taffy's table algorithm takes
-/// care of the anonymous row group around rows that sit directly in the table.
+/// than cells inside a row is wrapped in an anonymous cell. Columns, column groups and captions
+/// are laid out by the table. Taffy's table algorithm takes care of the anonymous row group
+/// around rows that sit directly in the table.
 fn collect_table_children(
     doc: &mut BaseDocument,
     container_node_id: NodeId,
@@ -825,23 +823,16 @@ fn collect_table_children(
             } else {
                 TableRole::Other
             };
-            let is_caption = display.outside() == DisplayOutside::TableCaption;
-            if is_caption {
-                // TODO: lay out captions
-                doc.nodes[child_id]
-                    .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
-                return;
-            }
-
             match (container_role, role) {
-                // Row groups, rows, column groups and columns directly in the table, rows in a
-                // row group, columns in a column group, cells in a row
+                // Row groups, rows, column groups, columns and captions directly in the table,
+                // rows in a row group, columns in a column group, cells in a row
                 (
                     TableRole::Other,
                     TableRole::RowGroup
                     | TableRole::Row
                     | TableRole::ColumnGroup
-                    | TableRole::Column,
+                    | TableRole::Column
+                    | TableRole::Caption,
                 )
                 | (TableRole::RowGroup, TableRole::Row)
                 | (TableRole::ColumnGroup, TableRole::Column)
@@ -865,7 +856,9 @@ fn collect_table_children(
                 // generates no box
                 (TableRole::ColumnGroup | TableRole::Column, _) => doc.nodes[child_id]
                     .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC),
-                (TableRole::Cell, _) => unreachable!("cells are flow containers"),
+                (TableRole::Cell | TableRole::Caption, _) => {
+                    unreachable!("cells and captions are flow containers")
+                }
             }
         });
     }
@@ -1059,9 +1052,13 @@ fn collect_complex_layout_children(
             });
             collect_layout_children_with_wrap(doc, child_id, out, wrap)
         }
-        // Consecutive row groups, rows, columns and cells outside of a table are wrapped in an
-        // anonymous table (CSS 2.1 §17.2.1), which the whitespace between them is dropped from.
-        else if child_display.outside() == DisplayOutside::InternalTable {
+        // Consecutive row groups, rows, columns, cells and captions outside of a table are
+        // wrapped in an anonymous table (CSS 2.1 §17.2.1), which the whitespace between them is
+        // dropped from.
+        else if matches!(
+            child_display.outside(),
+            DisplayOutside::InternalTable | DisplayOutside::TableCaption
+        ) {
             out.push_wrapped_in(
                 container_node_id,
                 child_id,
