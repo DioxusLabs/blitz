@@ -12,7 +12,7 @@ use style::{
 use crate::{
     color::{ToColorColor as _, contrast_ratio},
     kurbo_css::Edge,
-    render::{ElementCx, PhysicalTracks},
+    render::ElementCx,
 };
 
 /// A darker version of a colour (mirrors WebKit/Blink's `Color::Dark`): the
@@ -519,17 +519,19 @@ impl ElementCx<'_, '_> {
             return;
         }
 
-        let Some(grid_info) = &mut *table.computed_grid_info.borrow_mut() else {
-            return;
-        };
         let Some(border_style) = table.border_style.as_deref() else {
             return;
         };
 
         let outer_border_style = self.style.get_border();
 
-        let cols = PhysicalTracks::from_tracks(&grid_info.columns);
-        let rows = PhysicalTracks::from_tracks(&grid_info.rows);
+        let info = blitz_dom::table_layout_info(self.context.dom, self.node.id);
+        let (cols, rows) = (&info.column_tracks, &info.row_tracks);
+        let (Some(first_col), Some(last_col), Some(first_row), Some(last_row)) =
+            (cols.first(), cols.last(), rows.first(), rows.last())
+        else {
+            return;
+        };
 
         // TODO: support different colors for different borders
         let current_color = self.style.clone_color();
@@ -551,11 +553,11 @@ impl ElementCx<'_, '_> {
 
         // The borders are laid out as the gutters between the tracks, and as the border
         // of the table around them. Track positions are relative to the table's border box.
-        let border_width = table.style.gap.map(|gap| gap.into_raw().value() as f64);
-        let left = cols.origin() as f64 - border_width.width;
-        let right = (cols.origin() + cols.span()) as f64 + border_width.width;
-        let top = rows.origin() as f64 - border_width.height;
-        let bottom = (rows.origin() + rows.span()) as f64 + border_width.height;
+        let border_width = table.collapsed_gutter.map(|gap| gap as f64);
+        let left = first_col.start as f64 - border_width.width;
+        let right = last_col.end as f64 + border_width.width;
+        let top = first_row.start as f64 - border_width.height;
+        let bottom = last_row.end as f64 + border_width.height;
 
         let mut fill = |x0: f64, y0: f64, x1: f64, y1: f64| {
             let shape = Rect::new(x0, y0, x1, y1).scale_from_origin(self.scale);
