@@ -245,6 +245,10 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         stylo::DisplayInside::TableRow => taffy::Display::TableRow,
         #[cfg(feature = "table")]
         stylo::DisplayInside::TableCell => taffy::Display::TableCell,
+        #[cfg(feature = "table")]
+        stylo::DisplayInside::TableColumnGroup => taffy::Display::TableColumnGroup,
+        #[cfg(feature = "table")]
+        stylo::DisplayInside::TableColumn => taffy::Display::TableColumn,
         #[cfg(all(feature = "block", not(feature = "table")))]
         stylo::DisplayInside::TableCell => taffy::Display::Block,
         // TODO: Support display:contents in Taffy
@@ -519,6 +523,8 @@ pub fn table_role(input: stylo::Display) -> taffy::TableRole {
         stylo::DisplayInside::TableRowGroup
         | stylo::DisplayInside::TableHeaderGroup
         | stylo::DisplayInside::TableFooterGroup => taffy::TableRole::RowGroup,
+        stylo::DisplayInside::TableColumnGroup => taffy::TableRole::ColumnGroup,
+        stylo::DisplayInside::TableColumn => taffy::TableRole::Column,
         _ => taffy::TableRole::Other,
     }
 }

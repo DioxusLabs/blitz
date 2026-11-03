@@ -146,6 +146,14 @@ pub(crate) fn cell_spans_of(node: &crate::Node) -> (u16, u16) {
     (colspan, rowspan)
 }
 
+/// The number of columns a `<col>` or `<colgroup>` spans (HTML `span`)
+pub(crate) fn column_span_of(node: &crate::Node) -> u16 {
+    node.attr(local_name!("span"))
+        .and_then(|val| val.parse::<u16>().ok())
+        .map(|v| v.clamp(1, 1000))
+        .unwrap_or(1)
+}
+
 /// Record the table-level data for the table rooted at `table_root_node_id`
 pub(crate) fn build_table_context(doc: &BaseDocument, table_root_node_id: NodeId) -> TableContext {
     let root = &doc.nodes[table_root_node_id];
@@ -356,6 +364,8 @@ pub fn table_layout_info(doc: &BaseDocument, table_root_node_id: NodeId) -> Tabl
                     );
                 }
             }
+            // Columns and column groups hold no cells
+            TableRole::Column | TableRole::ColumnGroup => {}
             _ => push_row(&mut info, &mut cursor, child_id, None, taffy::Point::ZERO),
         }
     }
