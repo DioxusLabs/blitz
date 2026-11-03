@@ -331,6 +331,10 @@ fn resolve_color_stops<T>(
     item_resolver: impl Fn(CSSPixelLength, &T) -> Option<f32>,
 ) -> (f32, f32) {
     let mut hint: Option<f32> = None;
+    // Color stop fixup: a position less than any specified position before it
+    // is raised to the largest of those positions.
+    // https://drafts.csswg.org/css-images-3/#color-stop-fixup
+    let mut max_position = f32::NEG_INFINITY;
 
     for (idx, item) in items.iter().enumerate() {
         let (color, offset) = match item {
@@ -344,6 +348,8 @@ fn resolve_color_stops<T>(
             GenericGradientItem::ComplexColorStop { color, position } => {
                 let offset = item_resolver(gradient_length, position);
                 if let Some(offset) = offset {
+                    let offset = offset.max(max_position);
+                    max_position = offset;
                     (
                         color.resolve_to_absolute(current_color).as_dynamic_color(),
                         offset,
@@ -353,7 +359,11 @@ fn resolve_color_stops<T>(
                 }
             }
             GenericGradientItem::InterpolationHint(position) => {
-                hint = item_resolver(gradient_length, position);
+                hint = item_resolver(gradient_length, position).map(|hint| {
+                    let hint = hint.max(max_position);
+                    max_position = hint;
+                    hint
+                });
                 continue;
             }
         };
