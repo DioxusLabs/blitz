@@ -1,5 +1,5 @@
 use crate::Document;
-use crate::layout::paint_tree::{HoistedPaintChild, StackingContext};
+use crate::layout::paint_tree::{HoistedPaintChild, StackingContext, hoisted_child_position};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -1421,6 +1421,118 @@ impl Node {
         self.hit_inner(x, y, scale, &mut None)
     }
 
+    /// Whether paint containment applies to this box (excluding non-atomic inlines
+    /// and internal table boxes other than table cells).
+    pub fn has_paint_containment(&self) -> bool {
+        self.primary_styles().is_some_and(|style| {
+            let display = style.clone_display();
+            style
+                .clone_contain()
+                .contains(style::values::computed::Contain::PAINT)
+                && !display.is_inline_flow()
+                && !(display.outside() == DisplayOutside::InternalTable
+                    && display.inside() != DisplayInside::TableCell)
+        })
+    }
+
+    /// Test a border-box-relative, unscrolled point against the overflow clip edge.
+    fn matches_overflow_clip(&self, x: f32, y: f32) -> bool {
+        use style::values::computed::Overflow;
+        use style::values::generics::box_::OverflowClipMarginBox;
+
+        let Some(style) = self.primary_styles() else {
+            return true;
+        };
+        // The root's overflow is propagated to the viewport, not clipped to its box.
+        if self
+            .parent
+            .and_then(|id| self.tree().get(id))
+            .is_some_and(|parent| matches!(parent.data, NodeData::Document(_)))
+        {
+            return true;
+        }
+        let contain_paint = self.has_paint_containment();
+        let overflow_x = style.clone_overflow_x();
+        let overflow_y = style.clone_overflow_y();
+        let clip_x = contain_paint || overflow_x != Overflow::Visible;
+        let clip_y = contain_paint || overflow_y != Overflow::Visible;
+        if !clip_x && !clip_y {
+            return true;
+        }
+        let layout = self.final_layout();
+        let mut left = layout.border.left;
+        let mut top = layout.border.top;
+        let mut right = layout.size.width - layout.border.right;
+        let mut bottom = layout.size.height - layout.border.bottom;
+        let margin = &style.get_margin().overflow_clip_margin;
+        let offset = margin.offset.0.px();
+        let (margin_left, margin_top, margin_right, margin_bottom) = match margin.visual_box {
+            OverflowClipMarginBox::PaddingBox => (offset, offset, offset, offset),
+            OverflowClipMarginBox::BorderBox => (
+                offset + layout.border.left,
+                offset + layout.border.top,
+                offset + layout.border.right,
+                offset + layout.border.bottom,
+            ),
+            OverflowClipMarginBox::ContentBox => (
+                offset - layout.padding.left,
+                offset - layout.padding.top,
+                offset - layout.padding.right,
+                offset - layout.padding.bottom,
+            ),
+        };
+        // The margin extends overflow:clip, but never a scroll container's clip.
+        if overflow_x == Overflow::Clip && !contain_paint {
+            left -= margin_left;
+            right += margin_right;
+        }
+        if overflow_y == Overflow::Clip && !contain_paint {
+            top -= margin_top;
+            bottom += margin_bottom;
+        }
+        (!clip_x || (x >= left && x <= right)) && (!clip_y || (y >= top && y <= bottom))
+    }
+
+    fn hit_hoisted_child(
+        &self,
+        hoisted: &HoistedPaintChild,
+        x: f32,
+        y: f32,
+        scale: f64,
+        scrollbar: &mut Option<crate::node::ScrollbarRef>,
+    ) -> Option<HitResult> {
+        let child = self.tree().get(hoisted.node_id)?;
+        let content_offset = if self.flags.is_inline_root() {
+            let layout = self.final_layout();
+            taffy::Point {
+                x: layout.border.left + layout.padding.left,
+                y: layout.border.top + layout.padding.top,
+            }
+        } else {
+            taffy::Point::ZERO
+        };
+        // Z-order hoisting bypasses paint ancestors. Only ancestors on the
+        // containing-block chain clip: abspos boxes escape clips below their CB.
+        let mut current = child.containing_block();
+        while let Some(id) = current {
+            if id == self.id {
+                break;
+            }
+            let ancestor = self.tree().get(id)?;
+            let position = hoisted_child_position(self.tree(), self.id, id);
+            let location = ancestor.final_layout().location;
+            if !ancestor.matches_overflow_clip(
+                x + content_offset.x - position.x - location.x,
+                y + content_offset.y - position.y - location.y,
+            ) {
+                return None;
+            }
+            current = ancestor.containing_block();
+        }
+        let position = hoisted.position(self.tree(), self.id);
+        child.hit_inner(x - position.x, y - position.y, scale, scrollbar)
+    }
+
     /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
     /// thumb under the point into `scrollbar` during the same descent (so
     /// thumb hit-testing shares the exact coordinate handling — transforms
@@ -1534,6 +1646,18 @@ impl Node {
             *scrollbar = Some(sb);
         }
 
+        if !self.matches_overflow_clip(
+            x - self.scroll_offset().x as f32,
+            y - self.scroll_offset().y as f32,
+        ) {
+            return (matches_self && !pointer_events_none).then_some(HitResult {
+                node_id: self.id,
+                x,
+                y,
+                is_text: false,
+            });
+        }
+
         let content_box_offset = taffy::Point {
             x: self.final_layout().padding.left + self.final_layout().border.left,
             y: self.final_layout().padding.top + self.final_layout().border.top,
@@ -1547,13 +1671,8 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                    let Some(child) = self.tree().get(hoisted_child.node_id) else {
-                        continue;
-                    };
-                    let pos = hoisted_child.position(self.tree(), self.id);
-                    let x = x - pos.x;
-                    let y = y - pos.y;
-                    if let Some(hit) = child.hit_inner(x, y, scale, scrollbar) {
+                    if let Some(hit) = self.hit_hoisted_child(hoisted_child, x, y, scale, scrollbar)
+                    {
                         return Some(hit);
                     }
                 }
@@ -1596,13 +1715,8 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                    let Some(child) = self.tree().get(hoisted_child.node_id) else {
-                        continue;
-                    };
-                    let pos = hoisted_child.position(self.tree(), self.id);
-                    let x = x - pos.x;
-                    let y = y - pos.y;
-                    if let Some(hit) = child.hit_inner(x, y, scale, scrollbar) {
+                    if let Some(hit) = self.hit_hoisted_child(hoisted_child, x, y, scale, scrollbar)
+                    {
                         return Some(hit);
                     }
                 }

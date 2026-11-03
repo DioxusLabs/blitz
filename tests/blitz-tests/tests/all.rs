@@ -30,6 +30,7 @@ mod focusability_updates;
 mod fragment_navigation;
 mod harness_smoke;
 mod hit_test_dropped_nodes;
+mod hit_test_overflow;
 mod hover_dom_ancestors;
 mod incremental_oracle;
 mod inline_bfc_padding;
