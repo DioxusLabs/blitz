@@ -783,6 +783,14 @@ impl LayoutPassState<'_> {
         // These are laid out by the out-of-flow positioning pass (`compute_oof_layout`).
         let mut oof_candidates = OofCandidates::new();
 
+        // The bottoms of the last two line boxes (indexed by line index % 2), including any
+        // space skipped to move them down past floats. Only the last counted line is read, which
+        // is at most one line before the last.
+        #[cfg(feature = "floats")]
+        let mut line_bottoms = [0.0f64; 2];
+        #[cfg(feature = "floats")]
+        let mut line_count_so_far = 0usize;
+
         // Perform inline layout
         #[cfg(feature = "floats")]
         {
@@ -824,6 +832,8 @@ impl LayoutPassState<'_> {
                             line_start_state = has_active_floats.then(|| breaker.state().clone());
                             continue;
                         }
+                        line_bottoms[line_count_so_far % 2] = line_break_data.line_y_end;
+                        line_count_so_far += 1;
 
                         let state = breaker.state_mut();
 
@@ -998,6 +1008,25 @@ impl LayoutPassState<'_> {
         {
             height -= last_line.metrics().line_height;
             trailing_empty_line = Some(line_count - 1);
+        }
+
+        // Parley's height is the sum of the line heights, which misses the space skipped when a
+        // line is moved down past floats, so extend it to the bottom of the last counted line
+        // (Parley doesn't count an empty last line either).
+        #[cfg(feature = "floats")]
+        {
+            let counted_lines = match inline_layout.layout.get(line_count.wrapping_sub(1)) {
+                Some(last_line) if last_line.is_empty() => line_count - 1,
+                _ => trailing_empty_line.unwrap_or(line_count),
+            };
+            if has_inline_content
+                && let Some(bottom) = counted_lines
+                    .checked_sub(1)
+                    .filter(|&last| last < line_count_so_far && last + 2 >= line_count_so_far)
+                    .map(|last| line_bottoms[last % 2])
+            {
+                height = height.max(bottom as f32);
+            }
         }
 
         #[cfg(feature = "floats")]
