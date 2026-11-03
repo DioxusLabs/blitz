@@ -846,6 +846,14 @@ impl ElementData {
         std::mem::take(&mut self.inline_layout_data)
     }
 
+    /// Whether the element is a replaced element or form control, to which table display values
+    /// don't apply
+    pub(crate) fn ignores_table_display(&self) -> bool {
+        crate::layout::replaced::is_replaced_element(&self.name.local)
+            || self.name.local == local_name!("input")
+            || self.name.local == local_name!("textarea")
+    }
+
     pub(crate) fn is_button_input(&self) -> bool {
         self.name.local == local_name!("input")
             && matches!(

@@ -208,6 +208,20 @@ pub fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
 }
 
 #[inline]
+/// The display a replaced element or form control is laid out with: table display values don't
+/// apply to them, so `table` is treated as `block` and the other table values as `inline`
+/// (https://drafts.csswg.org/css-tables-3/#table-structure)
+pub fn replaced_element_display(input: stylo::Display) -> stylo::Display {
+    match (input.outside(), input.inside()) {
+        (stylo::DisplayOutside::Block, stylo::DisplayInside::Table) => stylo::Display::Block,
+        (stylo::DisplayOutside::Inline, stylo::DisplayInside::Table)
+        | (stylo::DisplayOutside::InternalTable | stylo::DisplayOutside::TableCaption, _) => {
+            stylo::Display::Inline
+        }
+        _ => input,
+    }
+}
+
 pub fn button_input_display(input: stylo::Display) -> stylo::Display {
     match input.outside() {
         stylo::DisplayOutside::None => input,
