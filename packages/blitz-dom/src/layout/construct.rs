@@ -25,7 +25,7 @@ use crate::{
     },
     node::{NodeFlags, NodeKind, SpecialElementData, TextInputData, TextLayout},
     qual_name, stylo_to_parley,
-    traversal::{iter_children, iter_children_and_pseudos},
+    traversal::iter_children,
 };
 
 use super::{
@@ -150,52 +150,69 @@ impl LayoutChildren {
         doc: &mut BaseDocument,
         pseudo: PseudoElement,
     ) {
-        const NAME: QualName = QualName {
-            prefix: None,
-            ns: ns!(html),
-            local: local_name!("div"),
-        };
-        let node_id = doc.create_node(NodeData::AnonymousBlock(Box::new(ElementData::new(
-            NAME,
-            Vec::new(),
-        ))));
-
-        // Set style data
-        let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
-        let read_guard = doc.guard.read();
-        let guards = StylesheetGuards::same(&read_guard);
-        let style = doc
-            .stylist
-            .style_for_anonymous::<&Node>(&guards, &pseudo, &parent_style);
-        let mut stylo_element_data = StyloElementData {
-            damage: ALL_DAMAGE,
-            ..Default::default()
-        };
-        drop(parent_style);
-
-        stylo_element_data.styles.primary = Some(style);
-        stylo_element_data.set_restyled();
-
-        *doc.nodes[node_id]
-            .stylo_element_data_mut()
-            .ensure_init_mut() = stylo_element_data;
-
-        if doc.nodes[container_node_id]
-            .flags
-            .contains(NodeFlags::IS_IN_DOCUMENT)
-        {
-            doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
-        }
-        doc.nodes[node_id].parent = Some(container_node_id);
-        doc.nodes[node_id]
-            .layout_parent
-            .set(Some(container_node_id));
-
+        let node_id = new_anonymous_box(doc, container_node_id, pseudo, None);
         self.children.push(node_id);
         self.anonymous_block_id = Some(node_id);
         self.anonymous_pseudo = Some(pseudo);
         self.anonymous_blocks.push(node_id);
     }
+}
+
+/// Create an anonymous box styled as `pseudo` (inheriting from `container_node_id`), with its
+/// `display` replaced by `display` when given (the UA sheet only knows block-level anonymous
+/// tables, but one generated inside inline content is an inline-table)
+fn new_anonymous_box(
+    doc: &mut BaseDocument,
+    container_node_id: NodeId,
+    pseudo: PseudoElement,
+    display: Option<Display>,
+) -> NodeId {
+    const NAME: QualName = QualName {
+        prefix: None,
+        ns: ns!(html),
+        local: local_name!("div"),
+    };
+    let node_id = doc.create_node(NodeData::AnonymousBlock(Box::new(ElementData::new(
+        NAME,
+        Vec::new(),
+    ))));
+
+    // Set style data
+    let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
+    let read_guard = doc.guard.read();
+    let guards = StylesheetGuards::same(&read_guard);
+    let mut style = doc
+        .stylist
+        .style_for_anonymous::<&Node>(&guards, &pseudo, &parent_style);
+    if let Some(display) = display {
+        let mut overridden = (*style).clone();
+        overridden.mutate_box().set_display(display);
+        style = style::servo_arc::Arc::new(overridden);
+    }
+    let mut stylo_element_data = StyloElementData {
+        damage: ALL_DAMAGE,
+        ..Default::default()
+    };
+    drop(parent_style);
+
+    stylo_element_data.styles.primary = Some(style);
+    stylo_element_data.set_restyled();
+
+    *doc.nodes[node_id]
+        .stylo_element_data_mut()
+        .ensure_init_mut() = stylo_element_data;
+
+    if doc.nodes[container_node_id]
+        .flags
+        .contains(NodeFlags::IS_IN_DOCUMENT)
+    {
+        doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
+    }
+    doc.nodes[node_id].parent = Some(container_node_id);
+    doc.nodes[node_id]
+        .layout_parent
+        .set(Some(container_node_id));
+    node_id
 }
 
 fn push_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node) {
@@ -676,7 +693,7 @@ fn collect_layout_children_with_wrap(
                     .flags
                     .insert(NodeFlags::IS_INLINE_ROOT);
 
-                find_inline_layout_embedded_boxes(doc, container_node_id, &mut out.children);
+                find_inline_layout_embedded_boxes(doc, container_node_id, out);
                 return;
             }
 
@@ -1168,21 +1185,163 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
 /// Find and return the "layout_children" (inline boxes) for an inline layout
 /// without actually constructing the layout. This allows us to defer the expensive
 /// construction of the Parley layout (which invokes text shaping) to a paralell phase.
+/// The children an inline box contributes to its inline formatting context: its `::before`, then
+/// its DOM children with runs of table parts replaced by the anonymous inline-table wrapping
+/// them (see [`wrap_inline_table_parts_recursive`]), then its `::after`.
+pub(crate) fn inline_children_and_pseudos(node: &Node) -> Vec<NodeId> {
+    let mut children = Vec::with_capacity(node.children.len() + 2);
+    children.extend(node.before());
+    match node.layout_children.borrow().as_deref() {
+        Some(wrapped) => children.extend_from_slice(wrapped),
+        None => children.extend_from_slice(&node.children),
+    }
+    children.extend(node.after());
+    children
+}
+
+/// Whether `node_id` is an inline box whose children take part in the surrounding inline
+/// formatting context (an inline flow box that is not an atomic inline, or `display: contents`)
+fn is_transparent_inline(nodes: &crate::NodeTree, node_id: NodeId) -> bool {
+    let node = &nodes[node_id];
+    let Some(element_data) = node.element_data() else {
+        return false;
+    };
+    let display = node.display_style().unwrap_or(Display::inline());
+    match (display.outside(), display.inside()) {
+        (DisplayOutside::None, DisplayInside::Contents) => true,
+        (DisplayOutside::Inline, DisplayInside::Flow) => {
+            !is_inline_box_element(&element_data.name.local)
+                && element_data.name.local != local_name!("br")
+        }
+        _ => false,
+    }
+}
+
+/// Table parts (cells, rows, row groups, columns and captions) inside inline content form an
+/// anonymous inline-table (CSS 2.1 §17.2.1): each run of consecutive table parts among the
+/// children of `node_id`, and the whitespace between them, is replaced by one anonymous
+/// `inline-table` box holding them. The replacement child list is stored as the node's
+/// `layout_children`; nodes with no table parts get `None` so that a stale list is never read.
+/// Recurses into every inline box that contributes to the same inline formatting context.
+fn wrap_inline_table_parts_recursive(
+    doc: &mut BaseDocument,
+    inline_root_node_id: NodeId,
+    node_id: NodeId,
+    anonymous_blocks: &mut ThinVec<NodeId>,
+) {
+    let children: Vec<NodeId> = doc.nodes[node_id].children.to_vec();
+    let is_table_part = |doc: &BaseDocument, child_id: NodeId| {
+        doc.nodes[child_id].display_style().is_some_and(|d| {
+            matches!(
+                d.outside(),
+                DisplayOutside::InternalTable | DisplayOutside::TableCaption
+            )
+        })
+    };
+
+    // The inline root's own table parts are wrapped during block-level collection
+    if node_id != inline_root_node_id {
+        let has_table_part = children
+            .iter()
+            .any(|&child_id| is_table_part(doc, child_id));
+        if !has_table_part {
+            *doc.nodes[node_id].layout_children.borrow_mut() = None;
+        } else {
+            let mut wrapped: Vec<NodeId> = Vec::with_capacity(children.len());
+            let mut index = 0;
+            while index < children.len() {
+                let child_id = children[index];
+                if !is_table_part(doc, child_id) {
+                    wrapped.push(child_id);
+                    index += 1;
+                    continue;
+                }
+                // A run of table parts: whitespace between two of them generates no box
+                // (CSS Tables 3 §3.1), whitespace after the last one stays in the inline content
+                let mut run = vec![child_id];
+                let mut end = index + 1;
+                let mut cursor = end;
+                while cursor < children.len() {
+                    let next_id = children[cursor];
+                    let next = &doc.nodes[next_id];
+                    let generates_no_box = next.data.kind() == NodeKind::Comment
+                        || next.is_whitespace_node()
+                        || next.display_style().is_some_and(|d| {
+                            d.outside() == DisplayOutside::None && d.inside() == DisplayInside::None
+                        });
+                    if generates_no_box {
+                        cursor += 1;
+                    } else if is_table_part(doc, next_id) {
+                        run.extend_from_slice(&children[end..cursor]);
+                        run.push(next_id);
+                        cursor += 1;
+                        end = cursor;
+                    } else {
+                        break;
+                    }
+                }
+                let anon_id = new_anonymous_box(
+                    doc,
+                    node_id,
+                    PseudoElement::ServoAnonymousTable,
+                    Some(Display::InlineTable),
+                );
+                for &part_id in &run {
+                    doc.nodes[part_id].layout_parent.set(Some(anon_id));
+                }
+                doc.nodes[anon_id].children = run.into_iter().collect();
+                anonymous_blocks.push(anon_id);
+                wrapped.push(anon_id);
+                index = end;
+            }
+            *doc.nodes[node_id].layout_children.borrow_mut() = Some(wrapped.into_iter().collect());
+        }
+    }
+
+    let mut descend: Vec<NodeId> = children
+        .into_iter()
+        .filter(|&child_id| is_transparent_inline(&doc.nodes, child_id))
+        .collect();
+    descend.extend(doc.nodes[node_id].before());
+    descend.extend(doc.nodes[node_id].after());
+    for child_id in descend {
+        if is_transparent_inline(&doc.nodes, child_id) {
+            wrap_inline_table_parts_recursive(doc, inline_root_node_id, child_id, anonymous_blocks);
+        }
+    }
+}
+
 pub(crate) fn find_inline_layout_embedded_boxes(
     doc: &mut BaseDocument,
     inline_context_root_node_id: NodeId,
-    layout_children: &mut ThinVec<NodeId>,
+    out: &mut LayoutChildren,
 ) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
+    wrap_inline_table_parts_recursive(
+        doc,
+        inline_context_root_node_id,
+        inline_context_root_node_id,
+        &mut out.anonymous_blocks,
+    );
 
-    iter_children_and_pseudos!(doc.nodes[inline_context_root_node_id], |child_id| {
+    // The root's own `layout_children` is the embedded box list being rebuilt here, so its DOM
+    // children are what it contributes
+    let root = &doc.nodes[inline_context_root_node_id];
+    let root_children: Vec<NodeId> = root
+        .before()
+        .into_iter()
+        .chain(root.children.iter().copied())
+        .chain(root.after())
+        .collect();
+    let layout_children = &mut out.children;
+    for child_id in root_children {
         find_inline_layout_embedded_boxes_recursive(
             &mut doc.nodes,
             inline_context_root_node_id,
             child_id,
             layout_children,
         );
-    });
+    }
 
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
@@ -1247,14 +1406,14 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                         } else {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            iter_children_and_pseudos!(nodes[node_id], |child_id| {
+                            for child_id in inline_children_and_pseudos(&nodes[node_id]) {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,
                                     node_id,
                                     child_id,
                                     layout_children,
                                 );
-                            });
+                            }
                         }
                     }
                     // Inline box
