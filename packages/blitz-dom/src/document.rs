@@ -368,6 +368,9 @@ pub struct BaseDocument {
     pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
+    /// The part of the last wheel event's delta which no scroller in this document could
+    /// consume. A parent document scrolls it when this document is a sub-document.
+    pub(crate) unconsumed_wheel_delta: crate::util::Point<f64>,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -571,6 +574,7 @@ impl BaseDocument {
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
+            unconsumed_wheel_delta: crate::util::Point::ZERO,
             text_selection: TextSelection::default(),
         };
 

@@ -130,9 +130,23 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
+        let is_wheel = matches!(ui_event, Some(UiEvent::Wheel(_)));
 
         if let Some(ui_event) = ui_event {
+            sub_doc.inner_mut().unconsumed_wheel_delta = Point::ZERO;
             sub_doc.handle_ui_event(ui_event);
+        }
+
+        // Scroll the sub-document could not consume chains to the scrollers around it.
+        if is_wheel {
+            let remainder =
+                std::mem::replace(&mut sub_doc.inner_mut().unconsumed_wheel_delta, Point::ZERO);
+            if remainder != Point::ZERO {
+                let parent_id = doc.nodes[target_node_id].parent;
+                if doc.scroll_chain_by(parent_id, remainder.x, remainder.y, &mut dispatch_event) {
+                    doc.shell_provider.request_redraw();
+                }
+            }
         }
 
         if set_focus {

@@ -838,12 +838,13 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
 
-    let has_changed = doc.scroll_chain_by(
+    let (has_changed, remainder) = doc.scroll_chain_by_with_remainder(
         doc.get_hover_node_id(),
         scroll_x,
         scroll_y,
         &mut dispatch_event,
     );
+    doc.unconsumed_wheel_delta = remainder;
     if has_changed {
         doc.shell_provider.request_redraw();
     }
