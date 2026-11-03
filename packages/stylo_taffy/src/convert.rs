@@ -39,6 +39,7 @@ pub(crate) mod stylo {
     pub(crate) use style::computed_values::table_layout::T as TableLayout;
     #[cfg(feature = "table")]
     pub(crate) use style::computed_values::visibility::T as Visibility;
+    pub(crate) use style::values::computed::table::CaptionSide;
     #[cfg(feature = "floats")]
     pub(crate) use style::values::computed::{Clear, Float};
 
@@ -270,6 +271,10 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         // TODO: Support flow and table layout
         stylo::DisplayOutside::Inline => {}
         stylo::DisplayOutside::Block => {}
+        // A caption is laid out by its table, above or below the table box
+        #[cfg(feature = "table")]
+        stylo::DisplayOutside::TableCaption => display = taffy::Display::TableCaption,
+        #[cfg(not(feature = "table"))]
         stylo::DisplayOutside::TableCaption => {}
         stylo::DisplayOutside::InternalTable => {}
     };
@@ -519,6 +524,9 @@ pub fn content_alignment(
 #[cfg(feature = "table")]
 #[inline]
 pub fn table_role(input: stylo::Display) -> taffy::TableRole {
+    if input.outside() == stylo::DisplayOutside::TableCaption {
+        return taffy::TableRole::Caption;
+    }
     match input.inside() {
         stylo::DisplayInside::TableCell => taffy::TableRole::Cell,
         stylo::DisplayInside::TableRow => taffy::TableRole::Row,
@@ -539,6 +547,16 @@ pub fn visibility(input: stylo::Visibility) -> taffy::Visibility {
         stylo::Visibility::Visible => taffy::Visibility::Visible,
         stylo::Visibility::Hidden => taffy::Visibility::Hidden,
         stylo::Visibility::Collapse => taffy::Visibility::Collapse,
+    }
+}
+
+/// Which side of the table box a caption is placed on (`caption-side`)
+#[cfg(feature = "table")]
+#[inline]
+pub fn caption_side(input: stylo::CaptionSide) -> taffy::CaptionSide {
+    match input {
+        stylo::CaptionSide::Top => taffy::CaptionSide::Top,
+        stylo::CaptionSide::Bottom => taffy::CaptionSide::Bottom,
     }
 }
 
@@ -1024,6 +1042,8 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         table_layout: self::table_layout(style.clone_table_layout()),
         #[cfg(feature = "table")]
         visibility: self::visibility(style.clone_visibility()),
+        #[cfg(feature = "table")]
+        caption_side: self::caption_side(style.get_inherited_table().caption_side),
         #[cfg(feature = "table")]
         border_spacing: {
             let spacing = &style.get_inherited_table().border_spacing.0;
