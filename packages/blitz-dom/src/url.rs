@@ -80,12 +80,11 @@ fn windows_absolute_path_as_url_path(raw: &str) -> Option<String> {
     is_windows_path.then(|| format!("/{}", raw.replace('\\', "/")))
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 
     #[test]
-    #[cfg(windows)]
     fn resolves_windows_absolute_paths() {
         let dioxus: DocumentUrl = "dioxus://index.html".parse().unwrap();
         assert_eq!(
