@@ -33,7 +33,7 @@ use selectors::{Element, matching::QuirksMode};
 use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -63,7 +63,7 @@ use style::{
     media_queries::MediaList,
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
-    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
+    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, StylesheetInDocument},
     stylist::Stylist,
 };
 use style_dom::ElementState;
@@ -1292,22 +1292,78 @@ impl BaseDocument {
         let element = &mut self.nodes[node_id].element_data_mut().unwrap();
         element.special_data = SpecialElementData::Stylesheet(stylesheet.clone());
 
-        // TODO: Nodes could potentially get reused so ordering by node_id might be wrong.
-        let insertion_point = self
-            .nodes_to_stylesheet
-            .range((Bound::Excluded(node_id), Bound::Unbounded))
-            .next()
-            .map(|(_, sheet)| sheet);
+        // Sheets of an origin cascade in document order: on equal specificity the sheet
+        // whose owner node comes later in tree order wins (CSS Cascade 4 § 6.4, CSSOM
+        // "document or shadow root CSS style sheets"). So insert the new sheet before the
+        // first sheet *of the same origin* whose node follows `node_id` in tree order.
+        // `NodeId` order can't be used for this as slab slots are reused, and Stylo
+        // panics if the `before` sheet is not in the new sheet's origin collection.
+        let insertion_point = {
+            let guard = self.guard.read();
+            let origin = stylesheet.contents(&guard).origin;
+            let mut insertion_point: Option<(NodeId, &DocumentStyleSheet)> = None;
+            if self.nodes[node_id].flags.is_in_document() {
+                for (&other_id, sheet) in &self.nodes_to_stylesheet {
+                    if other_id == node_id
+                        || !self
+                            .get_node(other_id)
+                            .is_some_and(|node| node.flags.is_in_document())
+                        || sheet.contents(&guard).origin != origin
+                        || !self.is_before_in_tree_order(node_id, other_id)
+                    {
+                        continue;
+                    }
+                    if insertion_point
+                        .is_none_or(|(best_id, _)| self.is_before_in_tree_order(other_id, best_id))
+                    {
+                        insertion_point = Some((other_id, sheet));
+                    }
+                }
+            }
+            insertion_point.map(|(_, sheet)| sheet.clone())
+        };
 
         if let Some(insertion_point) = insertion_point {
-            self.stylist.insert_stylesheet_before(
-                stylesheet,
-                insertion_point.clone(),
-                &self.guard.read(),
-            )
+            self.stylist
+                .insert_stylesheet_before(stylesheet, insertion_point, &self.guard.read())
         } else {
             self.stylist
                 .append_stylesheet(stylesheet, &self.guard.read())
+        }
+    }
+
+    /// Whether node `a` comes strictly before node `b` in tree order (a pre-order,
+    /// depth-first traversal). Returns `false` if the nodes are not in the same tree.
+    fn is_before_in_tree_order(&self, a: NodeId, b: NodeId) -> bool {
+        let ancestors_from_root = |mut id: NodeId| {
+            let mut chain = vec![id];
+            while let Some(parent_id) = self.nodes[id].parent {
+                chain.push(parent_id);
+                id = parent_id;
+            }
+            chain.reverse();
+            chain
+        };
+        let a_chain = ancestors_from_root(a);
+        let b_chain = ancestors_from_root(b);
+        let common = a_chain
+            .iter()
+            .zip(&b_chain)
+            .take_while(|(a, b)| a == b)
+            .count();
+
+        match (a_chain.get(common), b_chain.get(common)) {
+            // Different roots
+            _ if common == 0 => false,
+            // `a` is `b` or an ancestor of `b`
+            (None, b_branch) => b_branch.is_some(),
+            // `b` is an ancestor of `a`
+            (Some(_), None) => false,
+            // Compare the positions of the two branches below the lowest common ancestor
+            (Some(&a_branch), Some(&b_branch)) => {
+                let parent = &self.nodes[a_chain[common - 1]];
+                parent.index_of_child(a_branch) < parent.index_of_child(b_branch)
+            }
         }
     }
 
