@@ -106,3 +106,45 @@ fn br_with_trailing_whitespace_is_single_line() {
         "div with <br> + collapsible whitespace should be one line tall"
     );
 }
+
+#[test]
+fn trailing_breaks_add_n_minus_one_lines() {
+    // Chromium: a break that ends the block's content terminates the line box it
+    // sits in, so a run of N trailing breaks yields N-1 extra lines.
+    let doc = layout_doc(
+        "<html><body style=\"margin:0; font-size:12px;\">\
+            <div id=\"l0\">x</div>\
+            <div id=\"l1\">x<br></div>\
+            <div id=\"l2\">x<br><br></div>\
+            <div id=\"l3\">x<br><br><br></div>\
+        </body></html>",
+    );
+    let h = |sel: &str| {
+        let id = doc.query_selector(sel).unwrap().unwrap();
+        doc.get_node(id).unwrap().unrounded_layout().size.height
+    };
+    let one = h("#l0");
+    for (sel, lines) in [("#l1", 1.0), ("#l2", 2.0), ("#l3", 3.0)] {
+        assert_eq!(
+            h(sel),
+            one * lines,
+            "{sel}: expected {lines} line(s) of {one}"
+        );
+    }
+}
+
+#[test]
+fn breaks_before_following_content_are_not_trailing() {
+    // A break with content after it still opens a new line box.
+    let doc = layout_doc(
+        "<html><body style=\"margin:0; font-size:12px;\">\
+            <div id=\"l0\">x</div>\
+            <div id=\"mid\">x<br>y</div>\
+        </body></html>",
+    );
+    let h = |sel: &str| {
+        let id = doc.query_selector(sel).unwrap().unwrap();
+        doc.get_node(id).unwrap().unrounded_layout().size.height
+    };
+    assert_eq!(h("#mid"), h("#l0") * 2.0, "a mid-content break is two lines");
+}
