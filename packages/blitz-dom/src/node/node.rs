@@ -277,6 +277,12 @@ impl Node {
         &self.layout_data().final_layout
     }
 
+    /// See [`LayoutData::content_box_subpixel_offset`](crate::node::LayoutData::content_box_subpixel_offset).
+    #[inline]
+    pub fn content_box_subpixel_offset(&self) -> crate::Point<f32> {
+        self.layout_data().content_box_subpixel_offset
+    }
+
     #[inline]
     pub fn final_layout_mut(&mut self) -> &mut Layout {
         &mut self.layout_data_mut().final_layout

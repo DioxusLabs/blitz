@@ -685,9 +685,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_custom_widget(scene);
                                 cx.draw_sub_document(scene);
                                 cx.draw_input(scene);
-                                cx.draw_text_input_text(scene, content_position);
-                                cx.draw_inline_layout(scene, content_position);
-                                cx.draw_marker(scene, content_position);
+                                // Text is placed from the unrounded content box origin; only
+                                // box edges are snapped to whole pixels.
+                                let subpixel_offset = node.content_box_subpixel_offset();
+                                let text_position = Point {
+                                    x: content_position.x + subpixel_offset.x as f64,
+                                    y: content_position.y + subpixel_offset.y as f64,
+                                };
+                                cx.draw_text_input_text(scene, text_position);
+                                cx.draw_inline_layout(scene, text_position);
+                                cx.draw_marker(scene, text_position);
                                 cx.draw_children(scene, cx.transform, child_clip_rect);
                             },
                         );
