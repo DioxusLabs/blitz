@@ -2567,6 +2567,24 @@ mod test {
         );
     }
 
+    #[test]
+    fn border_collapse_change_rebuilds_the_table() {
+        check_incremental_restyle(
+            ".t { display: table; border: 2px solid } \
+             .c { display: table-cell; border: 4px solid; width: 10px; height: 10px } \
+             .x { border-collapse: collapse }",
+            |m| {
+                let root_id = m.doc.root_element().id;
+                let table = div(m, &[("class", "t")]);
+                let cells: Vec<NodeId> = (0..2).map(|_| div(m, &[("class", "c")])).collect();
+                m.append_children(table, &cells);
+                m.append_children(root_id, &[table]);
+                std::iter::once(table).chain(cells).collect()
+            },
+            |m, ids| m.set_attribute(ids[0], qual_name!("class"), "t x"),
+        );
+    }
+
     fn unhide(m: &mut DocumentMutator<'_>, ids: &[NodeId]) {
         m.clear_attribute(ids[0], qual_name!("class"));
     }
