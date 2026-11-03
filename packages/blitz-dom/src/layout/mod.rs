@@ -509,10 +509,13 @@ impl LayoutPassState<'_> {
                 match node.taffy_display() {
                     Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
                     Display::FlowRoot => compute_block_layout(self, node_id, inputs, None),
-                    // Cells, and rows and row groups outside of a table, are block containers
-                    Display::TableCell | Display::TableRow | Display::TableRowGroup => {
-                        compute_block_layout(self, node_id, inputs, None)
-                    }
+                    // Cells, and rows, row groups, columns and column groups outside of a
+                    // table, are block containers
+                    Display::TableCell
+                    | Display::TableRow
+                    | Display::TableRowGroup
+                    | Display::TableColumnGroup
+                    | Display::TableColumn => compute_block_layout(self, node_id, inputs, None),
                     Display::Table => {
                         // The space available to an absolutely positioned table never exceeds
                         // the size of its containing block (less the table's margins), even
@@ -912,6 +915,8 @@ impl PrintTree for TaffyDebugTree<'_> {
                     Display::TableRowGroup => "TABLE ROW GROUP",
                     Display::TableRow => "TABLE ROW",
                     Display::TableCell => "TABLE CELL",
+                    Display::TableColumnGroup => "TABLE COLUMN GROUP",
+                    Display::TableColumn => "TABLE COLUMN",
                     Display::Block => "BLOCK",
                     Display::FlowRoot => "FLOW ROOT",
                     Display::None => "NONE",
