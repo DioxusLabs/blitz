@@ -2322,14 +2322,16 @@ impl BaseDocument {
             return Some(CursorIcon::Text);
         }
 
-        // Use "pointer" cursor if any ancestor is a link
+        // Use "pointer" cursor if any ancestor is a link. Walk DOM parents: an atomic
+        // inline's layout parent is its inline root, which skips the inline elements
+        // (such as `<a>`) between them.
         let mut maybe_node = Some(node);
         while let Some(node) = maybe_node {
             if node.is_link() {
                 return Some(CursorIcon::Pointer);
             }
 
-            maybe_node = node.layout_parent.get().map(|node_id| node.with(node_id));
+            maybe_node = node.parent.map(|node_id| node.with(node_id));
         }
 
         // Return text cursor for text nodes
