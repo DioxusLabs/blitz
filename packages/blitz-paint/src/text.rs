@@ -12,7 +12,7 @@ use style::values::computed::{
 use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 
 use crate::color::{Color, ToColorColor as _};
-use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
+use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR, WINDOWS_FONT_EMBOLDEN_ENABLED};
 
 /// Draw the backgrounds of inline elements (e.g. `<span style="background: ...">`).
 ///
@@ -658,18 +658,21 @@ pub(crate) fn stroke_text<'a>(
                 // Approximates macOS font smoothing (stem dilation). The amounts are in device
                 // pixels per side, fitted to Safari's ink at 9-72px and 1x-3x scale. Safari keeps
                 // dilating at large sizes, so there is no ppem cutoff.
-                let embolden = if FONT_EMBOLDEN_ENABLED {
+                let (embolden, hint) = if FONT_EMBOLDEN_ENABLED {
                     let fs = font_size as f64 * embolden_scale(fill_color);
-                    kurbo::Vec2::new((0.0121 * fs).min(0.35), (0.015125 * fs).min(0.35))
+                    let e = kurbo::Vec2::new((0.0121 * fs).min(0.35), (0.015125 * fs).min(0.35));
+                    (e, false)
+                } else if WINDOWS_FONT_EMBOLDEN_ENABLED {
+                    windows_embolden(font_size as f64, fill_color)
                 } else {
-                    kurbo::Vec2::default()
+                    (kurbo::Vec2::default(), true)
                 };
 
                 let normalized_coords: &[i16] = bytemuck::cast_slice(run.normalized_coords());
                 scene.draw_glyphs(
                     font,
                     font_size,
-                    !FONT_EMBOLDEN_ENABLED, // hint
+                    hint,
                     normalized_coords,
                     embolden,
                     Fill::NonZero,
@@ -784,4 +787,20 @@ fn embolden_scale(color: Color) -> f64 {
         prev = *point;
     }
     prev.1
+}
+
+/// Approximates the extra weight Chrome gives light text on Windows, where Skia is built with
+/// `SK_GAMMA_CONTRAST` 1.0. Skia picks its coverage tables by the text's luma (Rec. 709 weights on
+/// sRGB-encoded channels), quantized to 3 bits, so the scale steps per luma bucket. Light text
+/// stays hinted; the embolden is in device pixels per side, mostly constant, wider in x than y.
+fn windows_embolden(font_size: f64, color: Color) -> (kurbo::Vec2, bool) {
+    const SCALE: [f64; 8] = [0.0, 0.0, 0.0, 0.17, 0.34, 0.51, 0.75, 1.0];
+    let [r, g, b, _] = color.discard_alpha().to_rgba8().to_u8_array();
+    let luma = (54 * r as u32 + 183 * g as u32 + 19 * b as u32) >> 8;
+    let scale = SCALE[(luma >> 5) as usize];
+    if scale == 0.0 {
+        return (kurbo::Vec2::default(), true);
+    }
+    let amount = scale * (0.15 + 0.0015 * font_size);
+    (kurbo::Vec2::new(1.5 * amount, 0.5 * amount), true)
 }
