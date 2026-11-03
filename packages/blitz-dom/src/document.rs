@@ -368,6 +368,7 @@ pub struct BaseDocument {
     pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
+    pub(crate) carried_fling: Option<crate::scrolling::CarriedFling>,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -571,6 +572,7 @@ impl BaseDocument {
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
+            carried_fling: None,
             text_selection: TextSelection::default(),
         };
 
