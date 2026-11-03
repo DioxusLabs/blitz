@@ -17,7 +17,7 @@ use taffy::{
 #[cfg(feature = "floats")]
 use parley::YieldData;
 #[cfg(feature = "floats")]
-use taffy::{BlockItemStyle as _, Clear, Float, prelude::TaffyMaxContent};
+use taffy::{BlockItemStyle as _, Clear, Float, FloatInsets, prelude::TaffyMaxContent};
 
 use stylo_taffy::StyleFlags;
 
@@ -629,8 +629,10 @@ impl LayoutPassState<'_> {
         #[cfg(feature = "floats")]
         let outer_block_ctx = block_ctx;
         #[cfg(feature = "floats")]
-        let mut block_ctx =
-            outer_block_ctx.sub_context(container_pb.top, [container_pb.left, container_pb.right]);
+        let mut block_ctx = outer_block_ctx.sub_context(
+            container_pb.top,
+            FloatInsets::new(container_pb.left, container_pb.right),
+        );
         // block_ctx.apply_content_box_inset([container_pb.left, container_pb.right]);
 
         if inputs.run_mode == taffy::RunMode::ComputeSize
