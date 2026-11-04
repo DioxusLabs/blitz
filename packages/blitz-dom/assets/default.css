@@ -402,13 +402,9 @@ table[rules] {
       A border with a given value should, of course, pass that value
       as the border-width in pixels -> attr mapping */
 
-/* :-moz-table-border-nonzero is like [border]:not([border="0"]) except it
-     also checks for other zero-like values according to HTML attribute
-     parsing rules */
-table:-moz-table-border-nonzero {
-    border-width: thin;
-    border-style: outset;
-}
+/* The table's own border from its 'border' attribute is a presentational
+   hint (stylo.rs): whether the value is equivalent to zero needs the HTML
+   rules for parsing non-negative integers, which no selector can express. */
 
 table[frame] {
     border: thin hidden;
@@ -453,15 +449,7 @@ table[frame="border"] {
 
 /* 'border' cell borders first */
 
-table:-moz-table-border-nonzero>*>tr>td,
-table:-moz-table-border-nonzero>*>tr>th,
-table:-moz-table-border-nonzero>*>td,
-table:-moz-table-border-nonzero>*>th,
-table:-moz-table-border-nonzero>td,
-table:-moz-table-border-nonzero>th {
-    border-width: thin;
-    border-style: inset;
-}
+/* These are presentational hints too (stylo.rs), for the same reason. */
 
 /* collapse only if rules are really specified */
 table[rules]:not([rules="none"], [rules=""]) {

@@ -1190,6 +1190,28 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
+            // A table's `border` attribute maps to its four border widths, with
+            // 1px for a value that does not parse, and -- unless it is
+            // equivalent to zero -- an `outset` border style. A `frame`
+            // attribute sets the table's border styles itself (default.css),
+            // so the style is left to it then.
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+            if *name == local_name!("border") && *tag == local_name!("table") {
+                use style::values::specified::{BorderSideWidth, BorderStyle};
+                let px = table_border_width(value);
+                let width = BorderSideWidth::from_px(px as f32);
+                push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderLeftWidth(width));
+                if px != 0 && elem.attr(local_name!("frame")).is_none() {
+                    push_style(PropertyDeclaration::BorderTopStyle(BorderStyle::Outset));
+                    push_style(PropertyDeclaration::BorderRightStyle(BorderStyle::Outset));
+                    push_style(PropertyDeclaration::BorderBottomStyle(BorderStyle::Outset));
+                    push_style(PropertyDeclaration::BorderLeftStyle(BorderStyle::Outset));
+                }
+            }
+
             // `body` carries four legacy margin attributes, as pixel lengths:
             // marginwidth and marginheight set both sides of an axis, and
             // leftmargin and topmargin set one side each.
@@ -1257,12 +1279,15 @@ impl<'a> TElement for BlitzNode<'a> {
         }
 
         // A table's `cellpadding` attribute maps to the padding of its cells (not
-        // those of nested tables), as a pixel length. The table is the first
-        // ancestor that isn't a row or row group.
+        // those of nested tables), as a pixel length, and a `border` attribute
+        // that is not equivalent to zero gives them a 1px inset border, unless
+        // a `rules` attribute sets their borders instead (default.css). The
+        // table is the first ancestor that isn't a row or row group.
         // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
         if *tag == local_name!("td") || *tag == local_name!("th") {
             let mut ancestor = self.parent_node();
             let mut cellpadding = None;
+            let mut inset_border = false;
             while let Some(node) = ancestor {
                 let Some(elem) = node.data.downcast_element() else {
                     break;
@@ -1277,6 +1302,13 @@ impl<'a> TElement for BlitzNode<'a> {
                         cellpadding = elem.attr(local_name!("cellpadding")).and_then(|value| {
                             style::servo::attr::parse_unsigned_integer(value.chars()).ok()
                         });
+                        let has_rules = elem
+                            .attr(local_name!("rules"))
+                            .is_some_and(|value| !value.is_empty());
+                        inset_border = !has_rules
+                            && elem
+                                .attr(local_name!("border"))
+                                .is_some_and(|value| table_border_width(value) != 0);
                     }
                     break;
                 }
@@ -1291,6 +1323,18 @@ impl<'a> TElement for BlitzNode<'a> {
                 push_style(PropertyDeclaration::PaddingRight(padding.clone()));
                 push_style(PropertyDeclaration::PaddingBottom(padding.clone()));
                 push_style(PropertyDeclaration::PaddingLeft(padding));
+            }
+            if inset_border {
+                use style::values::specified::{BorderSideWidth, BorderStyle};
+                let width = BorderSideWidth::from_px(1.0);
+                push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderLeftWidth(width));
+                push_style(PropertyDeclaration::BorderTopStyle(BorderStyle::Inset));
+                push_style(PropertyDeclaration::BorderRightStyle(BorderStyle::Inset));
+                push_style(PropertyDeclaration::BorderBottomStyle(BorderStyle::Inset));
+                push_style(PropertyDeclaration::BorderLeftStyle(BorderStyle::Inset));
             }
         }
 
@@ -1619,4 +1663,12 @@ fn parse_inline() {
     // );
 
     // let val = CSSInlineStyleDeclaration();
+}
+
+/// The border width in pixels that a table's `border` attribute asks for: the
+/// value parsed with the HTML rules for parsing non-negative integers, or 1 when
+/// that fails. Zero means the attribute is "equivalent to zero".
+/// https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+fn table_border_width(value: &str) -> u32 {
+    style::servo::attr::parse_unsigned_integer(value.chars()).unwrap_or(1)
 }
