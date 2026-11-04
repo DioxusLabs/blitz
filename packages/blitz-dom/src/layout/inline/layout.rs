@@ -370,6 +370,9 @@ impl LayoutPassState<'_> {
             .take_inline_layout()
             .unwrap();
 
+        // An outside list marker gets a line box even when the list item has no content.
+        let has_outside_marker = self.nodes[node_id].has_outside_list_marker();
+
         let style = self.nodes[node_id].layout_style();
 
         // Note: both horizontal and vertical percentage padding/borders are resolved against the container's inline size (i.e. width).
@@ -456,6 +459,7 @@ impl LayoutPassState<'_> {
             && node_size == Size::NONE
             && node_min_size == Size::NONE
             && aspect_ratio.is_none()
+            && !has_outside_marker
             && inline_layout.text.is_empty()
             && inline_layout.layout.inline_boxes().len() == 0
         {
@@ -1017,8 +1021,9 @@ impl LayoutPassState<'_> {
         // Parley lays out empty text as a single strut-height line (text-editor semantics),
         // but a line box containing no text, inline boxes or other in-flow content is a
         // zero-height line box in CSS (CSS2 §9.4.2).
-        let has_inline_content =
-            !inline_layout.text.is_empty() || inline_layout.layout.inline_boxes().len() > 0;
+        let has_inline_content = has_outside_marker
+            || !inline_layout.text.is_empty()
+            || inline_layout.layout.inline_boxes().len() > 0;
 
         let mut height = if has_inline_content {
             inline_layout.layout.height()
