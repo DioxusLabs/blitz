@@ -505,7 +505,15 @@ impl LayoutPassState<'_> {
         };
 
         // Update inline boxes
-        for ibox in inline_layout.layout.inline_boxes_mut() {
+        let inline_box_count = inline_layout.layout.inline_boxes().len();
+        for index in 0..inline_box_count {
+            let original = inline_layout
+                .layout
+                .inline_boxes()
+                .nth(index)
+                .unwrap()
+                .clone();
+            let mut ibox = original.clone();
             let style = self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
             let margin = style
                 .margin()
@@ -586,6 +594,11 @@ impl LayoutPassState<'_> {
                     (margin_box_height.max(0.0) * scale).min(f32::MAX)
                 };
             }
+            if ibox != original {
+                inline_layout
+                    .layout
+                    .edit_inline_box(index, |item| *item = ibox);
+            }
         }
 
         let text_indent = self.nodes[node_id]
@@ -620,7 +633,7 @@ impl LayoutPassState<'_> {
                 let float_width = match available_space.width {
                     AvailableSpace::MinContent => {
                         let mut width: f32 = 0.0;
-                        for ibox in inline_layout.layout.inline_boxes_mut() {
+                        for ibox in inline_layout.layout.inline_boxes() {
                             let (is_floated, margin) = {
                                 let style =
                                     self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
@@ -657,7 +670,7 @@ impl LayoutPassState<'_> {
                         let mut left_band: f32 = 0.0;
                         let mut right_band: f32 = 0.0;
                         let mut width: f32 = 0.0;
-                        for ibox in inline_layout.layout.inline_boxes_mut() {
+                        for ibox in inline_layout.layout.inline_boxes() {
                             let (float, clear, margin) = {
                                 let style =
                                     self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
