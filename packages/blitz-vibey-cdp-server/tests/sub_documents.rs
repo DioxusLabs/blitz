@@ -7,11 +7,13 @@ use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use blitz_cdp_server::documents::{collect_document_ids, find_picking_document, with_document_in};
-use blitz_cdp_server::{CdpServer, DevtoolsWaker, DocumentProvider, PickerEvent};
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_vibey_cdp_server::documents::{
+    collect_document_ids, find_picking_document, with_document_in,
+};
+use blitz_vibey_cdp_server::{CdpServer, DevtoolsWaker, DocumentProvider, PickerEvent};
 use serde_json::json;
 use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 
