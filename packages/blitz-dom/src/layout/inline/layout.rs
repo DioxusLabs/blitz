@@ -507,86 +507,90 @@ impl LayoutPassState<'_> {
         };
 
         // Update inline boxes
-        for ibox in inline_layout.layout.inline_boxes_mut() {
-            let style = self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
-            let margin = style
-                .margin()
-                .resolve_or_zero(inputs.parent_size, resolve_calc_value);
+        let inline_box_count = inline_layout.layout.inline_boxes().len();
+        for index in 0..inline_box_count {
+            inline_layout.layout.edit_inline_box(index, |ibox| {
+                let style = self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
+                let margin = style
+                    .margin()
+                    .resolve_or_zero(inputs.parent_size, resolve_calc_value);
 
-            #[cfg(feature = "floats")]
-            let is_floated = style.float().is_floated();
-            #[cfg(not(feature = "floats"))]
-            let is_floated = false;
+                #[cfg(feature = "floats")]
+                let is_floated = style.float().is_floated();
+                #[cfg(not(feature = "floats"))]
+                let is_floated = false;
 
-            let is_out_of_flow = style.position().is_out_of_flow();
-            // `baseline-source: auto` selects the last baseline for inline-blocks and the first
-            // for other atomic inlines. A block-axis scroll-container inline-block (except buttons)
-            // instead uses its bottom margin edge, but only with `auto` (css-align-3 §9.1).
-            // `overflow: clip` is not a scroll container. Exported scroll-container baselines
-            // are clamped to the border box.
-            // A layout-contained box is treated as having no baseline (css-contain-1 §3.3).
-            let overflow = style.overflow();
-            let box_style = style.style.get_box();
-            let is_flow = matches!(
-                style.effective_display().inside(),
-                DisplayInside::Flow | DisplayInside::FlowRoot
-            );
-            let baseline_source = box_style.slow_clone_baseline_source();
-            let uses_last_baseline = match baseline_source {
-                BaselineSource::Auto => is_flow,
-                BaselineSource::First => false,
-                BaselineSource::Last => true,
-            };
-            let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
-            let is_block_axis_scroll_container = is_flow
-                && is_scroll_container
-                && !style
-                    .flags
-                    .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
-            let contain_layout = box_style.slow_clone_contain().contains(Contain::LAYOUT);
-            let exports_baseline = !(contain_layout
-                || (baseline_source == BaselineSource::Auto && is_block_axis_scroll_container));
-            let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
-            drop(style);
+                let is_out_of_flow = style.position().is_out_of_flow();
+                // `baseline-source: auto` selects the last baseline for inline-blocks and the first
+                // for other atomic inlines. A block-axis scroll-container inline-block (except buttons)
+                // instead uses its bottom margin edge, but only with `auto` (css-align-3 §9.1).
+                // `overflow: clip` is not a scroll container. Exported scroll-container baselines
+                // are clamped to the border box.
+                // A layout-contained box is treated as having no baseline (css-contain-1 §3.3).
+                let overflow = style.overflow();
+                let box_style = style.style.get_box();
+                let is_flow = matches!(
+                    style.effective_display().inside(),
+                    DisplayInside::Flow | DisplayInside::FlowRoot
+                );
+                let baseline_source = box_style.slow_clone_baseline_source();
+                let uses_last_baseline = match baseline_source {
+                    BaselineSource::Auto => is_flow,
+                    BaselineSource::First => false,
+                    BaselineSource::Last => true,
+                };
+                let is_scroll_container = !matches!(overflow.y, Overflow::Visible | Overflow::Clip);
+                let is_block_axis_scroll_container = is_flow
+                    && is_scroll_container
+                    && !style
+                        .flags
+                        .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
+                let contain_layout = box_style.slow_clone_contain().contains(Contain::LAYOUT);
+                let exports_baseline = !(contain_layout
+                    || (baseline_source == BaselineSource::Auto && is_block_axis_scroll_container));
+                let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
+                drop(style);
 
-            if is_out_of_flow || is_floated {
-                ibox.width = 0.0;
-                ibox.height = 0.0;
-                ibox.baseline = None;
-            } else {
-                let output = self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
-                ibox.width = (margin.left + margin.right + output.size.width) * scale;
-                ibox.baseline = if exports_baseline {
-                    let baseline = if uses_last_baseline {
-                        output.baselines.last.or(output.baselines.first)
-                    } else {
-                        output.baselines.first.or(output.baselines.last)
-                    };
-                    baseline.map(|baseline| {
-                        let baseline = if is_scroll_container {
-                            baseline.clamp(0.0, output.size.height)
+                if is_out_of_flow || is_floated {
+                    ibox.width = 0.0;
+                    ibox.height = 0.0;
+                    ibox.baseline = None;
+                } else {
+                    let output =
+                        self.compute_child_layout(taffy::NodeId::from(ibox.id), box_inputs);
+                    ibox.width = (margin.left + margin.right + output.size.width) * scale;
+                    ibox.baseline = if exports_baseline {
+                        let baseline = if uses_last_baseline {
+                            output.baselines.last.or(output.baselines.first)
                         } else {
-                            baseline
+                            output.baselines.first.or(output.baselines.last)
                         };
-                        (margin.top + baseline) * scale
-                    })
-                } else {
-                    None
-                };
-                // Vertical margins adjust the space the box reserves in the line. A box with a
-                // baseline splits that space into ascent (`margin.top + baseline`) and descent
-                // (`margin.bottom + height - baseline`), either of which may be negative. A box
-                // without a baseline sits on the baseline and cannot reserve negative space.
-                // Kept finite: huge author lengths can sum to infinity, which is taller than
-                // the line breaker's `f32::MAX` height limit, and it then yields
-                // `MaxHeightExceeded` for this box forever without advancing.
-                let margin_box_height = margin.top + margin.bottom + output.size.height;
-                ibox.height = if ibox.baseline.is_some() {
-                    (margin_box_height * scale).min(f32::MAX)
-                } else {
-                    (margin_box_height.max(0.0) * scale).min(f32::MAX)
-                };
-            }
+                        baseline.map(|baseline| {
+                            let baseline = if is_scroll_container {
+                                baseline.clamp(0.0, output.size.height)
+                            } else {
+                                baseline
+                            };
+                            (margin.top + baseline) * scale
+                        })
+                    } else {
+                        None
+                    };
+                    // Vertical margins adjust the space the box reserves in the line. A box with a
+                    // baseline splits that space into ascent (`margin.top + baseline`) and descent
+                    // (`margin.bottom + height - baseline`), either of which may be negative. A box
+                    // without a baseline sits on the baseline and cannot reserve negative space.
+                    // Kept finite: huge author lengths can sum to infinity, which is taller than
+                    // the line breaker's `f32::MAX` height limit, and it then yields
+                    // `MaxHeightExceeded` for this box forever without advancing.
+                    let margin_box_height = margin.top + margin.bottom + output.size.height;
+                    ibox.height = if ibox.baseline.is_some() {
+                        (margin_box_height * scale).min(f32::MAX)
+                    } else {
+                        (margin_box_height.max(0.0) * scale).min(f32::MAX)
+                    };
+                }
+            });
         }
 
         let text_indent = self.nodes[node_id]
@@ -621,7 +625,7 @@ impl LayoutPassState<'_> {
                 let float_width = match available_space.width {
                     AvailableSpace::MinContent => {
                         let mut width: f32 = 0.0;
-                        for ibox in inline_layout.layout.inline_boxes_mut() {
+                        for ibox in inline_layout.layout.inline_boxes() {
                             let (is_floated, margin) = {
                                 let style =
                                     self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
@@ -658,7 +662,7 @@ impl LayoutPassState<'_> {
                         let mut left_band: f32 = 0.0;
                         let mut right_band: f32 = 0.0;
                         let mut width: f32 = 0.0;
-                        for ibox in inline_layout.layout.inline_boxes_mut() {
+                        for ibox in inline_layout.layout.inline_boxes() {
                             let (float, clear, margin) = {
                                 let style =
                                     self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
@@ -791,6 +795,24 @@ impl LayoutPassState<'_> {
         };
         #[cfg(feature = "floats")]
         let slack = max_advance - width;
+
+        let (alignment, last_line_alignment) = self.nodes[node_id]
+            .primary_styles()
+            .map(|s| {
+                (
+                    stylo_to_parley::text_align(s.clone_text_align()),
+                    stylo_to_parley::text_align_last(s.clone_text_align_last()),
+                )
+            })
+            .unwrap_or((parley::layout::Alignment::Start, None));
+
+        inline_layout.layout.set_alignment(
+            alignment,
+            AlignmentOptions {
+                align_when_overflowing: false,
+                last_line_alignment,
+            },
+        );
 
         #[cfg(not(feature = "floats"))]
         {
@@ -977,24 +999,6 @@ impl LayoutPassState<'_> {
         #[cfg(feature = "floats")]
         outer_block_ctx.add_child_floated_content_height_contribution(
             container_pb.top + float_height_contribution,
-        );
-
-        let (alignment, last_line_alignment) = self.nodes[node_id]
-            .primary_styles()
-            .map(|s| {
-                (
-                    stylo_to_parley::text_align(s.clone_text_align()),
-                    stylo_to_parley::text_align_last(s.clone_text_align_last()),
-                )
-            })
-            .unwrap_or((parley::layout::Alignment::Start, None));
-
-        inline_layout.layout.align(
-            alignment,
-            AlignmentOptions {
-                align_when_overflowing: false,
-                last_line_alignment,
-            },
         );
 
         // Parley lays out empty text as a single strut-height line (text-editor semantics),

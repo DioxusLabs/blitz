@@ -533,6 +533,7 @@ pub(crate) fn style(
         overflow_wrap,
         word_break,
         line_break,
+        collapsed_space: Default::default(),
 
         // Contains NodeId
         brush: TextBrush::from_id(span_id),
