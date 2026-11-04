@@ -110,7 +110,11 @@ fn node_list_item_child(
         }
     };
 
-    Some(ListItemLayout { marker, position })
+    Some(ListItemLayout {
+        marker,
+        position,
+        content_box_subpixel_offset: taffy::Point::ZERO,
+    })
 }
 
 // Determine the marker to render for a given list style type

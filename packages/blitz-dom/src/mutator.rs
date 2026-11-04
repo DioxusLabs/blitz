@@ -366,6 +366,12 @@ impl DocumentMutator<'_> {
         // If node if not in the document, then don't apply any special behaviours
         // and simply set the attribute value
         if !node.flags.is_in_document() {
+            // Except checkedness, which is read back from the checkbox state once it exists
+            if (tag, attr) == tag_and_attr!("input", "checked")
+                && element.checkbox_input_checked().is_some()
+            {
+                set_input_checked_state(element, value.to_string());
+            }
             return;
         }
 
@@ -1395,6 +1401,18 @@ impl<'doc> DocumentMutator<'doc> {
         let tagname = data.name.local.as_ref();
         let type_attr = data.attr(local_name!("type"));
         let value = data.attr(local_name!("value"));
+
+        // Checkbox state must exist even if the input never gets a box (e.g. `display: none`
+        // inside a `<label>`), so that it can be toggled and matched by `:checked`.
+        if let ("input", Some("checkbox" | "radio")) = (tagname, type_attr) {
+            let element = self.doc.nodes[target_id].element_data_mut().unwrap();
+            if element.checkbox_input_checked().is_none() {
+                let checked = element.has_attr(local_name!("checked"));
+                element.special_data = SpecialElementData::CheckboxInput(checked);
+                element.set_checkbox_input_checked(checked);
+            }
+            return;
+        }
 
         // Add content of "value" attribute as a text node child if:
         //   - Tag name is
