@@ -1255,3 +1255,320 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
         }
     }
 }
+
+/// Serve a document parsed from `html` and run `client` against it
+fn run_structural_session(html: &str, client: impl FnOnce(std::net::SocketAddr, usize) + Send) {
+    let mut doc: BaseDocument = HtmlDocument::from_html(
+        html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(1200, 800, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(blitz_html::HtmlProvider)),
+            ..Default::default()
+        },
+    )
+    .into();
+    doc.resolve(0.0);
+    let mut provider = SingleDocProvider(doc);
+    let doc_id = provider.0.id();
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender))));
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+
+    let done = Arc::new(Mutex::new(false));
+    std::thread::scope(|scope| {
+        let done2 = Arc::clone(&done);
+        scope.spawn(move || {
+            struct DoneGuard(Arc<Mutex<bool>>);
+            impl Drop for DoneGuard {
+                fn drop(&mut self) {
+                    *self.0.lock().unwrap() = true;
+                }
+            }
+            let _guard = DoneGuard(done2);
+            client(addr, doc_id);
+        });
+
+        while !*done.lock().unwrap() {
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_ok()
+            {
+                server.process_messages(&mut provider);
+            }
+        }
+    });
+}
+
+/// Find a node with the given "id" attribute anywhere in a `children` subtree
+fn find_by_id<'a>(node: &'a serde_json::Value, id: &str) -> Option<&'a serde_json::Value> {
+    let attrs = node["attributes"].as_array();
+    if attrs.is_some_and(|attrs| attrs.windows(2).any(|w| w[0] == "id" && w[1] == id)) {
+        return Some(node);
+    }
+    node["children"]
+        .as_array()?
+        .iter()
+        .find_map(|child| find_by_id(child, id))
+}
+
+fn node_id_of(root: &serde_json::Value, id: &str) -> u64 {
+    find_by_id(root, id).expect(id)["nodeId"].as_u64().unwrap()
+}
+
+#[test]
+fn remove_node() {
+    let html = "<html><body><div id=\"list\"><p id=\"a\">a</p><p id=\"b\">b</p></div>\
+         </body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let list_id = node_id_of(&root, "list");
+        let a_id = node_id_of(&root, "a");
+
+        // Removing a node whose parent's children are known emits childNodeRemoved
+        send_command(&mut ws, 2, "DOM.removeNode", json!({ "nodeId": a_id }));
+        read_reply(&mut ws, 2, &mut events);
+        assert!(events.iter().any(|e| e["method"] == "DOM.childNodeRemoved"
+            && e["params"]["parentNodeId"] == list_id
+            && e["params"]["nodeId"] == a_id));
+        events.clear();
+        send_command(&mut ws, 3, "DOM.getOuterHTML", json!({ "nodeId": list_id }));
+        let result = read_reply(&mut ws, 3, &mut events);
+        assert_eq!(
+            result["outerHTML"],
+            "<div id=\"list\"><p id=\"b\">b</p></div>"
+        );
+
+        // The removed node is gone
+        send_command(&mut ws, 4, "DOM.getOuterHTML", json!({ "nodeId": a_id }));
+        expect_error(&mut ws, 4);
+
+        // The document element cannot be removed
+        let html_id = root["children"][0]["nodeId"].as_u64().unwrap();
+        send_command(&mut ws, 5, "DOM.removeNode", json!({ "nodeId": html_id }));
+        expect_error(&mut ws, 5);
+    });
+}
+
+#[test]
+fn set_outer_html() {
+    let html = "<html><body><div id=\"list\"><p id=\"a\">a</p><p id=\"b\">b</p></div>\
+         <table><tbody id=\"rows\"><tr id=\"row\"><td>x</td></tr></tbody></table></body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let list_id = node_id_of(&root, "list");
+        let a_id = node_id_of(&root, "a");
+
+        // The node is replaced by the parsed nodes: a removal followed by
+        // insertions, each after the previous one
+        send_command(
+            &mut ws,
+            2,
+            "DOM.setOuterHTML",
+            json!({ "nodeId": a_id, "outerHTML": "<h1 id=\"x\">x</h1>text<!--c-->" }),
+        );
+        read_reply(&mut ws, 2, &mut events);
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|e| e["method"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "DOM.childNodeRemoved",
+                "DOM.childNodeInserted",
+                "DOM.childNodeInserted",
+                "DOM.childNodeInserted"
+            ]
+        );
+        assert_eq!(events[0]["params"]["nodeId"], a_id);
+        let inserted: Vec<&serde_json::Value> = events[1..].iter().map(|e| &e["params"]).collect();
+        assert!(inserted.iter().all(|p| p["parentNodeId"] == list_id));
+        assert_eq!(inserted[0]["previousNodeId"], 0);
+        assert_eq!(inserted[0]["node"]["nodeName"], "H1");
+        assert_eq!(inserted[1]["previousNodeId"], inserted[0]["node"]["nodeId"]);
+        assert_eq!(inserted[1]["node"]["nodeValue"], "text");
+        assert_eq!(inserted[2]["previousNodeId"], inserted[1]["node"]["nodeId"]);
+        assert_eq!(inserted[2]["node"]["nodeType"], 8);
+        events.clear();
+        send_command(&mut ws, 3, "DOM.getOuterHTML", json!({ "nodeId": list_id }));
+        let result = read_reply(&mut ws, 3, &mut events);
+        assert_eq!(
+            result["outerHTML"],
+            "<div id=\"list\"><h1 id=\"x\">x</h1>text<!--c--><p id=\"b\">b</p></div>"
+        );
+
+        // Markup is parsed in the context of the node's parent (a `<tr>`
+        // parsed outside a table would lose its tags)
+        let rows_id = node_id_of(&root, "rows");
+        let row_id = node_id_of(&root, "row");
+        send_command(
+            &mut ws,
+            4,
+            "DOM.setOuterHTML",
+            json!({ "nodeId": row_id, "outerHTML": "<tr><td>y</td></tr><tr><td>z</td></tr>" }),
+        );
+        read_reply(&mut ws, 4, &mut events);
+        send_command(&mut ws, 5, "DOM.getOuterHTML", json!({ "nodeId": rows_id }));
+        let result = read_reply(&mut ws, 5, &mut events);
+        assert_eq!(
+            result["outerHTML"],
+            "<tbody id=\"rows\"><tr><td>y</td></tr><tr><td>z</td></tr></tbody>"
+        );
+
+        // An empty string removes the node
+        let b_id = node_id_of(&root, "b");
+        events.clear();
+        send_command(
+            &mut ws,
+            6,
+            "DOM.setOuterHTML",
+            json!({ "nodeId": b_id, "outerHTML": "" }),
+        );
+        read_reply(&mut ws, 6, &mut events);
+        assert!(
+            events
+                .iter()
+                .any(|e| e["method"] == "DOM.childNodeRemoved" && e["params"]["nodeId"] == b_id)
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| e["method"] == "DOM.childNodeInserted")
+        );
+    });
+}
+
+#[test]
+fn move_to() {
+    let html = "<html><body><div id=\"list\"><p id=\"a\">a</p><p id=\"b\">b</p><p id=\"c\">c</p></div>\
+         <div id=\"other\"><span id=\"s\">s</span></div></body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let list_id = node_id_of(&root, "list");
+        let other_id = node_id_of(&root, "other");
+        let [a_id, b_id, c_id, s_id] = ["a", "b", "c", "s"].map(|id| node_id_of(&root, id));
+
+        // Moving within a parent: a removal then an insertion of the same node
+        send_command(
+            &mut ws,
+            2,
+            "DOM.moveTo",
+            json!({ "nodeId": c_id, "targetNodeId": list_id, "insertBeforeNodeId": a_id }),
+        );
+        let result = read_reply(&mut ws, 2, &mut events);
+        assert_eq!(result["nodeId"], c_id);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["method"], "DOM.childNodeRemoved");
+        assert_eq!(events[0]["params"]["parentNodeId"], list_id);
+        assert_eq!(events[0]["params"]["nodeId"], c_id);
+        assert_eq!(events[1]["method"], "DOM.childNodeInserted");
+        assert_eq!(events[1]["params"]["parentNodeId"], list_id);
+        assert_eq!(events[1]["params"]["previousNodeId"], 0);
+        assert_eq!(events[1]["params"]["node"]["nodeId"], c_id);
+        events.clear();
+        send_command(&mut ws, 3, "DOM.getOuterHTML", json!({ "nodeId": list_id }));
+        let result = read_reply(&mut ws, 3, &mut events);
+        assert_eq!(
+            result["outerHTML"],
+            "<div id=\"list\"><p id=\"c\">c</p><p id=\"a\">a</p><p id=\"b\">b</p></div>"
+        );
+
+        // Without an anchor the node is appended to the target
+        send_command(
+            &mut ws,
+            4,
+            "DOM.moveTo",
+            json!({ "nodeId": a_id, "targetNodeId": other_id }),
+        );
+        read_reply(&mut ws, 4, &mut events);
+        let inserted = events
+            .iter()
+            .find(|e| e["method"] == "DOM.childNodeInserted")
+            .expect("childNodeInserted");
+        assert_eq!(inserted["params"]["parentNodeId"], other_id);
+        assert_eq!(inserted["params"]["previousNodeId"], s_id);
+        events.clear();
+        send_command(
+            &mut ws,
+            5,
+            "DOM.getOuterHTML",
+            json!({ "nodeId": other_id }),
+        );
+        let result = read_reply(&mut ws, 5, &mut events);
+        assert_eq!(
+            result["outerHTML"],
+            "<div id=\"other\"><span id=\"s\">s</span><p id=\"a\">a</p></div>"
+        );
+
+        // A node cannot be moved into its own subtree, and the anchor must
+        // be a child of the target
+        send_command(
+            &mut ws,
+            6,
+            "DOM.moveTo",
+            json!({ "nodeId": list_id, "targetNodeId": b_id }),
+        );
+        expect_error(&mut ws, 6);
+        send_command(
+            &mut ws,
+            7,
+            "DOM.moveTo",
+            json!({ "nodeId": b_id, "targetNodeId": other_id, "insertBeforeNodeId": c_id }),
+        );
+        expect_error(&mut ws, 7);
+    });
+
+    // Moving into a node whose children the frontend hasn't loaded updates
+    // its child count instead
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+        // Depth 3 sends html, body and body's children, but not theirs
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": 3 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let body = &root["children"][0]["children"][1];
+        assert_eq!(body["nodeName"], "BODY");
+        let other = find_by_id(body, "other").expect("other");
+        assert!(other["children"].as_array().is_none());
+        let other_id = other["nodeId"].as_u64().unwrap();
+        let list_id = node_id_of(body, "list");
+
+        send_command(
+            &mut ws,
+            2,
+            "DOM.moveTo",
+            json!({ "nodeId": list_id, "targetNodeId": other_id }),
+        );
+        read_reply(&mut ws, 2, &mut events);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["method"], "DOM.childNodeRemoved");
+        assert_eq!(events[0]["params"]["parentNodeId"], body["nodeId"]);
+        assert_eq!(events[1]["method"], "DOM.childNodeCountUpdated");
+        assert_eq!(events[1]["params"]["nodeId"], other_id);
+        assert_eq!(events[1]["params"]["childNodeCount"], 2);
+    });
+}

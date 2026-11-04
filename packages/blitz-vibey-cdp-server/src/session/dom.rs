@@ -1,12 +1,14 @@
 //! Handlers for the `DOM` domain: document/child-node serialization,
-//! querying, box model, outer HTML, and attribute/character-data editing
+//! querying, box model, outer HTML, attribute/character-data editing and
+//! structural edits (node removal, replacement and moves)
 
-use blitz_dom::NodeData;
+use blitz_dom::{LocalName, NodeData, QualName, ns};
 use serde_json::json;
 
 use super::{
-    CdpError, Session, any_node_id_param, attr_name, blitz_node_id, cdp_node_id, no_document,
-    no_node, node_id_param, str_param, with_doc,
+    CdpError, Session, any_node_id_param, attr_name, blitz_node_id, cdp_node_id, check_removable,
+    emit_child_inserted, emit_child_removed, forget_subtree, no_document, no_node, node_id_param,
+    str_param, with_doc,
 };
 use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter};
 
@@ -205,6 +207,115 @@ pub(super) fn dispatch(
                 json!({ "nodeId": cdp_node_id(node_id), "characterData": value }),
             );
             Ok(json!({}))
+        }
+
+        "DOM.removeNode" => {
+            let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
+            let node_id = node_id_param(params, "nodeId")?;
+            let children_sent = &mut session.children_sent;
+            with_doc(docs, doc_id, |doc| {
+                let parent_id = check_removable(doc, node_id)?;
+                forget_subtree(doc, node_id, children_sent);
+                doc.mutate().remove_and_drop_node(node_id);
+                doc.shell_provider.request_redraw();
+                emit_child_removed(writer, doc, parent_id, node_id, children_sent);
+                Ok(())
+            })
+            .ok_or_else(no_document)??;
+            Ok(json!({}))
+        }
+
+        // Replace a node with the nodes parsed from `outerHTML`. The markup is
+        // parsed as a fragment in the context of the node's parent (via the
+        // document's HTML parser provider) and the node is replaced wholesale.
+        "DOM.setOuterHTML" => {
+            let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
+            let node_id = node_id_param(params, "nodeId")?;
+            let html = str_param(params, "outerHTML")?;
+            let children_sent = &mut session.children_sent;
+            with_doc(docs, doc_id, |doc| {
+                let parent_id = check_removable(doc, node_id)?;
+                let context_name = doc
+                    .get_node(parent_id)
+                    .and_then(|parent| parent.element_data())
+                    .map(|el| el.name.clone())
+                    .unwrap_or_else(|| QualName::new(None, ns!(html), LocalName::from("body")));
+                forget_subtree(doc, node_id, children_sent);
+
+                let mut mutr = doc.mutate();
+                let container_id = mutr.create_element(context_name, Vec::new());
+                mutr.set_inner_html(container_id, &html);
+                let new_ids = mutr.child_ids(container_id);
+                if new_ids.is_empty() && !html.is_empty() {
+                    mutr.remove_and_drop_node(container_id);
+                    return Err(CdpError::server_error("Could not parse HTML"));
+                }
+                mutr.insert_nodes_before(node_id, &new_ids);
+                mutr.remove_and_drop_node(node_id);
+                mutr.remove_and_drop_node(container_id);
+                drop(mutr);
+                doc.shell_provider.request_redraw();
+
+                emit_child_removed(writer, doc, parent_id, node_id, children_sent);
+                for new_id in new_ids {
+                    emit_child_inserted(writer, doc, new_id, children_sent);
+                }
+                Ok(())
+            })
+            .ok_or_else(no_document)??;
+            Ok(json!({}))
+        }
+
+        // Sent when a node is dragged to a new position in the Elements panel
+        "DOM.moveTo" => {
+            let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
+            let node_id = node_id_param(params, "nodeId")?;
+            let target_id = node_id_param(params, "targetNodeId")?;
+            let insert_before_id = params
+                .get("insertBeforeNodeId")
+                .map(|_| node_id_param(params, "insertBeforeNodeId"))
+                .transpose()?;
+            let children_sent = &mut session.children_sent;
+            with_doc(docs, doc_id, |doc| {
+                let old_parent_id = check_removable(doc, node_id)?;
+                doc.get_node(target_id)
+                    .filter(|target| target.is_element())
+                    .ok_or_else(no_node)?;
+                // A node cannot be moved into its own subtree
+                let mut ancestor = Some(target_id);
+                while let Some(ancestor_id) = ancestor {
+                    if ancestor_id == node_id {
+                        return Err(CdpError::server_error("Cannot move a node into itself"));
+                    }
+                    ancestor = doc.get_node(ancestor_id).and_then(|node| node.parent);
+                }
+                if let Some(anchor_id) = insert_before_id {
+                    let anchor = doc.get_node(anchor_id).ok_or_else(no_node)?;
+                    if anchor.parent != Some(target_id) {
+                        return Err(CdpError::server_error(
+                            "Anchor node must be a child of the target node",
+                        ));
+                    }
+                    if anchor_id == node_id {
+                        return Ok(());
+                    }
+                }
+                forget_subtree(doc, node_id, children_sent);
+
+                let mut mutr = doc.mutate();
+                match insert_before_id {
+                    Some(anchor_id) => mutr.insert_nodes_before(anchor_id, &[node_id]),
+                    None => mutr.append_children(target_id, &[node_id]),
+                }
+                drop(mutr);
+                doc.shell_provider.request_redraw();
+
+                emit_child_removed(writer, doc, old_parent_id, node_id, children_sent);
+                emit_child_inserted(writer, doc, node_id, children_sent);
+                Ok(())
+            })
+            .ok_or_else(no_document)??;
+            Ok(json!({ "nodeId": cdp_node_id(node_id) }))
         }
 
         "DOM.pushNodesByBackendIdsToFrontend" => {
