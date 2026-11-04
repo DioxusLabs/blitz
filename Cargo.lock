@@ -898,21 +898,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blitz-cdp-server"
-version = "0.3.0-beta.4"
-dependencies = [
- "blitz-dom",
- "blitz-html",
- "blitz-traits",
- "cssparser",
- "serde",
- "serde_json",
- "stylo",
- "tracing",
- "tungstenite 0.30.0",
-]
-
-[[package]]
 name = "blitz-dom"
 version = "0.3.0-beta.4"
 dependencies = [
@@ -1057,10 +1042,10 @@ dependencies = [
  "android-activity",
  "anyrender",
  "atomic_refcell",
- "blitz-cdp-server",
  "blitz-dom",
  "blitz-paint",
  "blitz-traits",
+ "blitz-vibey-cdp-server",
  "data-url",
  "futures-util",
  "keyboard-types",
@@ -1122,6 +1107,21 @@ dependencies = [
  "serde",
  "smol_str",
  "url",
+]
+
+[[package]]
+name = "blitz-vibey-cdp-server"
+version = "0.3.0-beta.4"
+dependencies = [
+ "blitz-dom",
+ "blitz-html",
+ "blitz-traits",
+ "cssparser",
+ "serde",
+ "serde_json",
+ "stylo",
+ "tracing",
+ "tungstenite 0.30.0",
 ]
 
 [[package]]

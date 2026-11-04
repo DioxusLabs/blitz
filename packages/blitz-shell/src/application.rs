@@ -25,7 +25,7 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub event_queue: Receiver<BlitzShellEvent>,
     pending_clipboard: HashMap<AsyncRequestSerial, WindowId>,
     #[cfg(feature = "devtools")]
-    pub cdp: Option<blitz_cdp_server::CdpServer>,
+    pub cdp: Option<blitz_vibey_cdp_server::CdpServer>,
     /// Windows with a swallowed element-picker button press whose matching
     /// release must also be swallowed (picking ends on the press, so by
     /// release time the picker flag is already off; letting the release
@@ -41,20 +41,24 @@ struct WindowsDocumentProvider<'a, Rend: WindowRenderer> {
 }
 
 #[cfg(feature = "devtools")]
-impl<Rend: WindowRenderer> blitz_cdp_server::DocumentProvider
+impl<Rend: WindowRenderer> blitz_vibey_cdp_server::DocumentProvider
     for WindowsDocumentProvider<'_, Rend>
 {
     fn document_ids(&self) -> Vec<usize> {
         let mut ids = Vec::new();
         for view in self.windows.values() {
-            blitz_cdp_server::documents::collect_document_ids(&view.doc.inner(), &mut ids);
+            blitz_vibey_cdp_server::documents::collect_document_ids(&view.doc.inner(), &mut ids);
         }
         ids
     }
 
     fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument)) {
         for view in self.windows.values_mut() {
-            if blitz_cdp_server::documents::with_document_in(&mut view.doc.inner_mut(), id, cb) {
+            if blitz_vibey_cdp_server::documents::with_document_in(
+                &mut view.doc.inner_mut(),
+                id,
+                cb,
+            ) {
                 return;
             }
         }
@@ -117,7 +121,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     #[cfg(feature = "devtools")]
     pub fn start_cdp_server(&mut self, port: u16) {
         use std::sync::Arc;
-        let mut server = blitz_cdp_server::CdpServer::new(Arc::new(self.proxy.clone()));
+        let mut server = blitz_vibey_cdp_server::CdpServer::new(Arc::new(self.proxy.clone()));
         server.start_listening(&format!("127.0.0.1:{port}"));
         self.cdp = Some(server);
     }
@@ -139,7 +143,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     /// the event was consumed.
     #[cfg(feature = "devtools")]
     fn handle_picker_event(&mut self, window_id: WindowId, event: &WindowEvent) -> bool {
-        use blitz_cdp_server::PickerEvent;
+        use blitz_vibey_cdp_server::PickerEvent;
         use winit::event::ElementState;
         use winit::keyboard::{Key, NamedKey};
 
@@ -159,7 +163,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         // sub-documents (each an inspectable target of its own): find it and
         // translate window coordinates into its coordinate space
         let find_picking = |x: f32, y: f32| {
-            blitz_cdp_server::documents::find_picking_document(&window.doc.inner(), x, y)
+            blitz_vibey_cdp_server::documents::find_picking_document(&window.doc.inner(), x, y)
         };
         if find_picking(0.0, 0.0).is_none() {
             return false;

@@ -107,7 +107,7 @@ impl BlitzShellProxy {
 }
 
 #[cfg(feature = "devtools")]
-impl blitz_cdp_server::DevtoolsWaker for BlitzShellProxy {
+impl blitz_vibey_cdp_server::DevtoolsWaker for BlitzShellProxy {
     fn wake(&self) {
         self.send_event_impl(BlitzShellEvent::DevtoolsPoll)
     }

@@ -9,7 +9,7 @@ members = [
     "packages/blitz-paint",
     "packages/blitz-vibey-script",
     "packages/blitz-shell",
-    "packages/blitz-cdp-server",
+    "packages/blitz-vibey-cdp-server",
     "packages/blitz",
     "packages/stylo_taffy",
     "packages/dioxus-native",
@@ -48,7 +48,7 @@ blitz-net = { version = "=0.3.0-beta.4", path = "./packages/blitz-net", default-
 blitz-paint = { version = "=0.3.0-beta.4", path = "./packages/blitz-paint", default-features = false }
 blitz-vibey-script = { version = "=0.3.0-beta.4", path = "./packages/blitz-vibey-script", default-features = false }
 blitz-shell = { version = "=0.3.0-beta.4", path = "./packages/blitz-shell", default-features = false }
-blitz-cdp-server = { version = "=0.3.0-beta.4", path = "./packages/blitz-cdp-server" }
+blitz-vibey-cdp-server = { version = "=0.3.0-beta.4", path = "./packages/blitz-vibey-cdp-server" }
 blitz-traits = { version = "=0.3.0-beta.4", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "=0.3.0-beta.4", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
