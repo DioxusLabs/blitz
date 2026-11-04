@@ -11,13 +11,16 @@ mod gradient;
 mod kurbo_css;
 mod layers;
 mod render;
+mod select_overlay;
 mod sizing;
 mod text;
 
 use std::collections::HashMap;
 
 use anyrender::{PaintScene, Scene};
-use blitz_dom::{BaseDocument, NodeId, util::Color};
+#[cfg(feature = "custom-widget")]
+use blitz_dom::NodeId;
+use blitz_dom::{BaseDocument, util::Color};
 use render::BlitzDomPainter;
 
 const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
@@ -30,7 +33,15 @@ const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
 const SELECTION_COLOR: Color = Color::from_rgb8(180, 213, 255);
 
 /// Pre-computed `Scene`s for each CustomWidget, keyed by `(document id, node id)`
+#[cfg(feature = "custom-widget")]
 type CustomWidgetSceneMap = HashMap<(usize, NodeId), Scene>;
+
+#[derive(Default)]
+pub(crate) struct PaintResources {
+    #[cfg(feature = "custom-widget")]
+    custom_widget_scenes: CustomWidgetSceneMap,
+    select_overlays: HashMap<usize, Scene>,
+}
 
 /// Paint a [`blitz_dom::BaseDocument`] by pushing drawing commands into
 /// an impl [`anyrender::PaintScene`].
@@ -54,10 +65,10 @@ pub fn paint_scene(
     // This helps us avoid borrow-checker issues as we recurse down the tree (`.paint()` require `&mut self`).
     //
     // TODO: Take widget and sub-document visibility into account
-    #[allow(unused_mut)]
-    let mut custom_widget_scenes: CustomWidgetSceneMap = HashMap::new();
+    let mut resources = PaintResources::default();
     #[cfg(feature = "custom-widget")]
-    build_custom_widget_scenes(&mut custom_widget_scenes, doc, scene, scale);
+    build_custom_widget_scenes(&mut resources.custom_widget_scenes, doc, scene, scale);
+    select_overlay::build_select_overlay_scenes(&mut resources.select_overlays, doc, scale);
 
     let generator = BlitzDomPainter::new(
         doc,
@@ -66,7 +77,7 @@ pub fn paint_scene(
         height,
         x_offset as f64,
         y_offset as f64,
-        &custom_widget_scenes,
+        &resources,
     );
     generator.paint_scene(scene);
 

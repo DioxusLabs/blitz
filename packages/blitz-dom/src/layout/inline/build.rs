@@ -37,13 +37,23 @@ pub(crate) fn build_inline_layout_into(
             .and_then(|parent_id| nodes[parent_id].primary_styles())
     });
 
-    let parley_style = root_node_style
+    let mut parley_style = root_node_style
         .as_ref()
         .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_else(|| parley::TextStyle {
             white_space_collapse: WhiteSpaceCollapse::Collapse,
             ..Default::default()
         });
+
+    let select_label = root_node
+        .element_data()
+        .and_then(|el| match &el.special_data {
+            crate::node::SpecialElementData::Select(data) => Some(data.label.as_str()),
+            _ => None,
+        });
+    if select_label.is_some() {
+        parley_style.white_space_collapse = WhiteSpaceCollapse::Preserve;
+    }
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
@@ -58,6 +68,14 @@ pub(crate) fn build_inline_layout_into(
         .as_deref()
         .map(|s| CaseTransform::from_style(s))
         .unwrap_or(CaseTransform::NONE);
+
+    if let Some(label) = select_label {
+        let mut transformer = TextTransformer::default();
+        builder.push_text(transformer.transform(label, &text_transform, &builder));
+        text_layout.text = builder.build_into(&mut text_layout.layout);
+        text_layout.layout.break_all_lines(None);
+        return;
+    }
 
     // Render position-inside list items
     if let Some(ListItemLayout {

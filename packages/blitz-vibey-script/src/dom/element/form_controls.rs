@@ -1,9 +1,9 @@
 //! Form-control values, text-input selection, and focus.
 
 use super::attributes::{attr_getter, attr_setter, clear_attr, read_attr, write_attr};
-use crate::dom::js_str;
 use crate::dom::{dom_ctx, this_node_id};
-use blitz_dom::NodeId;
+use crate::dom::{js_str, to_rust_string};
+use blitz_dom::{NodeId, node::SpecialElementData};
 use boa_engine::{Context, JsResult, JsValue};
 
 pub(super) fn get_placeholder(
@@ -72,14 +72,20 @@ pub(super) fn get_value(this: &JsValue, _: &[JsValue], context: &mut Context) ->
         let doc = ctx.doc.borrow();
         doc.get_node(node_id)
             .and_then(|node| node.element_data())
-            .map(|element| match element.text_input_data() {
-                Some(input_data) => input_data.editor.raw_text().to_string(),
-                None => element
-                    .attrs()
-                    .iter()
-                    .find(|attr| &*attr.name.local == "value")
-                    .map(|attr| attr.value.clone())
+            .map(|element| match &element.special_data {
+                SpecialElementData::Select(data) => data
+                    .selected
+                    .map(|id| doc.option_value(id))
                     .unwrap_or_default(),
+                _ => match element.text_input_data() {
+                    Some(input_data) => input_data.editor.raw_text().to_string(),
+                    None => element
+                        .attrs()
+                        .iter()
+                        .find(|attr| &*attr.name.local == "value")
+                        .map(|attr| attr.value.clone())
+                        .unwrap_or_default(),
+                },
             })
             .unwrap_or_default()
     };
@@ -91,6 +97,24 @@ pub(super) fn set_value(
     args: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    let is_select = ctx
+        .doc
+        .borrow()
+        .get_node(node_id)
+        .and_then(|node| node.element_data())
+        .is_some_and(|element| matches!(element.special_data, SpecialElementData::Select(_)));
+    if is_select {
+        let value = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+        let mut doc = ctx.doc.borrow_mut();
+        let option = doc
+            .select_options(node_id)
+            .into_iter()
+            .find(|&id| doc.option_value(id) == value);
+        doc.set_selected_option(node_id, option);
+        return Ok(JsValue::undefined());
+    }
     attr_setter("value", this, args, context)
 }
 

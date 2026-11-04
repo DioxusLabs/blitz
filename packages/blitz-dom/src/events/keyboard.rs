@@ -20,6 +20,14 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
     mut dispatch_event: F,
 ) {
     if let KeyboardOrTextInputEvent::KeyPress(event) = &event {
+        let mut events = Vec::new();
+        let consumed = doc.handle_select_key(event, &mut events);
+        for event in events {
+            dispatch_event(event);
+        }
+        if consumed {
+            return;
+        }
         if event.key == Key::Named(NamedKey::Tab) {
             let backwards = event.modifiers.contains(Modifiers::SHIFT);
             generate_focus_events(

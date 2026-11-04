@@ -643,6 +643,23 @@ pub(crate) fn handle_click(
             }
 
             match el.name.local {
+                local_name!("select")
+                    if matches!(el.special_data, SpecialElementData::Select(_)) =>
+                {
+                    if doc.open_select == Some(node_id) {
+                        doc.close_select();
+                    } else {
+                        generate_focus_events(
+                            doc,
+                            &mut |doc| {
+                                doc.set_focus_to(node_id);
+                            },
+                            dispatch_event,
+                        );
+                        doc.open_select(node_id);
+                    }
+                    break 'matched true;
+                }
                 local_name!("input") if el.attr(local_name!("type")) == Some("checkbox") => {
                     let mut is_checked = false;
                     doc.snapshot_node_and(node_id, ElementState::CHECKED, |node| {
