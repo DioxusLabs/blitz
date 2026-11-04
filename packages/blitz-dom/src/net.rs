@@ -12,8 +12,8 @@ use style::{
     shared_lock::SharedRwLock,
     shared_lock::{Locked, SharedRwLockReadGuard},
     stylesheets::{
-        AllowImportRules, CssRule, DocumentStyleSheet, ImportRule, Origin, Stylesheet,
-        StylesheetInDocument, StylesheetLoader as ServoStylesheetLoader, UrlExtraData,
+        CssRule, DocumentStyleSheet, ImportRule, Origin, Stylesheet, StylesheetInDocument,
+        StylesheetLoader as ServoStylesheetLoader, UrlExtraData,
         import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition},
     },
     values::{CssUrl, SourceLocation},
@@ -141,17 +141,19 @@ pub struct StylesheetHandler {
 }
 
 impl NetHandler for ResourceHandler<StylesheetHandler> {
-    fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
-        let Ok(css) = std::str::from_utf8(&bytes) else {
-            return self.respond(resolved_url, Err(String::from("Invalid UTF8")));
-        };
+    fn error(self: Box<Self>, url: String, error: String) {
+        self.respond(url, Err(error));
+    }
 
+    fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
         // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
         // let escaped_css = html_escape::decode_html_entities(css);
 
-        let sheet = Stylesheet::from_str(
-            css,
+        let sheet = Stylesheet::from_bytes(
+            &bytes,
             self.data.source_url.clone().into(),
+            None,
+            None,
             Origin::Author,
             ServoArc::new(self.data.guard.wrap(MediaList::empty())),
             self.data.guard.clone(),
@@ -165,7 +167,6 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
             }),
             None, // error_reporter
             QuirksMode::NoQuirks,
-            AllowImportRules::Yes,
         );
 
         self.respond(
@@ -259,23 +260,20 @@ struct NestedStylesheetHandler {
 
 impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
-        let Ok(css) = std::str::from_utf8(&bytes) else {
-            return self.respond(resolved_url, Err(String::from("Invalid UTF8")));
-        };
-
         // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
         // let escaped_css = html_escape::decode_html_entities(css);
 
-        let sheet = ServoArc::new(Stylesheet::from_str(
-            css,
+        let sheet = ServoArc::new(Stylesheet::from_bytes(
+            &bytes,
             UrlExtraData(self.data.url.clone()),
+            None,
+            None,
             Origin::Author,
             self.data.media.clone(),
             self.data.lock.clone(),
             Some(&self.data.loader),
             None, // error_reporter
             QuirksMode::NoQuirks,
-            AllowImportRules::Yes,
         ));
 
         // Fetch @font-face fonts
@@ -455,8 +453,11 @@ pub(crate) fn fetch_font_face_rules<'a>(
                         },
                         _ => FontFaceSourceFormatKeyword::None,
                     };
-                    if format == FontFaceSourceFormatKeyword::None {
-                        let (_, end) = url_source.url.as_str().rsplit_once('.')?;
+                    // A url with no extension, such as a `data:` url, is
+                    // sniffed from its bytes once fetched.
+                    if format == FontFaceSourceFormatKeyword::None
+                        && let Some((_, end)) = url_source.url.as_str().rsplit_once('.')
+                    {
                         format = match end {
                             "woff2" => FontFaceSourceFormatKeyword::Woff2,
                             "woff" => FontFaceSourceFormatKeyword::Woff,

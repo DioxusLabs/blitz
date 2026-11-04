@@ -24,6 +24,14 @@ fn parse_metas(js_source: &str) -> Vec<(&str, &str)> {
     metas
 }
 
+pub fn js_test_variants(js_source: &str) -> Vec<String> {
+    parse_metas(js_source)
+        .into_iter()
+        .filter(|(key, _)| *key == "variant")
+        .map(|(_, value)| value.to_string())
+        .collect()
+}
+
 /// Does the test's `// META: global=` line (or the `.any.js` default of
 /// "window,dedicatedworker") include the `window` global?
 fn globals_include_window(metas: &[(&str, &str)]) -> bool {

@@ -17,6 +17,13 @@ impl DocumentUrl {
     }
 
     pub(crate) fn resolve_relative(&self, raw: &str) -> Option<url::Url> {
+        // Dioxus `asset!()` paths are absolute filesystem paths when not bundled. On Windows
+        // these start with a drive letter (`C:\...`), which URL parsing reads as a `c:` scheme.
+        if cfg!(windows)
+            && let Some(path) = windows_absolute_path_as_url_path(raw)
+        {
+            return self.base_url.join(&path).ok();
+        }
         self.base_url.join(raw).ok()
     }
 
@@ -59,5 +66,49 @@ impl Deref for DocumentUrl {
     type Target = Url;
     fn deref(&self) -> &Self::Target {
         &self.base_url
+    }
+}
+
+/// Converts a Windows absolute path (`C:\foo\bar` or `C:/foo/bar`) to an absolute URL path
+/// (`/C:/foo/bar`), as used in `file:` URLs.
+fn windows_absolute_path_as_url_path(raw: &str) -> Option<String> {
+    let bytes = raw.as_bytes();
+    let is_windows_path = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/');
+    is_windows_path.then(|| format!("/{}", raw.replace('\\', "/")))
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_windows_absolute_paths() {
+        let dioxus: DocumentUrl = "dioxus://index.html".parse().unwrap();
+        assert_eq!(
+            dioxus
+                .resolve_relative(r"C:\Users\me\My App\assets\style.css")
+                .unwrap()
+                .as_str(),
+            "dioxus://index.html/C:/Users/me/My%20App/assets/style.css"
+        );
+
+        let file: DocumentUrl = "file:///C:/Users/me/page.html".parse().unwrap();
+        assert_eq!(
+            file.resolve_relative("D:/assets/style.css")
+                .unwrap()
+                .as_str(),
+            "file:///D:/assets/style.css"
+        );
+
+        assert_eq!(
+            dioxus
+                .resolve_relative("mailto:me@example.com")
+                .unwrap()
+                .as_str(),
+            "mailto:me@example.com"
+        );
     }
 }

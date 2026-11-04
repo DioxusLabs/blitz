@@ -89,8 +89,3 @@ wasm-build APP *ARGS:
 
 wasm-serve APP *ARGS:
   cd examples/{{APP}} && trunk serve --release --public-url ./ {{ARGS}}
-
-## Ops
-
-bump *ARGS:
-  cargo run --release --package bump {{ARGS}}

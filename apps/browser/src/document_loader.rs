@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use blitz_dom::{DocumentConfig, FontContext};
+use blitz_dom::{DocumentConfig, FontContext, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     net::{AbortController, AbortSignal, Request, Url},
@@ -52,7 +52,6 @@ pub fn make_doc_config(
     DocumentConfig {
         viewport: None,
         base_url,
-        ua_stylesheets: None,
         net_provider: Some(net_provider as _),
         navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
@@ -60,6 +59,7 @@ pub fn make_doc_config(
         font_ctx: Some(font_ctx),
         media_type: None,
         abort_signal,
+        style_threading: StyleThreading::Parallel,
         ..Default::default()
     }
 }

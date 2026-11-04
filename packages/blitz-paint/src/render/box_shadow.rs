@@ -1,6 +1,7 @@
 use super::ElementCx;
 use crate::color::{Color, ToColorColor as _};
 use anyrender::{BoxShadowKind, NonUniformRoundedRect, PaintScene};
+use blitz_dom::CopyStyleGetters;
 use kurbo::Vec2;
 use style::values::computed::BoxShadow;
 

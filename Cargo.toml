@@ -17,7 +17,6 @@ members = [
     "apps/browser",
     "apps/browser/persistence",
     "apps/readme",
-    "apps/bump",
     "wpt/runner",
     "tests/blitz-tests",
     "examples/counter",
@@ -31,7 +30,7 @@ exclude = ["sites"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0-beta.2"
+version = "0.3.0-beta.4"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
@@ -41,15 +40,15 @@ rust-version = "1.91.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
-blitz = { version = "=0.3.0-beta.2", path = "./packages/blitz" }
-blitz-dom = { version = "=0.3.0-beta.2", path = "./packages/blitz-dom", default-features = false }
-blitz-html = { version = "=0.3.0-beta.2", path = "./packages/blitz-html", default-features = false }
-blitz-net = { version = "=0.3.0-beta.2", path = "./packages/blitz-net", default-features = false }
-blitz-paint = { version = "=0.3.0-beta.2", path = "./packages/blitz-paint", default-features = false }
-blitz-vibey-script = { version = "=0.3.0-beta.2", path = "./packages/blitz-vibey-script", default-features = false }
-blitz-shell = { version = "=0.3.0-beta.2", path = "./packages/blitz-shell", default-features = false }
-blitz-traits = { version = "=0.3.0-beta.2", path = "./packages/blitz-traits", default-features = false }
-stylo_taffy = { version = "=0.3.0-beta.2", path = "./packages/stylo_taffy", default-features = false }
+blitz = { version = "=0.3.0-beta.4", path = "./packages/blitz" }
+blitz-dom = { version = "=0.3.0-beta.4", path = "./packages/blitz-dom", default-features = false }
+blitz-html = { version = "=0.3.0-beta.4", path = "./packages/blitz-html", default-features = false }
+blitz-net = { version = "=0.3.0-beta.4", path = "./packages/blitz-net", default-features = false }
+blitz-paint = { version = "=0.3.0-beta.4", path = "./packages/blitz-paint", default-features = false }
+blitz-vibey-script = { version = "=0.3.0-beta.4", path = "./packages/blitz-vibey-script", default-features = false }
+blitz-shell = { version = "=0.3.0-beta.4", path = "./packages/blitz-shell", default-features = false }
+blitz-traits = { version = "=0.3.0-beta.4", path = "./packages/blitz-traits", default-features = false }
+stylo_taffy = { version = "=0.3.0-beta.4", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
@@ -58,12 +57,12 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-style = { version = "0.22.0", package = "stylo" }
-style_traits = { version = "0.22.0", package = "stylo_traits" }
-style_atoms = { version = "0.22.0", package = "stylo_atoms" }
-style_config = { version = "0.22.0", package = "stylo_static_prefs" }
-style_dom = { version = "0.22.0", package = "stylo_dom" }
-selectors = { version = "0.41.0", package = "selectors" }
+style = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo" }
+style_traits = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo_traits" }
+style_atoms = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo_atoms" }
+style_config = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo_static_prefs" }
+style_dom = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo_dom" }
+selectors = { version = "0.42.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "selectors" }
 cssparser = { version = "0.38.0" }
 
 # HTML5ever dependencies
@@ -79,26 +78,26 @@ smallvec = "1"
 thin-vec = "0.2"
 
 # DioxusLabs dependencies
-dioxus = { version = "0.7.3" }
-dioxus-core = { version = "0.7.3" }
-dioxus-html = { version = "0.7.3" }
-dioxus-hooks = { version = "0.7.3" }
-dioxus-signals = { version = "0.7.3" }
-dioxus-stores = { version = "0.7.3" }
-dioxus-asset-resolver = { version = "0.7.3" }
-manganis = { version = "0.7.3" }
-dioxus-document = { version = "0.7.3" }
-dioxus-history = { version = "0.7.3" }
+dioxus = { version = "0.8.0-alpha.3" }
+dioxus-core = { version = "0.8.0-alpha.3" }
+dioxus-html = { version = "0.8.0-alpha.3" }
+dioxus-hooks = { version = "0.8.0-alpha.3" }
+dioxus-signals = { version = "0.8.0-alpha.3" }
+dioxus-stores = { version = "0.8.0-alpha.3" }
+dioxus-asset-resolver = { version = "0.8.0-alpha.3" }
+manganis = { version = "0.8.0-alpha.3" }
+dioxus-document = { version = "0.8.0-alpha.3" }
+dioxus-history = { version = "0.8.0-alpha.3" }
 
 # Dioxus hot reload
-dioxus-devtools = { version = "0.7.3" }
-dioxus-cli-config = { version = "0.7.3" }
+dioxus-devtools = { version = "0.8.0-alpha.3" }
+dioxus-cli-config = { version = "0.8.0-alpha.3" }
 
 # Dioxus Prelude
-dioxus-core-macro = { version = "0.7.3" }
+dioxus-core-macro = { version = "0.8.0-alpha.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "9770a07a749489e759b9d2186d1f674373de1527", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "fca167cf659b8bf48019d0dea90624109a78103f", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
@@ -108,20 +107,20 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "9770a07a749489e759
     "calc",
     "detailed_layout_info",
 ] }
-parley = { git = "https://github.com/linebender/parley", rev = "718dcb721941fd8e72128833122d31f5a4e80504", default-features = false, features = ["std"] }
+parley = { version = "0.12", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { version = "0.14.0" }
-anyrender_serialize = { version = "0.8.0" }
-anyrender_skia = { version = "0.12.0" }
-anyrender_vello = { version = "0.15.0" }
-anyrender_vello_cpu = { version = "0.18.0" }
-anyrender_vello_hybrid = { version = "0.11.0" }
-anyrender_svg = { version = "0.15.0" }
-wgpu_context = { version = "0.10.0" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -134,11 +133,10 @@ svgtypes = "0.16.1" # Should match usvg's version
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
-winit = { version = "=0.31.0-beta.3" }
+winit = { version = "=0.31.0-beta.4" }
 accesskit = "0.25"
-arboard = { version = "3.4.1", default-features = false }
 rfd = { version = "0.17.1", default-features = false }
-keyboard-types = "0.7"
+keyboard-types = "0.8"
 cursor-icon = "1"
 
 # IO & Networking
@@ -189,8 +187,15 @@ smol_str = "0.3"
 bitflags = "2.8.0"
 bytemuck = "1"
 rayon = "1"
-test-that = "0.5.2"
+test-that = "0.6.0"
 thread_local = "1"
+
+# Unicode (ICU4X)
+icu_casemap = { version = "2.3", default-features = false, features = ["compiled_data"] }
+icu_locale_core = { version = "2.3", default-features = false }
+icu_properties = { version = "2.3", default-features = false, features = ["compiled_data"] }
+icu_segmenter = { version = "2.3", default-features = false, features = ["compiled_data"] }
+writeable = { version = "0.6", default-features = false }
 
 [profile.profile]
 inherits = "release"
@@ -289,15 +294,26 @@ wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
 
+# vello main with linebender/vello#1718 (inverse blurred rounded rects, needed by anyrender's
+# box shadows) and the glifo unhinted embolden fix (linebender/vello#2049). Drop once released.
 [patch.crates-io]
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+vello = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_encoding = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_shaders = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_common = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_cpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_gpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello_gpu_shaders = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+glifo = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+
+# [patch.crates-io]
+# anyrender = { path = "../anyrender/crates/anyrender" }
+# anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
+# anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
+# anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
+# anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
+# anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
+# wgpu_context = { path = "../anyrender/crates/wgpu_context" }
 
 # vello = { path = "../vello/vello" }
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }

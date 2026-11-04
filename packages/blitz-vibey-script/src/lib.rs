@@ -34,9 +34,10 @@ mod document;
 mod dom;
 mod event_handler;
 mod fetch;
+mod inner_text;
 mod runtime;
 mod state;
 mod timers;
 
 pub use document::ScriptDocument;
-pub use fetch::{DefaultScriptFetcher, FetchError, ScriptFetcher};
+pub use fetch::{DefaultScriptFetcher, FetchError, ScriptFetcher, document_may_load};

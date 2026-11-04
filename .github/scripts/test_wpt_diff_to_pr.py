@@ -3,7 +3,7 @@
 
 import unittest
 
-from wpt_diff_to_pr import Diff, format_lines, render, splice
+from wpt_diff_to_pr import Diff, format_area_lines, format_lines, render, splice
 
 ENTRIES = [
     {
@@ -47,6 +47,59 @@ ENTRIES = [
     },
 ]
 
+# As produced by `wpt diff --verbose`, which lists the subtests that changed.
+VERBOSE_ENTRIES = [
+    {
+        "kind": "changed",
+        "test": "/css/mixed.html",
+        "before": "FAIL",
+        "after": "FAIL",
+        "counts_before": {"pass": 2, "total": 4},
+        "counts_after": {"pass": 2, "total": 4},
+        "subtests": [
+            {"kind": "changed", "name": "a", "before": "FAIL", "after": "PASS"},
+            {"kind": "added", "name": "b", "status": "PASS"},
+            {"kind": "changed", "name": "c", "before": "PASS", "after": "FAIL"},
+            {"kind": "removed", "name": "d", "status": "PASS"},
+        ],
+    },
+    {
+        "kind": "changed",
+        "test": "/css/more-gained.html",
+        "before": "FAIL",
+        "after": "FAIL",
+        "counts_before": {"pass": 1, "total": 4},
+        "counts_after": {"pass": 2, "total": 4},
+        "subtests": [
+            {"kind": "changed", "name": "a", "before": "FAIL", "after": "PASS"},
+            {"kind": "changed", "name": "b", "before": "TIMEOUT", "after": "PASS"},
+            {"kind": "changed", "name": "c", "before": "PASS", "after": "NOTRUN"},
+        ],
+    },
+    {
+        "kind": "changed",
+        "test": "/css/no-pass-change.html",
+        "before": "FAIL",
+        "after": "FAIL",
+        "counts_before": {"pass": 0, "total": 2},
+        "counts_after": {"pass": 0, "total": 2},
+        "subtests": [
+            {"kind": "changed", "name": "a", "before": "FAIL", "after": "TIMEOUT"},
+            {"kind": "removed", "name": "b", "status": "FAIL"},
+            {"kind": "added", "name": "c", "status": "FAIL"},
+        ],
+    },
+    {
+        "kind": "changed",
+        "test": "/css/ref.html",
+        "before": "FAIL",
+        "after": "PASS",
+        "counts_before": {"pass": 0, "total": 1},
+        "counts_after": {"pass": 1, "total": 1},
+        "subtests": [],
+    },
+]
+
 
 class FormatLinesTest(unittest.TestCase):
     def test_sorted_aligned_and_marked(self):
@@ -61,8 +114,23 @@ class FormatLinesTest(unittest.TestCase):
             ],
         )
 
+    def test_subtests_changing_in_both_directions(self):
+        self.assertEqual(
+            format_lines(Diff(VERBOSE_ENTRIES)),
+            [
+                "! FAIL => FAIL  [2/4]  +2/-2  /css/mixed.html",
+                "! FAIL => FAIL  [2/4]  +2/-1  /css/more-gained.html",
+                "+ FAIL => PASS  [1/1]     +1  /css/ref.html",
+            ],
+        )
+
 
 class RenderTest(unittest.TestCase):
+    def test_headline_counts_each_direction(self):
+        section = render(Diff(VERBOSE_ENTRIES), run_url=None)
+        self.assertIn("Subtests: **5** newly passing, **3** newly failing (net +2).", section)
+        self.assertIn("<summary>Full diff (3 changed tests)</summary>", section)
+
     def test_headline_counts_subtests(self):
         section = render(Diff(ENTRIES), run_url=None)
         self.assertIn(
@@ -72,6 +140,24 @@ class RenderTest(unittest.TestCase):
         )
         self.assertNotIn("Crashes", section)
         self.assertIn("<summary>Full diff (5 changed tests)</summary>", section)
+
+    def test_area_lines(self):
+        areas = [
+            {"area": "css", "before": 100, "after": 104, "total": 200, "gained": 12, "lost": 8},
+            {"area": "css/css-grid", "before": 9, "after": 8, "total": 10, "gained": 0, "lost": 1},
+            {"area": "css/css-grid/x", "before": 3, "after": 3, "total": 4, "gained": 1, "lost": 1},
+        ]
+        self.assertEqual(
+            format_area_lines(areas),
+            [
+                "+ css        | +4 (+12 / -8) | 50.00% -> 52.00% ( +2.00%) | 100 -> 104 / 200",
+                "-   css-grid | -1 ( +0 / -1) | 90.00% -> 80.00% (-10.00%) |   9 ->   8 /  10",
+                "!     x      | +0 ( +1 / -1) | 75.00% -> 75.00% ( +0.00%) |   3 ->   3 /   4",
+            ],
+        )
+        section = render(Diff(ENTRIES), run_url=None, areas=areas)
+        self.assertIn("<summary>Subtest changes by area (3 areas)</summary>", section)
+        self.assertNotIn("by area", render(Diff(ENTRIES), run_url=None, areas=[]))
 
     def test_no_changes(self):
         section = render(Diff([]), run_url="https://example.com/run")

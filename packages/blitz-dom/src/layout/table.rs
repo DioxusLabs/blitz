@@ -1,5 +1,8 @@
 use blitz_traits::node_id::NodeId;
 use std::{ops::Range, sync::Arc};
+use style::logical_geometry::WritingMode;
+use style::properties::ComputedValues;
+use stylo_taffy::CopyStyleGetters;
 
 use atomic_refcell::AtomicRefCell;
 use markup5ever::local_name;
@@ -23,12 +26,13 @@ use taffy::{
 };
 
 use crate::BaseDocument;
+use crate::layout::LayoutPassState;
 
 use super::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use super::resolve_calc_value;
 
-pub struct TableTreeWrapper<'doc> {
-    pub(crate) doc: &'doc mut BaseDocument,
+pub struct TableTreeWrapper<'a, 'doc> {
+    pub(crate) doc: &'a mut LayoutPassState<'doc>,
     pub(crate) ctx: Arc<TableContext>,
 }
 
@@ -125,11 +129,37 @@ pub struct TableRow {
     pub group: Option<NodeId>,
     /// The row's specified `height`, if it is a length
     pub height: Option<f32>,
+    /// Whether the row or any cell originating in it (and spanning only this row) has a
+    /// specified length `height`. Such rows do not receive excess table height when there
+    /// are unconstrained rows to receive it instead.
+    pub is_constrained: bool,
 }
 
 /// The used width of one border side: border widths are not adjusted for
 /// border-style in computed styles, so a border with `none`/`hidden` style
 /// must be treated as zero-width.
+/// The writing mode the table's grid runs in (the table's own)
+#[cfg_attr(not(feature = "writing-mode"), allow(unused_variables))]
+fn table_wm(doc: &BaseDocument, table_root_node_id: NodeId) -> WritingMode {
+    #[cfg(feature = "writing-mode")]
+    {
+        if doc.try_root_element().map(|root| root.id) == Some(table_root_node_id) {
+            doc.root_layout_wm(table_root_node_id)
+        } else {
+            doc.nodes[table_root_node_id].writing_mode()
+        }
+    }
+    #[cfg(not(feature = "writing-mode"))]
+    {
+        WritingMode::empty()
+    }
+}
+
+/// Convert a table part's style into the table's writing mode
+fn table_taffy_style(style: &ComputedValues, table_wm: WritingMode) -> taffy::Style<Atom> {
+    stylo_taffy::to_taffy_style_in(style, table_wm)
+}
+
 fn side_width(width: app_units::Au, style: BorderStyle) -> f32 {
     if style.none_or_hidden() {
         0.0
@@ -180,6 +210,7 @@ pub(crate) fn build_table_context(
     let mut row = 0u16;
     let mut cursor = ColumnCursor::default();
 
+    let wm = table_wm(doc, table_root_node_id);
     let root_node = &mut doc.nodes[table_root_node_id];
 
     let children = std::mem::take(&mut root_node.children);
@@ -188,7 +219,7 @@ pub(crate) fn build_table_context(
         panic!("Ignoring table because it has no styles");
     };
 
-    let mut style = stylo_taffy::to_taffy_style(&stylo_styles);
+    let mut style = table_taffy_style(&stylo_styles, wm);
     style.item_is_table = true;
     // Use `dense` row-flow so that each cell scans the row from its
     // leftmost column for the first free track. Without `dense`,
@@ -213,7 +244,7 @@ pub(crate) fn build_table_context(
     let mut columns: Vec<TableColumn> = Vec::new();
     let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
     for child_id in children.iter().copied() {
-        collect_columns(doc, child_id, &mut columns, &mut column_sizes);
+        collect_columns(doc, child_id, wm, &mut columns, &mut column_sizes);
     }
     // Percentage column widths only take effect in the fixed table layout algorithm
     if !is_fixed {
@@ -246,6 +277,7 @@ pub(crate) fn build_table_context(
             collect_table_cells(
                 doc,
                 child_id,
+                wm,
                 is_fixed,
                 border_collapse,
                 &mut row,
@@ -315,13 +347,23 @@ pub(crate) fn build_table_context(
 
     style.grid_template_columns = column_sizes.into_iter().map(|dim| dim.into()).collect();
     // A row's `height` is a minimum: the row grows to fit the content of its cells.
+    // Excess table height is distributed to unconstrained rows (via the stretching of
+    // `auto` tracks) if there are any, and to all rows otherwise. So constrained rows
+    // use a `max-content` (rather than `auto`) maximum when there are unconstrained rows.
+    let has_unconstrained_rows = rows.iter().any(|row| !row.is_constrained);
     style.grid_template_rows = rows
         .iter()
-        .map(|row| match row.height {
-            Some(height) => {
-                style_helpers::minmax(style_helpers::length(height), style_helpers::auto())
-            }
-            None => style_helpers::auto(),
+        .map(|row| {
+            let min = match row.height {
+                Some(height) => style_helpers::length(height),
+                None => style_helpers::auto(),
+            };
+            let max = if row.is_constrained && has_unconstrained_rows {
+                style_helpers::max_content()
+            } else {
+                style_helpers::auto()
+            };
+            style_helpers::minmax(min, max)
         })
         .collect();
 
@@ -399,6 +441,7 @@ pub(crate) fn build_table_context(
 fn collect_columns(
     doc: &mut BaseDocument,
     node_id: NodeId,
+    wm: WritingMode,
     columns: &mut Vec<TableColumn>,
     column_sizes: &mut Vec<TrackSizingFunction>,
 ) {
@@ -406,7 +449,7 @@ fn collect_columns(
     if !node.is_element() {
         return;
     }
-    let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
+    let Some(display) = node.display_style() else {
         return;
     };
 
@@ -415,7 +458,7 @@ fn collect_columns(
             let first_column = columns.len();
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
-                collect_columns(doc, child_id, columns, column_sizes);
+                collect_columns(doc, child_id, wm, columns, column_sizes);
             }
             doc.nodes[node_id].children = children;
             for column in &mut columns[first_column..] {
@@ -423,7 +466,7 @@ fn collect_columns(
             }
         }
         DisplayInside::TableColumn => {
-            let style = stylo_taffy::to_taffy_style(&node.primary_styles().unwrap());
+            let style = table_taffy_style(&node.primary_styles().unwrap(), wm);
             let span: u16 = node
                 .attr(local_name!("span"))
                 .and_then(|val| val.parse::<u16>().ok())
@@ -472,6 +515,7 @@ fn collect_columns(
 fn collect_table_cells(
     doc: &mut BaseDocument,
     node_id: NodeId,
+    wm: WritingMode,
     is_fixed: bool,
     border_collapse: BorderCollapse,
     row: &mut u16,
@@ -489,7 +533,7 @@ fn collect_table_cells(
         return;
     }
 
-    let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
+    let Some(display) = node.display_style() else {
         #[cfg(feature = "tracing")]
         tracing::info!("Ignoring table descendent because it has no styles");
         return;
@@ -521,6 +565,7 @@ fn collect_table_cells(
                 collect_table_cells(
                     doc,
                     child_id,
+                    wm,
                     is_fixed,
                     border_collapse,
                     row,
@@ -546,13 +591,14 @@ fn collect_table_cells(
             cursor.start_row();
 
             let height = node.primary_styles().and_then(|style| {
-                let height = stylo_taffy::convert::dimension(&style.clone_height());
+                let height = stylo_taffy::convert::dimension(style.get_height());
                 (height.tag() == taffy::CompactLength::LENGTH_TAG).then(|| height.value())
             });
             rows.push(TableRow {
                 node_id,
                 group: None,
                 height,
+                is_constrained: height.is_some(),
             });
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
@@ -560,6 +606,7 @@ fn collect_table_cells(
                 collect_table_cells(
                     doc,
                     child_id,
+                    wm,
                     is_fixed,
                     border_collapse,
                     row,
@@ -586,7 +633,7 @@ fn collect_table_cells(
                 .and_then(|val| val.parse::<u16>().ok())
                 .map(|v| v.clamp(1, 65534))
                 .unwrap_or(1);
-            let mut style = stylo_taffy::to_taffy_style(stylo_style);
+            let mut style = table_taffy_style(stylo_style, wm);
             let col = cursor.next_free();
 
             // In the collapsed borders model the borders are laid out as gutters between
@@ -673,6 +720,12 @@ fn collect_table_cells(
                 start: style_helpers::line(*row as i16),
                 end: style_helpers::span(rowspan),
             };
+            if rowspan == 1 && style.size.height.tag() == taffy::CompactLength::LENGTH_TAG {
+                if let Some(row) = rows.last_mut() {
+                    row.is_constrained = true;
+                }
+            }
+
             style.size.width = style_helpers::auto();
             cells.push(TableCell {
                 node_id,
@@ -686,7 +739,8 @@ fn collect_table_cells(
         DisplayInside::Flow
         | DisplayInside::FlowRoot
         | DisplayInside::Flex
-        | DisplayInside::Grid => {
+        | DisplayInside::Grid
+        | DisplayInside::GridLanes => {
             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             // Probably a table caption: ignore
             // println!(
@@ -715,7 +769,7 @@ impl Iterator for RangeIter {
     }
 }
 
-impl taffy::TraversePartialTree for TableTreeWrapper<'_> {
+impl taffy::TraversePartialTree for TableTreeWrapper<'_, '_> {
     type ChildIter<'a>
         = RangeIter
     where
@@ -736,9 +790,9 @@ impl taffy::TraversePartialTree for TableTreeWrapper<'_> {
         index.into()
     }
 }
-impl taffy::TraverseTree for TableTreeWrapper<'_> {}
+impl taffy::TraverseTree for TableTreeWrapper<'_, '_> {}
 
-impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
+impl taffy::LayoutPartialTree for TableTreeWrapper<'_, '_> {
     type CoreContainerStyle<'a>
         = &'a taffy::Style<Atom>
     where
@@ -770,7 +824,7 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
     }
 }
 
-impl taffy::LayoutGridContainer for TableTreeWrapper<'_> {
+impl taffy::LayoutGridContainer for TableTreeWrapper<'_, '_> {
     type GridContainerStyle<'a>
         = &'a taffy::Style<Atom>
     where

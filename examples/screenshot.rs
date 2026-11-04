@@ -38,7 +38,7 @@ async fn main() {
     // Fetch HTML from URL
     let html = match url.scheme() {
         "file" => {
-            let file_content = std::fs::read(url.path()).unwrap();
+            let file_content = std::fs::read(url.to_file_path().unwrap()).unwrap();
             String::from_utf8(file_content).unwrap()
         }
         _ => {

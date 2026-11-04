@@ -6,16 +6,14 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Waker};
 
-use blitz_dom::{
-    BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
-};
+use blitz_dom::{BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver};
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
 use blitz_traits::events::{DomEvent, UiEvent};
 use url::Url;
 use web_time::Instant;
 
 use crate::event_handler::ScriptEventHandler;
-use crate::fetch::{DefaultScriptFetcher, ScriptFetcher};
+use crate::fetch::{DefaultScriptFetcher, FetchError, ScriptFetcher, document_may_load};
 use crate::runtime::ScriptRuntime;
 
 /// A `<script>` element found in the document
@@ -55,13 +53,6 @@ impl ScriptDocument {
     /// [`execute_scripts`](Self::execute_scripts) to do so (or rely on the
     /// first `poll` doing it automatically).
     pub fn from_html(html: &str, mut config: DocumentConfig) -> Self {
-        if let Some(ss) = &mut config.ua_stylesheets {
-            if !ss.iter().any(|s| s == DEFAULT_CSS) {
-                ss.push(String::from(DEFAULT_CSS));
-            }
-        } else {
-            config.ua_stylesheets = Some(vec![String::from(DEFAULT_CSS)]);
-        }
         if config.html_parser_provider.is_none() {
             config.html_parser_provider = Some(Arc::new(HtmlProvider));
         }
@@ -169,6 +160,13 @@ impl ScriptDocument {
                         self.record_error(format!("could not resolve script URL {src:?}"));
                         continue;
                     };
+                    if !document_may_load(self.base_url.as_ref(), &url) {
+                        self.record_error(format!(
+                            "failed to fetch script {url}: {}",
+                            FetchError::Forbidden(url.clone())
+                        ));
+                        continue;
+                    }
                     let fetch_result = self.fetcher.borrow().fetch(&url);
                     let code = match fetch_result {
                         Ok(code) => code,
@@ -209,7 +207,8 @@ impl ScriptDocument {
     }
 
     /// The resolved URLs of the document's external (`<script src="...">`) scripts,
-    /// in document order.
+    /// in document order, omitting those the document may not load
+    /// (see [`document_may_load`]).
     ///
     /// The [`ScriptFetcher`] API is synchronous, so embedders with asynchronous
     /// networking can use this to prefetch script sources before calling
@@ -220,6 +219,7 @@ impl ScriptDocument {
             .iter()
             .filter_map(|script| script.src.as_deref())
             .filter_map(|src| self.resolve_script_url(src))
+            .filter(|url| document_may_load(self.base_url.as_ref(), url))
             .collect()
     }
 

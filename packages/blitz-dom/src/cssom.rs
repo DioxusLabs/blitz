@@ -24,7 +24,7 @@ use style::shared_lock::{Locked, SharedRwLockReadGuard, ToCssWithGuard};
 use style::stylesheets::keyframes_rule::{Keyframe, KeyframesRule};
 use style::stylesheets::{
     AllowImportRules, CssRule, CssRuleRef, CssRuleType, CssRuleTypes, CssRules, DocumentStyleSheet,
-    Origin, RulesMutateError, StylesheetInDocument,
+    Origin, OriginSet, RulesMutateError, StylesheetInDocument,
 };
 use style_traits::{CssStringWriter, ParsingMode, ToCss};
 // For `SelectorList::to_css_string`
@@ -302,6 +302,31 @@ impl BaseDocument {
     /// detect that rule data cached on the script side is stale.
     pub fn stylesheet_generation(&self) -> u64 {
         self.stylesheet_generation
+    }
+
+    /// Whether the stylesheet owned by `node_id` has been disabled through the
+    /// CSSOM (`CSSStyleSheet.disabled` / `HTMLStyleElement.disabled` /
+    /// `HTMLLinkElement.disabled`). `false` if the node owns no stylesheet.
+    pub fn stylesheet_disabled(&self, node_id: NodeId) -> bool {
+        self.nodes_to_stylesheet
+            .get(&node_id)
+            .is_some_and(|sheet| sheet.0.disabled())
+    }
+
+    /// Set the disabled flag of the stylesheet owned by `node_id`. A disabled
+    /// stylesheet stays associated with its owner node but its rules no longer
+    /// apply to the document.
+    ///
+    /// Returns `false` if the node owns no stylesheet.
+    pub fn set_stylesheet_disabled(&mut self, node_id: NodeId, disabled: bool) -> bool {
+        let Some(sheet) = self.nodes_to_stylesheet.get(&node_id) else {
+            return false;
+        };
+        if sheet.0.set_disabled(disabled) {
+            self.stylist
+                .force_stylesheet_origins_dirty(OriginSet::all());
+        }
+        true
     }
 
     fn stylesheet_loader(&self) -> StylesheetLoader {

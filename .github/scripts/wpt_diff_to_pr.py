@@ -15,7 +15,17 @@ START_MARKER = "<!-- wpt-results-start -->"
 END_MARKER = "<!-- wpt-results-end -->"
 
 PASSING_STATUSES = {"PASS", "OK"}
+SUBTEST_PASS = "PASS"
 MAX_DIFF_LINES = 400
+
+
+def subtest_passes(subtest):
+    """Whether a changed subtest passed (before, after)."""
+    if subtest["kind"] == "added":
+        return False, subtest["status"] == SUBTEST_PASS
+    if subtest["kind"] == "removed":
+        return subtest["status"] == SUBTEST_PASS, False
+    return subtest["before"] == SUBTEST_PASS, subtest["after"] == SUBTEST_PASS
 
 
 class Change:
@@ -41,6 +51,16 @@ class Change:
             self.counts = entry["counts_after"]
             self.delta = self.counts["pass"] - entry["counts_before"]["pass"]
 
+        # The net change hides subtests that moved in opposite directions, so
+        # count each direction from the individual subtest changes if present.
+        subtests = entry.get("subtests") or []
+        if subtests:
+            passes = [subtest_passes(subtest) for subtest in subtests]
+            self.gained = sum(1 for before, after in passes if after and not before)
+            self.lost = sum(1 for before, after in passes if before and not after)
+        else:
+            self.gained, self.lost = max(self.delta, 0), max(-self.delta, 0)
+
         self.newly_passing = self.kind == "changed" and (
             self.before not in PASSING_STATUSES and self.after in PASSING_STATUSES
         )
@@ -49,22 +69,40 @@ class Change:
         )
 
     @property
+    def is_relevant(self):
+        """False if only non-passing subtest statuses changed (e.g. FAIL to TIMEOUT)."""
+        return bool(
+            self.kind != "changed"
+            or self.before != self.after
+            or self.delta
+            or self.gained
+            or self.lost
+        )
+
+    @property
     def marker(self):
         if self.newly_passing or self.kind == "added":
             return "+"
         if self.newly_failing or self.kind == "removed":
             return "-"
-        if self.before == self.after:
+        if self.before == self.after and not (self.gained and self.lost):
             if self.delta > 0:
                 return "+"
             if self.delta < 0:
                 return "-"
         return "!"
 
+    @property
+    def delta_text(self):
+        if self.gained and self.lost:
+            return f"+{self.gained}/-{self.lost}"
+        return f"{self.delta:+}"
+
 
 class Diff:
     def __init__(self, entries):
-        self.changes = sorted((Change(entry) for entry in entries), key=lambda c: c.test)
+        changes = (Change(entry) for entry in entries)
+        self.changes = sorted((c for c in changes if c.is_relevant), key=lambda c: c.test)
 
     @property
     def is_empty(self):
@@ -75,11 +113,11 @@ class Diff:
 
     @property
     def subtests_gained(self):
-        return sum(change.delta for change in self.changes if change.delta > 0)
+        return sum(change.gained for change in self.changes)
 
     @property
     def subtests_lost(self):
-        return -sum(change.delta for change in self.changes if change.delta < 0)
+        return sum(change.lost for change in self.changes)
 
     def status_delta(self, status):
         """The change in the number of tests with the given status."""
@@ -96,7 +134,7 @@ def format_lines(diff):
 
     status_width = max(len(change.status) for change in diff.changes)
     counts_width = max(len(counts_of(change)) for change in diff.changes)
-    delta_width = max(len(f"{change.delta:+}") for change in diff.changes)
+    delta_width = max(len(change.delta_text) for change in diff.changes)
 
     return [
         "{} {:<{}}  {:>{}}  {:>{}}  {}".format(
@@ -105,7 +143,7 @@ def format_lines(diff):
             status_width,
             counts_of(change),
             counts_width,
-            f"{change.delta:+}",
+            change.delta_text,
             delta_width,
             change.test,
         )
@@ -113,7 +151,45 @@ def format_lines(diff):
     ]
 
 
-def render(diff, run_url):
+def format_area_lines(areas):
+    """Render per-area subtest changes as diff-syntax lines, nested areas indented."""
+
+    def percent(passing, total):
+        return 100 * passing / total if total else 0.0
+
+    rows = []
+    for area in areas:
+        net = area["after"] - area["before"]
+        before = percent(area["before"], area["total"])
+        after = percent(area["after"], area["total"])
+        depth = area["area"].count("/")
+        rows.append(
+            (
+                "+" if net > 0 else "-" if net < 0 else "!",
+                "  " * depth + area["area"].rsplit("/", 1)[-1],
+                f"{net:+}",
+                f"+{area['gained']}",
+                f"-{area['lost']}",
+                f"{before:.2f}%",
+                f"{after:.2f}%",
+                f"{after - before:+.2f}%",
+                str(area["before"]),
+                str(area["after"]),
+                str(area["total"]),
+            )
+        )
+
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
+    template = "{} {:<{}} | {:>{}} ({:>{}} / {:>{}}) | {:>{}} -> {:>{}} ({:>{}}) | {:>{}} -> {:>{}} / {:>{}}"
+    return [
+        template.format(
+            row[0], *(value for i in range(1, len(row)) for value in (row[i], widths[i]))
+        ).rstrip()
+        for row in rows
+    ]
+
+
+def render(diff, run_url, areas=None):
     if diff.is_empty:
         headline = "No changes in test results compared to `main`."
     else:
@@ -137,6 +213,18 @@ def render(diff, run_url):
                 headline += f" {label}: **{delta:+}**."
 
     out = [START_MARKER, "## WPT results", "", headline, ""]
+
+    if areas:
+        noun = "area" if len(areas) == 1 else "areas"
+        out.append("<details>")
+        out.append(f"<summary>Subtest changes by area ({len(areas)} {noun})</summary>")
+        out.append("")
+        out.append("```diff")
+        out.extend(format_area_lines(areas))
+        out.append("```")
+        out.append("")
+        out.append("</details>")
+        out.append("")
 
     if not diff.is_empty:
         lines = format_lines(diff)
@@ -188,13 +276,19 @@ def main():
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--pr", default=os.environ.get("PR_NUMBER"))
     parser.add_argument("--run-url", default=os.environ.get("RUN_URL"))
+    parser.add_argument("--areas", help="per-area changes from wpt_area_changes.py")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     with open(args.diff_file, encoding="utf-8") as file:
         diff = Diff(json.load(file))
 
-    section = render(diff, args.run_url)
+    areas = None
+    if args.areas and os.path.exists(args.areas):
+        with open(args.areas, encoding="utf-8") as file:
+            areas = json.load(file)
+
+    section = render(diff, args.run_url, areas)
 
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if step_summary:

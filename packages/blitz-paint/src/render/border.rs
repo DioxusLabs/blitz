@@ -1,4 +1,5 @@
 use anyrender::PaintScene;
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::node::SpecialElementData;
 use kurbo::{BezPath, Cap, Circle, Insets, Join, PathEl, Point, Rect, Shape as _, Stroke, Vec2};
 use peniko::{Color, Fill};

@@ -33,6 +33,9 @@ pub trait NetProvider: Send + Sync + 'static {
 /// the NetCallack with the result.
 pub trait NetHandler: Send + Sync + 'static {
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes);
+
+    /// Called when fetching fails, including HTTP error statuses and cancellation.
+    fn error(self: Box<Self>, _url: String, _error: String) {}
 }
 
 /// A callback which gets called every time a network request completes

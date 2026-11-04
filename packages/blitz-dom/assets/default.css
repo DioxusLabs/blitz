@@ -39,7 +39,8 @@
     display: none;
 }
 
-a {
+/* https://html.spec.whatwg.org/#phrasing-content-3: only links are styled */
+a[href] {
     color: rgb(0, 0, 238);
     text-decoration: underline;
 }
@@ -104,9 +105,7 @@ input[type="button"] {
     color: black;
     background-color: #EFEFEF;
     text-align: center;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    display: inline-block;
 }
 
 /* Button-flavored inputs clip their contents to the border box and never
@@ -146,10 +145,6 @@ legend {
 
 option {
     display: none;
-}
-
-picture {
-    display: contents;
 }
 
 source {

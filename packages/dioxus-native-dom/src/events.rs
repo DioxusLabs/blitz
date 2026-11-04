@@ -7,9 +7,9 @@ use blitz_traits::events::{
     BlitzWheelEvent, MouseEventButton,
 };
 use dioxus_html::{
-    AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
-    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
+    AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DragData,
+    FocusData, FormData, FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData,
+    HasMouseData, HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
     HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
     MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking, ResizeData,
     ScrollBehavior, ScrollData, ScrollLogicalPosition, ScrollToOptions, SelectionData, ToggleData,
@@ -69,6 +69,12 @@ impl HtmlEventConverter for NativeConverter {
 
     fn convert_animation_data(&self, _event: &PlatformEventData) -> AnimationData {
         unimplemented!("todo: convert_animation_data in dioxus-native. requires support in blitz")
+    }
+
+    fn convert_before_input_data(&self, _event: &PlatformEventData) -> BeforeInputData {
+        unimplemented!(
+            "todo: convert_before_input_data in dioxus-native. requires support in blitz"
+        )
     }
 
     fn convert_clipboard_data(&self, _event: &PlatformEventData) -> ClipboardData {
@@ -197,12 +203,22 @@ impl RenderedElementBacking for NodeHandle {
     }
 
     fn get_scroll_offset(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsVector2D>>>> {
-        let scroll_offset = *self.node().scroll_offset();
+        let Some(scroll_offset) = self
+            .doc()
+            .get_node(self.node_id)
+            .map(|node| *node.scroll_offset())
+        else {
+            return self.node_not_exist_err();
+        };
         Box::pin(async move { Ok(PixelsVector2D::new(scroll_offset.x, scroll_offset.y)) })
     }
 
     fn get_scroll_size(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsSize>>>> {
-        let node = self.node();
+        let doc = self.doc();
+        let Some(node) = doc.get_node(self.node_id) else {
+            drop(doc);
+            return self.node_not_exist_err();
+        };
         let scroll_width = node.final_layout().scroll_width() as f64;
         let scroll_height = node.final_layout().scroll_height() as f64;
         Box::pin(async move { Ok(PixelsSize::new(scroll_width, scroll_height)) })
@@ -651,6 +667,16 @@ pub fn synthetic_click_event(node: &Node, modifiers: Modifiers) -> Box<dyn Any> 
     Box::new(NativePointerData(
         node.synthetic_click_event_data(modifiers),
     ))
+}
+
+pub fn synthetic_form_event(
+    value: impl Into<String>,
+    values: impl Into<Vec<(String, FormValue)>>,
+) -> Box<dyn Any> {
+    Box::new(NativeFormData {
+        value: value.into(),
+        values: values.into(),
+    })
 }
 
 #[cfg(test)]

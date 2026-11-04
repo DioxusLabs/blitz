@@ -42,6 +42,13 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(proto, "styleSheets", Some(style_sheets), None, context);
     define_accessor(
         proto,
+        "children",
+        Some(super::element::children),
+        None,
+        context,
+    );
+    define_accessor(
+        proto,
         "childElementCount",
         Some(super::element::child_element_count),
         None,
@@ -65,6 +72,13 @@ pub(crate) fn init_document_proto(proto: &JsObject, context: &mut Context) {
     define_method(proto, "createElement", 1, create_element, context);
     define_method(proto, "createElementNS", 2, create_element_ns, context);
     define_method(proto, "createTextNode", 1, create_text_node, context);
+    define_method(
+        proto,
+        "getSelection",
+        0,
+        super::selection::get_selection,
+        context,
+    );
     define_method(proto, "createComment", 1, create_comment, context);
     define_method(
         proto,

@@ -1,6 +1,7 @@
+use blitz_dom::CopyStyleGetters;
 use std::time::Duration;
 
-use blitz_dom::{BaseDocument, Document as _, Node};
+use blitz_dom::{BaseDocument, Document as _, Node, NodeId};
 use log::warn;
 use style_traits::ToCss;
 
@@ -94,8 +95,7 @@ fn check_layout(
         .map(|(idx, root_id)| {
             let mut errors = Vec::new();
             document.iter_subtree_mut(root_id, |node_id, doc| {
-                let node = doc.get_node(node_id).unwrap();
-                errors.extend_from_slice(&check_node_layout(node));
+                errors.extend_from_slice(&check_node_layout(doc, node_id));
             });
 
             let has_error = !errors.is_empty();
@@ -105,8 +105,18 @@ fn check_layout(
                 pass_count += 1;
             }
 
+            let mut name = format!("{subtest_selector} {}", idx + 1);
+            if let Some(title) = document
+                .get_node(root_id)
+                .and_then(|node| node.attr(blitz_dom::local_name!("title")))
+                .filter(|title| !title.is_empty())
+            {
+                name.push_str(": ");
+                name.push_str(title);
+            }
+
             SubtestResult {
-                name: format!("{subtest_selector} {}", idx + 1),
+                name,
                 status: status_from_bool(!has_error),
                 errors,
             }
@@ -123,11 +133,19 @@ fn check_layout(
     (status, subtest_counts, subtest_results)
 }
 
-pub fn check_node_layout(node: &Node) -> Vec<String> {
+pub fn check_node_layout(doc: &BaseDocument, node_id: NodeId) -> Vec<String> {
+    let node = doc.get_node(node_id).unwrap();
     if node.element_data().is_none() {
         return Vec::new();
     }
     let layout = node.final_layout();
+    // Width and height are checked against `offsetWidth`/`offsetHeight`, which round the
+    // unrounded physical size rather than the pixel-snapped edges
+    let (offset_width, offset_height) = doc
+        .offset_rect(node_id)
+        .map_or((layout.size.width, layout.size.height), |rect| {
+            (rect.width.round() as f32, rect.height.round() as f32)
+        });
 
     let client_width =
         layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width;
@@ -144,8 +162,8 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
                     let name = attr.name.local.as_ref();
                     let value = &attr.value;
                     match name {
-                        "data-expected-width" => check_attr(name, value, layout.size.width),
-                        "data-expected-height" => check_attr(name, value, layout.size.height),
+                        "data-expected-width" => check_attr(name, value, offset_width),
+                        "data-expected-height" => check_attr(name, value, offset_height),
                         "data-expected-padding-top" => check_attr(name, value, layout.padding.top),
                         "data-expected-padding-bottom" => {
                             check_attr(name, value, layout.padding.bottom)
@@ -170,16 +188,12 @@ pub fn check_node_layout(node: &Node) -> Vec<String> {
 
                         "data-expected-client-width" => check_attr(name, value, client_width),
                         "data-expected-client-height" => check_attr(name, value, client_height),
-                        "data-expected-scroll-width" => check_attr(
-                            name,
-                            value,
-                            client_width.max(layout.scrollable_overflow_rect.right),
-                        ),
-                        "data-expected-scroll-height" => check_attr(
-                            name,
-                            value,
-                            client_height.max(layout.scrollable_overflow_rect.bottom),
-                        ),
+                        "data-expected-scroll-width" => {
+                            check_attr(name, value, node.scroll_width())
+                        }
+                        "data-expected-scroll-height" => {
+                            check_attr(name, value, node.scroll_height())
+                        }
                         "data-expected-bounding-client-rect-width" => {
                             check_attr(name, value, layout.size.width)
                         }
@@ -247,4 +261,37 @@ fn check_attr(attr_name: &str, attr_val: &str, actual: f32) -> Result<(), String
 
 fn assert_with_tolerance(expected: f32, actual: f32) -> bool {
     (actual - expected).abs() < 1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use blitz_dom::DocumentConfig;
+    use blitz_html::HtmlDocument;
+
+    use super::*;
+
+    #[test]
+    fn subtest_names_include_nonempty_root_titles() {
+        let html = r#"
+            <div class="test" title="start"><span title="child"></span></div>
+            <div class="test" title="last baseline"></div>
+            <div class="test"></div>
+            <div class="test" title=""></div>
+            <div class="test" title=" "></div>
+        "#;
+        let mut document = HtmlDocument::from_html(html, DocumentConfig::default()).into();
+        let (_, _, results) = check_layout(&mut document, ".test");
+
+        let names: Vec<_> = results.iter().map(|result| result.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                ".test 1: start",
+                ".test 2: last baseline",
+                ".test 3",
+                ".test 4",
+                ".test 5:  ",
+            ]
+        );
+    }
 }

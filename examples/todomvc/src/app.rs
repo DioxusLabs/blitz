@@ -114,7 +114,7 @@ fn TodoHeader(mut todos: Signal<HashMap<u32, TodoItem>>) -> Element {
 
     let onkeydown = move |evt: KeyboardEvent| {
         let is_enter = match evt.key() {
-            Key::Enter => true,
+            Key::Named(NamedKey::Enter) => true,
             Key::Character(s) if s == "\n" => true,
             _ => false,
         };
@@ -205,7 +205,7 @@ fn TodoEntry(mut todos: Signal<HashMap<u32, TodoItem>>, id: u32) -> Element {
                     autofocus: "true",
                     onfocusout: move |_| is_editing.set(false),
                     onkeydown: move |evt| {
-                        if matches!(evt.key(), Key::Enter | Key::Escape | Key::Tab) {
+                        if matches!(evt.key(), Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Escape) | Key::Named(NamedKey::Tab)) {
                             evt.prevent_default();
                             is_editing.set(false);
                         }

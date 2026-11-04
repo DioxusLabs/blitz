@@ -25,7 +25,9 @@ pub trait ShellProvider: Send + Sync + 'static {
         let _ = width;
         let _ = height;
     }
-    fn get_clipboard_text(&self) -> Result<String, ClipboardError> {
+    /// Request clipboard text, delivered asynchronously to the document as a `UiEvent`.
+    /// The text is applied to whichever text input is focused when it arrives.
+    fn request_clipboard_text(&self) -> Result<(), ClipboardError> {
         Err(ClipboardError)
     }
     fn set_clipboard_text(&self, text: String) -> Result<(), ClipboardError> {

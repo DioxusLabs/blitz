@@ -121,3 +121,30 @@ fn block_elements_return_single_rect() {
     assert_eq!(rects[0].height, bounding.height);
     assert_eq!(bounding.width, 100.0);
 }
+
+#[test]
+fn offset_sizes_use_unrounded_border_box() {
+    for writing_mode in ["horizontal-tb", "vertical-lr", "vertical-rl"] {
+        let html = format!(
+            r#"<!DOCTYPE html><style>
+                body {{ margin: 0; writing-mode: {writing_mode}; }}
+                #box {{ margin: 0.5px; width: 12.5px; height: 10.5px; }}
+            </style><div id="box"></div>"#
+        );
+        let mut doc = HtmlDocument::from_html(
+            &html,
+            DocumentConfig {
+                viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+                html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+                ..Default::default()
+            },
+        );
+        doc.resolve(0.0);
+        let box_id = node(&doc, "#box");
+        let rect = doc.offset_rect(box_id).unwrap();
+        assert_eq!(rect.width, 12.5, "{writing_mode}");
+        assert_eq!(rect.height, 10.5, "{writing_mode}");
+        assert_eq!(rect.width.round(), 13.0, "{writing_mode}");
+        assert_eq!(rect.height.round(), 11.0, "{writing_mode}");
+    }
+}

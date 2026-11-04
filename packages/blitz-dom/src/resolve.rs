@@ -23,12 +23,13 @@ use taffy::AvailableSpace;
 use crate::{
     BaseDocument,
     layout::{
+        LayoutPassState,
         construct::{
             ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
-            ConstructionTaskResultData, LayoutChildren, build_inline_layout_into,
-            collect_layout_children,
+            ConstructionTaskResultData, LayoutChildren, collect_layout_children,
         },
         damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
+        inline::build_inline_layout_into,
     },
     node::TextBrush,
 };
@@ -441,8 +442,21 @@ impl BaseDocument {
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
-        taffy::compute_root_layout(self, root_element_id, available_space);
-        taffy::round_layout(self, root_element_id);
+        let mut state = LayoutPassState::new(self);
+        #[cfg(feature = "writing-mode")]
+        let available_space = {
+            state.layout_wm = state.layout_wm_of(crate::dom_node_id(root_element_id));
+            if state.layout_wm.is_vertical() {
+                available_space.transpose()
+            } else {
+                available_space
+            }
+        };
+        taffy::compute_root_layout(&mut state, root_element_id, available_space);
+        #[cfg(feature = "writing-mode")]
+        state.physicalise_and_round_layout(root_element_id);
+        #[cfg(not(feature = "writing-mode"))]
+        taffy::round_layout(&mut state, root_element_id);
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)

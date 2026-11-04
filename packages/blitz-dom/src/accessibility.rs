@@ -1,12 +1,17 @@
-use crate::{BaseDocument, ElementData, Node as BlitzDomNode, local_name};
+use crate::{
+    BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId, local_name,
+};
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
 use style::properties::longhands::visibility;
+use stylo_taffy::CopyStyleGetters;
 
 impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
         let mut nodes = std::collections::HashMap::new();
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
+        let mut labelled_by_nodes = Vec::new();
+        let mut described_by_nodes = Vec::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -25,8 +30,56 @@ impl BaseDocument {
                 .unwrap_or(&mut window);
             let (id, builder) = self.build_accessibility_node(node, parent);
 
+            if node.attr(local_name!("aria-labelledby")).is_some() {
+                labelled_by_nodes.push(node_id);
+            }
+            if node.attr(local_name!("aria-describedby")).is_some() {
+                described_by_nodes.push(node_id);
+            }
             nodes.insert(node_id, (id, builder));
         });
+
+        let mut label = FlatText::default();
+        for node_id in labelled_by_nodes {
+            let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-labelledby")) else {
+                continue;
+            };
+            let Some((id, mut builder)) = nodes.remove(&node_id) else {
+                continue;
+            };
+            let mut has_target = false;
+            label.clear();
+            for target in self.referenced_dom_ids_to_node_ids(id_refs) {
+                if !has_target {
+                    builder.clear_labelled_by();
+                    has_target = true;
+                }
+                if target == node_id || nodes.contains_key(&target) {
+                    builder.push_labelled_by(NodeId(target.as_u64()));
+                }
+                self.nodes[target].write_text_alternative(&mut label);
+                label.break_word();
+            }
+            if !label.text.is_empty() {
+                builder.set_label(label.text.as_str());
+            }
+            nodes.insert(node_id, (id, builder));
+        }
+
+        for node_id in described_by_nodes {
+            let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-describedby")) else {
+                continue;
+            };
+            let Some((id, mut builder)) = nodes.remove(&node_id) else {
+                continue;
+            };
+            for target in self.referenced_dom_ids_to_node_ids(id_refs) {
+                if target == node_id || nodes.contains_key(&target) {
+                    builder.push_described_by(NodeId(target.as_u64()));
+                }
+            }
+            nodes.insert(node_id, (id, builder));
+        }
 
         let mut nodes: Vec<_> = nodes
             .into_iter()
@@ -41,6 +94,15 @@ impl BaseDocument {
             tree: Some(tree),
             focus: NodeId(self.focus_node_id.map(|id| id.as_u64()).unwrap_or(u64::MAX)),
         }
+    }
+
+    fn referenced_dom_ids_to_node_ids<'a>(
+        &'a self,
+        nodes_reference: &'a str,
+    ) -> impl Iterator<Item = BlitzDomNodeId> + 'a {
+        nodes_reference
+            .split_ascii_whitespace()
+            .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
     }
 
     fn build_accessibility_node(
@@ -65,12 +127,48 @@ impl BaseDocument {
                 .unwrap_or(Role::Unknown);
 
             builder.set_role(role);
-            builder.set_html_tag(name);
 
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
                 builder.set_hidden();
             }
+
+            if let Some(aria_expanded) = element_data.attr(local_name!("aria-expanded"))
+                && let Ok(aria_expanded) = aria_expanded.parse()
+            {
+                builder.set_expanded(aria_expanded);
+            }
+
+            if element_data.attr(local_name!("aria-disabled")) == Some("true") {
+                builder.set_disabled();
+            }
+
+            if let Some(aria_selected) = element_data.attr(local_name!("aria-selected"))
+                && let Ok(aria_selected) = aria_selected.parse()
+            {
+                builder.set_selected(aria_selected);
+            }
+
+            if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
+                builder.set_label(aria_label);
+            }
+            if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
+                builder.set_description(aria_description);
+            }
+            if let Some(aria_level) = element_data.attr(local_name!("aria-level"))
+                && let Ok(aria_level) = aria_level.parse::<usize>()
+                // Accesskit levels are 0-based, while ARIA levels are 1-based
+                // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+                && let Some(aria_level) = aria_level.checked_sub(1)
+            {
+                builder.set_level(aria_level);
+            } else if let Some(default_level) = default_level_for_tag(&name) {
+                builder.set_level(default_level);
+            } else if let Some(default_level) = default_level_for_role(role) {
+                builder.set_level(default_level);
+            }
+
+            builder.set_html_tag(name);
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
             builder.set_value(node.text_content());
@@ -95,6 +193,59 @@ impl BlitzDomNode {
                         == visibility::computed_value::T::Hidden
             })
             .unwrap_or(false)
+    }
+
+    fn write_text_alternative(&self, out: &mut FlatText) {
+        match self
+            .attr(local_name!("aria-label"))
+            .filter(|aria_label| !aria_label.trim_ascii().is_empty())
+        {
+            Some(aria_label) => out.push(aria_label),
+            None => self.write_flat_text_content(out),
+        }
+    }
+
+    fn write_flat_text_content(&self, out: &mut FlatText) {
+        match &self.data {
+            NodeData::Text(data) => out.push(&data.content),
+            NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
+                for &child_id in &self.children {
+                    self.with(child_id).write_flat_text_content(out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Default)]
+struct FlatText {
+    text: String,
+    pending_space: bool,
+}
+
+impl FlatText {
+    fn push(&mut self, text: &str) {
+        for (i, word) in text.split(|c: char| c.is_ascii_whitespace()).enumerate() {
+            self.pending_space |= i > 0;
+            if word.is_empty() {
+                continue;
+            }
+            if self.pending_space && !self.text.is_empty() {
+                self.text.push(' ');
+            }
+            self.pending_space = false;
+            self.text.push_str(word);
+        }
+    }
+
+    fn break_word(&mut self) {
+        self.pending_space = true;
+    }
+
+    fn clear(&mut self) {
+        self.text.clear();
+        self.pending_space = false;
     }
 }
 
@@ -158,6 +309,29 @@ fn role_from_name(name: &str) -> Option<Role> {
         "main" => Some(Role::Main),
         "navigation" => Some(Role::Navigation),
         "search" => Some(Role::Search),
+        _ => None,
+    }
+}
+
+fn default_level_for_tag(name: &str) -> Option<usize> {
+    // Accesskit levels are 0-based, while ARIA levels are 1-based
+    // See https://docs.rs/accesskit/latest/accesskit/struct.Node.html#method.level
+    match name {
+        "h1" => Some(0),
+        "h2" => Some(1),
+        "h3" => Some(2),
+        "h4" => Some(3),
+        "h5" => Some(4),
+        "h6" => Some(5),
+        _ => None,
+    }
+}
+
+fn default_level_for_role(role: Role) -> Option<usize> {
+    match role {
+        // ARIA specifies an implicit level of 2 for the heading role. Accesskit levels are 0-based,
+        // so this turns into level 1
+        Role::Heading => Some(1),
         _ => None,
     }
 }

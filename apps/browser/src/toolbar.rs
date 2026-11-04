@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-use blitz_dom::{BaseDocument, DocumentConfig};
+use blitz_dom::{BaseDocument, DocumentConfig, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
@@ -194,13 +194,13 @@ pub fn Toolbar(
         let config = DocumentConfig {
             viewport: None,
             base_url: None,
-            ua_stylesheets: None,
             net_provider: None,
             navigation_provider: None,
             shell_provider: None,
             html_parser_provider: Some(Arc::new(HtmlProvider)),
             font_ctx: Some(tab.loader_rc().font_ctx.clone()),
             media_type: None,
+            style_threading: StyleThreading::Parallel,
             ..Default::default()
         };
         let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
@@ -376,15 +376,15 @@ pub fn Toolbar(
                     onkeydown: move |evt| {
                         let key = evt.key();
                         match &key {
-                            Key::ArrowDown => {
+                            Key::Named(NamedKey::ArrowDown) => {
                                 evt.prevent_default();
                                 move_selection_down(());
                             }
-                            Key::ArrowUp => {
+                            Key::Named(NamedKey::ArrowUp) => {
                                 evt.prevent_default();
                                 move_selection_up(());
                             }
-                            Key::Escape => {
+                            Key::Named(NamedKey::Escape) => {
                                 evt.prevent_default();
                                 blur_urlbar(());
                             }

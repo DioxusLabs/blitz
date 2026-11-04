@@ -3,11 +3,13 @@
 /// Private module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
     pub(crate) use style::Atom;
+    pub(crate) use style::logical_geometry::WritingMode;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
     pub(crate) use style::properties::generated::longhands::direction::computed_value::T as Direction;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
+    pub(crate) use style::values::computed::CSSPixelLength;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
     pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
     pub(crate) use style::values::computed::{
@@ -46,6 +48,10 @@ pub(crate) mod stylo {
 
     #[cfg(feature = "block")]
     pub(crate) use style::values::computed::text::TextAlign;
+    #[cfg(feature = "block")]
+    pub(crate) use style::values::computed::{AlignmentBaseline, BaselineShift};
+    #[cfg(feature = "block")]
+    pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     #[cfg(feature = "grid")]
     pub(crate) use style::{
         computed_values::grid_auto_flow::T as GridAutoFlow,
@@ -57,6 +63,7 @@ pub(crate) mod stylo {
     };
 }
 
+use crate::CopyStyleGetters;
 use stylo::Atom;
 use taffy::CompactLength;
 use taffy::style_helpers::*;
@@ -105,8 +112,9 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
             stylo::UnpackedLengthPercentage::Percentage(percentage) => {
                 taffy::Dimension::fit_content_percent(percentage.0)
             }
-            // TODO: support calc values as fit-content() limits in Taffy
-            stylo::UnpackedLengthPercentage::Calc(_) => taffy::Dimension::AUTO,
+            stylo::UnpackedLengthPercentage::Calc(calc_ptr) => taffy::Dimension::fit_content_calc(
+                calc_ptr as *const stylo::CalcLengthPercentage as *const (),
+            ),
         },
 
         stylo::Size::Stretch => taffy::Dimension::stretch(),
@@ -195,6 +203,15 @@ pub fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
 }
 
 #[inline]
+pub fn button_input_display(input: stylo::Display) -> stylo::Display {
+    match input.outside() {
+        stylo::DisplayOutside::None => input,
+        stylo::DisplayOutside::Inline => stylo::Display::InlineBlock,
+        _ => stylo::Display::Block,
+    }
+}
+
+#[inline]
 pub fn is_block(input: stylo::Display) -> bool {
     self::display(input) == taffy::Display::Block
 }
@@ -263,6 +280,13 @@ pub fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
 /// Convert the inset properties to a Taffy `Rect`. Insets have no effect on
 /// `position: static` boxes, so they are reported as `auto` in that case.
 #[inline]
+/// Resolve a `calc()` length-percentage (as stored in a [`taffy::LengthPercentage`] created by
+/// [`length_percentage`]) against `parent_size`
+pub fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc_ptr as *const stylo::CalcLengthPercentage) };
+    calc.resolve(stylo::CSSPixelLength::new(parent_size)).px()
+}
+
 pub fn inset_rect(style: &stylo::ComputedValues) -> taffy::Rect<taffy::LengthPercentageAuto> {
     if style.get_box().position == stylo::Position::Static {
         return taffy::Rect::auto();
@@ -356,6 +380,29 @@ pub fn containing_block_claims(style: &stylo::ComputedValues) -> taffy::Containi
     }
 }
 
+/// [`containing_block_claims`] for a non-atomic inline box, to which transforms and containment
+/// do not apply.
+pub fn inline_containing_block_claims(
+    style: &stylo::ComputedValues,
+) -> taffy::ContainingBlockClaims {
+    use style::values::specified::box_::WillChangeBits;
+
+    let box_style = style.get_box();
+    let effects = style.get_effects();
+    let fixed = !effects.filter.0.is_empty()
+        || !effects.backdrop_filter.0.is_empty()
+        || box_style
+            .will_change
+            .bits
+            .intersects(WillChangeBits::FIXPOS_CB_NON_SVG);
+    taffy::ContainingBlockClaims {
+        absolute: box_style.position != stylo::Position::Static
+            || fixed
+            || establishes_absolute_containing_block(style),
+        fixed,
+    }
+}
+
 #[inline]
 pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
     match input {
@@ -398,8 +445,10 @@ pub fn direction(input: stylo::Direction) -> taffy::Direction {
 #[inline]
 pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
     match input.ratio {
-        stylo::PreferredRatio::None => None,
-        stylo::PreferredRatio::Ratio(val) => Some(val.0.0 / val.1.0),
+        // A degenerate ratio (either side zero) behaves as `auto`:
+        // <https://drafts.csswg.org/css-sizing-4/#aspect-ratio>
+        stylo::PreferredRatio::Ratio(val) if !val.is_degenerate() => Some(val.0.0 / val.1.0),
+        _ => None,
     }
 }
 
@@ -412,38 +461,66 @@ pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
 pub fn content_alignment(
     input: stylo::ContentDistribution,
     display: stylo::Display,
-) -> Option<taffy::AlignContent> {
+) -> taffy::AlignContent {
     let primary = input.primary();
     let mut align = match primary.value() {
-        stylo::AlignFlags::NORMAL => None,
-        stylo::AlignFlags::AUTO => None,
-        stylo::AlignFlags::START => Some(taffy::AlignContent::START),
-        stylo::AlignFlags::END => Some(taffy::AlignContent::END),
-        stylo::AlignFlags::LEFT => Some(taffy::AlignContent::START),
-        stylo::AlignFlags::RIGHT => Some(taffy::AlignContent::END),
-        stylo::AlignFlags::FLEX_START => Some(taffy::AlignContent::FLEX_START),
-        stylo::AlignFlags::STRETCH => Some(taffy::AlignContent::STRETCH),
-        stylo::AlignFlags::FLEX_END => Some(taffy::AlignContent::FLEX_END),
-        stylo::AlignFlags::CENTER => Some(taffy::AlignContent::CENTER),
-        stylo::AlignFlags::SPACE_BETWEEN => Some(taffy::AlignContent::SPACE_BETWEEN),
-        stylo::AlignFlags::SPACE_AROUND => Some(taffy::AlignContent::SPACE_AROUND),
-        stylo::AlignFlags::SPACE_EVENLY => Some(taffy::AlignContent::SPACE_EVENLY),
+        stylo::AlignFlags::NORMAL => return taffy::AlignContent::NORMAL,
+        stylo::AlignFlags::AUTO => return taffy::AlignContent::NORMAL,
+        stylo::AlignFlags::START => taffy::AlignContent::START,
+        stylo::AlignFlags::END => taffy::AlignContent::END,
+        stylo::AlignFlags::LEFT => taffy::AlignContent::START,
+        stylo::AlignFlags::RIGHT => taffy::AlignContent::END,
+        stylo::AlignFlags::FLEX_START => taffy::AlignContent::FLEX_START,
+        stylo::AlignFlags::STRETCH => taffy::AlignContent::STRETCH,
+        stylo::AlignFlags::FLEX_END => taffy::AlignContent::FLEX_END,
+        stylo::AlignFlags::CENTER => taffy::AlignContent::CENTER,
+        stylo::AlignFlags::SPACE_BETWEEN => taffy::AlignContent::SPACE_BETWEEN,
+        stylo::AlignFlags::SPACE_AROUND => taffy::AlignContent::SPACE_AROUND,
+        stylo::AlignFlags::SPACE_EVENLY => taffy::AlignContent::SPACE_EVENLY,
         // Baseline content-alignment is not supported: it falls back to start/end
         // (<https://www.w3.org/TR/css-align-3/#baseline-align-self>)
-        stylo::AlignFlags::BASELINE => Some(taffy::AlignContent::START),
-        stylo::AlignFlags::LAST_BASELINE => Some(taffy::AlignContent::END),
+        stylo::AlignFlags::BASELINE => taffy::AlignContent::START,
+        stylo::AlignFlags::LAST_BASELINE => taffy::AlignContent::END,
         // Should never be hit. But no real reason to panic here.
-        _ => None,
-    }?;
+        _ => return taffy::AlignContent::NORMAL,
+    };
     let is_block_container = matches!(
         display.inside(),
-        stylo::DisplayInside::Flow | stylo::DisplayInside::FlowRoot
+        stylo::DisplayInside::Flow
+            | stylo::DisplayInside::FlowRoot
+            | stylo::DisplayInside::TableCell
     );
     let safe = primary.flags().contains(stylo::AlignFlags::SAFE)
         || (is_block_container && !primary.flags().contains(stylo::AlignFlags::UNSAFE));
     if safe {
         align.safety = taffy::AlignmentSafety::Safe;
     }
+    align
+}
+
+/// The `align-content` value that a table cell's `vertical-align` is equivalent to when the
+/// cell's own `align-content` is `normal`: `top`, `middle` and `bottom` behave as
+/// `safe start`, `safe center` and `safe end` respectively
+/// (<https://drafts.csswg.org/css-align-3/#distribution-block>). Baseline alignment is left
+/// to the table's row layout.
+#[cfg(feature = "block")]
+#[inline]
+pub fn table_cell_vertical_align(style: &stylo::ComputedValues) -> Option<taffy::AlignContent> {
+    let box_styles = style.get_box();
+    let mut align = match (
+        box_styles.slow_clone_alignment_baseline(),
+        box_styles.get_baseline_shift(),
+    ) {
+        (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Top)) => {
+            taffy::AlignContent::START
+        }
+        (_, stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Bottom)) => {
+            taffy::AlignContent::END
+        }
+        (stylo::AlignmentBaseline::Middle, _) => taffy::AlignContent::CENTER,
+        _ => return None,
+    };
+    align.safety = taffy::AlignmentSafety::Safe;
     Some(align)
 }
 
@@ -456,66 +533,118 @@ pub fn justify_content(
     flex_direction: stylo::FlexDirection,
     direction: stylo::Direction,
     display: stylo::Display,
-) -> Option<taffy::AlignContent> {
+) -> taffy::AlignContent {
     let is_row = matches!(
         flex_direction,
         stylo::FlexDirection::Row | stylo::FlexDirection::RowReverse
     );
     let is_rtl = matches!(direction, stylo::Direction::Rtl);
+    justify_content_in(input, is_row.then_some(is_rtl), display)
+}
+
+/// Convert `justify-content`. `left_is_end` is how the physical `left` keyword resolves when the
+/// main axis is parallel to the left/right axis; `None` makes `left`/`right` behave as `start`.
+#[inline]
+pub fn justify_content_in(
+    input: stylo::ContentDistribution,
+    left_is_end: Option<bool>,
+    display: stylo::Display,
+) -> taffy::AlignContent {
     let primary = input.primary();
-    let physical = match primary.value() {
-        stylo::AlignFlags::LEFT => Some(false),
-        stylo::AlignFlags::RIGHT => Some(true),
+    let is_right = match primary.value() {
+        stylo::AlignFlags::LEFT => false,
+        stylo::AlignFlags::RIGHT => true,
         _ => return self::content_alignment(input, display),
     };
-    let mut align = match physical {
-        Some(is_right) if is_row => {
-            if is_right != is_rtl {
-                taffy::AlignContent::END
-            } else {
-                taffy::AlignContent::START
-            }
-        }
+    let mut align = match left_is_end {
+        Some(left_is_end) if is_right != left_is_end => taffy::AlignContent::END,
         _ => taffy::AlignContent::START,
     };
     if primary.flags().contains(stylo::AlignFlags::SAFE) {
         align.safety = taffy::AlignmentSafety::Safe;
     }
-    Some(align)
+    align
 }
 
 /// Convert item alignment values (`align-items`/`align-self`/`justify-items`/`justify-self`),
 /// resolving the physical `left`/`right` keywords against `is_horiz_rtl`: whether the axis being
 /// aligned is a horizontal axis with right-to-left text direction. Pass `false` for the vertical
 /// axis (<https://www.w3.org/TR/css-align-3/#positional-values>).
+///
+/// `auto` maps to `None` (for the `*-self` properties Taffy then defers to the container's
+/// `*-items` value). `normal` maps to Taffy's `NORMAL` keyword, which Taffy resolves according
+/// to the layout mode of the box being aligned.
 #[inline]
 pub fn item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> Option<taffy::AlignItems> {
     let mut align = match input.value() {
-        stylo::AlignFlags::AUTO => None,
-        stylo::AlignFlags::NORMAL => Some(taffy::AlignItems::STRETCH),
-        stylo::AlignFlags::STRETCH => Some(taffy::AlignItems::STRETCH),
-        stylo::AlignFlags::FLEX_START => Some(taffy::AlignItems::FLEX_START),
-        stylo::AlignFlags::FLEX_END => Some(taffy::AlignItems::FLEX_END),
-        stylo::AlignFlags::SELF_START => Some(taffy::AlignItems::SELF_START),
-        stylo::AlignFlags::SELF_END => Some(taffy::AlignItems::SELF_END),
-        stylo::AlignFlags::START => Some(taffy::AlignItems::START),
-        stylo::AlignFlags::END => Some(taffy::AlignItems::END),
-        stylo::AlignFlags::LEFT if is_horiz_rtl => Some(taffy::AlignItems::END),
-        stylo::AlignFlags::LEFT => Some(taffy::AlignItems::START),
-        stylo::AlignFlags::RIGHT if is_horiz_rtl => Some(taffy::AlignItems::START),
-        stylo::AlignFlags::RIGHT => Some(taffy::AlignItems::END),
-        stylo::AlignFlags::CENTER => Some(taffy::AlignItems::CENTER),
-        stylo::AlignFlags::BASELINE => Some(taffy::AlignItems::BASELINE),
+        stylo::AlignFlags::AUTO => return None,
+        stylo::AlignFlags::NORMAL => return Some(taffy::AlignItems::NORMAL),
+        stylo::AlignFlags::STRETCH => taffy::AlignItems::STRETCH,
+        stylo::AlignFlags::FLEX_START => taffy::AlignItems::FLEX_START,
+        stylo::AlignFlags::FLEX_END => taffy::AlignItems::FLEX_END,
+        stylo::AlignFlags::SELF_START => taffy::AlignItems::SELF_START,
+        stylo::AlignFlags::SELF_END => taffy::AlignItems::SELF_END,
+        stylo::AlignFlags::START => taffy::AlignItems::START,
+        stylo::AlignFlags::END => taffy::AlignItems::END,
+        stylo::AlignFlags::LEFT if is_horiz_rtl => taffy::AlignItems::END,
+        stylo::AlignFlags::LEFT => taffy::AlignItems::START,
+        stylo::AlignFlags::RIGHT if is_horiz_rtl => taffy::AlignItems::START,
+        stylo::AlignFlags::RIGHT => taffy::AlignItems::END,
+        stylo::AlignFlags::CENTER => taffy::AlignItems::CENTER,
+        stylo::AlignFlags::BASELINE => taffy::AlignItems::BASELINE,
         // Taffy does not support last-baseline alignment, so map it to its
         // fallback alignment of `self-end` (https://www.w3.org/TR/css-align-3/#baseline-values)
-        stylo::AlignFlags::LAST_BASELINE => Some(taffy::AlignItems::END),
+        stylo::AlignFlags::LAST_BASELINE => taffy::AlignItems::END,
         // Should never be hit. But no real reason to panic here.
-        _ => None,
-    }?;
+        _ => return None,
+    };
     if input.flags().contains(stylo::AlignFlags::SAFE) {
         align.safety = taffy::AlignmentSafety::Safe;
+    } else if input.flags().contains(stylo::AlignFlags::UNSAFE) {
+        align.safety = taffy::AlignmentSafety::Unsafe;
     }
     Some(align)
+}
+
+/// Convert the `align-self`/`justify-self` value of an absolutely positioned box. This only
+/// differs from [`item_alignment`] in its handling of the physical `left`/`right` keywords.
+///
+/// `is_inline_axis` is whether the property aligns the box in its inline (horizontal) axis.
+/// The physical `left`/`right` keywords behave as `start` in the block axis.
+///
+/// `is_item_rtl` is whether the box's own `direction` is `rtl`. Taffy resolves alignment
+/// relative to the *containing block's* direction, which is not known here, so the physical
+/// `left`/`right` keywords are expressed in terms of the box's own direction as
+/// `self-start`/`self-end` (which Taffy resolves against the containing block's direction).
+#[inline]
+pub fn oof_item_alignment(
+    input: stylo::AlignFlags,
+    is_inline_axis: bool,
+    is_item_rtl: bool,
+) -> Option<taffy::AlignItems> {
+    let mut align = match input.value() {
+        stylo::AlignFlags::LEFT | stylo::AlignFlags::RIGHT if !is_inline_axis => {
+            taffy::AlignItems::START
+        }
+        stylo::AlignFlags::LEFT if is_item_rtl => taffy::AlignItems::SELF_END,
+        stylo::AlignFlags::LEFT => taffy::AlignItems::SELF_START,
+        stylo::AlignFlags::RIGHT if is_item_rtl => taffy::AlignItems::SELF_START,
+        stylo::AlignFlags::RIGHT => taffy::AlignItems::SELF_END,
+        _ => return item_alignment(input, is_item_rtl),
+    };
+    if input.flags().contains(stylo::AlignFlags::SAFE) {
+        align.safety = taffy::AlignmentSafety::Safe;
+    } else if input.flags().contains(stylo::AlignFlags::UNSAFE) {
+        align.safety = taffy::AlignmentSafety::Unsafe;
+    }
+    Some(align)
+}
+
+/// Convert a container's `align-items`/`justify-items`. `auto` is not a valid value of these
+/// properties, so it is treated as `normal`.
+#[inline]
+pub fn default_item_alignment(input: stylo::AlignFlags, is_horiz_rtl: bool) -> taffy::AlignItems {
+    item_alignment(input, is_horiz_rtl).unwrap_or(taffy::AlignItems::NORMAL)
 }
 
 #[inline]
@@ -680,9 +809,8 @@ pub fn grid_template_tracks(
             })
             .collect(),
 
-        // TODO: Implement subgrid and masonry
+        // TODO: Implement subgrid
         stylo::GenericGridTemplateComponent::Subgrid(_) => Vec::new(),
-        stylo::GenericGridTemplateComponent::Masonry => Vec::new(),
     }
 }
 
@@ -697,9 +825,8 @@ pub fn grid_template_line_names(
             Some(crate::wrapper::StyloLineNameIter::new(&list.line_names))
         }
 
-        // TODO: Implement subgrid and masonry
+        // TODO: Implement subgrid
         stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-        stylo::GenericGridTemplateComponent::Masonry => None,
     }
 }
 
@@ -816,6 +943,18 @@ pub fn max_track(
 }
 
 /// Eagerly convert an entire [`stylo::ComputedValues`] into a [`taffy::Style`]
+/// Convert a stylo style into a concrete [`taffy::Style`] expressed in the axes of `layout_wm`, the
+/// writing mode of the algorithm laying the box out (see [`crate::writing_mode`]).
+pub fn to_taffy_style_in(
+    style: &stylo::ComputedValues,
+    layout_wm: stylo::WritingMode,
+) -> taffy::Style<Atom> {
+    use crate::writing_mode::WritingModeExt;
+    let mut taffy_style = to_taffy_style(style);
+    layout_wm.transpose_style(&mut taffy_style);
+    taffy_style
+}
+
 pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
     let display = style.clone_display();
     let pos = style.get_position();
@@ -829,6 +968,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         box_sizing: self::box_sizing(style.clone_box_sizing()),
         item_is_table: display.inside() == stylo::DisplayInside::Table,
         item_is_replaced: false,
+        item_is_compressible_replaced: false,
         position: self::position(style.clone_position()),
         overflow: taffy::Point {
             x: self::overflow(style.clone_overflow_x()),
@@ -895,11 +1035,11 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             display,
         ),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_items: self::item_alignment(pos.align_items.0, false),
+        align_items: self::default_item_alignment(pos.align_items.0, false),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         align_self: self::item_alignment(pos.align_self.0, false),
         #[cfg(feature = "grid")]
-        justify_items: self::item_alignment(
+        justify_items: self::default_item_alignment(
             (pos.justify_items.computed.0).0,
             style.clone_direction() == stylo::Direction::Rtl,
         ),

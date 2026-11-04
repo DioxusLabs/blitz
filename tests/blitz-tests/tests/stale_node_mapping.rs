@@ -1,19 +1,14 @@
-//! Regression tests for stale `node_id_mapping` entries after node removal.
+//! Regression tests for node removal in `dioxus-native-dom`.
 //! See https://github.com/DioxusLabs/dioxus/pull/5182
 //!
-//! When `remove_node` (or `replace_node_with`) detaches a node, the
-//! `node_id_mapping` entries for the node's subtree are (intentionally) not
-//! cleared, so that dioxus-core can reuse the detached DOM nodes. However,
-//! when the detached subtree is later dropped via `remove_node_if_unparented`
-//! (called from `assign_node_id`), only the mapping for the ElementId being
-//! reassigned is updated. Any *descendant* of the dropped subtree that has its
-//! own ElementId mapping is left pointing at a freed slab slot.
+//! Removing a node used to leave `ElementId -> NodeId` mappings for its
+//! subtree behind. When blitz-dom reused the freed slot for a new node and
+//! dioxus-core reused the stale `ElementId`, the writer dropped the new node
+//! and a later mutation in the same render panicked with "invalid key".
 //!
-//! When that slab slot is reused for a brand-new (not yet parented) node and
-//! the stale ElementId is then reused by dioxus-core via `AssignId`,
-//! `remove_node_if_unparented` incorrectly drops the new node, causing an
-//! "invalid key" slab panic in blitz-dom's `DocumentMutator` later in the
-//! same render (matching the stack trace reported in the PR).
+//! Node ids are now generational and dioxus-core always re-maps an
+//! `ElementId` (`set_id`) before pushing it, so these tests only check that
+//! heavy template, keyed-list and `ElementId` churn renders without panicking.
 
 use blitz_test_harness::HarnessOptions;
 use dioxus::prelude::*;
@@ -57,36 +52,11 @@ impl Harness {
         Self { inner, generation }
     }
 
-    fn doc(&self) -> &DioxusDocument {
-        &self.inner.doc
-    }
-
     fn step(&mut self) {
         self.generation.set(self.generation.get() + 1);
         self.inner.doc.vdom.mark_dirty(ScopeId::APP);
         self.inner.pump();
     }
-}
-
-/// Check that every ElementId -> NodeId mapping points at a node that still
-/// exists in the document. A mapping pointing at a freed slab slot will cause
-/// an "invalid key" panic (or worse: silent deletion of an unrelated node
-/// that happens to reuse the slot) on a later render.
-fn assert_no_stale_mappings(doc: &DioxusDocument, context: &str) {
-    let inner = doc.inner.borrow();
-    let mut stale = Vec::new();
-    for raw_id in 0..4096 {
-        let element_id = dioxus_core::ElementId(raw_id);
-        if let Some(node_id) = doc.vdom_state.try_element_to_node_id(element_id)
-            && inner.get_node(node_id).is_none()
-        {
-            stale.push((raw_id, node_id));
-        }
-    }
-    assert!(
-        stale.is_empty(),
-        "stale node_id_mapping entries (ElementId, NodeId) after {context}: {stale:?}"
-    );
 }
 
 fn bare_text(generation: usize) -> Element {
@@ -165,11 +135,10 @@ fn toggle_app(generation: usize) -> Element {
 }
 
 #[test]
-fn template_swaps_do_not_leave_stale_mappings() {
+fn template_swaps_do_not_panic_over_many_steps() {
     let mut harness = Harness::new(toggle_app);
-    for i in 0..20 {
+    for _ in 0..20 {
         harness.step();
-        assert_no_stale_mappings(harness.doc(), &format!("step {i}"));
     }
 }
 
@@ -238,8 +207,7 @@ fn list_app(generation: usize) -> Element {
 #[test]
 fn keyed_list_grow_shrink() {
     let mut harness = Harness::new(list_app);
-    for i in 0..300 {
+    for _ in 0..300 {
         harness.step();
-        assert_no_stale_mappings(harness.doc(), &format!("step {i}"));
     }
 }

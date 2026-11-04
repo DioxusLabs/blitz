@@ -39,7 +39,9 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{
+    Arc, LazyLock, Mutex, MutexGuard, Once, OnceLock, RwLockReadGuard, RwLockWriteGuard,
+};
 use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -55,7 +57,6 @@ use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::UserSelect;
 use style::values::computed::ui::CursorKind;
-use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{
     device::Device,
     dom::{TDocument, TNode},
@@ -66,12 +67,97 @@ use style::{
     stylist::Stylist,
 };
 use style_dom::ElementState;
+use stylo_taffy::CopyStyleGetters;
 use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
 
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
+
+/// A user-agent stylesheet, parsed with a read-only lock so that it can be shared between documents.
+///
+/// Documents with the same user-agent stylesheets (in the same order) also share Stylo's
+/// cached user-agent cascade data. `@import` rules are ignored.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UserAgentStylesheet(DocumentStyleSheet);
+
+pub(crate) fn init_stylo_prefs() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        style_config::set_pref!("layout.css.flexbox-balance.enabled", true);
+        style_config::set_pref!("layout.css.background-clip.text.enabled", true);
+        style_config::set_pref!("layout.css.webkit-text-fill-color.enabled", true);
+        style_config::set_pref!("layout.css.columns.enabled", true);
+        style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
+        style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
+        style_config::set_pref!("layout.css.progress-function.enabled", true);
+        style_config::set_pref!("layout.css.font-variations.enabled", true);
+        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
+        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
+        #[cfg(feature = "writing-mode")]
+        {
+            style_config::set_pref!("layout.css.writing-mode.enabled", true);
+            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
+        }
+
+        // Properties that were previously enabled by the `layout.unimplemented` pref
+        style_config::set_pref!("layout.css.appearance.enabled", true);
+        style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
+        style_config::set_pref!("layout.css.contain.enabled", true);
+        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
+        style_config::set_pref!("layout.css.corner-shape.enabled", true);
+        style_config::set_pref!("layout.css.counters.enabled", true);
+        style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
+        style_config::set_pref!("layout.css.forced-color-adjust.enabled", true);
+        style_config::set_pref!("layout.css.masking.enabled", true);
+        style_config::set_pref!("layout.css.math-properties.enabled", true);
+        style_config::set_pref!("layout.css.motion-path.enabled", true);
+        style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
+        style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
+        style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
+        style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
+        style_config::set_pref!("layout.css.text-overflow.enabled", true);
+        style_config::set_pref!("layout.css.text-underline.enabled", true);
+        style_config::set_pref!("layout.css.view-transitions.enabled", true);
+        style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
+        style_config::set_pref!("layout.css.zoom.enabled", true);
+        style_config::set_pref!("layout.threads", -1);
+    });
+}
+
+impl UserAgentStylesheet {
+    pub fn parse(css: &str) -> Self {
+        // Pref-gated UA declarations must be enabled before parsing.
+        init_stylo_prefs();
+
+        let lock = SharedRwLock::read_only();
+        let data = Stylesheet::from_str(
+            css,
+            DocumentUrl::default().url_extra_data(),
+            Origin::UserAgent,
+            ServoArc::new(lock.wrap(MediaList::empty())),
+            lock,
+            None,
+            None,
+            QuirksMode::NoQuirks,
+            AllowImportRules::No,
+        );
+        Self(DocumentStyleSheet(ServoArc::new(data)))
+    }
+
+    /// The default user-agent stylesheet ([`DEFAULT_CSS`]), parsed once.
+    pub fn default_sheet() -> Self {
+        static SHEET: LazyLock<UserAgentStylesheet> =
+            LazyLock::new(|| UserAgentStylesheet::parse(DEFAULT_CSS));
+        SHEET.clone()
+    }
+
+    pub fn sheet(&self) -> &DocumentStyleSheet {
+        &self.0
+    }
+}
 
 pub enum DocGuard<'a> {
     Ref(&'a BaseDocument),
@@ -304,9 +390,6 @@ pub struct BaseDocument {
     /// added, replaced or removed), so that CSSOM wrappers can detect that
     /// their cached rule data is stale.
     pub(crate) stylesheet_generation: u64,
-    /// Stylesheets added by the useragent
-    /// where the key is the hashed CSS
-    pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<NodeId, NodeId>,
     /// Nodes that contain sub documents
@@ -363,6 +446,8 @@ pub struct BaseDocument {
 impl BaseDocument {
     /// Create a new (empty) [`BaseDocument`] with the specified configuration
     pub fn new(config: DocumentConfig) -> Self {
+        init_stylo_prefs();
+
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
@@ -392,17 +477,6 @@ impl BaseDocument {
                 font_ctx
             });
         let font_ctx = Arc::new(Mutex::new(font_ctx));
-
-        // Make sure we turn on stylo features *before* creating the Stylist
-        style_config::set_pref!("layout.grid.enabled", true);
-        style_config::set_pref!("layout.flexbox.balance", true);
-        style_config::set_pref!("layout.unimplemented", true);
-        style_config::set_pref!("layout.columns.enabled", true);
-        style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
-        style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
-        style_config::set_pref!("layout.css.progress-function.enabled", true);
-        style_config::set_pref!("layout.variable_fonts.enabled", true);
-        style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
@@ -453,7 +527,6 @@ impl BaseDocument {
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
-            ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
             font_ctx,
@@ -505,13 +578,8 @@ impl BaseDocument {
         doc.root_node_id = doc.create_node(NodeData::Document(Box::default()));
         doc.root_node_mut().flags.insert(NodeFlags::IS_IN_DOCUMENT);
 
-        match config.ua_stylesheets {
-            Some(stylesheets) => {
-                for ss in &stylesheets {
-                    doc.add_user_agent_stylesheet(ss);
-                }
-            }
-            None => doc.add_user_agent_stylesheet(DEFAULT_CSS),
+        for sheet in config.ua_stylesheets {
+            doc.add_user_agent_stylesheet(sheet);
         }
 
         // Stylo data on the root node container is needed to render the node
@@ -917,6 +985,21 @@ impl BaseDocument {
         if self.focus_node_id == Some(node_id) {
             let shell_provider = self.shell_provider.clone();
             self.nodes[node_id].blur(shell_provider);
+            // Nothing on the chain contains the focus anymore. Only the surviving
+            // ancestors need a snapshot for restyling: nodes in the removed subtree had
+            // theirs dropped already and may be freed entirely.
+            let mut maybe_id = Some(node_id);
+            while let Some(node) = maybe_id.and_then(|id| self.get_node(id)) {
+                let id = node.id;
+                maybe_id = node.parent;
+                if node.flags.is_in_document() {
+                    self.snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
+                        node.remove_focus_within()
+                    });
+                } else {
+                    self.nodes[id].remove_focus_within();
+                }
+            }
             self.focus_node_id = None;
         }
         if self.mousedown_node_id == Some(node_id) {
@@ -1066,13 +1149,8 @@ impl BaseDocument {
         node
     }
 
-    pub(crate) fn resolve_url(&self, raw: &str) -> url::Url {
-        self.url.resolve_relative(raw).unwrap_or_else(|| {
-            panic!(
-                "to be able to resolve {raw} with the base_url: {:?}",
-                *self.url
-            )
-        })
+    pub(crate) fn resolve_url(&self, raw: &str) -> Option<url::Url> {
+        self.url.resolve_relative(raw)
     }
 
     pub fn print_tree(&self) {
@@ -1093,8 +1171,9 @@ impl BaseDocument {
             if element.name.local == local_name!("link") {
                 if let Some(href) = element.attr(local_name!("href")) {
                     // println!("Node {node_id} {href} {href_to_reload} {} {}", resolved_href.as_str(), resolved_href.as_str() == url_to_reload);
-                    if href == href_to_reload {
-                        let resolved_href = self.resolve_url(href);
+                    if href == href_to_reload
+                        && let Some(resolved_href) = self.resolve_url(href)
+                    {
                         self.net_provider.fetch(
                             self.id(),
                             self.build_request(resolved_href.clone()),
@@ -1124,9 +1203,10 @@ impl BaseDocument {
         self.add_stylesheet_for_node(sheet, target_id);
     }
 
-    pub fn remove_user_agent_stylesheet(&mut self, contents: &str) {
-        if let Some(sheet) = self.ua_stylesheets.remove(contents) {
-            self.stylist.remove_stylesheet(sheet, &self.guard.read());
+    pub fn remove_user_agent_stylesheet(&mut self, sheet: &UserAgentStylesheet) {
+        if self.useragent_stylesheets().any(|s| *s == sheet.0) {
+            self.stylist
+                .remove_stylesheet(sheet.0.clone(), &self.guard.read());
         }
     }
 
@@ -1143,13 +1223,16 @@ impl BaseDocument {
 
     /// Iterate over the user-agent stylesheets currently associated with this document
     pub fn useragent_stylesheets(&self) -> impl Iterator<Item = &DocumentStyleSheet> {
-        self.ua_stylesheets.values()
+        (0..self.stylist.sheet_count(Origin::UserAgent))
+            .filter_map(|i| self.stylist.sheet_at(Origin::UserAgent, i))
     }
 
-    pub fn add_user_agent_stylesheet(&mut self, css: &str) {
-        let sheet = self.make_stylesheet(css, Origin::UserAgent);
-        self.ua_stylesheets.insert(css.to_string(), sheet.clone());
-        self.stylist.append_stylesheet(sheet, &self.guard.read());
+    /// Append a user-agent stylesheet. Adding a sheet that is already present is a no-op.
+    pub fn add_user_agent_stylesheet(&mut self, sheet: UserAgentStylesheet) {
+        if self.useragent_stylesheets().any(|s| *s == sheet.0) {
+            return;
+        }
+        self.stylist.append_stylesheet(sheet.0, &self.guard.read());
     }
 
     pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
@@ -1384,8 +1467,12 @@ impl BaseDocument {
 
             match image_type {
                 ImageType::Image => {
-                    node.element_data_mut().unwrap().special_data =
-                        SpecialElementData::Image(Box::new(image.clone()));
+                    let element = node.element_data_mut().unwrap();
+                    #[cfg(feature = "custom-widget")]
+                    if element.custom_widget_data().is_some() {
+                        continue;
+                    }
+                    element.special_data = SpecialElementData::Image(Box::new(image.clone()));
 
                     // Clear layout cache
                     node.clear_layout_cache();
@@ -1411,19 +1498,20 @@ impl BaseDocument {
 
     /// Snapshot the node's pre-mutation state (element state and attributes) ahead of
     /// an attribute mutation, so that the next style traversal can diff selector matches
-    /// then-vs-now and invalidate the affected elements.
-    pub fn snapshot_node(&mut self, node_id: NodeId) {
-        self.snapshot_node_impl(node_id, true)
+    /// then-vs-now and invalidate the affected elements. `attr` is the attribute about to
+    /// change; it is recorded as changed even if the element does not have it yet.
+    pub fn snapshot_node(&mut self, node_id: NodeId, attr: &LocalName) {
+        self.snapshot_node_impl(node_id, Some(attr))
     }
 
     /// Snapshot only the node's pre-change [`ElementState`] ahead of a state change
     /// (hover/focus/active/etc). Cheaper than [`Self::snapshot_node`] as it does not
     /// copy attributes or trigger attribute/class/id invalidation work.
     pub fn snapshot_node_state_only(&mut self, node_id: NodeId) {
-        self.snapshot_node_impl(node_id, false)
+        self.snapshot_node_impl(node_id, None)
     }
 
-    fn snapshot_node_impl(&mut self, node_id: NodeId, capture_attrs: bool) {
+    fn snapshot_node_impl(&mut self, node_id: NodeId, changed_attr: Option<&LocalName>) {
         let node = &mut self.nodes[node_id];
 
         // Do not snapshot nodes that have never been styled. A snapshot records an element's
@@ -1445,7 +1533,7 @@ impl BaseDocument {
         // semantics): state is captured at most once, and attributes are captured at most
         // once, but a state-only snapshot is upgraded to also capture attributes if an
         // attribute mutation follows.
-        let needs_attrs = capture_attrs
+        let needs_attrs = changed_attr.is_some()
             && self
                 .snapshots
                 .get_mut(&opaque_node_id)
@@ -1482,10 +1570,15 @@ impl BaseDocument {
                     .collect()
             });
 
-            let changed_attrs: Vec<_> = attrs
+            let mut changed_attrs: Vec<_> = attrs
                 .as_ref()
                 .map(|attrs| attrs.iter().map(|attr| attr.0.name.clone()).collect())
                 .unwrap_or_default();
+            if let Some(attr) = changed_attr {
+                if !changed_attrs.iter().any(|name| name.0 == *attr) {
+                    changed_attrs.push(GenericAtomIdent(attr.clone()));
+                }
+            }
 
             (attrs, changed_attrs)
         } else {
@@ -1501,6 +1594,10 @@ impl BaseDocument {
                 snapshot.class_changed = true;
                 snapshot.id_changed = true;
                 snapshot.other_attributes_changed = true;
+            } else if let Some(attr) = changed_attr {
+                if !snapshot.changed_attrs.iter().any(|name| name.0 == *attr) {
+                    snapshot.changed_attrs.push(GenericAtomIdent(attr.clone()));
+                }
             }
         } else {
             self.snapshots.insert(
@@ -1654,7 +1751,13 @@ impl BaseDocument {
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
                 node.blur(shell_provider)
             });
+            for &ancestor in self.node_element_ancestors(id).iter() {
+                self.snapshot_node_and(ancestor, ElementState::FOCUS_WITHIN, |node| {
+                    node.remove_focus_within()
+                });
+            }
             self.focus_node_id = None;
+            self.shell_provider.request_redraw();
         }
     }
 
@@ -1666,6 +1769,10 @@ impl BaseDocument {
             return false;
         };
         if Some(focus_node_id) == self.focus_node_id {
+            return false;
+        }
+        // A node that is not in the document cannot be focused
+        if !self.nodes[focus_node_id].flags.is_in_document() {
             return false;
         }
 
@@ -1688,7 +1795,31 @@ impl BaseDocument {
             |node| node.focus(shell_provider),
         );
 
+        // Update :focus-within on the ancestor chains (shared prefix stays)
+        let old_node_path = self.maybe_node_element_ancestors(self.focus_node_id);
+        let new_node_path = self.node_element_ancestors(focus_node_id);
+        let same_count = old_node_path
+            .iter()
+            .zip(&new_node_path)
+            .take_while(|(o, n)| o == n)
+            .count();
+        for &id in old_node_path.iter().skip(same_count) {
+            self.snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
+                node.remove_focus_within()
+            });
+        }
+        for &id in new_node_path.iter().skip(same_count) {
+            self.snapshot_node_and(id, ElementState::FOCUS_WITHIN, |node| {
+                node.add_focus_within()
+            });
+        }
+
         self.focus_node_id = Some(focus_node_id);
+
+        // The focus is styled (:focus, :focus-visible, :focus-within), so
+        // moving it changes what is on screen. Nothing else asks for the
+        // frame: a keyboard focus change touches no layout and no content.
+        self.shell_provider.request_redraw();
 
         true
     }
@@ -1846,19 +1977,11 @@ impl BaseDocument {
         let hover_node_id = hit_node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
         let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
 
-        let hit_changed =
-            hit_node_id != self.hover_hit_node_id || new_is_text != self.hover_node_is_text;
         self.hover_hit_node_id = hit_node_id;
         self.hover_node_is_text = new_is_text;
 
         // Return early if the new node is the same as the already-hovered node
         if hover_node_id == self.hover_node_id {
-            if hit_changed {
-                // The canonical target is unchanged (so no restyle is needed)
-                // but the precise hit node changed, which can change the cursor
-                // (e.g. moving between text and non-text within one element).
-                self.shell_provider.set_cursor(self.get_cursor());
-            }
             return scrollbar_changed;
         }
 
@@ -1877,9 +2000,6 @@ impl BaseDocument {
         }
 
         self.hover_node_id = hover_node_id;
-
-        // Update the cursor
-        self.shell_provider.set_cursor(self.get_cursor());
 
         // Request redraw
         self.shell_provider.request_redraw();
@@ -1905,9 +2025,6 @@ impl BaseDocument {
         self.hover_node_id = None;
         self.hover_node_is_text = false;
 
-        // Update the cursor
-        self.shell_provider.set_cursor(self.get_cursor());
-
         // Request redraw
         self.shell_provider.request_redraw();
 
@@ -1925,7 +2042,30 @@ impl BaseDocument {
         };
         let x = pos.x + self.viewport_scroll().x as f32;
         let y = pos.y + self.viewport_scroll().y as f32;
-        self.set_hover_to(x, y)
+        let prev_hover = self.hover_state();
+        let changed = self.set_hover_to(x, y);
+        if self.hover_state() != prev_hover {
+            self.update_cursor();
+        }
+        changed
+    }
+
+    /// The hover state that determines the cursor: the hovered node, the precise hit
+    /// node and whether the hit is text
+    pub(crate) fn hover_state(&self) -> (Option<NodeId>, Option<NodeId>, bool) {
+        (
+            self.hover_node_id,
+            self.hover_hit_node_id,
+            self.hover_node_is_text,
+        )
+    }
+
+    /// Send the current cursor to the shell.
+    ///
+    /// Hover updates don't send the cursor themselves: the cursor of a node hosting a
+    /// sub-document is only known once the sub-document has handled the event.
+    pub(crate) fn update_cursor(&self) {
+        self.shell_provider.set_cursor(self.get_cursor());
     }
 
     pub fn get_hover_node_id(&self) -> Option<NodeId> {
@@ -2090,7 +2230,7 @@ impl BaseDocument {
             device.set_root_style(root_style);
 
             let font = root_style.get_font();
-            let font_size = font.clone_font_size().computed_size();
+            let font_size = font.slow_clone_font_size().computed_size();
             device.set_root_font_size(root_style.effective_zoom.unzoom(font_size.px()));
 
             let line_height = device
@@ -2148,20 +2288,26 @@ impl BaseDocument {
         // Prefer the precise hit node: `cursor` and `user-select` may be set on
         // a pseudo-element or resolved on an anonymous box, and text hits carry
         // is_text via the hit node. Fall back to the canonical hover node if
-        // the hit node has been removed (it is transient across resolves).
-        let node_id = self
+        // the hit node has been removed (it is transient across resolves), and
+        // to the default cursor if the pointer is over no box.
+        let Some(node_id) = self
             .hover_hit_node_id
             .filter(|&id| self.nodes.contains_key(id))
-            .or(self.get_hover_node_id())?;
+            .or(self.get_hover_node_id())
+        else {
+            return Some(CursorIcon::Default);
+        };
         let node = &self.nodes[node_id];
 
-        if let Some(subdoc) = node.subdoc().map(|doc| doc.inner()) {
+        if let Some(subdoc) = node.subdoc().map(|doc| doc.inner())
+            && subdoc.get_hover_node_id().is_some()
+        {
             return subdoc.get_cursor();
         }
 
         let style = node.primary_styles()?;
         let user_select = style.clone_user_select();
-        let keyword = style.clone_cursor().keyword;
+        let keyword = style.get_cursor().keyword;
 
         // Return cursor from style if it is non-auto
         if keyword != CursorKind::Auto {
@@ -2176,14 +2322,16 @@ impl BaseDocument {
             return Some(CursorIcon::Text);
         }
 
-        // Use "pointer" cursor if any ancestor is a link
+        // Use "pointer" cursor if any ancestor is a link. Walk DOM parents: an atomic
+        // inline's layout parent is its inline root, which skips the inline elements
+        // (such as `<a>`) between them.
         let mut maybe_node = Some(node);
         while let Some(node) = maybe_node {
             if node.is_link() {
                 return Some(CursorIcon::Pointer);
             }
 
-            maybe_node = node.layout_parent.get().map(|node_id| node.with(node_id));
+            maybe_node = node.parent.map(|node_id| node.with(node_id));
         }
 
         // Return text cursor for text nodes
@@ -2225,40 +2373,41 @@ impl BaseDocument {
         })
     }
 
+    /// `node_id`'s document-relative position and unrounded (sub-pixel) layout in physical
+    /// coordinates, for CSSOM geometry APIs such as `getBoundingClientRect`.
+    #[cfg(not(feature = "writing-mode"))]
+    pub(crate) fn physical_unrounded_geometry(
+        &self,
+        node_id: NodeId,
+    ) -> (crate::util::Point<f32>, taffy::Layout) {
+        let mut pos = crate::util::Point { x: 0.0, y: 0.0 };
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let node = &self.nodes[id];
+            pos.x += node.unrounded_layout().location.x - node.scroll_offset().x as f32;
+            pos.y += node.unrounded_layout().location.y - node.scroll_offset().y as f32;
+            current = node.containing_block();
+        }
+        (pos, *self.nodes[node_id].unrounded_layout())
+    }
+
     /// Computes the size and position of the `Node` relative to the viewport
     pub fn get_client_bounding_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         // Non-atomic inline elements have no layout box of their own: return
         // the union of their per-line-box fragment rects.
         if let Some(rects) = self.inline_fragment_rects(node_id) {
-            let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
-            let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
-            let x1 = rects
-                .iter()
-                .map(|r| r.x + r.width)
-                .fold(f64::NEG_INFINITY, f64::max);
-            let y1 = rects
-                .iter()
-                .map(|r| r.y + r.height)
-                .fold(f64::NEG_INFINITY, f64::max);
-            return match rects.is_empty() {
-                true => None,
-                false => Some(BoundingRect {
-                    x: x0,
-                    y: y0,
-                    width: x1 - x0,
-                    height: y1 - y0,
-                }),
-            };
+            return rects.reduce(BoundingRect::union);
         }
 
-        let node = self.get_node(node_id)?;
-        let pos = node.unrounded_absolute_position(0.0, 0.0);
+        self.get_node(node_id)?;
+        let (pos, layout) = self.physical_unrounded_geometry(node_id);
+        let size = layout.size;
 
         Some(BoundingRect {
             x: snap_to_layout_unit(pos.x as f64 - self.viewport_scroll().x),
             y: snap_to_layout_unit(pos.y as f64 - self.viewport_scroll().y),
-            width: snap_to_layout_unit(node.unrounded_layout().size.width as f64),
-            height: snap_to_layout_unit(node.unrounded_layout().size.height as f64),
+            width: snap_to_layout_unit(size.width as f64),
+            height: snap_to_layout_unit(size.height as f64),
         })
     }
 
@@ -2276,7 +2425,14 @@ impl BaseDocument {
         // Nodes with their own layout box: use it directly
         let Some(rects) = self.inline_fragment_rects(node_id) else {
             let pos = node.offset_top_left();
-            let size = node.final_layout().size;
+            let size = node.unrounded_layout().size;
+            #[cfg(feature = "writing-mode")]
+            let size = match node.containing_block() {
+                Some(parent) if self.nodes[parent].layout_data().writing_mode.is_vertical() => {
+                    size.transpose()
+                }
+                _ => size,
+            };
             return Some(BoundingRect {
                 x: pos.x as f64,
                 y: pos.y as f64,
@@ -2284,26 +2440,14 @@ impl BaseDocument {
                 height: size.height as f64,
             });
         };
-        if rects.is_empty() {
-            return None;
-        }
 
         // Union the per-line-box fragments into a single bounding box
-        let x0 = rects.iter().map(|r| r.x).fold(f64::INFINITY, f64::min);
-        let y0 = rects.iter().map(|r| r.y).fold(f64::INFINITY, f64::min);
-        let x1 = rects
-            .iter()
-            .map(|r| r.x + r.width)
-            .fold(f64::NEG_INFINITY, f64::max);
-        let y1 = rects
-            .iter()
-            .map(|r| r.y + r.height)
-            .fold(f64::NEG_INFINITY, f64::max);
+        let bounds = rects.reduce(BoundingRect::union)?;
 
         // Fragment rects are viewport-relative; convert to document-relative
         let scroll = self.viewport_scroll();
-        let mut x = x0 + scroll.x;
-        let mut y = y0 + scroll.y;
+        let mut x = bounds.x + scroll.x;
+        let mut y = bounds.y + scroll.y;
 
         // Resolve the offsetParent from the inline root (the root itself if it is positioned)
         let inline_root = node.inline_root_ancestor()?;
@@ -2314,8 +2458,8 @@ impl BaseDocument {
         };
         // Make the position relative to the offsetParent's padding edge
         if let Some(parent) = offset_parent.filter(|parent| !parent.is_static_body()) {
-            let parent_pos = parent.unrounded_absolute_position(0.0, 0.0);
-            let border = parent.unrounded_layout().border;
+            let (parent_pos, parent_layout) = self.physical_unrounded_geometry(parent.id);
+            let border = parent_layout.border;
             x -= (parent_pos.x + border.left) as f64;
             y -= (parent_pos.y + border.top) as f64;
         }
@@ -2323,8 +2467,8 @@ impl BaseDocument {
         Some(BoundingRect {
             x,
             y,
-            width: x1 - x0,
-            height: y1 - y0,
+            width: bounds.width,
+            height: bounds.height,
         })
     }
 
@@ -2334,7 +2478,7 @@ impl BaseDocument {
     /// spans within an inline root's text layout) return one rect per line box.
     pub fn node_client_rects(&self, node_id: NodeId) -> Vec<BoundingRect> {
         match self.inline_fragment_rects(node_id) {
-            Some(rects) => rects,
+            Some(rects) => rects.collect(),
             None => self.get_client_bounding_rect(node_id).into_iter().collect(),
         }
     }
@@ -2342,115 +2486,28 @@ impl BaseDocument {
     /// Computes per-line-box fragment rects for a non-atomic inline element by walking
     /// the containing inline root's text layout. Returns `None` for nodes that have
     /// their own layout box (which should use `get_client_bounding_rect` instead).
-    pub fn inline_fragment_rects(&self, node_id: NodeId) -> Option<Vec<BoundingRect>> {
-        use parley::PositionedLayoutItem;
-
+    pub fn inline_fragment_rects(
+        &self,
+        node_id: NodeId,
+    ) -> Option<impl Iterator<Item = BoundingRect> + '_> {
         let node = self.get_node(node_id)?;
 
         // Only non-atomic inline elements lack their own layout box: they are
         // flattened into the containing inline root's text layout as style spans.
-        let element = node.element_data()?;
-        if node.flags.is_inline_root()
-            || crate::layout::replaced::is_inline_box_element(&element.name.local)
-        {
-            return None;
-        }
-        let display = node.primary_styles()?.clone_display();
-        if !(display.outside() == DisplayOutside::Inline && display.inside() == DisplayInside::Flow)
-        {
-            return None;
-        }
-
+        let fragments = node.inline_fragment_boxes()?;
         let inline_root = node.inline_root_ancestor()?;
-        let inline_layout = inline_root.element_data()?.inline_layout_data.as_ref()?;
-        let layout = &inline_layout.layout;
-        let scale = layout.scale() as f64;
 
-        // Walk up the DOM parent chain from `id` to check whether it is (or is
-        // inside) the target node, stopping at the inline root.
-        let is_in_target = |mut id: NodeId| -> bool {
-            loop {
-                if id == node_id {
-                    return true;
-                }
-                if id == inline_root.id {
-                    return false;
-                }
-                match self.get_node(id).and_then(|n| n.parent) {
-                    Some(parent) => id = parent,
-                    None => return false,
-                }
-            }
-        };
+        // Fragment boxes are relative to the inline root's border box.
+        let (root_pos, _) = self.physical_unrounded_geometry(inline_root.id);
+        let origin_x = root_pos.x as f64 - self.viewport_scroll().x;
+        let origin_y = root_pos.y as f64 - self.viewport_scroll().y;
 
-        // Fragment rects are relative to the inline root's content box.
-        let root_layout = inline_root.unrounded_layout();
-        let root_pos = inline_root.unrounded_absolute_position(0.0, 0.0);
-        let origin_x = root_pos.x as f64
-            + (root_layout.padding.left + root_layout.border.left) as f64
-            - self.viewport_scroll().x;
-        let origin_y = root_pos.y as f64
-            + (root_layout.padding.top + root_layout.border.top) as f64
-            - self.viewport_scroll().y;
-
-        let mut rects: Vec<BoundingRect> = Vec::new();
-        for line in layout.lines() {
-            let line_metrics = line.metrics();
-            // Union all of the target's fragments on this line into a single rect
-            let mut line_rect: Option<(f64, f64, f64, f64)> = None;
-            let mut add = |x0: f64, y0: f64, x1: f64, y1: f64| {
-                line_rect = Some(match line_rect {
-                    Some((lx0, ly0, lx1, ly1)) => {
-                        (lx0.min(x0), ly0.min(y0), lx1.max(x1), ly1.max(y1))
-                    }
-                    None => (x0, y0, x1, y1),
-                });
-            };
-
-            for item in line.items() {
-                match item {
-                    PositionedLayoutItem::GlyphRun(glyph_run) => {
-                        if !is_in_target(glyph_run.style().brush.id) {
-                            continue;
-                        }
-                        let x0 = glyph_run.offset() as f64;
-                        let x1 = x0 + glyph_run.advance() as f64;
-                        // Use the line box's block extent rather than the
-                        // run's font ascent/descent: fonts with small
-                        // typographic metrics would otherwise produce rects
-                        // that clip the rendered glyphs. This matches the
-                        // geometry used for text selection highlights.
-                        let y0 = line_metrics.block_min_coord as f64;
-                        let y1 = line_metrics.block_max_coord as f64;
-                        add(x0, y0, x1, y1);
-                    }
-                    PositionedLayoutItem::InlineBox(inline_box) => {
-                        if !is_in_target(NodeId::from_u64(inline_box.id)) {
-                            continue;
-                        }
-                        let x0 = inline_box.x as f64;
-                        let y0 = inline_box.y as f64;
-                        add(
-                            x0,
-                            y0,
-                            x0 + inline_box.width as f64,
-                            y0 + inline_box.height as f64,
-                        );
-                    }
-                }
-            }
-
-            if let Some((x0, y0, x1, y1)) = line_rect {
-                rects.push(BoundingRect {
-                    x: snap_to_layout_unit(origin_x + x0 / scale),
-                    y: snap_to_layout_unit(origin_y + y0 / scale),
-                    width: snap_to_layout_unit((x1 - x0) / scale),
-                    height: snap_to_layout_unit((y1 - y0) / scale),
-                });
-            }
-        }
-
-        Some(rects)
+        Some(fragments.map(move |rect| BoundingRect {
+            x: snap_to_layout_unit(origin_x + rect.left as f64),
+            y: snap_to_layout_unit(origin_y + rect.top as f64),
+            width: snap_to_layout_unit((rect.right - rect.left) as f64),
+            height: snap_to_layout_unit((rect.bottom - rect.top) as f64),
+        }))
     }
 
     /// The first element in tree order with the given tag name. The root element and
@@ -2821,6 +2878,20 @@ pub struct BoundingRect {
     pub height: f64,
 }
 
+impl BoundingRect {
+    /// The smallest rect containing both `self` and `other`.
+    pub fn union(self, other: BoundingRect) -> BoundingRect {
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        BoundingRect {
+            x,
+            y,
+            width: (self.x + self.width).max(other.x + other.width) - x,
+            height: (self.y + self.height).max(other.y + other.height) - y,
+        }
+    }
+}
+
 /// Snap a CSSOM geometry value to a 1/64px grid (the precision of Blink's `LayoutUnit`).
 /// Layout values are accumulated in `f32`, so e.g. seven `55/7`-wide flex items would
 /// otherwise end at `55.0000005` and appear to overflow their 55px container.
@@ -2965,6 +3036,16 @@ mod hover_state_tests {
         assert_eq!(doc.get_hover_node_id(), Some(container));
         assert_eq!(doc.get_cursor(), Some(CursorIcon::Default));
     }
+
+    /// Hovering below the content hits no box: default cursor (`None` would hide it).
+    #[test]
+    fn hovering_below_content_reports_default_cursor() {
+        let (mut doc, _) = make_doc();
+
+        doc.set_hover_to(5.0, 250.0);
+        assert_eq!(doc.get_hover_node_id(), None);
+        assert_eq!(doc.get_cursor(), Some(CursorIcon::Default));
+    }
 }
 
 #[cfg(test)]
@@ -2980,9 +3061,10 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = UserAgentStylesheet::parse(
             "div:hover { background-color: rgb(255, 0, 0); } div:hover span { color: rgb(0, 255, 0); }",
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let style = |value: &str| Attribute {
             name: qual_name!("style"),
@@ -3067,9 +3149,10 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = UserAgentStylesheet::parse(
             ".promo:link:hover .headline, .promo:visited:hover .headline { color: rgb(184, 0, 0); text-decoration-line: underline; }",
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let attr = |name: QualName, value: &str| Attribute {
             name,
@@ -3136,9 +3219,10 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = UserAgentStylesheet::parse(
             "input:checked { color: rgb(184, 0, 0); } input:checked + label { color: rgb(0, 184, 0); }",
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let attr = |name: QualName, value: &str| Attribute {
             name,
@@ -3215,10 +3299,11 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = UserAgentStylesheet::parse(
             "div::before { content: \"x\"; color: rgb(1, 2, 3); } \
              div:hover::before { color: rgb(0, 0, 255); }",
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let style = |value: &str| Attribute {
             name: qual_name!("style"),
@@ -3271,10 +3356,11 @@ mod hover_invalidation_tests {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
         });
-        doc.add_user_agent_stylesheet(
+        let sheet = UserAgentStylesheet::parse(
             "div { background-image: url(\"https://example.com/a.png\"); } \
              div:hover { background-image: url(\"https://example.com/b.png\"); }",
         );
+        doc.add_user_agent_stylesheet(sheet);
         let root_id = doc.root_node().id;
         let style = |value: &str| Attribute {
             name: qual_name!("style"),
@@ -3325,6 +3411,243 @@ mod hover_invalidation_tests {
             Some("https://example.com/a.png"),
             "unhover should flush the restored background image"
         );
+    }
+}
+
+#[cfg(test)]
+mod picture_display_tests {
+    use super::*;
+    use crate::qual_name;
+    use blitz_traits::shell::ColorScheme;
+
+    /// `<picture>` must generate a box (inline, as in browsers): the
+    /// aspect-ratio wrapper pattern relies on it for its absolutely positioned
+    /// child. `display: contents` would leave the `<img>` in flow instead.
+    #[test]
+    fn picture_is_not_display_contents() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let picture = mutator.create_element(qual_name!("picture"), vec![]);
+        mutator.append_children(body, &[picture]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        let display = doc.nodes[picture]
+            .primary_styles()
+            .expect("picture should be styled")
+            .get_box()
+            .display;
+        assert!(!display.is_contents());
+    }
+}
+
+#[cfg(test)]
+mod inline_with_only_block_children_tests {
+    use super::*;
+    use crate::qual_name;
+    use blitz_traits::shell::ColorScheme;
+
+    #[test]
+    fn inline_with_only_block_children_is_detected() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            "html, body, div { display: block } b { display: contents }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        mutator.append_children(root_id, &[html]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        mutator.append_children(html, &[body]);
+
+        let inline_with_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_block]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(inline_with_block, &[block_child]);
+
+        let inline_with_whitespace_and_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_whitespace_and_block]);
+        let whitespace = mutator.create_text_node("\n  ");
+        mutator.append_children(inline_with_whitespace_and_block, &[whitespace]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(inline_with_whitespace_and_block, &[block_child]);
+
+        let inline_with_text_and_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_text_and_block]);
+        let text = mutator.create_text_node("text");
+        mutator.append_children(inline_with_text_and_block, &[text]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(inline_with_text_and_block, &[block_child]);
+
+        // The nested span is itself laid out as a block box, so the outer span has
+        // block-level content only. Chrome paints nothing for the outer span either.
+        let inline_with_nested_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_nested_block]);
+        let nested_inline = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(inline_with_nested_block, &[nested_inline]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(nested_inline, &[block_child]);
+
+        let inline_with_comment_and_block = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_comment_and_block]);
+        let comment = mutator.create_comment_node("comment");
+        mutator.append_children(inline_with_comment_and_block, &[comment]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(inline_with_comment_and_block, &[block_child]);
+
+        let inline_with_contents_text_and_block =
+            mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_contents_text_and_block]);
+        let contents = mutator.create_element(qual_name!("b"), vec![]);
+        mutator.append_children(inline_with_contents_text_and_block, &[contents]);
+        let text = mutator.create_text_node("text");
+        mutator.append_children(contents, &[text]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(inline_with_contents_text_and_block, &[block_child]);
+
+        let inline_with_text = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[inline_with_text]);
+        let text = mutator.create_text_node("text");
+        mutator.append_children(inline_with_text, &[text]);
+
+        let empty_inline = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[empty_inline]);
+
+        let block_with_block = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(body, &[block_with_block]);
+        let nested_block = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(block_with_block, &[nested_block]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        assert!(doc.nodes[inline_with_block].is_inline_with_only_block_children());
+        assert!(doc.nodes[inline_with_whitespace_and_block].is_inline_with_only_block_children());
+        assert!(!doc.nodes[inline_with_text_and_block].is_inline_with_only_block_children());
+        assert!(doc.nodes[inline_with_nested_block].is_inline_with_only_block_children());
+        assert!(doc.nodes[inline_with_comment_and_block].is_inline_with_only_block_children());
+        assert!(
+            !doc.nodes[inline_with_contents_text_and_block].is_inline_with_only_block_children()
+        );
+        assert!(!doc.nodes[inline_with_text].is_inline_with_only_block_children());
+        assert!(!doc.nodes[empty_inline].is_inline_with_only_block_children());
+        assert!(!doc.nodes[block_with_block].is_inline_with_only_block_children());
+    }
+
+    #[test]
+    fn inline_with_only_block_children_follows_child_edits() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            "html, body, div { display: block }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        mutator.append_children(root_id, &[html]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        mutator.append_children(html, &[body]);
+        let span = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[span]);
+        let text = mutator.create_text_node("text");
+        mutator.append_children(span, &[text]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(span, &[block_child]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(!doc.nodes[span].is_inline_with_only_block_children());
+
+        let mut mutator = doc.mutate();
+        mutator.remove_and_drop_node(text);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(doc.nodes[span].is_inline_with_only_block_children());
+
+        let mut mutator = doc.mutate();
+        let inline_child = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(span, &[inline_child]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(!doc.nodes[span].is_inline_with_only_block_children());
+    }
+
+    #[test]
+    fn inline_with_only_block_children_follows_text_edits() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            "html, body, div { display: block }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        mutator.append_children(root_id, &[html]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        mutator.append_children(html, &[body]);
+        let span = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[span]);
+        let whitespace = mutator.create_text_node("\n  ");
+        mutator.append_children(span, &[whitespace]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(span, &[block_child]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(doc.nodes[span].is_inline_with_only_block_children());
+
+        let mut mutator = doc.mutate();
+        mutator.append_text_to_node(whitespace, "x").unwrap();
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(!doc.nodes[span].is_inline_with_only_block_children());
+    }
+
+    #[test]
+    fn inline_with_only_block_children_follows_contents_descendant_edits() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        doc.add_user_agent_stylesheet(crate::UserAgentStylesheet::parse(
+            "html, body, div { display: block } b { display: contents }",
+        ));
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        mutator.append_children(root_id, &[html]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        mutator.append_children(html, &[body]);
+        let span = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[span]);
+        let contents = mutator.create_element(qual_name!("b"), vec![]);
+        mutator.append_children(span, &[contents]);
+        let block_in_contents = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(contents, &[block_in_contents]);
+        let block_child = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(span, &[block_child]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(doc.nodes[span].is_inline_with_only_block_children());
+
+        let mut mutator = doc.mutate();
+        let text = mutator.create_text_node("text");
+        mutator.append_children(contents, &[text]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(!doc.nodes[span].is_inline_with_only_block_children());
     }
 }
 

@@ -38,34 +38,34 @@ pub struct Tab {
 
 #[store(pub)]
 impl<Lens> Store<Tab, Lens> {
-    fn nav_history(&self) -> SyncStore<History> {
+    pub(crate) fn nav_history(&self) -> SyncStore<History> {
         *self.history().read()
     }
 
-    fn loader_rc(&self) -> Rc<DocumentLoader> {
+    pub(crate) fn loader_rc(&self) -> Rc<DocumentLoader> {
         // `open_tab` always assigns Some(loader) immediately after pushing the
         // tab, so by the time any view code can call this the loader is set.
         #[allow(clippy::expect_used)]
         self.loader().cloned().expect("loader uninitialized")
     }
 
-    fn tab_id(&self) -> TabId {
+    pub(crate) fn tab_id(&self) -> TabId {
         *self.id().read()
     }
 
-    fn navigate(&self, req: Request) {
+    pub(crate) fn navigate(&self, req: Request) {
         self.nav_history().navigate(req);
     }
 
-    fn reload(&self) {
+    pub(crate) fn reload(&self) {
         self.loader_rc().reload();
     }
 
-    fn go_back(&self) {
+    pub(crate) fn go_back(&self) {
         self.nav_history().go_back();
     }
 
-    fn go_forward(&self) {
+    pub(crate) fn go_forward(&self) {
         self.nav_history().go_forward();
     }
 
@@ -73,7 +73,7 @@ impl<Lens> Store<Tab, Lens> {
     // through the document loader, so this is the only place their title is
     // set and the only place a stale favicon from a previous real page gets
     // cleared.
-    fn commit_about_chrome(&self, page: AboutPage)
+    pub(crate) fn commit_about_chrome(&self, page: AboutPage)
     where
         Lens: Writable,
     {
@@ -127,7 +127,13 @@ pub fn active_tab(tabs: Store<Vec<Tab>>, active_id: TabId) -> Store<Tab> {
 // a render can't sample a half-applied state where the new document is showing
 // under the previous page's icon; the favicon is refilled asynchronously by
 // the spawned probe.
-fn commit_loaded_document(tab: Store<Tab>, history: HistoryService, loaded: LoadedDocument) {
+fn commit_loaded_document<Lens>(
+    tab: Store<Tab, Lens>,
+    history: HistoryService,
+    loaded: LoadedDocument,
+) where
+    Lens: Writable<Target = Tab> + Copy + 'static,
+{
     let page_url = tab.nav_history().current_url().read().url.clone();
     let candidate = loaded.favicon_candidate.clone();
 
@@ -168,7 +174,12 @@ fn commit_loaded_document(tab: Store<Tab>, history: HistoryService, loaded: Load
 }
 
 #[component]
-pub fn TabWebView(tab: Store<Tab>, active_tab_id: Signal<TabId>) -> Element {
+pub fn TabWebView(tabs: Store<Vec<Tab>>, tab_id: TabId, active_tab_id: Signal<TabId>) -> Element {
+    #[allow(clippy::expect_used)]
+    let tab = tabs
+        .iter()
+        .find(|tab| tab.tab_id() == tab_id)
+        .expect("tab exists while mounted");
     let about = use_memo(move || AboutPage::from_url(&tab.nav_history().current_url().read().url));
 
     let loader = tab.loader_rc();
@@ -278,5 +289,55 @@ pub fn Favicon(url: Option<Url>, class: &'static str) -> Element {
                 alt: "",
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dioxus_core::Properties;
+
+    use super::*;
+
+    #[test]
+    fn tab_lens_survives_webview_props_replacement() {
+        fn app() -> Element {
+            let tabs = use_store(|| {
+                vec![Tab {
+                    id: 0,
+                    history: Store::new_maybe_sync(History::new(Request::get(
+                        Url::parse("https://example.com").unwrap(),
+                    ))),
+                    loader: None,
+                    document: None,
+                    node_handle: None,
+                    html_source: String::new(),
+                    title: String::new(),
+                    favicon_url: None,
+                }]
+            });
+            let active_tab_id = use_signal(|| 0);
+            let props = || TabWebViewProps {
+                tabs,
+                tab_id: 0,
+                active_tab_id,
+            };
+            let mut initial = props();
+            let captured_tab = initial.tabs.iter().next().unwrap();
+            let replacement = props();
+            initial.memoize(&replacement);
+            drop(replacement);
+
+            // Resources and favicon tasks retain the lens across parent renders.
+            assert_eq!(
+                captured_tab.nav_history().current_url().read().url.as_str(),
+                "https://example.com/"
+            );
+            *captured_tab.favicon_url().write() =
+                Some(Url::parse("https://example.com/favicon.ico").unwrap());
+            assert!(tabs.iter().next().unwrap().favicon_url().read().is_some());
+            VNode::empty()
+        }
+
+        VirtualDom::new(app).rebuild_in_place();
     }
 }

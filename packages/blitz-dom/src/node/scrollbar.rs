@@ -4,6 +4,7 @@
 
 use blitz_traits::node_id::NodeId;
 use kurbo::Rect as KurboRect;
+use stylo_taffy::CopyStyleGetters;
 use taffy::AbsoluteAxis;
 use web_time::Duration;
 
@@ -62,7 +63,7 @@ impl Node {
             return ScrollbarColor::Auto;
         };
         let current_color = style.clone_color();
-        match style.clone_scrollbar_color() {
+        match style.get_scrollbar_color() {
             style::values::computed::ScrollbarColor::Auto => ScrollbarColor::Auto,
             style::values::computed::ScrollbarColor::Colors { thumb, track } => {
                 ScrollbarColor::Colors {
@@ -88,11 +89,11 @@ impl Node {
         let (overflow, scroll_extent) = match axis {
             AbsoluteAxis::Horizontal => (
                 style.clone_overflow_x(),
-                self.final_layout().scroll_width() as f64,
+                (self.scroll_width() - self.client_width()) as f64,
             ),
             AbsoluteAxis::Vertical => (
                 style.clone_overflow_y(),
-                self.final_layout().scroll_height() as f64,
+                (self.scroll_height() - self.client_height()) as f64,
             ),
         };
         match overflow {
@@ -125,10 +126,10 @@ impl Node {
         const THUMB_MARGIN: f64 = 2.0;
         const MIN_THUMB_LENGTH: f64 = 32.0;
 
-        let layout = self.final_layout();
-        let scroll_extent = match axis {
-            AbsoluteAxis::Horizontal => layout.scroll_width() as f64,
-            AbsoluteAxis::Vertical => layout.scroll_height() as f64,
+        let (min, max) = self.scroll_range();
+        let (scroll_extent, scroll_min) = match axis {
+            AbsoluteAxis::Horizontal => (max.x - min.x, min.x),
+            AbsoluteAxis::Vertical => (max.y - min.y, min.y),
         };
         if scroll_extent <= 0.5 {
             return None;
@@ -147,7 +148,7 @@ impl Node {
         let thumb_len = (viewport_len * viewport_len / (viewport_len + scroll_extent))
             .max(MIN_THUMB_LENGTH)
             .min(viewport_len);
-        let progress = (scroll_offset / scroll_extent).clamp(0.0, 1.0);
+        let progress = ((scroll_offset - scroll_min) / scroll_extent).clamp(0.0, 1.0);
         // Round a sub-pixel displacement up to a whole pixel so any nonzero
         // scroll visibly moves the thumb off the origin.
         let thumb_start = match progress * (viewport_len - thumb_len) {
@@ -179,12 +180,12 @@ impl Node {
         let port = self.scrollport();
         let (scroll_extent, viewport_len, thumb_len) = match axis {
             AbsoluteAxis::Horizontal => (
-                self.final_layout().scroll_width() as f64,
+                (self.scroll_width() - self.client_width()) as f64,
                 port.width(),
                 thumb.width(),
             ),
             AbsoluteAxis::Vertical => (
-                self.final_layout().scroll_height() as f64,
+                (self.scroll_height() - self.client_height()) as f64,
                 port.height(),
                 thumb.height(),
             ),

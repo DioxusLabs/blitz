@@ -3,6 +3,7 @@
 use html_escape::{encode_quoted_attribute_to_string, encode_text_to_string};
 use markup5ever::{QualName, ns};
 use style_traits::values::ToCss;
+use stylo_taffy::CopyStyleGetters;
 
 use super::{Node, NodeData};
 

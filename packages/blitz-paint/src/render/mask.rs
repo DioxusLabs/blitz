@@ -16,8 +16,8 @@
 //! `background-*` properties share computed value types.
 use crate::render::background::get_cyclic;
 
-use super::ElementCx;
 use super::background::ImageLayerStyles;
+use super::{ALMOST_OPAQUE, ElementCx};
 use anyrender::PaintScene;
 use peniko::{BlendMode, Compose, Fill, Mix};
 use style::properties::generated::longhands::mask_composite::single_value::computed_value::T as StyloMaskComposite;
@@ -25,14 +25,6 @@ use style::values::generics::image::GenericImage;
 
 #[cfg(feature = "tracing")]
 use tracing::warn;
-
-/// An opacity just below 1.0, used to force the renderer to allocate an isolated
-/// buffer for the mask isolation layer. Renderers (e.g. vello_cpu) may optimize
-/// layers with `Mix::Normal`/`Compose::SrcOver` and an opacity of exactly 1.0 into
-/// plain non-isolated clip layers, in which case the `Compose::DestIn` mask
-/// compositing would erase the backdrop behind the element rather than just the
-/// element's own content.
-const ALMOST_OPAQUE: f32 = 1.0 - f32::EPSILON;
 
 impl ElementCx<'_, '_> {
     /// Whether the element has any CSS `mask-image` layers

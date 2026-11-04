@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   RUSTDOCFLAGS: "-D warnings"
@@ -35,19 +35,11 @@ jobs:
           cache-workspace-crates: "true"
           cache-provider: "warpbuild"
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The cached tarball is workspace-relative and the WarpBuild arm64 runner uses
-      # /runner/_work instead of /home/runner/work, so entries created on GitHub-hosted
-      # runners extract to the wrong place and "restore" 0 packages. Including the runner
-      # label in `version` (the only user-controlled part of the cache key) keeps the
-      # cache entries separate per runner image.
       # fonts-tlwg-loma-otf provides a Thai font; some WPT reftests (e.g.
       # css/css-text/i18n/css3-text-line-break-opclns-201.html) depend on Thai glyphs
       # rendering at a realistic width rather than as a narrow .notdef box.
       - name: Install Fontconfig and fonts
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libfontconfig1-dev fonts-tlwg-loma-otf
-          version: 1.0-warp-ubuntu-latest-arm64-16x
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev fonts-tlwg-loma-otf
       - name: Clone WPT tests
         run: git clone --depth 1 --revision "$(cat ./wpt/WPT_COMMIT)" https://github.com/web-platform-tests/wpt ./wpt/tests
       - name: Build WPT runner
@@ -77,12 +69,13 @@ jobs:
       - name: Diff WPT results
         run: |
           wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json | tee ./wpt/output/wptdiff.txt
-          wpt diff --format json ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptdiff.json
+          wpt diff --verbose --format json ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptdiff.json
+          python3 ./.github/scripts/wpt_area_changes.py ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptareas.json
       - name: Render results in step summary
         if: github.event_name == 'pull_request'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python3 ./.github/scripts/wpt_diff_to_pr.py --dry-run ./wpt/output/wptdiff.json
+        run: python3 ./.github/scripts/wpt_diff_to_pr.py --dry-run --areas ./wpt/output/wptareas.json ./wpt/output/wptdiff.json
       - name: Upload WPT diff
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
@@ -91,6 +84,7 @@ jobs:
           path: |
             ./wpt/output/wptdiff.txt
             ./wpt/output/wptdiff.json
+            ./wpt/output/wptareas.json
       - name: Setup Github Pages
         if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v6

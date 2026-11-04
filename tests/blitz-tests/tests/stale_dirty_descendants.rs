@@ -19,6 +19,7 @@
 //! leaving `:hover` styles unapplied until unrelated damage happened to
 //! sweep the stale bits.
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};

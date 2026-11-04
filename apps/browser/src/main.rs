@@ -189,7 +189,8 @@ fn app() -> Element {
             for tab in tabs.iter() {
                 TabWebView {
                     key: "{tab.tab_id()}",
-                    tab,
+                    tabs,
+                    tab_id: tab.tab_id(),
                     active_tab_id,
                 }
             }

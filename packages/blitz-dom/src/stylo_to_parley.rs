@@ -22,11 +22,11 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::OverflowWrap;
     pub(crate) use style::values::computed::WordBreak;
     pub(crate) use style::values::computed::font::FontFeatureSettings;
+    pub(crate) use style::values::computed::font::FontOpticalSizing;
     pub(crate) use style::values::computed::font::FontStyle;
     pub(crate) use style::values::computed::font::FontVariantEastAsian;
     pub(crate) use style::values::computed::font::FontVariantLigatures;
     pub(crate) use style::values::computed::font::FontVariantNumeric;
-    pub(crate) use style::values::computed::font::FontVariationSettings;
     pub(crate) use style::values::computed::font::FontWeight;
     pub(crate) use style::values::computed::font::FontWidth;
     pub(crate) use style::values::computed::font::GenericFontFamily;
@@ -100,15 +100,28 @@ pub(crate) fn font_style(input: stylo::FontStyle) -> parley::FontStyle {
     }
 }
 
-pub(crate) fn font_variations(input: &stylo::FontVariationSettings) -> Vec<parley::FontVariation> {
-    input
-        .0
-        .iter()
-        .map(|v| parley::FontVariation {
-            tag: parley::Tag::from_bytes(v.tag.0.to_be_bytes()),
-            value: v.value,
-        })
-        .collect()
+/// Converts `font-variation-settings`, adding an `opsz` axis value equal to the font size in CSS
+/// pixels when `font-optical-sizing` is `auto` (as browsers do), unless `opsz` is set explicitly.
+pub(crate) fn font_variations(
+    font_styles: &stylo::Font,
+    font_size: f32,
+) -> Vec<parley::FontVariation> {
+    const OPSZ: parley::Tag = parley::Tag::new(b"opsz");
+    let settings = &font_styles.font_variation_settings.0;
+    let auto_opsz = font_styles.font_optical_sizing == stylo::FontOpticalSizing::Auto
+        && !settings.iter().any(|v| v.tag.0.to_be_bytes() == *b"opsz");
+    let mut variations = Vec::with_capacity(settings.len() + usize::from(auto_opsz));
+    if auto_opsz {
+        variations.push(parley::FontVariation {
+            tag: OPSZ,
+            value: font_size,
+        });
+    }
+    variations.extend(settings.iter().map(|v| parley::FontVariation {
+        tag: parley::Tag::from_bytes(v.tag.0.to_be_bytes()),
+        value: v.value,
+    }));
+    variations
 }
 
 #[inline]
@@ -177,6 +190,17 @@ pub(crate) fn font_variant_caps(input: stylo::FontVariantCaps, out: &mut Vec<par
     match input {
         stylo::FontVariantCaps::Normal => {}
         stylo::FontVariantCaps::SmallCaps => out.push(feature(b"smcp", 1)),
+        stylo::FontVariantCaps::AllSmallCaps => {
+            out.push(feature(b"smcp", 1));
+            out.push(feature(b"c2sc", 1));
+        }
+        stylo::FontVariantCaps::PetiteCaps => out.push(feature(b"pcap", 1)),
+        stylo::FontVariantCaps::AllPetiteCaps => {
+            out.push(feature(b"pcap", 1));
+            out.push(feature(b"c2pc", 1));
+        }
+        stylo::FontVariantCaps::Unicase => out.push(feature(b"unic", 1)),
+        stylo::FontVariantCaps::TitlingCaps => out.push(feature(b"titl", 1)),
     }
 }
 
@@ -342,6 +366,8 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
 
         stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::PreserveBreaks,
         stylo::WhiteSpaceCollapse::BreakSpaces => parley::WhiteSpaceCollapse::BreakSpaces,
+        // Parley has no mode that preserves spaces but converts segment breaks to spaces
+        stylo::WhiteSpaceCollapse::PreserveSpaces => parley::WhiteSpaceCollapse::Preserve,
     }
 }
 
@@ -351,13 +377,13 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
 /// Percentages are resolved against the element's own `line-height`.
 pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalAlign {
     let box_styles = style.get_box();
-    let alignment = match box_styles.clone_alignment_baseline() {
+    let alignment = match box_styles.slow_clone_alignment_baseline() {
         stylo::AlignmentBaseline::Baseline => parley::AlignmentBaseline::Baseline,
         stylo::AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
         stylo::AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
         stylo::AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
     };
-    let shift = match box_styles.clone_baseline_shift() {
+    let shift = match box_styles.get_baseline_shift() {
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Sub) => {
             parley::BaselineShift::Sub
         }
@@ -427,7 +453,7 @@ pub(crate) fn style(
     let font_weight = self::font_weight(font_styles.font_weight);
     let font_style = self::font_style(font_styles.font_style);
     let font_width = self::font_width(font_styles.font_width);
-    let font_variations = self::font_variations(&font_styles.font_variation_settings);
+    let font_variations = self::font_variations(font_styles, font_size);
     let font_features = self::font_features(font_styles);
 
     // Convert font family
@@ -469,6 +495,7 @@ pub(crate) fn style(
         stylo::WordBreak::Normal => parley::WordBreak::Normal,
         stylo::WordBreak::BreakAll => parley::WordBreak::BreakAll,
         stylo::WordBreak::KeepAll => parley::WordBreak::KeepAll,
+        stylo::WordBreak::BreakWord => parley::WordBreak::Normal,
     };
     let line_break = match itext_styles.line_break {
         stylo::LineBreak::Loose => parley::LineBreak::Loose,
@@ -476,7 +503,11 @@ pub(crate) fn style(
         stylo::LineBreak::Auto | stylo::LineBreak::Strict => parley::LineBreak::Strict,
         stylo::LineBreak::Anywhere => parley::LineBreak::Anywhere,
     };
+    // `word-break: break-word` implies `overflow-wrap: anywhere`
     let overflow_wrap = match itext_styles.overflow_wrap {
+        _ if itext_styles.word_break == stylo::WordBreak::BreakWord => {
+            parley::OverflowWrap::Anywhere
+        }
         stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
         stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
         stylo::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
@@ -542,8 +573,7 @@ mod tests {
                     tag: FontTag(u32::from_be_bytes(**tag)),
                     value: *value,
                 })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+                .collect(),
         )
     }
 

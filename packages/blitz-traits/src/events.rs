@@ -64,11 +64,14 @@ pub enum UiEvent {
     PointerUp(BlitzPointerEvent),
     PointerDown(BlitzPointerEvent),
     PointerCancel(BlitzPointerEvent),
+    /// The pointer has left the document (e.g. it moved out of the window)
+    PointerLeave(BlitzPointerEvent),
     Wheel(BlitzWheelEvent),
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     Ime(BlitzImeEvent),
     AppleStandardKeybinding(SmolStr),
+    Paste(String),
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {

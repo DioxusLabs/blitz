@@ -3,7 +3,7 @@ use blitz_traits::{
     node_id::NodeId,
     shell::ShellProvider,
 };
-use keyboard_types::{Key, Modifiers};
+use keyboard_types::{Key, Modifiers, NamedKey};
 use parley::{ContentWidths, FontContext, LayoutContext};
 
 use crate::util::ACTION_MOD;
@@ -26,6 +26,17 @@ pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
+    /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
+    /// box, as applied by `align-content`.
+    pub block_offset: f32,
+    /// The out-of-flow positions for which some inline span with an inline box below it is a
+    /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
+    /// Set by each `RunMode::PerformLayout` run of inline layout.
+    pub span_cb_flags: stylo_taffy::StyleFlags,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 impl TextLayout {
@@ -65,6 +76,10 @@ pub struct TextInputData {
     /// vertical offset. It is kept up to date so that the caret remains visible within the
     /// input's content box.
     pub scroll_offset: f32,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 // FIXME: Implement Clone for PlainEditor
@@ -81,6 +96,7 @@ impl TextInputData {
             editor,
             is_multiline,
             scroll_offset: 0.0,
+            content_box_subpixel_offset: taffy::Point::ZERO,
         }
     }
 
@@ -226,8 +242,8 @@ impl TextInputData {
                         }
                     }
                     "v" => {
-                        let text = shell_provider.get_clipboard_text().unwrap_or_default();
-                        driver.insert_or_replace_selection(&text)
+                        let _ = shell_provider.request_clipboard_text();
+                        return None;
                     }
                     _ => unreachable!(),
                 }
@@ -242,7 +258,7 @@ impl TextInputData {
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
-            Key::ArrowLeft => {
+            Key::Named(NamedKey::ArrowLeft) => {
                 if action_mod {
                     if shift {
                         driver.select_word_left()
@@ -256,7 +272,7 @@ impl TextInputData {
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
-            Key::ArrowRight => {
+            Key::Named(NamedKey::ArrowRight) => {
                 if action_mod {
                     if shift {
                         driver.select_word_right()
@@ -270,7 +286,7 @@ impl TextInputData {
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
-            Key::ArrowUp => {
+            Key::Named(NamedKey::ArrowUp) => {
                 if shift {
                     driver.select_up()
                 } else {
@@ -278,7 +294,7 @@ impl TextInputData {
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
-            Key::ArrowDown => {
+            Key::Named(NamedKey::ArrowDown) => {
                 if shift {
                     driver.select_down()
                 } else {
@@ -286,7 +302,7 @@ impl TextInputData {
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
-            Key::Home => {
+            Key::Named(NamedKey::Home) => {
                 if action_mod {
                     if shift {
                         driver.select_to_text_start()
@@ -300,7 +316,7 @@ impl TextInputData {
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
-            Key::End => {
+            Key::Named(NamedKey::End) => {
                 if action_mod {
                     if shift {
                         driver.select_to_text_end()
@@ -314,7 +330,7 @@ impl TextInputData {
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
-            Key::Delete => {
+            Key::Named(NamedKey::Delete) => {
                 if action_mod {
                     driver.delete_word()
                 } else {
@@ -325,7 +341,7 @@ impl TextInputData {
 
             // On macOS this is handled by the apple standard keybindings
             #[cfg(not(target_os = "macos"))]
-            Key::Backspace => {
+            Key::Named(NamedKey::Backspace) => {
                 if action_mod {
                     driver.backdelete_word()
                 } else {
@@ -342,7 +358,7 @@ impl TextInputData {
                     return Some(GeneratedTextInputEvent::Submit);
                 }
             }
-            Key::Enter => {
+            Key::Named(NamedKey::Enter) => {
                 if is_multiline {
                     driver.insert_or_replace_selection("\n");
                     return Some(GeneratedTextInputEvent::Input);
@@ -351,7 +367,7 @@ impl TextInputData {
                 }
             }
             Key::Character(s)
-                if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::SUPER) =>
+                if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::META) =>
             {
                 driver.insert_or_replace_selection(&s);
                 return Some(GeneratedTextInputEvent::Input);
@@ -772,6 +788,7 @@ impl TextInputData {
                 Some(GeneratedTextInputEvent::PreEditChange)
             }
             BlitzImeEvent::Commit(text) => {
+                driver.clear_compose();
                 driver.insert_or_replace_selection(&text);
                 Some(GeneratedTextInputEvent::Input)
             }
@@ -793,5 +810,45 @@ impl TextInputData {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ime_commit_replaces_preedit() {
+        for committed in ["完成", ""] {
+            for cursor in [Some((3, 3)), None] {
+                let mut input = TextInputData::new(false);
+                let mut font_ctx = FontContext::new();
+                let mut layout_ctx = LayoutContext::new();
+                input.apply_ime_event(
+                    &mut font_ctx,
+                    &mut layout_ctx,
+                    BlitzImeEvent::Preedit("仮".into(), cursor),
+                );
+                input.apply_ime_event(
+                    &mut font_ctx,
+                    &mut layout_ctx,
+                    BlitzImeEvent::Commit(committed.into()),
+                );
+                assert_eq!(input.editor.text(), committed);
+                input.apply_ime_event(&mut font_ctx, &mut layout_ctx, BlitzImeEvent::Disabled);
+                assert_eq!(input.editor.text(), committed);
+            }
+        }
+    }
+
+    #[test]
+    fn ime_commit_without_preedit() {
+        let mut input = TextInputData::new(false);
+        input.apply_ime_event(
+            &mut FontContext::new(),
+            &mut LayoutContext::new(),
+            BlitzImeEvent::Commit("text".into()),
+        );
+        assert_eq!(input.editor.text(), "text");
     }
 }

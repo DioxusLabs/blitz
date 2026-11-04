@@ -7,6 +7,7 @@
 //! incremental layout enabled the popup appeared but never animated, and its
 //! text stayed at the transition's start color (transparent).
 
+use blitz_dom::CopyStyleGetters;
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};

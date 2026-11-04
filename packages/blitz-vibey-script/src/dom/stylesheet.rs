@@ -20,6 +20,8 @@ pub(crate) fn register(context: &mut Context) {
         ("__blitz_stylesheet_owner_nodes", 0, owner_nodes),
         ("__blitz_node_has_stylesheet", 1, node_has_stylesheet),
         ("__blitz_stylesheet_generation", 0, stylesheet_generation),
+        ("__blitz_sheet_disabled", 1, sheet_disabled),
+        ("__blitz_sheet_set_disabled", 2, sheet_set_disabled),
         ("__blitz_sheet_rule_count", 2, rule_count),
         ("__blitz_sheet_rule_info", 2, rule_info),
         ("__blitz_sheet_insert_rule", 4, insert_rule),
@@ -113,6 +115,24 @@ fn stylesheet_generation(_: &JsValue, _: &[JsValue], context: &mut Context) -> J
     let ctx = dom_ctx(context)?;
     let generation = ctx.doc.borrow().stylesheet_generation();
     Ok(JsValue::from(generation as f64))
+}
+
+fn sheet_disabled(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let Some(node_id) = node_id_of_value(&arg(args, 0)) else {
+        return Ok(JsValue::from(false));
+    };
+    Ok(JsValue::from(ctx.doc.borrow().stylesheet_disabled(node_id)))
+}
+
+fn sheet_set_disabled(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = node_arg(args, 0)?;
+    let disabled = arg(args, 1).to_boolean();
+    ctx.doc
+        .borrow_mut()
+        .set_stylesheet_disabled(node_id, disabled);
+    Ok(JsValue::undefined())
 }
 
 fn rule_count(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {

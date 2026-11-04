@@ -57,6 +57,28 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             return prev_hover_node_id;
         }
 
+        self.dispatch_hover_change(prev_hover_node_id, hover_node_id, event);
+
+        hover_node_id
+    }
+
+    /// End hover when the pointer leaves the document, dispatching out/leave
+    /// events to the previously hovered chain
+    pub fn handle_pointer_leave(&mut self, event: &BlitzPointerEvent) {
+        let mut doc = self.doc.inner_mut();
+        let prev_hover_node_id = doc.hover_node_id;
+        doc.clear_hover();
+        drop(doc);
+
+        self.dispatch_hover_change(prev_hover_node_id, None, event);
+    }
+
+    fn dispatch_hover_change(
+        &mut self,
+        prev_hover_node_id: Option<NodeId>,
+        hover_node_id: Option<NodeId>,
+        event: &BlitzPointerEvent,
+    ) {
         let doc = self.doc.inner();
         let mut old_chain = prev_hover_node_id
             .map(|id| doc.node_chain(id))
@@ -141,17 +163,20 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 }
             }
         }
-
-        hover_node_id
     }
 
     pub fn handle_ui_event(&mut self, event: UiEvent) {
         let doc = self.doc.inner();
 
-        let mut should_clear_hover = false;
+        // A non-hovering pointer (finger) ends hover once it is lifted or cancelled
+        let mut hover_end_event = None;
         let mut hover_node_id = doc.hover_node_id;
         let focussed_node_id = doc.focus_node_id;
+        let prev_hover = doc.hover_state();
         drop(doc);
+
+        // A document the pointer has left has no say over the cursor
+        let is_leave = matches!(event, UiEvent::PointerLeave(_));
 
         // Update document input state (hover, focus, active, etc)
         match &event {
@@ -170,7 +195,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 doc.unactive_node();
 
                 if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
-                    should_clear_hover = true;
+                    hover_end_event = Some(event.clone());
                 }
             }
             UiEvent::PointerCancel(event) => {
@@ -179,8 +204,12 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 doc.unactive_node();
 
                 if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
-                    should_clear_hover = true;
+                    hover_end_event = Some(event.clone());
                 }
+            }
+            UiEvent::PointerLeave(event) => {
+                self.handle_pointer_leave(event);
+                hover_node_id = None;
             }
             _ => {}
         };
@@ -190,10 +219,12 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::PointerUp(_) => hover_node_id,
             UiEvent::PointerDown(_) => hover_node_id,
             UiEvent::PointerCancel(_) => hover_node_id,
+            UiEvent::PointerLeave(_) => hover_node_id,
             UiEvent::Wheel(_) => hover_node_id,
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
+            UiEvent::Paste(_) => focussed_node_id,
             UiEvent::AppleStandardKeybinding(_) => focussed_node_id,
         };
         // Fall back to the root element. A document without a root element (e.g. an
@@ -242,6 +273,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                     DomEventData::TouchCancel,
                 );
             }
+            // Out/leave events were dispatched by `handle_pointer_leave`
+            UiEvent::PointerLeave(_) => {}
             UiEvent::Wheel(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
             }
@@ -254,6 +287,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::Ime(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
             }
+            UiEvent::Paste(text) => {
+                super::ime::handle_ime_event(
+                    &mut self.doc.inner_mut(),
+                    blitz_traits::events::BlitzImeEvent::Commit(text),
+                    |event| self.queue.push_back(event),
+                );
+                self.process_queue();
+            }
             UiEvent::AppleStandardKeybinding(data) => {
                 let mut dom_event =
                     DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
@@ -263,8 +304,15 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         // Update document input state (hover, focus, active, etc)
-        if should_clear_hover {
-            self.doc.inner_mut().clear_hover();
+        if let Some(event) = hover_end_event {
+            self.handle_pointer_leave(&event);
+        }
+
+        // Update the cursor once the event (including any forwarding to a
+        // sub-document) has been fully handled
+        let doc = self.doc.inner();
+        if !is_leave && doc.hover_state() != prev_hover {
+            doc.update_cursor();
         }
     }
 

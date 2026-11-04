@@ -10,7 +10,7 @@ use anyrender::ImageRenderer as _;
 use anyrender::PaintScene as _;
 use anyrender_vello::VelloScenePainter;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use anyrender_vello_hybrid::{ImageManager, VelloHybridScenePainter};
+use anyrender_vello_hybrid::{ImageCache, ImageManager, VelloHybridScenePainter};
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
@@ -232,7 +232,7 @@ async fn main() {
             let depth_texture_view =
                 vello_gpu::Renderer::create_depth_texture_view(&device_handle.device, &render_size);
             let mut scene = vello_gpu::Scene::new(render_width as u16, render_height as u16);
-            let mut image_cache = FxHashMap::default();
+            let mut image_cache = ImageCache::default();
             let mut texture_bindings = FxHashMap::default();
 
             let target_texture = device_handle

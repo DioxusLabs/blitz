@@ -8,15 +8,17 @@ use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
+use stylo_taffy::CopyStyleGetters;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
     AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
-    FlexDirection, LayoutContainingBlock, LayoutPartialTree, NodeId, OofCandidate, ResolveOrZero,
-    RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
+    FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
+    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
     compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
     compute_oof_layout, prelude::*,
 };
@@ -28,6 +30,9 @@ pub(crate) mod list;
 pub(crate) mod paint_tree;
 pub(crate) mod replaced;
 pub(crate) mod table;
+pub(crate) mod text_transform;
+#[cfg(feature = "writing-mode")]
+pub(crate) mod writing_mode;
 
 use self::replaced::{
     IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
@@ -75,7 +80,82 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
     result.px()
 }
 
-impl BaseDocument {
+/// Per-pass layout state: wraps the document for the duration of a layout pass and carries
+/// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
+pub(crate) struct LayoutPassState<'doc> {
+    doc: &'doc mut BaseDocument,
+    /// The writing mode of the box whose layout algorithm is currently running (see
+    /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
+    #[cfg(feature = "writing-mode")]
+    pub(crate) layout_wm: stylo_taffy::WritingMode,
+    /// The root element and the writing mode its algorithm runs in (see `BaseDocument::root_layout_wm`).
+    #[cfg(feature = "writing-mode")]
+    root_id: Option<crate::NodeId>,
+    #[cfg(feature = "writing-mode")]
+    root_wm: stylo_taffy::WritingMode,
+    /// Whether the node whose layout algorithm is running aligns its children's `align-self` in its
+    /// inline axis (a column flex container).
+    #[cfg(feature = "writing-mode")]
+    pub(crate) current_align_axis_is_inline: bool,
+    /// The box currently being laid out in an orthogonal flow and its containing block's inline
+    /// size, against which its percentage padding resolves (see `layout::writing_mode`).
+    #[cfg(feature = "writing-mode")]
+    pub(crate) orthogonal_percent_basis: Option<(crate::NodeId, f32)>,
+}
+
+impl<'doc> LayoutPassState<'doc> {
+    /// The containing block's inline size when `dom_id` is the box currently laid out in an orthogonal
+    /// flow: its percentage padding resolves against it (see `layout::writing_mode`).
+    #[inline]
+    fn orthogonal_percent_basis_of(&self, dom_id: crate::NodeId) -> Option<f32> {
+        #[cfg(feature = "writing-mode")]
+        {
+            self.orthogonal_percent_basis
+                .filter(|(node, _)| *node == dom_id)
+                .map(|(_, basis)| basis)
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            let _ = dom_id;
+            None
+        }
+    }
+
+    pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
+        #[cfg(feature = "writing-mode")]
+        let root_id = doc.try_root_element().map(|root| root.id);
+        Self {
+            #[cfg(feature = "writing-mode")]
+            root_wm: root_id.map_or(stylo_taffy::WritingMode::empty(), |id| {
+                doc.root_layout_wm(id)
+            }),
+            doc,
+            #[cfg(feature = "writing-mode")]
+            root_id,
+            #[cfg(feature = "writing-mode")]
+            layout_wm: stylo_taffy::WritingMode::empty(),
+            #[cfg(feature = "writing-mode")]
+            current_align_axis_is_inline: false,
+            #[cfg(feature = "writing-mode")]
+            orthogonal_percent_basis: None,
+        }
+    }
+}
+
+impl Deref for LayoutPassState<'_> {
+    type Target = BaseDocument;
+    fn deref(&self) -> &BaseDocument {
+        self.doc
+    }
+}
+
+impl DerefMut for LayoutPassState<'_> {
+    fn deref_mut(&mut self) -> &mut BaseDocument {
+        self.doc
+    }
+}
+
+impl LayoutPassState<'_> {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
         &self.nodes[dom_node_id(node_id)]
     }
@@ -84,11 +164,28 @@ impl BaseDocument {
     }
 }
 
-impl BaseDocument {
+impl LayoutPassState<'_> {
     /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
     /// boxes for which it is the containing block. Must be called inside the layout
     /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
     fn compute_child_layout_internal(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::tree::LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> taffy::tree::LayoutOutput {
+        #[cfg(feature = "writing-mode")]
+        {
+            self.compute_child_layout_in_own_wm(node_id, inputs, block_ctx)
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            self.compute_child_layout_in_current_wm(node_id, inputs, block_ctx)
+        }
+    }
+
+    /// Lay out `node_id` in the writing mode of the currently running algorithm (its parent's)
+    pub(crate) fn compute_child_layout_in_current_wm(
         &mut self,
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
@@ -101,18 +198,38 @@ impl BaseDocument {
         output
     }
 
+    /// The style of a node being laid out *by* the node whose algorithm is currently running,
+    /// expressed in that node's writing mode (see `layout::writing_mode`).
+    #[inline]
+    pub(crate) fn child_layout_style<'a>(
+        &self,
+        node: &'a Node,
+    ) -> stylo_taffy::TaffyStyloStyle<ComputedStyleRef<'a>> {
+        #[cfg(feature = "writing-mode")]
+        {
+            let mut style = node.layout_style_in(self.layout_wm);
+            style.align_axis_is_inline = self.current_align_axis_is_inline;
+            style
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            node.layout_style()
+        }
+    }
+
     fn dispatch_child_layout(
         &mut self,
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        let orthogonal_percent_basis = self.orthogonal_percent_basis_of(dom_node_id(node_id));
         let node = &mut self.nodes[dom_node_id(node_id)];
 
         let font_styles = node.primary_styles().map(|style| {
             use style::values::computed::font::LineHeight;
 
-            let font_size = style.clone_font_size().used_size().px();
+            let font_size = style.slow_clone_font_size().used_size().px();
             let line_height = match style.clone_line_height() {
                 LineHeight::Normal => font_size * 1.2,
                 LineHeight::Number(num) => font_size * num.0,
@@ -192,8 +309,9 @@ impl BaseDocument {
                                     .resolve_or_zero(inputs.parent_size.width, resolve_calc_value)
                         };
                         let content_width = (output.size.width - pb.horizontal_axis_sum()).max(0.0);
-                        let scale = self.viewport.scale();
-                        let node = &mut self.nodes[dom_node_id(node_id)];
+                        let doc = &mut *self.doc;
+                        let scale = doc.viewport.scale();
+                        let node = &mut doc.nodes[dom_node_id(node_id)];
                         if let Some(input) = node
                             .data
                             .downcast_element_mut()
@@ -201,8 +319,8 @@ impl BaseDocument {
                         {
                             input.editor.set_width(Some(content_width * scale));
                             input.editor.refresh_layout(
-                                &mut self.font_ctx.lock().unwrap(),
-                                &mut self.layout_ctx,
+                                &mut doc.font_ctx.lock().unwrap(),
+                                &mut doc.layout_ctx,
                             );
                         }
                     }
@@ -354,20 +472,56 @@ impl BaseDocument {
                         _ => unreachable!(),
                     };
 
+                    #[cfg(feature = "writing-mode")]
+                    let (intrinsic_sizes, default_object_size) =
+                        if node.writing_mode().is_vertical() {
+                            // Intrinsic sizes are physical; the element's algorithm runs in its own writing mode
+                            (
+                                crate::layout::replaced::IntrinsicSizes {
+                                    width: intrinsic_sizes.height,
+                                    height: intrinsic_sizes.width,
+                                    ratio: intrinsic_sizes.ratio.map(|ratio| 1.0 / ratio),
+                                },
+                                default_object_size.transpose(),
+                            )
+                        } else {
+                            (intrinsic_sizes, default_object_size)
+                        };
+
                     let replaced_context = ReplacedContext {
                         intrinsic_sizes,
                         default_object_size,
                     };
 
+                    let mut style = node.layout_style();
+                    style.set_percent_basis(orthogonal_percent_basis);
                     return compute_replaced_layout(
                         inputs,
-                        &node.layout_style(),
+                        &style,
                         resolve_calc_value,
                         &replaced_context,
                     );
                 }
 
                 if node.flags.is_table_root() {
+                    // The space available to an absolutely positioned table never exceeds
+                    // the size of its containing block (less the table's margins), even
+                    // when negative insets would otherwise add to it
+                    // (https://drafts.csswg.org/css-tables-3/#abspos).
+                    let mut inputs = inputs;
+                    if self.nodes[dom_node_id(node_id)].is_out_of_flow() {
+                        let margin = self.nodes[dom_node_id(node_id)]
+                            .layout_style()
+                            .margin()
+                            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+                        let max_available_space = inputs
+                            .parent_size
+                            .maybe_sub(margin.sum_axes())
+                            .maybe_max(taffy::Size::ZERO);
+                        inputs.available_space =
+                            inputs.available_space.maybe_min(max_available_space);
+                    }
+
                     let SpecialElementData::TableRoot(context) = &self.nodes[dom_node_id(node_id)]
                         .data
                         .downcast_element()
@@ -414,14 +568,16 @@ impl BaseDocument {
                     }
 
                     // HACK: Cap scrollable overflow at node size to prevent scrolling
-                    output.scrollable_overflow_rect.left = 0.0;
-                    output.scrollable_overflow_rect.top = 0.0;
-                    output.scrollable_overflow_rect.right =
-                        output.scrollable_overflow_rect.right.min(output.size.width);
-                    output.scrollable_overflow_rect.bottom = output
-                        .scrollable_overflow_rect
-                        .bottom
-                        .min(output.size.height);
+                    let overflow = output.scrollable_overflow_rect;
+                    output.scrollable_overflow_rect = taffy::ScrollableOverflow::new(
+                        taffy::Rect {
+                            left: 0.0,
+                            top: 0.0,
+                            right: overflow.right().min(output.size.width),
+                            bottom: overflow.bottom().min(output.size.height),
+                        },
+                        output.scrollable_overflow_rect.is_reversed(),
+                    );
 
                     return output;
                 }
@@ -434,7 +590,13 @@ impl BaseDocument {
                 match node.taffy_display() {
                     Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
                     Display::FlowRoot => compute_block_layout(self, node_id, inputs, None),
-                    Display::Flex => compute_flexbox_layout(self, node_id, inputs),
+                    Display::Flex => {
+                        #[cfg(feature = "writing-mode")]
+                        {
+                            self.current_align_axis_is_inline = node.is_column_flex_container();
+                        }
+                        compute_flexbox_layout(self, node_id, inputs)
+                    }
                     Display::Grid => compute_grid_layout(self, node_id, inputs),
                     Display::None => taffy::LayoutOutput::HIDDEN,
                 }
@@ -446,8 +608,11 @@ impl BaseDocument {
     }
 }
 
-impl TraversePartialTree for BaseDocument {
-    type ChildIter<'a> = RefCellChildIter<'a>;
+impl TraversePartialTree for LayoutPassState<'_> {
+    type ChildIter<'a>
+        = RefCellChildIter<'a>
+    where
+        Self: 'a;
 
     fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
         let layout_children = self.node_from_id(node_id).layout_children.borrow(); //.unwrap().as_ref();
@@ -475,9 +640,9 @@ impl TraversePartialTree for BaseDocument {
         )
     }
 }
-impl TraverseTree for BaseDocument {}
+impl TraverseTree for LayoutPassState<'_> {}
 
-impl LayoutPartialTree for BaseDocument {
+impl LayoutPartialTree for LayoutPassState<'_> {
     type CoreContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -486,7 +651,19 @@ impl LayoutPartialTree for BaseDocument {
     type CustomIdent = Atom;
 
     fn get_core_container_style(&self, node_id: NodeId) -> Self::CoreContainerStyle<'_> {
-        self.node_from_id(node_id).layout_style()
+        #[cfg(feature = "writing-mode")]
+        {
+            // Container styles are read by the node's own algorithm (or, for the containing block
+            // of an out-of-flow box, by that box's algorithm) and are expressed in the node's writing mode.
+            let dom_id = dom_node_id(node_id);
+            let mut style = self.nodes[dom_id].layout_style_in(self.layout_wm_of(dom_id));
+            style.set_percent_basis(self.orthogonal_percent_basis_of(dom_id));
+            style
+        }
+        #[cfg(not(feature = "writing-mode"))]
+        {
+            self.node_from_id(node_id).layout_style()
+        }
     }
 
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {
@@ -509,14 +686,14 @@ impl LayoutPartialTree for BaseDocument {
     }
 }
 
-impl LayoutContainingBlock for BaseDocument {
+impl LayoutContainingBlock for LayoutPassState<'_> {
     type OofItemStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
         Self: 'a;
 
     fn get_oof_item_style(&self, node_id: NodeId) -> Self::OofItemStyle<'_> {
-        self.node_from_id(node_id).layout_style()
+        self.child_layout_style(self.node_from_id(node_id))
     }
 
     fn clear_hoisted_children(&mut self, node_id: NodeId) {
@@ -555,7 +732,7 @@ impl LayoutContainingBlock for BaseDocument {
     }
 }
 
-impl taffy::CacheTree for BaseDocument {
+impl taffy::CacheTree for LayoutPassState<'_> {
     #[inline]
     fn cache_get(
         &mut self,
@@ -586,7 +763,7 @@ impl taffy::CacheTree for BaseDocument {
     }
 }
 
-impl taffy::LayoutBlockContainer for BaseDocument {
+impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
     type BlockContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -602,7 +779,7 @@ impl taffy::LayoutBlockContainer for BaseDocument {
     }
 
     fn get_block_child_style(&self, child_node_id: NodeId) -> Self::BlockItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 
     #[inline(always)]
@@ -618,7 +795,7 @@ impl taffy::LayoutBlockContainer for BaseDocument {
     }
 }
 
-impl taffy::LayoutFlexboxContainer for BaseDocument {
+impl taffy::LayoutFlexboxContainer for LayoutPassState<'_> {
     type FlexboxContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -634,11 +811,11 @@ impl taffy::LayoutFlexboxContainer for BaseDocument {
     }
 
     fn get_flexbox_child_style(&self, child_node_id: NodeId) -> Self::FlexboxItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 }
 
-impl taffy::LayoutGridContainer for BaseDocument {
+impl taffy::LayoutGridContainer for LayoutPassState<'_> {
     type GridContainerStyle<'a>
         = TaffyStyloStyle<ComputedStyleRef<'a>>
     where
@@ -654,7 +831,7 @@ impl taffy::LayoutGridContainer for BaseDocument {
     }
 
     fn get_grid_child_style(&self, child_node_id: NodeId) -> Self::GridItemStyle<'_> {
-        self.get_core_container_style(child_node_id)
+        self.child_layout_style(self.node_from_id(child_node_id))
     }
 
     fn set_detailed_grid_info(
@@ -669,7 +846,7 @@ impl taffy::LayoutGridContainer for BaseDocument {
     }
 }
 
-impl RoundTree for BaseDocument {
+impl RoundTree for LayoutPassState<'_> {
     fn get_unrounded_layout(&self, node_id: NodeId) -> Layout {
         *self.node_from_id(node_id).unrounded_layout()
     }
@@ -679,7 +856,9 @@ impl RoundTree for BaseDocument {
     }
 
     fn is_out_of_flow(&self, node_id: NodeId) -> bool {
-        self.node_from_id(node_id).is_out_of_flow()
+        self.node_from_id(node_id)
+            .out_of_flow
+            .load(core::sync::atomic::Ordering::Relaxed)
     }
 
     fn hoisted_child_count(&self, node_id: NodeId) -> usize {
@@ -691,7 +870,50 @@ impl RoundTree for BaseDocument {
     }
 }
 
-impl PrintTree for BaseDocument {
+pub(crate) struct TaffyDebugTree<'doc>(pub(crate) &'doc BaseDocument);
+
+impl TaffyDebugTree<'_> {
+    fn node_from_id(&self, node_id: NodeId) -> &Node {
+        &self.0.nodes[dom_node_id(node_id)]
+    }
+}
+
+impl TraversePartialTree for TaffyDebugTree<'_> {
+    type ChildIter<'a>
+        = RefCellChildIter<'a>
+    where
+        Self: 'a;
+
+    fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
+        let layout_children = self.node_from_id(node_id).layout_children.borrow();
+        RefCellChildIter::new(Ref::map(layout_children, |children| {
+            children.as_ref().map(|c| c.as_slice()).unwrap_or(&[])
+        }))
+    }
+
+    fn child_count(&self, node_id: NodeId) -> usize {
+        self.node_from_id(node_id)
+            .layout_children
+            .borrow()
+            .as_ref()
+            .map(|c| c.len())
+            .unwrap_or(0)
+    }
+
+    fn get_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
+        taffy_node_id(
+            self.node_from_id(node_id)
+                .layout_children
+                .borrow()
+                .as_ref()
+                .unwrap()[index],
+        )
+    }
+}
+
+impl TraverseTree for TaffyDebugTree<'_> {}
+
+impl PrintTree for TaffyDebugTree<'_> {
     fn get_debug_label(&self, node_id: NodeId) -> &'static str {
         let node = &self.node_from_id(node_id);
 

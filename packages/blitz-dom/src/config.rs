@@ -1,4 +1,4 @@
-use crate::HtmlParserProvider;
+use crate::{HtmlParserProvider, UserAgentStylesheet};
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
@@ -10,33 +10,33 @@ use style::media_queries::MediaType;
 
 /// Strategy for Stylo's style traversal during `resolve`.
 ///
-/// Two `Document`s resolving on [`StyleThreading::Parallel`] concurrently
-/// share Stylo's global thread pool and can panic with
-/// `already mutably borrowed` — see
-/// <https://github.com/DioxusLabs/blitz/issues/430>. Set
-/// [`StyleThreading::Sequential`] on documents that may resolve from a
-/// user thread while another `Parallel` resolve is in flight.
+/// `Parallel` traversals are serialised process-wide (Stylo's global pool can
+/// only run one traversal at a time), so documents resolving from several
+/// threads never run their style traversals concurrently but also never
+/// overlap: it only pays off when a single thread resolves all documents
+/// (e.g. a UI thread, including nested sub-documents).
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StyleThreading {
     /// Use Stylo's parallel traversal via its global rayon thread pool.
-    /// Fastest for a single document; panics if another `Parallel` resolve
-    /// is in flight on a different thread.
     Parallel,
     /// Run style traversal sequentially on the calling thread, bypassing
-    /// the global pool. Safe to use from many user threads concurrently.
+    /// the global pool and its lock. Threads resolving their own documents
+    /// run independently of each other.
     #[default]
     Sequential,
 }
 
 /// Options used when constructing a [`BaseDocument`](crate::BaseDocument)
-#[derive(Default)]
 pub struct DocumentConfig {
     /// The initial `Viewport`
     pub viewport: Option<Viewport>,
     /// The base url which relative URLs are resolved against
     pub base_url: Option<String>,
-    /// User Agent stylesheets
-    pub ua_stylesheets: Option<Vec<String>>,
+    /// User Agent stylesheets, in cascade order. Defaults to `vec![UserAgentStylesheet::default_sheet()]`.
+    ///
+    /// The list is used as given, so replacing it removes the default sheet unless it is
+    /// included, e.g. `vec![UserAgentStylesheet::default_sheet(), custom]`.
+    pub ua_stylesheets: Vec<UserAgentStylesheet>,
     /// Net provider to handle network requests for resources
     pub net_provider: Option<Arc<dyn NetProvider>>,
     /// Navigation provider to handle link clicks and form submissions
@@ -51,7 +51,7 @@ pub struct DocumentConfig {
     /// Defaults to [`MediaType::screen`].
     pub media_type: Option<MediaType>,
     /// Strategy for Stylo's style traversal.
-    /// Defaults to [`StyleThreading::Parallel`].
+    /// Defaults to [`StyleThreading::Sequential`].
     pub style_threading: StyleThreading,
     /// Whether incremental layout is enabled. Defaults to `true`.
     ///
@@ -66,4 +66,24 @@ pub struct DocumentConfig {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub subdocument_depth: usize,
+}
+
+impl Default for DocumentConfig {
+    fn default() -> Self {
+        Self {
+            viewport: None,
+            base_url: None,
+            ua_stylesheets: vec![UserAgentStylesheet::default_sheet()],
+            net_provider: None,
+            navigation_provider: None,
+            shell_provider: None,
+            html_parser_provider: None,
+            font_ctx: None,
+            media_type: None,
+            style_threading: StyleThreading::default(),
+            incremental: None,
+            abort_signal: None,
+            subdocument_depth: 0,
+        }
+    }
 }

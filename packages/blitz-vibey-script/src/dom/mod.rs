@@ -11,6 +11,7 @@ pub(crate) mod element;
 pub(crate) mod event;
 pub(crate) mod hyperlink;
 pub(crate) mod node;
+pub(crate) mod selection;
 pub(crate) mod style;
 pub(crate) mod stylesheet;
 

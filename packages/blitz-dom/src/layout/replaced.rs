@@ -82,8 +82,8 @@ pub fn compute_replaced_layout(
         Size::ZERO
     };
 
-    // The scrollable overflow rect is measured from the scroll origin at the
-    // padding-box corner: the content-box size offset by the start padding. A
+    // The scrollable overflow rect is measured from the client area's
+    // top-left corner: the content-box size offset by the start padding. A
     // scroll container's own padding at the end of the content is part of its
     // scrollable overflow region, so it is included. Boxes that are not scroll
     // containers do not extend their overflow region by their own padding.
@@ -95,24 +95,35 @@ pub fn compute_replaced_layout(
     let overflow_rect_for = |content_box_size: Size<f32>| {
         let start_padding = if is_rtl { padding.right } else { padding.left };
         let end_padding = if is_rtl { padding.left } else { padding.right };
-        taffy::Rect {
-            left: 0.0,
-            right: start_padding
-                + content_box_size.width
-                + if is_scroll_container {
-                    end_padding
+        let client_width = content_box_size.width + padding.left + padding.right;
+        taffy::ScrollableOverflow::new(
+            taffy::Rect {
+                left: 0.0,
+                right: if is_rtl {
+                    client_width
                 } else {
-                    0.0
+                    start_padding
+                        + content_box_size.width
+                        + if is_scroll_container {
+                            end_padding
+                        } else {
+                            0.0
+                        }
                 },
-            top: 0.0,
-            bottom: padding.top
-                + content_box_size.height
-                + if is_scroll_container {
-                    padding.bottom
-                } else {
-                    0.0
-                },
-        }
+                top: 0.0,
+                bottom: padding.top
+                    + content_box_size.height
+                    + if is_scroll_container {
+                        padding.bottom
+                    } else {
+                        0.0
+                    },
+            },
+            taffy::Point {
+                x: is_scroll_container && is_rtl,
+                y: false,
+            },
+        )
     };
 
     // Return early if both width and height are known
@@ -141,10 +152,8 @@ pub fn compute_replaced_layout(
     // element get no preferred aspect ratio at all.
     let is_usable_ratio = |ratio: &f32| ratio.is_finite() && *ratio > 0.0;
     let intrinsic = context.intrinsic_sizes;
-    let aspect_ratio: Option<f32> = style
-        .aspect_ratio()
-        .filter(is_usable_ratio)
-        .or(intrinsic.ratio.filter(is_usable_ratio));
+    let style_aspect_ratio = style.aspect_ratio().filter(is_usable_ratio);
+    let aspect_ratio: Option<f32> = style_aspect_ratio.or(intrinsic.ratio.filter(is_usable_ratio));
 
     // Concrete object size per the CSS default sizing algorithm with no
     // specified size (https://drafts.csswg.org/css-images/#default-sizing):
@@ -200,7 +209,19 @@ pub fn compute_replaced_layout(
             None => default_size,
         },
     };
+    // The `aspect-ratio` property coerces the natural height to match the natural width, in the
+    // box-sizing box (https://github.com/w3c/csswg-drafts/issues/11236).
+    let inherent_size = match style_aspect_ratio {
+        Some(ratio) => Size {
+            width: inherent_size.width,
+            height: ((inherent_size.width + box_sizing_adjustment.width) / ratio
+                - box_sizing_adjustment.height)
+                .max(0.0),
+        },
+        None => inherent_size,
+    };
 
+    // Percentages are only resolved against zero in the inline axis.
     // See https://www.w3.org/TR/css-sizing-3/#replaced-percentage-min-contribution
     let basis_for_max_and_preferred = Size {
         width: if available_space.width == AvailableSpace::MinContent {
@@ -208,11 +229,7 @@ pub fn compute_replaced_layout(
         } else {
             parent_size.width
         },
-        height: if available_space.height == AvailableSpace::MinContent {
-            Some(0.0)
-        } else {
-            parent_size.height
-        },
+        height: parent_size.height,
     };
 
     // `stretch` fills the containing block (less margins) when its size is definite, and

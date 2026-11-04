@@ -190,7 +190,8 @@ impl<Rend: WindowRenderer> View<Rend> {
         let viewport = Viewport::new(viewport_width, viewport_height, scale, color_scheme);
 
         // Create shell provider
-        let shell_provider = BlitzShellProvider::new(winit_window.clone(), proxy.clone());
+        let shell_provider =
+            BlitzShellProvider::new(winit_window.clone(), proxy.clone(), config.doc.id());
 
         let mut doc = config.doc;
         let mut inner = doc.inner_mut();
@@ -680,7 +681,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                                     drop(inner);
                                     self.request_redraw();
                                 }
-                                KeyCode::KeyT => self.doc.inner().print_taffy_tree(),
+                                KeyCode::KeyT => self.doc.inner_mut().print_taffy_tree(),
                                 _ => {}
                             };
                         }
@@ -729,8 +730,24 @@ impl<Rend: WindowRenderer> View<Rend> {
                     };
 
                     self.doc.handle_ui_event(UiEvent::PointerCancel(event));
-                    self.request_redraw();
                 }
+
+                // The pointer left the window: end hover
+                let position = position.unwrap_or(self.pointer_pos);
+                let event = BlitzPointerEvent {
+                    id,
+                    is_primary: primary,
+                    coords: self.pointer_coords(position),
+                    button: Default::default(),
+                    buttons: self.buttons,
+                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    details: PointerDetails::default(),
+                    element: Default::default(),
+                    active_pointers: Arc::clone(&self.active_events),
+                };
+
+                self.doc.handle_ui_event(UiEvent::PointerLeave(event));
+                self.request_redraw();
             }
             WindowEvent::PointerMoved { position, source, primary, .. } => {
                 self.pointer_pos = position;
