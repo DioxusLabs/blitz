@@ -1,13 +1,14 @@
 //! Handlers for the `DOM` domain: document/child-node serialization,
 //! querying, box model, outer HTML, attribute/character-data editing and
-//! node removal
+//! structural edits (node removal and replacement)
 
-use blitz_dom::NodeData;
+use blitz_dom::{LocalName, NodeData, QualName, ns};
 use serde_json::json;
 
 use super::{
     CdpError, Session, any_node_id_param, attr_name, blitz_node_id, cdp_node_id, check_removable,
-    emit_child_removed, forget_subtree, no_document, no_node, node_id_param, str_param, with_doc,
+    emit_child_inserted, emit_child_removed, forget_subtree, no_document, no_node, node_id_param,
+    str_param, with_doc,
 };
 use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter};
 
@@ -218,6 +219,47 @@ pub(super) fn dispatch(
                 doc.mutate().remove_and_drop_node(node_id);
                 doc.shell_provider.request_redraw();
                 emit_child_removed(writer, doc, parent_id, node_id, children_sent);
+                Ok(())
+            })
+            .ok_or_else(no_document)??;
+            Ok(json!({}))
+        }
+
+        // Replace a node with the nodes parsed from `outerHTML`. The markup is
+        // parsed as a fragment in the context of the node's parent (via the
+        // document's HTML parser provider) and the node is replaced wholesale.
+        "DOM.setOuterHTML" => {
+            let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
+            let node_id = node_id_param(params, "nodeId")?;
+            let html = str_param(params, "outerHTML")?;
+            let children_sent = &mut session.children_sent;
+            with_doc(docs, doc_id, |doc| {
+                let parent_id = check_removable(doc, node_id)?;
+                let context_name = doc
+                    .get_node(parent_id)
+                    .and_then(|parent| parent.element_data())
+                    .map(|el| el.name.clone())
+                    .unwrap_or_else(|| QualName::new(None, ns!(html), LocalName::from("body")));
+                forget_subtree(doc, node_id, children_sent);
+
+                let mut mutr = doc.mutate();
+                let container_id = mutr.create_element(context_name, Vec::new());
+                mutr.set_inner_html(container_id, &html);
+                let new_ids = mutr.child_ids(container_id);
+                if new_ids.is_empty() && !html.is_empty() {
+                    mutr.remove_and_drop_node(container_id);
+                    return Err(CdpError::server_error("Could not parse HTML"));
+                }
+                mutr.insert_nodes_before(node_id, &new_ids);
+                mutr.remove_and_drop_node(node_id);
+                mutr.remove_and_drop_node(container_id);
+                drop(mutr);
+                doc.shell_provider.request_redraw();
+
+                emit_child_removed(writer, doc, parent_id, node_id, children_sent);
+                for new_id in new_ids {
+                    emit_child_inserted(writer, doc, new_id, children_sent);
+                }
                 Ok(())
             })
             .ok_or_else(no_document)??;

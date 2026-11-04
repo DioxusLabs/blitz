@@ -1358,3 +1358,98 @@ fn remove_node() {
         expect_error(&mut ws, 5);
     });
 }
+
+#[test]
+fn set_outer_html() {
+    let html = "<html><body><div id=\"list\"><p id=\"a\">a</p><p id=\"b\">b</p></div>\
+         <table><tbody id=\"rows\"><tr id=\"row\"><td>x</td></tr></tbody></table></body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let list_id = node_id_of(&root, "list");
+        let a_id = node_id_of(&root, "a");
+
+        // The node is replaced by the parsed nodes: a removal followed by
+        // insertions, each after the previous one
+        send_command(
+            &mut ws,
+            2,
+            "DOM.setOuterHTML",
+            json!({ "nodeId": a_id, "outerHTML": "<h1 id=\"x\">x</h1>text<!--c-->" }),
+        );
+        read_reply(&mut ws, 2, &mut events);
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|e| e["method"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "DOM.childNodeRemoved",
+                "DOM.childNodeInserted",
+                "DOM.childNodeInserted",
+                "DOM.childNodeInserted"
+            ]
+        );
+        assert_eq!(events[0]["params"]["nodeId"], a_id);
+        let inserted: Vec<&serde_json::Value> = events[1..].iter().map(|e| &e["params"]).collect();
+        assert!(inserted.iter().all(|p| p["parentNodeId"] == list_id));
+        assert_eq!(inserted[0]["previousNodeId"], 0);
+        assert_eq!(inserted[0]["node"]["nodeName"], "H1");
+        assert_eq!(inserted[1]["previousNodeId"], inserted[0]["node"]["nodeId"]);
+        assert_eq!(inserted[1]["node"]["nodeValue"], "text");
+        assert_eq!(inserted[2]["previousNodeId"], inserted[1]["node"]["nodeId"]);
+        assert_eq!(inserted[2]["node"]["nodeType"], 8);
+        events.clear();
+        send_command(&mut ws, 3, "DOM.getOuterHTML", json!({ "nodeId": list_id }));
+        let result = read_reply(&mut ws, 3, &mut events);
+        assert_eq!(
+            result["outerHTML"],
+            "<div id=\"list\"><h1 id=\"x\">x</h1>text<!--c--><p id=\"b\">b</p></div>"
+        );
+
+        // Markup is parsed in the context of the node's parent (a `<tr>`
+        // parsed outside a table would lose its tags)
+        let rows_id = node_id_of(&root, "rows");
+        let row_id = node_id_of(&root, "row");
+        send_command(
+            &mut ws,
+            4,
+            "DOM.setOuterHTML",
+            json!({ "nodeId": row_id, "outerHTML": "<tr><td>y</td></tr><tr><td>z</td></tr>" }),
+        );
+        read_reply(&mut ws, 4, &mut events);
+        send_command(&mut ws, 5, "DOM.getOuterHTML", json!({ "nodeId": rows_id }));
+        let result = read_reply(&mut ws, 5, &mut events);
+        assert_eq!(
+            result["outerHTML"],
+            "<tbody id=\"rows\"><tr><td>y</td></tr><tr><td>z</td></tr></tbody>"
+        );
+
+        // An empty string removes the node
+        let b_id = node_id_of(&root, "b");
+        events.clear();
+        send_command(
+            &mut ws,
+            6,
+            "DOM.setOuterHTML",
+            json!({ "nodeId": b_id, "outerHTML": "" }),
+        );
+        read_reply(&mut ws, 6, &mut events);
+        assert!(
+            events
+                .iter()
+                .any(|e| e["method"] == "DOM.childNodeRemoved" && e["params"]["nodeId"] == b_id)
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| e["method"] == "DOM.childNodeInserted")
+        );
+    });
+}

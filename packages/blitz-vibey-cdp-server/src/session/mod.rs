@@ -325,6 +325,47 @@ fn emit_child_removed(
     }
 }
 
+/// Emit the event for a node that was inserted into the tree (call after
+/// the insertion): `DOM.childNodeInserted` if the frontend knows the new
+/// parent's children, otherwise a child count update
+fn emit_child_inserted(
+    writer: &mut MessageWriter,
+    doc: &BaseDocument,
+    node_id: NodeId,
+    children_sent: &mut HashSet<NodeId>,
+) {
+    let Some(parent_id) = doc.get_node(node_id).and_then(|node| node.parent) else {
+        return;
+    };
+    if !children_sent.contains(&parent_id) {
+        emit_child_count_updated(writer, doc, parent_id, children_sent);
+        return;
+    }
+    let siblings = doc
+        .get_node(parent_id)
+        .map(|parent| crate::dom::dom_children(doc, parent))
+        .unwrap_or_default();
+    // Anonymous and whitespace-only nodes are not exposed to the frontend
+    let Some(index) = siblings.iter().position(|sibling| sibling.id == node_id) else {
+        return;
+    };
+    let previous_id = match index {
+        0 => 0,
+        _ => cdp_node_id(siblings[index - 1].id),
+    };
+    let Some(node) = crate::dom::node_json(doc, node_id, 0, children_sent) else {
+        return;
+    };
+    writer.event(
+        "DOM.childNodeInserted",
+        json!({
+            "parentNodeId": cdp_node_id(parent_id),
+            "previousNodeId": previous_id,
+            "node": node,
+        }),
+    );
+}
+
 /// Check that a node can be removed or replaced: the document and its root
 /// element cannot be
 fn check_removable(doc: &BaseDocument, node_id: NodeId) -> Result<NodeId, CdpError> {
