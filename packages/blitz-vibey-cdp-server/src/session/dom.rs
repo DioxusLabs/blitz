@@ -1,6 +1,6 @@
 //! Handlers for the `DOM` domain: document/child-node serialization,
 //! querying, box model, outer HTML, attribute/character-data editing and
-//! structural edits (node removal and replacement)
+//! structural edits (node removal, replacement and moves)
 
 use blitz_dom::{LocalName, NodeData, QualName, ns};
 use serde_json::json;
@@ -264,6 +264,58 @@ pub(super) fn dispatch(
             })
             .ok_or_else(no_document)??;
             Ok(json!({}))
+        }
+
+        // Sent when a node is dragged to a new position in the Elements panel
+        "DOM.moveTo" => {
+            let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
+            let node_id = node_id_param(params, "nodeId")?;
+            let target_id = node_id_param(params, "targetNodeId")?;
+            let insert_before_id = params
+                .get("insertBeforeNodeId")
+                .map(|_| node_id_param(params, "insertBeforeNodeId"))
+                .transpose()?;
+            let children_sent = &mut session.children_sent;
+            with_doc(docs, doc_id, |doc| {
+                let old_parent_id = check_removable(doc, node_id)?;
+                doc.get_node(target_id)
+                    .filter(|target| target.is_element())
+                    .ok_or_else(no_node)?;
+                // A node cannot be moved into its own subtree
+                let mut ancestor = Some(target_id);
+                while let Some(ancestor_id) = ancestor {
+                    if ancestor_id == node_id {
+                        return Err(CdpError::server_error("Cannot move a node into itself"));
+                    }
+                    ancestor = doc.get_node(ancestor_id).and_then(|node| node.parent);
+                }
+                if let Some(anchor_id) = insert_before_id {
+                    let anchor = doc.get_node(anchor_id).ok_or_else(no_node)?;
+                    if anchor.parent != Some(target_id) {
+                        return Err(CdpError::server_error(
+                            "Anchor node must be a child of the target node",
+                        ));
+                    }
+                    if anchor_id == node_id {
+                        return Ok(());
+                    }
+                }
+                forget_subtree(doc, node_id, children_sent);
+
+                let mut mutr = doc.mutate();
+                match insert_before_id {
+                    Some(anchor_id) => mutr.insert_nodes_before(anchor_id, &[node_id]),
+                    None => mutr.append_children(target_id, &[node_id]),
+                }
+                drop(mutr);
+                doc.shell_provider.request_redraw();
+
+                emit_child_removed(writer, doc, old_parent_id, node_id, children_sent);
+                emit_child_inserted(writer, doc, node_id, children_sent);
+                Ok(())
+            })
+            .ok_or_else(no_document)??;
+            Ok(json!({ "nodeId": cdp_node_id(node_id) }))
         }
 
         "DOM.pushNodesByBackendIdsToFrontend" => {
