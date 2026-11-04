@@ -366,6 +366,12 @@ impl DocumentMutator<'_> {
         // If node if not in the document, then don't apply any special behaviours
         // and simply set the attribute value
         if !node.flags.is_in_document() {
+            // Except checkedness, which is read back from the checkbox state once it exists
+            if (tag, attr) == tag_and_attr!("input", "checked")
+                && element.checkbox_input_checked().is_some()
+            {
+                set_input_checked_state(element, value.to_string());
+            }
             return;
         }
 
