@@ -23,7 +23,7 @@ blitz-traits = { workspace = true }
 
 # Networking dependencies
 tokio = { workspace = true, features = ["sync", "time"] }
-reqwest = { workspace = true, features = ["charset", "native-tls", "form"] }
+reqwest = { workspace = true, features = ["charset", "form"] }
 data-url = { workspace = true }
 
 # Caching
@@ -33,6 +33,9 @@ http-cache = { workspace = true, optional = true, features = ["url-standard"] }
 directories = { workspace = true, optional = true }
 
 tracing = { workspace = true, optional = true }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+reqwest = { workspace = true, features = ["rustls"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { workspace = true, features = ["native-tls-vendored"] }
