@@ -441,6 +441,10 @@ pub struct BaseDocument {
     /// it cancels all in-flight fetches tied to this document. Set via
     /// [`DocumentConfig::abort_signal`].
     pub(crate) abort_signal: Option<AbortSignal>,
+    /// Devtools provider notified of DOM mutations. Set via
+    /// [`DocumentConfig::devtools_provider`] or [`Self::set_devtools_provider`].
+    #[cfg(feature = "devtools")]
+    pub(crate) devtools_provider: Option<Arc<dyn blitz_traits::devtools::DevtoolsProvider>>,
 }
 
 impl BaseDocument {
@@ -564,6 +568,8 @@ impl BaseDocument {
             shell_provider,
             html_parser_provider,
             abort_signal: config.abort_signal,
+            #[cfg(feature = "devtools")]
+            devtools_provider: config.devtools_provider,
             last_mousedown_time: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
@@ -612,6 +618,15 @@ impl BaseDocument {
     /// Set the Document's shell provider
     pub fn set_shell_provider(&mut self, shell_provider: Arc<dyn ShellProvider>) {
         self.shell_provider = shell_provider;
+    }
+
+    /// Set (or clear) the Document's devtools provider, which is notified of DOM mutations
+    #[cfg(feature = "devtools")]
+    pub fn set_devtools_provider(
+        &mut self,
+        devtools_provider: Option<Arc<dyn blitz_traits::devtools::DevtoolsProvider>>,
+    ) {
+        self.devtools_provider = devtools_provider;
     }
 
     /// Set the Document's html parser provider
