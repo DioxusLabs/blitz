@@ -256,6 +256,88 @@ impl Session {
     }
 }
 
+/// Whether the frontend has a node object for the given node: the document
+/// itself, or any child of a node whose children have been sent
+fn is_known_to_frontend(
+    doc: &BaseDocument,
+    node_id: NodeId,
+    children_sent: &HashSet<NodeId>,
+) -> bool {
+    node_id == doc.root_node().id
+        || doc
+            .get_node(node_id)
+            .and_then(|node| node.parent)
+            .is_some_and(|parent_id| children_sent.contains(&parent_id))
+}
+
+/// Forget that the children of a node (and its descendants) were sent:
+/// the frontend discards its node objects for a removed subtree, so they
+/// must be sent afresh if the subtree is reinserted
+fn forget_subtree(doc: &BaseDocument, node_id: NodeId, children_sent: &mut HashSet<NodeId>) {
+    children_sent.remove(&node_id);
+    if let Some(node) = doc.get_node(node_id) {
+        for child_id in &node.children {
+            forget_subtree(doc, *child_id, children_sent);
+        }
+    }
+}
+
+/// Tell the frontend that `parent_id`'s child list changed: emit
+/// `DOM.childNodeCountUpdated` if it knows the parent but not its children
+fn emit_child_count_updated(
+    writer: &mut MessageWriter,
+    doc: &BaseDocument,
+    parent_id: NodeId,
+    children_sent: &HashSet<NodeId>,
+) {
+    if children_sent.contains(&parent_id) || !is_known_to_frontend(doc, parent_id, children_sent) {
+        return;
+    }
+    let Some(parent) = doc.get_node(parent_id) else {
+        return;
+    };
+    writer.event(
+        "DOM.childNodeCountUpdated",
+        json!({
+            "nodeId": cdp_node_id(parent_id),
+            "childNodeCount": crate::dom::dom_children(doc, parent).len(),
+        }),
+    );
+}
+
+/// Emit the event for a node that was removed from `parent_id` (call after
+/// the removal): `DOM.childNodeRemoved` if the frontend knows the parent's
+/// children, otherwise a child count update
+fn emit_child_removed(
+    writer: &mut MessageWriter,
+    doc: &BaseDocument,
+    parent_id: NodeId,
+    node_id: NodeId,
+    children_sent: &HashSet<NodeId>,
+) {
+    if children_sent.contains(&parent_id) {
+        writer.event(
+            "DOM.childNodeRemoved",
+            json!({ "parentNodeId": cdp_node_id(parent_id), "nodeId": cdp_node_id(node_id) }),
+        );
+    } else {
+        emit_child_count_updated(writer, doc, parent_id, children_sent);
+    }
+}
+
+/// Check that a node can be removed or replaced: the document and its root
+/// element cannot be
+fn check_removable(doc: &BaseDocument, node_id: NodeId) -> Result<NodeId, CdpError> {
+    let node = doc.get_node(node_id).ok_or_else(no_node)?;
+    let parent_id = node
+        .parent
+        .ok_or_else(|| CdpError::server_error("Node has no parent"))?;
+    if parent_id == doc.root_node().id && node.is_element() {
+        return Err(CdpError::server_error("Cannot modify the document element"));
+    }
+    Ok(parent_id)
+}
+
 fn no_document() -> CdpError {
     CdpError::server_error("No document")
 }

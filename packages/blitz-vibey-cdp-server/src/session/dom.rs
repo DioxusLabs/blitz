@@ -1,12 +1,13 @@
 //! Handlers for the `DOM` domain: document/child-node serialization,
-//! querying, box model, outer HTML, and attribute/character-data editing
+//! querying, box model, outer HTML, attribute/character-data editing and
+//! node removal
 
 use blitz_dom::NodeData;
 use serde_json::json;
 
 use super::{
-    CdpError, Session, any_node_id_param, attr_name, blitz_node_id, cdp_node_id, no_document,
-    no_node, node_id_param, str_param, with_doc,
+    CdpError, Session, any_node_id_param, attr_name, blitz_node_id, cdp_node_id, check_removable,
+    emit_child_removed, forget_subtree, no_document, no_node, node_id_param, str_param, with_doc,
 };
 use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter};
 
@@ -204,6 +205,22 @@ pub(super) fn dispatch(
                 "DOM.characterDataModified",
                 json!({ "nodeId": cdp_node_id(node_id), "characterData": value }),
             );
+            Ok(json!({}))
+        }
+
+        "DOM.removeNode" => {
+            let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
+            let node_id = node_id_param(params, "nodeId")?;
+            let children_sent = &mut session.children_sent;
+            with_doc(docs, doc_id, |doc| {
+                let parent_id = check_removable(doc, node_id)?;
+                forget_subtree(doc, node_id, children_sent);
+                doc.mutate().remove_and_drop_node(node_id);
+                doc.shell_provider.request_redraw();
+                emit_child_removed(writer, doc, parent_id, node_id, children_sent);
+                Ok(())
+            })
+            .ok_or_else(no_document)??;
             Ok(json!({}))
         }
 
