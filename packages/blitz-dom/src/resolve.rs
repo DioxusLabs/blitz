@@ -175,10 +175,14 @@ impl BaseDocument {
 
         let scale = self.viewport.scale_f64();
 
-        if !self.nodes[node_id]
-            .damage()
-            .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))
-            .unwrap_or(false)
+        // Anonymous boxes are never skipped: damage marking walks the DOM parent chain,
+        // which bypasses them, so they carry no damage of their own even when a
+        // descendant's transform or overflow has changed.
+        if !self.nodes[node_id].is_anonymous()
+            && !self.nodes[node_id]
+                .damage()
+                .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))
+                .unwrap_or(false)
         {
             let node = &self.nodes[node_id];
             let location = node.final_layout().location.map(|v| v as f64 * scale);
