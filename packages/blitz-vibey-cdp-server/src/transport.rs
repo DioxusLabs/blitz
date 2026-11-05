@@ -15,7 +15,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 
 use crate::session::Session;
-use crate::{CdpCommand, CdpEvent, CdpEventData, Connection, JsonValue, MessageWriter};
+use crate::{CdpCommand, CdpEvent, CdpEventData, Connection, JsonValue, MessageWriter, TargetId};
 
 pub(crate) fn run_cdp_server(
     addr: String,
@@ -160,10 +160,10 @@ fn handle_connection(
 
     tracing::debug!("CDP: new connection (id: {connection_id}, path: {path})");
 
-    // The document id requested via the WebSocket path (`/devtools/page/{id}`)
-    let doc_id_hint = path
+    // The target requested via the WebSocket path (`/devtools/page/{id}`)
+    let target = path
         .strip_prefix("/devtools/page/")
-        .and_then(|id| id.parse::<usize>().ok());
+        .and_then(TargetId::parse);
 
     // A short read timeout lets the single connection thread alternate
     // between blocking reads and draining the outgoing message queue
@@ -176,7 +176,7 @@ fn handle_connection(
         connection_id,
         data: CdpEventData::ConnectionOpened(Connection {
             writer: MessageWriter(outgoing_sender),
-            session: Session::new(doc_id_hint),
+            session: Session::new(target),
         }),
     });
 

@@ -7,7 +7,7 @@ use blitz_dom::{BaseDocument, LocalName, QualName, ns};
 use blitz_traits::node_id::NodeId;
 use serde_json::json;
 
-use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter};
+use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter, TargetId};
 
 mod css;
 mod dom;
@@ -134,10 +134,12 @@ const STUB_METHODS: &[&str] = &[
     "Overlay.highlightFrame",
 ];
 
-/// A single CDP client session, attached to one Blitz document
+/// A single CDP client session, attached to one Blitz target
 pub(crate) struct Session {
-    /// The document id requested via the WebSocket path
-    doc_id_hint: Option<usize>,
+    /// The target requested via the WebSocket path
+    target: Option<TargetId>,
+    /// The id of the document the target showed when last checked
+    bound_doc_id: Option<usize>,
     /// Whether inspect mode (the element picker) is currently active
     pub(crate) picking: bool,
     /// Whether this session currently has a node highlighted on the document
@@ -153,9 +155,10 @@ pub(crate) struct Session {
 }
 
 impl Session {
-    pub(crate) fn new(doc_id_hint: Option<usize>) -> Self {
+    pub(crate) fn new(target: Option<TargetId>) -> Self {
         Session {
-            doc_id_hint,
+            target,
+            bound_doc_id: None,
             picking: false,
             highlighting: false,
             last_picker_node: None,
@@ -163,14 +166,43 @@ impl Session {
         }
     }
 
-    /// The id of the document this session is inspecting: the one requested
-    /// via the WebSocket path (fixed for the session's lifetime — `None` if
-    /// it has closed), or the first document if none was requested
+    /// The id of the document this session is inspecting: the one the
+    /// requested target showed when last bound (`None` if it has closed),
+    /// or the first document if no target was requested
     pub(crate) fn doc_id(&self, docs: &dyn DocumentProvider) -> Option<usize> {
         let ids = docs.document_ids();
-        match self.doc_id_hint {
-            Some(id) => ids.contains(&id).then_some(id),
+        match self.target {
+            Some(_) => self.bound_doc_id.filter(|id| ids.contains(id)),
             None => ids.first().copied(),
+        }
+    }
+
+    /// Bind the session to the document its target currently shows. If the
+    /// target has navigated to a new document since it was last bound, the
+    /// frontend's tree is discarded with a `DOM.documentUpdated` event (as
+    /// Chrome does), after which it requests the new document.
+    pub(crate) fn rebind(&mut self, writer: &mut MessageWriter, docs: &mut dyn DocumentProvider) {
+        let Some(target) = self.target else {
+            return;
+        };
+        let doc_id = target.resolve(docs);
+        if doc_id == self.bound_doc_id {
+            return;
+        }
+        let was_bound = self.bound_doc_id.is_some();
+        self.bound_doc_id = doc_id;
+        self.children_sent.clear();
+        self.highlighting = false;
+        self.last_picker_node = None;
+        let Some(doc_id) = doc_id else {
+            return;
+        };
+        // Inspect mode stays active across navigations
+        if self.picking {
+            with_doc(docs, doc_id, |doc| doc.devtools_mut().element_picker = true);
+        }
+        if was_bound {
+            writer.event("DOM.documentUpdated", json!({}));
         }
     }
 

@@ -5,8 +5,12 @@
 //! connect to and inspect Blitz documents.
 //!
 //! Targets are advertised over HTTP at `/json/list` (and `/json/version`),
-//! and each document is debuggable over a WebSocket at
-//! `/devtools/page/{doc_id}` speaking plain JSON CDP messages.
+//! and each target is debuggable over a WebSocket at
+//! `/devtools/page/{target_id}` speaking plain JSON CDP messages. A top-level
+//! document's target id is its document id. A sub-document's target id is
+//! that of the element hosting it (`{host_doc_id}.{host_node_id}`), so the
+//! target follows the host as it navigates to new documents (e.g. a browser
+//! tab or an iframe).
 //!
 //! [Chrome DevTools Protocol]: https://chromedevtools.github.io/devtools-protocol/
 
@@ -15,6 +19,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, SyncSender, channel};
 use std::time::Duration;
+
+use blitz_traits::node_id::NodeId;
 use tungstenite::Message;
 
 mod css;
@@ -127,6 +133,13 @@ impl CdpServer {
     /// whenever the waker fires. The waker also fires after the first
     /// mutation to an inspected document since the last call.
     pub fn process_messages(&mut self, docs: &mut dyn DocumentProvider) {
+        // Move sessions inspecting a dropped sub-document on to the
+        // document that replaced it (if any)
+        if self.mutation_log.take_documents_dropped() {
+            for conn in self.connections.values_mut() {
+                conn.session.rebind(&mut conn.writer, docs);
+            }
+        }
         while let Ok(event) = self.event_queue.try_recv() {
             self.handle_event(event, docs);
         }
@@ -172,7 +185,8 @@ impl CdpServer {
 
     fn handle_event(&mut self, event: CdpEvent, docs: &mut dyn DocumentProvider) {
         match event.data {
-            CdpEventData::ConnectionOpened(connection) => {
+            CdpEventData::ConnectionOpened(mut connection) => {
+                connection.session.rebind(&mut connection.writer, docs);
                 self.connections.insert(event.connection_id, connection);
             }
             CdpEventData::ConnectionClosed => {
@@ -201,6 +215,10 @@ impl CdpServer {
                 // makes are sent before its reply (as Chrome does)
                 self.flush_mutations(docs);
                 let conn = self.connections.get_mut(&event.connection_id).unwrap();
+                // The host may have navigated since the session was last
+                // bound without the document being dropped while recorded
+                // (e.g. before the session's first `DOM.getDocument`)
+                conn.session.rebind(&mut conn.writer, docs);
                 let result = conn.session.dispatch(&mut conn.writer, docs, &command);
                 // Record mutations to the document from now on: the frontend
                 // has a tree to apply them to
@@ -222,7 +240,7 @@ impl CdpServer {
             }
             CdpEventData::TargetListRequest(reply) => {
                 let mut targets = Vec::new();
-                for doc_id in docs.document_ids() {
+                for (target_id, doc_id) in list_targets(docs) {
                     docs.with_document(doc_id, &mut |doc| {
                         let title = match doc.devtools_title() {
                             Some(title) => title.to_string(),
@@ -232,7 +250,7 @@ impl CdpServer {
                                 .unwrap_or_default(),
                         };
                         targets.push(TargetInfo {
-                            id: doc_id,
+                            id: target_id,
                             title,
                             url: doc.url().to_string(),
                         });
@@ -273,8 +291,90 @@ pub(crate) struct CdpCommand {
     pub(crate) session_id: Option<String>,
 }
 
+/// The id of a debuggable target
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TargetId {
+    /// A top-level document, by document id
+    Document(usize),
+    /// Whichever document is hosted by an element (e.g. a browser tab's
+    /// web view or an iframe), which stays the same target as the element
+    /// navigates to new documents
+    SubDocument(SubDocumentHost),
+}
+
+/// An element hosting a sub-document
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SubDocumentHost {
+    pub(crate) doc_id: usize,
+    pub(crate) node_id: NodeId,
+}
+
+impl TargetId {
+    /// Parse a target id as formatted by its `Display` impl
+    pub(crate) fn parse(id: &str) -> Option<Self> {
+        match id.split_once('.') {
+            Some((doc_id, node_id)) => Some(TargetId::SubDocument(SubDocumentHost {
+                doc_id: doc_id.parse().ok()?,
+                node_id: NodeId::from_u64(node_id.parse().ok()?),
+            })),
+            None => Some(TargetId::Document(id.parse().ok()?)),
+        }
+    }
+
+    /// The id of the document the target currently shows (if it exists)
+    pub(crate) fn resolve(&self, docs: &mut dyn DocumentProvider) -> Option<usize> {
+        match self {
+            TargetId::Document(doc_id) => docs.document_ids().contains(doc_id).then_some(*doc_id),
+            TargetId::SubDocument(host) => {
+                let mut sub_doc_id = None;
+                with_document(docs, host.doc_id, |doc| {
+                    sub_doc_id = doc
+                        .get_node(host.node_id)
+                        .and_then(|node| node.subdoc())
+                        .map(|sub_doc| sub_doc.id());
+                });
+                sub_doc_id
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for TargetId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TargetId::Document(doc_id) => write!(f, "{doc_id}"),
+            TargetId::SubDocument(host) => {
+                write!(f, "{}.{}", host.doc_id, host.node_id.as_u64())
+            }
+        }
+    }
+}
+
+/// The current targets (in document order), each with the id of the
+/// document it shows
+fn list_targets(docs: &mut dyn DocumentProvider) -> Vec<(TargetId, usize)> {
+    let doc_ids = docs.document_ids();
+    let mut hosts = HashMap::new();
+    for &doc_id in &doc_ids {
+        with_document(docs, doc_id, |doc| {
+            for node_id in doc.sub_document_node_ids() {
+                if let Some(sub_doc) = doc.get_node(node_id).and_then(|node| node.subdoc()) {
+                    hosts.insert(sub_doc.id(), SubDocumentHost { doc_id, node_id });
+                }
+            }
+        });
+    }
+    doc_ids
+        .into_iter()
+        .map(|doc_id| match hosts.get(&doc_id) {
+            Some(host) => (TargetId::SubDocument(*host), doc_id),
+            None => (TargetId::Document(doc_id), doc_id),
+        })
+        .collect()
+}
+
 pub(crate) struct TargetInfo {
-    pub(crate) id: usize,
+    pub(crate) id: TargetId,
     pub(crate) title: String,
     pub(crate) url: String,
 }

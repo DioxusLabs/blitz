@@ -87,4 +87,8 @@ pub trait DevtoolsProvider: Send + Sync + 'static {
     fn mutations(&self, records: &[MutationRecord]) {
         let _ = records;
     }
+
+    /// The document was dropped (e.g. a sub-document replaced by navigating
+    /// its host element). Called from the document's `Drop` impl.
+    fn document_dropped(&self) {}
 }
