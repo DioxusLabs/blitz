@@ -9,7 +9,7 @@ use blitz_traits::net::Bytes;
 use serde_json::json;
 
 use super::{CdpError, Session};
-use crate::network::{NetworkRecord, base64_encode, is_text_mime_type};
+use crate::network::{NetworkRecord, ResourceType, base64_encode, is_text_mime_type};
 use crate::{CdpCommand, JsonValue, MessageWriter};
 
 /// Body buffer sizes used when `Network.enable` doesn't specify them
@@ -145,7 +145,10 @@ impl Session {
                     json!({
                         "requestId": cdp_request_id(request.request_id),
                         "loaderId": loader_id,
-                        "documentURL": doc_url,
+                        "documentURL": match request.resource_type {
+                            ResourceType::Document => request.url.as_str(),
+                            _ => doc_url,
+                        },
                         "request": {
                             "url": request.url,
                             "method": request.method,
