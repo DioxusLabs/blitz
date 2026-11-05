@@ -357,6 +357,17 @@ impl std::fmt::Display for TargetId {
     }
 }
 
+/// The id of the target showing the document `doc_id` (for use in a
+/// `/devtools/page/{target_id}` WebSocket address, e.g. with [`frontend_url`]).
+/// A sub-document's target is its host element, so a session attached to it
+/// follows the host as it navigates to new documents.
+pub fn target_id(docs: &mut dyn DocumentProvider, doc_id: usize) -> Option<String> {
+    list_targets(docs)
+        .into_iter()
+        .find(|&(_, id)| id == doc_id)
+        .map(|(target_id, _)| target_id.to_string())
+}
+
 /// The current targets (in document order), each with the id of the
 /// document it shows
 fn list_targets(docs: &mut dyn DocumentProvider) -> Vec<(TargetId, usize)> {

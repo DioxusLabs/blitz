@@ -93,12 +93,20 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         if self.devtools.cdp.is_none() {
             self.start_cdp_server(0);
         }
+        // Inspect the document's target, which for a sub-document (e.g. a
+        // browser tab) follows its host element across navigations
+        let mut target_id = None;
+        self.with_cdp(|_, docs| target_id = blitz_vibey_cdp_server::target_id(docs, doc_id));
+        let Some(target_id) = target_id else {
+            eprintln!("CDP: can't open devtools: no document {doc_id}");
+            return;
+        };
         let cdp = self.devtools.cdp.as_ref().unwrap();
         let Some(addr) = cdp.wait_for_local_addr(Duration::from_secs(1)) else {
             eprintln!("CDP: can't open devtools: the server isn't listening");
             return;
         };
-        let url = blitz_vibey_cdp_server::frontend_url(addr, doc_id);
+        let url = blitz_vibey_cdp_server::frontend_url(addr, &target_id);
         // Browsers can't be launched with Chrome's bundled frontend
         if url.starts_with("devtools://") {
             eprintln!("CDP: to open devtools, paste this URL into Chrome: {url}");

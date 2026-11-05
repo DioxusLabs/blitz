@@ -37,10 +37,10 @@ fn serves_the_frontend() {
         .wait_for_local_addr(Duration::from_secs(10))
         .expect("server should start listening");
 
-    let url = frontend_url(addr, 7);
+    let url = frontend_url(addr, "7.42");
     assert_eq!(
         url,
-        format!("http://{addr}/devtools_app.html?ws={addr}/devtools/page/7")
+        format!("http://{addr}/devtools_app.html?ws={addr}/devtools/page/7.42")
     );
 
     // The page (requested with its query string), which loads the entrypoint

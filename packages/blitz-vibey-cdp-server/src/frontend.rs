@@ -12,8 +12,8 @@ const FRONTEND_DIR_VAR: &str = "BLITZ_DEVTOOLS_FRONTEND_DIR";
 /// The path of the frontend's page
 const ENTRY_PATH: &str = "devtools_app.html";
 
-/// The URL of a DevTools frontend inspecting the document `doc_id` of the
-/// server listening on `addr`.
+/// The URL of a DevTools frontend inspecting the target `target_id` (see
+/// [`target_id`](crate::target_id)) of the server listening on `addr`.
 ///
 /// When the `embedded-frontend` feature is enabled (or
 /// `BLITZ_DEVTOOLS_FRONTEND_DIR` is set), this is the frontend served by the
@@ -21,7 +21,7 @@ const ENTRY_PATH: &str = "devtools_app.html";
 /// frontend bundled with Chrome (a `devtools://` URL, as advertised at
 /// `/json/list`), which can only be opened by pasting it into Chrome's address
 /// bar.
-pub fn frontend_url(addr: std::net::SocketAddr, doc_id: usize) -> String {
+pub fn frontend_url(addr: std::net::SocketAddr, target_id: &str) -> String {
     let serves_frontend =
         cfg!(feature = "embedded-frontend") || std::env::var_os(FRONTEND_DIR_VAR).is_some();
     let base = if serves_frontend {
@@ -29,7 +29,7 @@ pub fn frontend_url(addr: std::net::SocketAddr, doc_id: usize) -> String {
     } else {
         "devtools://devtools/bundled".to_string()
     };
-    format!("{base}/{ENTRY_PATH}?ws={addr}/devtools/page/{doc_id}")
+    format!("{base}/{ENTRY_PATH}?ws={addr}/devtools/page/{target_id}")
 }
 
 /// The `Content-Type` and contents of the frontend file at `path` (relative
