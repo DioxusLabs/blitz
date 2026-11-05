@@ -37,7 +37,8 @@ mod transport;
 use blitz_traits::net::NetProvider;
 use devtools_provider::MutationLog;
 pub use frontend::frontend_url;
-use network::{NetworkLog, RecordingNetProvider};
+pub use network::{DocumentLoadRecorder, recording_net_provider};
+use network::{NetworkLog, RecordingNetProvider, is_embedder_recorder};
 use session::Session;
 
 pub(crate) type JsonValue = serde_json::Value;
@@ -89,10 +90,12 @@ pub struct CdpServer {
 impl CdpServer {
     pub fn new(waker: Arc<dyn DevtoolsWaker>) -> Self {
         let (sender, receiver) = channel();
+        let network_log = Arc::new(NetworkLog::new(waker.clone()));
+        network_log.make_current();
         CdpServer {
             connections: HashMap::new(),
             mutation_log: Arc::new(MutationLog::new(waker.clone())),
-            network_log: Arc::new(NetworkLog::new(waker.clone())),
+            network_log,
             net_recorders: HashMap::new(),
             waker,
             event_sender: sender,
@@ -182,16 +185,19 @@ impl CdpServer {
                 });
             }
         }
+        self.network_log.set_active(!recorded.is_empty());
         if recorded.is_empty() && self.net_recorders.is_empty() {
             return;
         }
-        self.network_log.set_active(!recorded.is_empty());
         let recorders = &mut self.net_recorders;
         let log = &self.network_log;
         for doc_id in docs.document_ids() {
             with_document(docs, doc_id, |doc| {
                 let key = Arc::as_ptr(&doc.net_provider) as *const ();
                 match (recorded.contains(&doc_id), recorders.get(&key)) {
+                    // Documents created with the embedder's recording
+                    // provider are already recorded
+                    (true, None) if is_embedder_recorder(&doc.net_provider) => {}
                     (true, None) => {
                         let recorder = Arc::new(RecordingNetProvider::new(
                             Arc::clone(&doc.net_provider),
@@ -218,10 +224,26 @@ impl CdpServer {
     /// Send the events for all logged network activity to the sessions
     /// recording the documents that issued the requests
     fn flush_network(&mut self, docs: &mut dyn DocumentProvider) {
-        let records = self.network_log.take();
+        let mut records = self.network_log.take();
         if records.is_empty() {
             return;
         }
+        // Keep the records of documents that don't exist yet (e.g. a page
+        // whose requests were recorded while it was being built) until they
+        // are shown, or for a while at most
+        let doc_ids = docs.document_ids();
+        let now = network::monotonic_time();
+        let (pending, ready) = records
+            .drain(..)
+            .partition::<Vec<_>, _>(|(doc_id, _)| !doc_ids.contains(doc_id));
+        let pending: Vec<_> = pending
+            .into_iter()
+            .filter(|(_, record)| now - record.timestamp() < PENDING_RECORD_LIFETIME_SECS)
+            .collect();
+        if !pending.is_empty() {
+            self.network_log.put_back(pending);
+        }
+        let records = ready;
         let mut doc_urls = HashMap::new();
         for (doc_id, _) in &records {
             doc_urls.entry(*doc_id).or_insert_with(|| {
@@ -371,6 +393,10 @@ impl CdpServer {
         }
     }
 }
+
+/// How long the network records of a document that doesn't exist yet are
+/// kept for it
+const PENDING_RECORD_LIFETIME_SECS: f64 = 30.0;
 
 pub(crate) struct Connection {
     pub(crate) writer: MessageWriter,
