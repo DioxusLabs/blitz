@@ -53,7 +53,7 @@ pub trait DevtoolsProvider: Send + Sync + 'static {
     fn attribute_changed(&self, node_id: NodeId, name: &str) {
         let _ = (node_id, name);
     }
-    /// The text of the text node `node_id` changed
+    /// The text of the text or comment node `node_id` changed
     fn character_data_changed(&self, node_id: NodeId) {
         let _ = node_id;
     }
