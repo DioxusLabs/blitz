@@ -15,7 +15,7 @@ mod text;
 pub use attributes::{Attribute, Attributes};
 #[cfg(feature = "custom-widget")]
 pub use custom_widget::{
-    ComputedStyles, CustomWidgetData, CustomWidgetStatus, ProxyRenderContext, Widget,
+    ComputedStyles, CustomWidgetData, CustomWidgetStatus, ProxyRenderContext, Widget, WidgetCx,
 };
 pub(crate) use element::parse_classes;
 pub use element::{

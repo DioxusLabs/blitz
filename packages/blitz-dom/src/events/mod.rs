@@ -162,7 +162,9 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
         if let Some(ui_event) = ui_event {
-            widget_data.widget.handle_event(&ui_event);
+            let mut cx = crate::WidgetCx::new();
+            widget_data.widget.handle_event(&ui_event, &mut cx);
+            doc.apply_widget_requests(target_node_id, cx);
         }
 
         if set_focus {

@@ -41,7 +41,11 @@ impl Widget for DemoWidget {
         true
     }
 
-    fn handle_event(&mut self, event: &blitz_traits::events::UiEvent) {
+    fn handle_event(
+        &mut self,
+        event: &blitz_traits::events::UiEvent,
+        _cx: &mut blitz_dom::WidgetCx,
+    ) {
         let _ = event;
     }
 

@@ -824,12 +824,14 @@ impl ElementData {
     }
 
     #[cfg(feature = "custom-widget")]
-    pub fn set_custom_widget(&mut self, mut widget: Box<dyn crate::Widget>) {
+    pub fn set_custom_widget(&mut self, mut widget: Box<dyn crate::Widget>) -> crate::WidgetCx {
         use crate::node::custom_widget::CustomWidgetData;
+        let mut cx = crate::WidgetCx::new();
         for attr in self.attrs.iter() {
-            widget.attribute_changed(&attr.name.local, None, Some(&attr.value));
+            widget.attribute_changed(&attr.name.local, None, Some(&attr.value), &mut cx);
         }
         self.special_data = SpecialElementData::CustomWidget(CustomWidgetData::new(widget));
+        cx
     }
 
     #[cfg(feature = "custom-widget")]
