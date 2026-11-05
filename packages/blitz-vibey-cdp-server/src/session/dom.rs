@@ -7,8 +7,7 @@ use serde_json::json;
 
 use super::{
     CdpError, Session, any_node_id_param, attr_name, blitz_node_id, cdp_node_id, check_removable,
-    emit_child_inserted, emit_child_removed, forget_subtree, no_document, no_node, node_id_param,
-    str_param, with_doc,
+    no_document, no_node, node_id_param, str_param, with_doc,
 };
 use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter};
 
@@ -111,10 +110,6 @@ pub(super) fn dispatch(
                 Ok(())
             })
             .ok_or_else(no_document)??;
-            writer.event(
-                "DOM.attributeModified",
-                json!({ "nodeId": cdp_node_id(node_id), "name": name, "value": value }),
-            );
             Ok(json!({}))
         }
 
@@ -131,10 +126,6 @@ pub(super) fn dispatch(
                 Ok(())
             })
             .ok_or_else(no_document)??;
-            writer.event(
-                "DOM.attributeRemoved",
-                json!({ "nodeId": cdp_node_id(node_id), "name": name }),
-            );
             Ok(json!({}))
         }
 
@@ -166,18 +157,6 @@ pub(super) fn dispatch(
                 Ok(())
             })
             .ok_or_else(no_document)??;
-            if let Some(name) = &removed {
-                writer.event(
-                    "DOM.attributeRemoved",
-                    json!({ "nodeId": cdp_node_id(node_id), "name": name }),
-                );
-            }
-            for (name, value) in &new_attrs {
-                writer.event(
-                    "DOM.attributeModified",
-                    json!({ "nodeId": cdp_node_id(node_id), "name": name, "value": value }),
-                );
-            }
             Ok(json!({}))
         }
 
@@ -186,39 +165,25 @@ pub(super) fn dispatch(
             let node_id = node_id_param(params, "nodeId")?;
             let value = str_param(params, "value")?;
             with_doc(docs, doc_id, |doc| {
-                let node = doc.get_node_mut(node_id).ok_or_else(no_node)?;
-                match &mut node.data {
-                    NodeData::Text(_) => {}
-                    NodeData::Comment { contents } => {
-                        *contents = value.clone();
-                        return Ok(());
-                    }
-                    _ => {
-                        return Err(CdpError::server_error("Node is not a character data node"));
-                    }
+                let node = doc.get_node(node_id).ok_or_else(no_node)?;
+                if !matches!(node.data, NodeData::Text(_) | NodeData::Comment { .. }) {
+                    return Err(CdpError::server_error("Node is not a character data node"));
                 }
                 doc.mutate().set_node_text(node_id, &value);
                 doc.shell_provider.request_redraw();
                 Ok(())
             })
             .ok_or_else(no_document)??;
-            writer.event(
-                "DOM.characterDataModified",
-                json!({ "nodeId": cdp_node_id(node_id), "characterData": value }),
-            );
             Ok(json!({}))
         }
 
         "DOM.removeNode" => {
             let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
             let node_id = node_id_param(params, "nodeId")?;
-            let children_sent = &mut session.children_sent;
             with_doc(docs, doc_id, |doc| {
-                let parent_id = check_removable(doc, node_id)?;
-                forget_subtree(doc, node_id, children_sent);
+                check_removable(doc, node_id)?;
                 doc.mutate().remove_and_drop_node(node_id);
                 doc.shell_provider.request_redraw();
-                emit_child_removed(writer, doc, parent_id, node_id, children_sent);
                 Ok(())
             })
             .ok_or_else(no_document)??;
@@ -232,7 +197,6 @@ pub(super) fn dispatch(
             let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
             let node_id = node_id_param(params, "nodeId")?;
             let html = str_param(params, "outerHTML")?;
-            let children_sent = &mut session.children_sent;
             with_doc(docs, doc_id, |doc| {
                 let parent_id = check_removable(doc, node_id)?;
                 let context_name = doc
@@ -240,7 +204,6 @@ pub(super) fn dispatch(
                     .and_then(|parent| parent.element_data())
                     .map(|el| el.name.clone())
                     .unwrap_or_else(|| QualName::new(None, ns!(html), LocalName::from("body")));
-                forget_subtree(doc, node_id, children_sent);
 
                 let mut mutr = doc.mutate();
                 let container_id = mutr.create_element(context_name, Vec::new());
@@ -255,11 +218,6 @@ pub(super) fn dispatch(
                 mutr.remove_and_drop_node(container_id);
                 drop(mutr);
                 doc.shell_provider.request_redraw();
-
-                emit_child_removed(writer, doc, parent_id, node_id, children_sent);
-                for new_id in new_ids {
-                    emit_child_inserted(writer, doc, new_id, children_sent);
-                }
                 Ok(())
             })
             .ok_or_else(no_document)??;
@@ -275,9 +233,8 @@ pub(super) fn dispatch(
                 .get("insertBeforeNodeId")
                 .map(|_| node_id_param(params, "insertBeforeNodeId"))
                 .transpose()?;
-            let children_sent = &mut session.children_sent;
             with_doc(docs, doc_id, |doc| {
-                let old_parent_id = check_removable(doc, node_id)?;
+                check_removable(doc, node_id)?;
                 doc.get_node(target_id)
                     .filter(|target| target.is_element())
                     .ok_or_else(no_node)?;
@@ -300,8 +257,6 @@ pub(super) fn dispatch(
                         return Ok(());
                     }
                 }
-                forget_subtree(doc, node_id, children_sent);
-
                 let mut mutr = doc.mutate();
                 match insert_before_id {
                     Some(anchor_id) => mutr.insert_nodes_before(anchor_id, &[node_id]),
@@ -309,9 +264,6 @@ pub(super) fn dispatch(
                 }
                 drop(mutr);
                 doc.shell_provider.request_redraw();
-
-                emit_child_removed(writer, doc, old_parent_id, node_id, children_sent);
-                emit_child_inserted(writer, doc, node_id, children_sent);
                 Ok(())
             })
             .ok_or_else(no_document)??;

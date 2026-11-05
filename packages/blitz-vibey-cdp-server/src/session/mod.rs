@@ -11,6 +11,7 @@ use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter};
 
 mod css;
 mod dom;
+mod mutations;
 mod overlay;
 mod page;
 
@@ -20,8 +21,8 @@ const INVALID_PARAMS: i64 = -32602;
 const SERVER_ERROR: i64 = -32000;
 
 pub(crate) struct CdpError {
-    code: i64,
-    message: String,
+    pub(crate) code: i64,
+    pub(crate) message: String,
 }
 
 impl CdpError {
@@ -165,7 +166,7 @@ impl Session {
     /// The id of the document this session is inspecting: the one requested
     /// via the WebSocket path (fixed for the session's lifetime — `None` if
     /// it has closed), or the first document if none was requested
-    fn doc_id(&self, docs: &dyn DocumentProvider) -> Option<usize> {
+    pub(crate) fn doc_id(&self, docs: &dyn DocumentProvider) -> Option<usize> {
         let ids = docs.document_ids();
         match self.doc_id_hint {
             Some(id) => ids.contains(&id).then_some(id),
@@ -173,19 +174,7 @@ impl Session {
         }
     }
 
-    pub(crate) fn handle_command(
-        &mut self,
-        writer: &mut MessageWriter,
-        docs: &mut dyn DocumentProvider,
-        command: CdpCommand,
-    ) {
-        match self.dispatch(writer, docs, &command) {
-            Ok(result) => writer.reply(&command, result),
-            Err(err) => writer.reply_err(&command, err.code, &err.message),
-        }
-    }
-
-    fn dispatch(
+    pub(crate) fn dispatch(
         &mut self,
         writer: &mut MessageWriter,
         docs: &mut dyn DocumentProvider,
@@ -301,67 +290,6 @@ fn emit_child_count_updated(
         json!({
             "nodeId": cdp_node_id(parent_id),
             "childNodeCount": crate::dom::dom_children(doc, parent).len(),
-        }),
-    );
-}
-
-/// Emit the event for a node that was removed from `parent_id` (call after
-/// the removal): `DOM.childNodeRemoved` if the frontend knows the parent's
-/// children, otherwise a child count update
-fn emit_child_removed(
-    writer: &mut MessageWriter,
-    doc: &BaseDocument,
-    parent_id: NodeId,
-    node_id: NodeId,
-    children_sent: &HashSet<NodeId>,
-) {
-    if children_sent.contains(&parent_id) {
-        writer.event(
-            "DOM.childNodeRemoved",
-            json!({ "parentNodeId": cdp_node_id(parent_id), "nodeId": cdp_node_id(node_id) }),
-        );
-    } else {
-        emit_child_count_updated(writer, doc, parent_id, children_sent);
-    }
-}
-
-/// Emit the event for a node that was inserted into the tree (call after
-/// the insertion): `DOM.childNodeInserted` if the frontend knows the new
-/// parent's children, otherwise a child count update
-fn emit_child_inserted(
-    writer: &mut MessageWriter,
-    doc: &BaseDocument,
-    node_id: NodeId,
-    children_sent: &mut HashSet<NodeId>,
-) {
-    let Some(parent_id) = doc.get_node(node_id).and_then(|node| node.parent) else {
-        return;
-    };
-    if !children_sent.contains(&parent_id) {
-        emit_child_count_updated(writer, doc, parent_id, children_sent);
-        return;
-    }
-    let siblings = doc
-        .get_node(parent_id)
-        .map(|parent| crate::dom::dom_children(doc, parent))
-        .unwrap_or_default();
-    // Anonymous and whitespace-only nodes are not exposed to the frontend
-    let Some(index) = siblings.iter().position(|sibling| sibling.id == node_id) else {
-        return;
-    };
-    let previous_id = match index {
-        0 => 0,
-        _ => cdp_node_id(siblings[index - 1].id),
-    };
-    let Some(node) = crate::dom::node_json(doc, node_id, 0, children_sent) else {
-        return;
-    };
-    writer.event(
-        "DOM.childNodeInserted",
-        json!({
-            "parentNodeId": cdp_node_id(parent_id),
-            "previousNodeId": previous_id,
-            "node": node,
         }),
     );
 }
