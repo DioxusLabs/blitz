@@ -2084,3 +2084,98 @@ fn style_sheet_rule_editing() {
         );
     });
 }
+
+#[test]
+fn style_sheet_rule_selector_editing() {
+    let html = "<html><head><style id=\"sheet\">.a { color: red }\n\
+         .c { color: blue }\n</style></head>\
+         <body><div id=\"t\" class=\"a\">x</div></body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let t_id = node_id_of(&root, "t");
+        send_command(&mut ws, 2, "CSS.enable", json!({}));
+        read_reply(&mut ws, 2, &mut events);
+        let sheet_id = events
+            .iter()
+            .find(|e| e["method"] == "CSS.styleSheetAdded")
+            .map(|e| e["params"]["header"]["styleSheetId"].clone())
+            .unwrap();
+
+        // Selecting the element with the second rule restyles it
+        send_command(
+            &mut ws,
+            3,
+            "CSS.setRuleSelector",
+            json!({
+                "styleSheetId": sheet_id,
+                "range": { "startLine": 1, "startColumn": 0, "endLine": 1, "endColumn": 2 },
+                "selector": "#t,  .z",
+            }),
+        );
+        let result = read_reply(&mut ws, 3, &mut events);
+        assert_eq!(result["selectorList"]["text"], "#t,  .z");
+        assert_eq!(result["selectorList"]["selectors"][1]["text"], ".z");
+        assert_eq!(
+            result["selectorList"]["selectors"][1]["range"],
+            json!({ "startLine": 1, "startColumn": 5, "endLine": 1, "endColumn": 7 })
+        );
+        assert_eq!(computed_value(&mut ws, 4, t_id, "color"), "rgb(0, 0, 255)");
+
+        // The edited rule is reported with ranges into the new text
+        send_command(
+            &mut ws,
+            5,
+            "CSS.getMatchedStylesForNode",
+            json!({ "nodeId": t_id }),
+        );
+        let matched = read_reply(&mut ws, 5, &mut events);
+        let rule = matched_rule(&matched, "#t,  .z");
+        assert_eq!(rule["styleSheetId"], sheet_id);
+        assert_eq!(rule["style"]["cssText"], " color: blue ");
+
+        // Invalid selectors, and ranges that are not a selector list, are
+        // rejected and leave the sheet unchanged
+        for (id, range, selector) in [
+            (
+                6,
+                rule["selectorList"]["selectors"][0]["range"].clone(),
+                "!!",
+            ),
+            (
+                7,
+                rule["selectorList"]["selectors"][0]["range"].clone(),
+                ".y {} .x",
+            ),
+            (
+                8,
+                rule["selectorList"]["selectors"][1]["range"].clone(),
+                ".y",
+            ),
+        ] {
+            send_command(
+                &mut ws,
+                id,
+                "CSS.setRuleSelector",
+                json!({ "styleSheetId": sheet_id, "range": range, "selector": selector }),
+            );
+            expect_error(&mut ws, id);
+        }
+        send_command(
+            &mut ws,
+            9,
+            "CSS.getStyleSheetText",
+            json!({ "styleSheetId": sheet_id }),
+        );
+        assert_eq!(
+            read_reply(&mut ws, 9, &mut events)["text"],
+            ".a { color: red }\n#t,  .z { color: blue }\n"
+        );
+        assert_eq!(computed_value(&mut ws, 10, t_id, "color"), "rgb(0, 0, 255)");
+    });
+}
