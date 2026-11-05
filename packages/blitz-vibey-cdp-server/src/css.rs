@@ -161,33 +161,9 @@ fn rule_match_json(
         }
         _ => None,
     };
-    if let Some(RuleSource {
-        sheet_id,
-        text,
-        ranges,
-    }) = source
-    {
-        let selectors: Vec<JsonValue> = ranges
-            .selectors
-            .iter()
-            .map(|&(start, end)| {
-                json!({ "text": &text[start..end], "range": source_range_json(text, start, end) })
-            })
-            .collect();
-        let selector_text = match (ranges.selectors.first(), ranges.selectors.last()) {
-            (Some(first), Some(last)) => &text[first.0..last.1],
-            _ => "",
-        };
-        let matching: Vec<usize> = (0..selectors.len()).collect();
-        return json!({
-            "rule": {
-                "styleSheetId": sheet_id,
-                "selectorList": { "selectors": selectors, "text": selector_text },
-                "origin": "regular",
-                "style": authored_style_json(text, ranges.style.0, ranges.style.1, sheet_id),
-            },
-            "matchingSelectors": matching,
-        });
+    if let Some(source) = source {
+        let matching: Vec<usize> = (0..source.ranges.selectors.len()).collect();
+        return json!({ "rule": sheet_rule_json(&source), "matchingSelectors": matching });
     }
 
     // An empty selector confuses the frontend's rule display: fall back to "*"
@@ -209,6 +185,38 @@ fn rule_match_json(
         },
         "matchingSelectors": matching,
     })
+}
+
+/// A CDP `CSS.CSSRule` for a style rule located in a reported sheet
+pub(crate) fn sheet_rule_json(source: &RuleSource) -> JsonValue {
+    let RuleSource {
+        sheet_id,
+        text,
+        ranges,
+    } = source;
+    json!({
+        "styleSheetId": sheet_id,
+        "selectorList": selector_list_json(source),
+        "origin": "regular",
+        "style": authored_style_json(text, ranges.style.0, ranges.style.1, sheet_id),
+    })
+}
+
+/// A CDP `CSS.SelectorList`, with source ranges, for a style rule located
+/// in a reported sheet
+pub(crate) fn selector_list_json(source: &RuleSource) -> JsonValue {
+    let RuleSource { text, ranges, .. } = source;
+    let selectors: Vec<JsonValue> = ranges
+        .selectors
+        .iter()
+        .map(|&(start, end)| {
+            json!({ "text": &text[start..end], "range": source_range_json(text, start, end) })
+        })
+        .collect();
+    let selector_text = ranges
+        .selector_list()
+        .map_or("", |(start, end)| &text[start..end]);
+    json!({ "selectors": selectors, "text": selector_text })
 }
 
 /// Collect the style rules matching a node from Stylo's rule tree,
