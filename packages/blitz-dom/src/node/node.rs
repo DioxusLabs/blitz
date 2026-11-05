@@ -123,6 +123,12 @@ pub struct Node {
     /// stacking context on its last (non-skipped) paint-tree build. Replayed
     /// when the subtree is skipped as clean. Empty for stacking-context roots.
     pub sc_contribution_cache: RefCell<ThinVec<HoistedPaintChild>>,
+    /// Containing blocks, above this node, of z-indexed boxes painted through
+    /// this node's paint lists (transitively) because they joined a stacking
+    /// context below their containing block. While non-empty, this node's
+    /// bounds and overflow do not cover everything it paints, so hit testing
+    /// and paint culling must not prune it.
+    pub escaped_stacked_cbs: RefCell<ThinVec<NodeId>>,
 
     // Flags
     pub flags: NodeFlags,
@@ -424,6 +430,7 @@ impl Node {
             paint_children: RefCell::new(None),
             stacking_context: None,
             sc_contribution_cache: RefCell::new(ThinVec::new()),
+            escaped_stacked_cbs: RefCell::new(ThinVec::new()),
 
             flags: NodeFlags::empty(),
             out_of_flow: AtomicBool::new(false),
@@ -1500,15 +1507,20 @@ impl Node {
             || y < overflow_rect.top() + client_y
             || y > overflow_rect.bottom() + client_y);
 
-        let matches_hoisted_content = match &self.stacking_context {
-            Some(sc) => {
-                // Both the point (after the scroll adjustment above) and the
-                // bbox are in this node's unscrolled content coordinates.
-                let bbox = sc.hoisted_content_bbox(self.tree(), self.id, scale);
-                x >= bbox.left && x <= bbox.right && y >= bbox.top && y <= bbox.bottom
-            }
-            None => false,
-        };
+        // Boxes that escaped to a stacking context in this subtree are not
+        // covered by any of the bounds below.
+        let paints_escaped_boxes = !self.escaped_stacked_cbs.borrow().is_empty();
+
+        let matches_hoisted_content = paints_escaped_boxes
+            || match &self.stacking_context {
+                Some(sc) => {
+                    // Both the point (after the scroll adjustment above) and the
+                    // bbox are in this node's unscrolled content coordinates.
+                    let bbox = sc.hoisted_content_bbox(self.tree(), self.id, scale);
+                    x >= bbox.left && x <= bbox.right && y >= bbox.top && y <= bbox.bottom
+                }
+                None => false,
+            };
 
         // `scrollable_overflow` is stored in device (scaled) pixels, whereas the
         // coordinates here are in CSS pixels, so unscale it before comparing.
@@ -1519,7 +1531,12 @@ impl Node {
             && y >= (overflow.y0 / scale) as f32
             && y <= (overflow.y1 / scale) as f32;
 
-        if !matches_self && !matches_content && !matches_hoisted_content && !matches_overflow {
+        if !matches_self
+            && !matches_content
+            && !matches_hoisted_content
+            && !matches_overflow
+            && !paints_escaped_boxes
+        {
             return None;
         }
 

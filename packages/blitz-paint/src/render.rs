@@ -482,10 +482,15 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Cull elements that fall entirely outside the current clip rectangle. In addition to
         // the viewport, `clip_rect` is narrowed by any ancestor scrollport (see below), so this
         // also culls elements scrolled out of view inside a clipping/scrolling container.
-        if screen_bbox.x1 < clip_rect.x0
-            || screen_bbox.x0 > clip_rect.x1
-            || screen_bbox.y1 < clip_rect.y0
-            || screen_bbox.y0 > clip_rect.y1
+        //
+        // Boxes that escaped to a stacking context in this subtree (see
+        // `Node::escaped_stacked_cbs`) are not covered by `screen_bbox`.
+        let paints_escaped_boxes = !node.escaped_stacked_cbs.borrow().is_empty();
+        if !paints_escaped_boxes
+            && (screen_bbox.x1 < clip_rect.x0
+                || screen_bbox.x0 > clip_rect.x1
+                || screen_bbox.y1 < clip_rect.y0
+                || screen_bbox.y0 > clip_rect.y1)
         {
             return;
         }
@@ -629,6 +634,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 effect_layer_clip.y0 += filter_expansion_area.y0;
                 effect_layer_clip.x1 += filter_expansion_area.x1;
                 effect_layer_clip.y1 += filter_expansion_area.y1;
+                if paints_escaped_boxes && cx.transform.determinant() != 0.0 {
+                    let viewport = Rect::new(
+                        self.initial_x,
+                        self.initial_y,
+                        self.initial_x + self.width as f64,
+                        self.initial_y + self.height as f64,
+                    );
+                    effect_layer_clip = effect_layer_clip
+                        .union(cx.transform.inverse().transform_rect_bbox(viewport));
+                }
 
                 // Opacity/Filter layer if box has opacity or a filter.
                 // Clipped to border-box as it needs to include the background and borders.
