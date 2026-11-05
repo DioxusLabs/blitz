@@ -470,3 +470,50 @@ fn clicking_and_dragging_in_the_gutter_selects_lines() {
     );
     assert_eq!(editor.selections(), vec![(4, 14)]);
 }
+
+#[test]
+fn dragging_below_the_editor_keeps_scrolling() {
+    let text = (0..200).map(|i| format!("line {i}\n")).collect::<String>();
+    let (mut editor, mut cx) = editor(&text);
+    editor.set_size(Size::new(400.0, 200.0));
+    editor.prepare(&mut cx);
+    let x = editor.text_x();
+    editor.handle_input(
+        &mut cx,
+        EditorInput::PointerDown {
+            pos: Point::new(x, 5.0),
+            button: PointerButton::Primary,
+            mods: Modifiers::default(),
+            click_count: 1,
+        },
+    );
+    let resp = editor.handle_input(
+        &mut cx,
+        EditorInput::PointerMove {
+            pos: Point::new(x, 260.0),
+        },
+    );
+    let interval = resp.timer.expect("autoscroll timer");
+    let end_before = editor.selections()[0].1;
+
+    // The pointer stays put, but each timer tick scrolls and extends the selection
+    let resp = editor.handle_input(&mut cx, EditorInput::Timer);
+    assert_eq!(resp.timer, Some(interval));
+    assert!(editor.scroll_offset().y > 0.0);
+    for _ in 0..20 {
+        editor.handle_input(&mut cx, EditorInput::Timer);
+    }
+    assert!(editor.selections()[0].1 > end_before);
+
+    // Releasing the pointer stops the autoscroll
+    editor.handle_input(
+        &mut cx,
+        EditorInput::PointerUp {
+            pos: Point::new(x, 260.0),
+            button: PointerButton::Primary,
+        },
+    );
+    let scroll = editor.scroll_offset();
+    editor.handle_input(&mut cx, EditorInput::Timer);
+    assert_eq!(editor.scroll_offset(), scroll);
+}

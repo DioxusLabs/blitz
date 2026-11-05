@@ -28,6 +28,9 @@ const WHEEL_LINES: f64 = 3.0;
 /// How long the caret stays visible (or hidden) while blinking
 const DEFAULT_CARET_BLINK: Duration = Duration::from_millis(530);
 
+/// How often to scroll while drag-selecting with the pointer outside the editor
+const AUTOSCROLL_INTERVAL: Duration = Duration::from_millis(16);
+
 /// What the host should do after the editor handled an input
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EditorResponse {
@@ -88,6 +91,8 @@ struct Drag {
     granularity: Granularity,
     /// The range selected by the initial click (a word or line for multi-clicks)
     anchor: (usize, usize),
+    /// The latest pointer position
+    pos: Point,
 }
 
 /// IME composition text, shown at the primary caret but not yet part of the buffer
@@ -261,13 +266,25 @@ impl CodeEditor {
                 resp.handled = true;
                 resp.redraw = true;
             }
-            EditorInput::Timer => self.blink(&mut resp),
+            EditorInput::Timer => {
+                if !self.autoscroll(cx, &mut resp) {
+                    self.blink(&mut resp);
+                }
+            }
         }
         if self.focused && resp.redraw && restarts_blink {
             resp.ime_cursor_area = Some(self.caret_rect(cx));
             // Show the caret straight away after it moves or the text changes
             self.caret_visible = true;
             resp.timer = self.caret_blink;
+        }
+        // Start scrolling when a drag selection moves the pointer outside the editor. The timer
+        // keeps itself going from there (see `autoscroll`) until the scroll offset stops moving.
+        if restarts_blink
+            && let Some(drag) = self.drag
+            && self.autoscroll_step(drag.pos) != Vec2::ZERO
+        {
+            resp.timer = Some(AUTOSCROLL_INTERVAL);
         }
         resp
     }
@@ -742,16 +759,28 @@ impl CodeEditor {
         self.drag = Some(Drag {
             granularity,
             anchor,
+            pos,
         });
         resp.handled = true;
         resp.redraw = true;
     }
 
     fn pointer_move(&mut self, cx: &mut TextContext, pos: Point, resp: &mut EditorResponse) {
+        let Some(drag) = &mut self.drag else {
+            return;
+        };
+        drag.pos = pos;
+        self.extend_drag(cx);
+        resp.handled = true;
+        resp.redraw = true;
+    }
+
+    /// Moves the end of the dragged selection to the pointer
+    fn extend_drag(&mut self, cx: &mut TextContext) {
         let Some(drag) = self.drag else {
             return;
         };
-        let offset = self.offset_at_point(cx, pos);
+        let offset = self.offset_at_point(cx, drag.pos);
         let (start, end) = self.granular_range(offset, drag.granularity);
         let (anchor, focus) = if start < drag.anchor.0 {
             (drag.anchor.1, start)
@@ -762,9 +791,44 @@ impl CodeEditor {
         let affinity = selection.get_cursor_affinity();
         selection.replace_last_inserted_region(SelRegion::new(anchor, focus, affinity, None));
         self.set_selection(selection);
-        self.scroll_to_offset(cx, focus);
+    }
+
+    /// How far to scroll per [`AUTOSCROLL_INTERVAL`] while drag-selecting with the pointer at
+    /// `pos`: faster the further the pointer is outside the text area
+    fn autoscroll_step(&self, pos: Point) -> Vec2 {
+        let max = 4.0 * self.metrics.line_height;
+        let speed = |overshoot: f64| (overshoot / 2.0).clamp(1.0, max);
+        let axis = |pos: f64, min: f64, max: f64| {
+            if pos < min {
+                -speed(min - pos)
+            } else if pos > max {
+                speed(pos - max)
+            } else {
+                0.0
+            }
+        };
+        Vec2::new(
+            axis(pos.x, self.gutter_width(), self.size.width),
+            axis(pos.y, 0.0, self.size.height),
+        )
+    }
+
+    /// Scrolls towards the pointer during a drag selection. Returns whether it scrolled.
+    fn autoscroll(&mut self, cx: &mut TextContext, resp: &mut EditorResponse) -> bool {
+        let Some(drag) = self.drag else {
+            return false;
+        };
+        let before = self.scroll;
+        self.scroll += self.autoscroll_step(drag.pos);
+        self.clamp_scroll();
+        if self.scroll == before {
+            return false;
+        }
+        self.extend_drag(cx);
         resp.handled = true;
         resp.redraw = true;
+        resp.timer = Some(AUTOSCROLL_INTERVAL);
+        true
     }
 
     // --- IME
