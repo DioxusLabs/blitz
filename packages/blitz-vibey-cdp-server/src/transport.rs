@@ -1,7 +1,9 @@
-//! Network transport: the TCP listener, HTTP discovery endpoints
-//! (`/json/list`, `/json/version`) and the WebSocket upgrade / message loop.
+//! Network transport: the TCP listener, HTTP endpoints (`/json/list`,
+//! `/json/version` and the DevTools frontend's files) and the WebSocket
+//! upgrade / message loop.
 
 use serde_json::json;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{Read, Write};
@@ -15,7 +17,9 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 
 use crate::session::Session;
-use crate::{CdpCommand, CdpEvent, CdpEventData, Connection, JsonValue, MessageWriter, TargetId};
+use crate::{
+    CdpCommand, CdpEvent, CdpEventData, Connection, JsonValue, MessageWriter, TargetId, frontend,
+};
 
 pub(crate) fn run_cdp_server(
     addr: String,
@@ -88,7 +92,8 @@ fn handle_connection(
         .is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
 
     if !is_websocket_upgrade {
-        let body = match path.as_str() {
+        let path = path.split(['?', '#']).next().unwrap_or_default();
+        let json = match path {
             "/json" | "/json/list" => {
                 // Ask the main thread for the current target list
                 let (reply_sender, reply_receiver) = sync_channel(1);
@@ -134,16 +139,28 @@ fn handle_connection(
             _ => None,
         };
 
-        let response = match body {
-            Some(body) => format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            ),
-            None => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                .to_string(),
+        let response = match json {
+            Some(json) => Some((
+                "application/json; charset=UTF-8",
+                Cow::Owned(json.into_bytes()),
+            )),
+            None => frontend::file(path.trim_start_matches('/')),
         };
-        stream.write_all(response.as_bytes())?;
+        match response {
+            Some((content_type, body)) => {
+                // The frontend's files can change between Blitz versions on the
+                // same port: don't let the browser use stale cached copies
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )?;
+                stream.write_all(&body)?;
+            }
+            None => stream.write_all(
+                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )?,
+        }
         return Ok(());
     }
 

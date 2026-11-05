@@ -87,7 +87,8 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
 
     /// Open a Chrome DevTools frontend inspecting the document with the given
     /// id (in Chrome if it is installed, otherwise in the default browser),
-    /// first starting the CDP server on a free port if it isn't running
+    /// first starting the CDP server on a free port if it isn't running. If
+    /// the CDP server doesn't embed a frontend, print a URL to open instead.
     pub fn open_devtools(&mut self, doc_id: usize) {
         if self.devtools.cdp.is_none() {
             self.start_cdp_server(0);
@@ -98,6 +99,11 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
             return;
         };
         let url = blitz_vibey_cdp_server::frontend_url(addr, doc_id);
+        // Browsers can't be launched with Chrome's bundled frontend
+        if url.starts_with("devtools://") {
+            eprintln!("CDP: to open devtools, paste this URL into Chrome: {url}");
+            return;
+        }
         if webbrowser::open_browser(Browser::Chrome, &url).is_err()
             && let Err(err) = webbrowser::open(&url)
         {

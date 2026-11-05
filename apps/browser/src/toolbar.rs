@@ -5,9 +5,9 @@ use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::net::{Request, Url};
 #[cfg(feature = "devtools")]
 use blitz_traits::shell::ShellProvider;
-use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 #[cfg(feature = "devtools")]
 use dioxus_native::use_window_event;
+use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 #[cfg(feature = "devtools")]
 use winit::event::WindowEvent;
 #[cfg(feature = "devtools")]
@@ -298,7 +298,9 @@ pub fn Toolbar(
             WindowEvent::ModifiersChanged(new_modifiers) => {
                 modifiers = new_modifiers.state();
             }
-            WindowEvent::KeyboardInput { event, .. } if event.state.is_pressed() && !event.repeat => {
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state.is_pressed() && !event.repeat =>
+            {
                 let is_shortcut = match event.physical_key {
                     PhysicalKey::Code(KeyCode::F12) => true,
                     PhysicalKey::Code(KeyCode::KeyI) if cfg!(target_os = "macos") => {
