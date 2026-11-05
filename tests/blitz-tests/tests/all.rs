@@ -43,6 +43,7 @@ mod inline_svg_serialize;
 mod inner_html_leak;
 mod interaction_state_canonicalization;
 mod interaction_state_teardown;
+mod label_activation;
 mod lang_attribute;
 mod line_break;
 mod link_cursor;
