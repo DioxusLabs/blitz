@@ -7,10 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Waker};
 
 use blitz_dom::{
-    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, UiEventOutcome,
+    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, Point,
 };
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
-use blitz_traits::events::{DomEvent, UiEvent};
+use blitz_traits::events::{BlitzWheelEvent, DomEvent, UiEvent};
 use url::Url;
 use web_time::Instant;
 
@@ -410,17 +410,29 @@ impl Document for ScriptDocument {
         DocGuardMut::RefCell(self.inner.borrow_mut())
     }
 
-    fn handle_ui_event(&mut self, event: UiEvent) -> UiEventOutcome {
+    fn handle_ui_event(&mut self, event: UiEvent) {
         let handler = ScriptEventHandler {
             runtime: &mut self.runtime,
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
-        let outcome = driver.handle_ui_event(event);
+        driver.handle_ui_event(event);
 
         // JS may have mutated the DOM or scheduled timers
         self.request_redraw();
         self.arm_timer_thread();
-        outcome
+    }
+
+    fn handle_wheel_event(&mut self, event: BlitzWheelEvent) -> Point<f64> {
+        let handler = ScriptEventHandler {
+            runtime: &mut self.runtime,
+        };
+        let mut driver = EventDriver::new(&mut self.inner, handler);
+        let remainder = driver.handle_wheel_event(event);
+
+        // JS may have mutated the DOM or scheduled timers
+        self.request_redraw();
+        self.arm_timer_thread();
+        remainder
     }
 
     fn poll(&mut self, task_context: Option<TaskContext>) -> bool {
