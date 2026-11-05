@@ -302,10 +302,10 @@ rustc-hash = { workspace = true }
 
 # glifo 0.4.0 with the unhinted embolden fix (linebender/vello#2049). Drop once it ships.
 [patch.crates-io]
-glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-unhinted-embolden" }
-vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-unhinted-embolden" }
-vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-unhinted-embolden" }
-vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-unhinted-embolden" }
+glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
+vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
+vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
+vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
