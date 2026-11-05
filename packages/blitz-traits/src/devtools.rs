@@ -37,15 +37,38 @@ impl DevtoolSettings {
 /// A DOM mutation reported to a [`DevtoolsProvider`]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MutationRecord {
-    /// `node_id` was inserted into the child list of `parent_id`
-    Inserted { parent_id: NodeId, node_id: NodeId },
-    /// `node_id` was removed from the child list of `parent_id` (it may since
-    /// have been dropped)
-    Removed { parent_id: NodeId, node_id: NodeId },
-    /// The attribute with the given local name was set or removed on `node_id`
-    AttributeChanged { node_id: NodeId, name: SmolStr },
-    /// The text of the text or comment node `node_id` changed
-    CharacterDataChanged { node_id: NodeId },
+    NodeInserted(NodeInserted),
+    NodeRemoved(NodeRemoved),
+    AttributeChanged(AttributeChanged),
+    CharacterDataChanged(CharacterDataChanged),
+}
+
+/// `node_id` was inserted into the child list of `parent_id`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeInserted {
+    pub parent_id: NodeId,
+    pub node_id: NodeId,
+}
+
+/// `node_id` was removed from the child list of `parent_id` (it may since
+/// have been dropped)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeRemoved {
+    pub parent_id: NodeId,
+    pub node_id: NodeId,
+}
+
+/// The attribute with the local name `name` was set or removed on `node_id`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeChanged {
+    pub node_id: NodeId,
+    pub name: SmolStr,
+}
+
+/// The text of the text or comment node `node_id` changed
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CharacterDataChanged {
+    pub node_id: NodeId,
 }
 
 /// Receives the DOM mutations made to a document, for devtools that mirror

@@ -1,5 +1,7 @@
 #[cfg(feature = "devtools")]
-use blitz_traits::devtools::MutationRecord;
+use blitz_traits::devtools::{
+    AttributeChanged, CharacterDataChanged, MutationRecord, NodeInserted, NodeRemoved,
+};
 use blitz_traits::node_id::NodeId;
 use markup5ever::LocalName;
 use std::collections::HashSet;
@@ -245,7 +247,10 @@ impl DocumentMutator<'_> {
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
             if node_is_in_document {
-                devtools!(self, MutationRecord::CharacterDataChanged { node_id });
+                devtools!(
+                    self,
+                    MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id })
+                );
             }
             // Mark ancestors dirty so the style traversal visits this subtree.
             // Without this, the traversal may skip nodes with pending damage.
@@ -278,7 +283,10 @@ impl DocumentMutator<'_> {
                 data.content += text;
                 self.mutations_occurred |= node_is_in_document;
                 if node_is_in_document {
-                    devtools!(self, MutationRecord::CharacterDataChanged { node_id });
+                    devtools!(
+                        self,
+                        MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id })
+                    );
                 }
                 if let Some(parent_id) = parent_id {
                     self.doc.nodes[parent_id].insert_damage(ALL_DAMAGE);
@@ -348,10 +356,10 @@ impl DocumentMutator<'_> {
         if node_is_in_document {
             devtools!(
                 self,
-                MutationRecord::AttributeChanged {
+                MutationRecord::AttributeChanged(AttributeChanged {
                     node_id,
                     name: blitz_traits::SmolStr::new(&*name.local),
-                }
+                })
             );
         }
 
@@ -475,10 +483,10 @@ impl DocumentMutator<'_> {
         if node_is_in_document {
             devtools!(
                 self,
-                MutationRecord::AttributeChanged {
+                MutationRecord::AttributeChanged(AttributeChanged {
                     node_id,
                     name: blitz_traits::SmolStr::new(&*name.local),
-                }
+                })
             );
         }
 
@@ -607,7 +615,10 @@ impl DocumentMutator<'_> {
             parent.children.retain(|id| *id != node_id);
             if node_is_in_document {
                 self.restyle_for_child_list_change(parent_id, index..index);
-                devtools!(self, MutationRecord::Removed { parent_id, node_id });
+                devtools!(
+                    self,
+                    MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id })
+                );
             }
             self.maybe_record_node(parent_id);
         }
@@ -640,7 +651,10 @@ impl DocumentMutator<'_> {
 
             if parent_is_in_doc {
                 self.restyle_for_child_list_change(parent_id, index..index);
-                devtools!(self, MutationRecord::Removed { parent_id, node_id });
+                devtools!(
+                    self,
+                    MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id })
+                );
             }
 
             self.maybe_record_node(parent_id);
@@ -665,10 +679,10 @@ impl DocumentMutator<'_> {
             if parent_is_in_doc {
                 devtools!(
                     self,
-                    MutationRecord::Removed {
+                    MutationRecord::NodeRemoved(NodeRemoved {
                         parent_id: node_id,
                         node_id: child_id,
-                    }
+                    })
                 );
             }
         }
@@ -882,10 +896,10 @@ impl DocumentMutator<'_> {
                 self.restyle_for_child_list_change(old_parent_id, index..index);
                 devtools!(
                     self,
-                    MutationRecord::Removed {
+                    MutationRecord::NodeRemoved(NodeRemoved {
                         parent_id: old_parent_id,
                         node_id: child_id,
-                    }
+                    })
                 );
             }
 
@@ -912,10 +926,10 @@ impl DocumentMutator<'_> {
             if new_parent_is_in_document {
                 devtools!(
                     self,
-                    MutationRecord::Inserted {
+                    MutationRecord::NodeInserted(NodeInserted {
                         parent_id,
                         node_id: child_id,
-                    }
+                    })
                 );
             }
 
@@ -1974,7 +1988,10 @@ mod test {
     #[cfg(feature = "devtools")]
     #[test]
     fn devtools_provider_records_in_document_mutations() {
-        use blitz_traits::devtools::{DevtoolsProvider, MutationRecord};
+        use blitz_traits::devtools::{
+            AttributeChanged, CharacterDataChanged, DevtoolsProvider, MutationRecord, NodeInserted,
+            NodeRemoved,
+        };
         use std::sync::Mutex;
 
         #[derive(Default)]
@@ -1984,16 +2001,16 @@ mod test {
                 let mut log = self.0.lock().unwrap();
                 for record in records {
                     log.push(match record {
-                        MutationRecord::Inserted { parent_id, node_id } => {
+                        MutationRecord::NodeInserted(NodeInserted { parent_id, node_id }) => {
                             format!("insert {} {}", parent_id.as_u64(), node_id.as_u64())
                         }
-                        MutationRecord::Removed { parent_id, node_id } => {
+                        MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id }) => {
                             format!("remove {} {}", parent_id.as_u64(), node_id.as_u64())
                         }
-                        MutationRecord::AttributeChanged { node_id, name } => {
+                        MutationRecord::AttributeChanged(AttributeChanged { node_id, name }) => {
                             format!("attr {} {name}", node_id.as_u64())
                         }
-                        MutationRecord::CharacterDataChanged { node_id } => {
+                        MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id }) => {
                             format!("text {}", node_id.as_u64())
                         }
                     });
