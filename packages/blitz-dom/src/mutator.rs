@@ -1361,7 +1361,10 @@ impl<'doc> DocumentMutator<'doc> {
         let (Some(rels), Some(href)) = (rel_attr, href_attr) else {
             return;
         };
-        if !rels.split_ascii_whitespace().any(|rel| rel == "stylesheet") {
+        if !rels
+            .split_ascii_whitespace()
+            .any(|rel| rel.eq_ignore_ascii_case("stylesheet"))
+        {
             return;
         }
 
