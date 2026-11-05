@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use blitz_dom::{DocumentConfig, FontContext, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
-    net::{AbortController, AbortSignal, Request, Url},
+    net::{AbortController, AbortSignal, NetProvider, Request, Url},
     shell::ShellProvider,
 };
 use dioxus_native::{SubDocumentAttr, prelude::*};
@@ -12,6 +12,23 @@ use linebender_resource_handle::Blob;
 use crate::StdNetProvider;
 use crate::favicon::favicon_candidate;
 use crate::history::{BrowserNavProvider, History, SyncStore};
+
+#[cfg(feature = "devtools")]
+use blitz_vibey_cdp_server::DocumentLoadRecorder;
+
+/// Stand-in for the devtools recorder of page loads
+#[cfg(not(feature = "devtools"))]
+struct DocumentLoadRecorder;
+
+#[cfg(not(feature = "devtools"))]
+impl DocumentLoadRecorder {
+    fn start(_request: &Request) -> Self {
+        DocumentLoadRecorder
+    }
+    fn response(&mut self, _resolved_url: &str, _bytes: &blitz_traits::net::Bytes) {}
+    fn failed(&mut self, _error: &str) {}
+    fn finish(self, _doc_id: usize) {}
+}
 
 pub enum DocumentLoaderStatus {
     Loading,
@@ -36,6 +53,8 @@ pub struct LoadedDocument {
 pub struct DocumentLoader {
     pub font_ctx: FontContext,
     pub net_provider: Arc<StdNetProvider>,
+    /// The provider of loaded documents (which devtools record from the start)
+    doc_net_provider: Arc<dyn NetProvider>,
     pub status: Signal<DocumentLoaderStatus>,
     pub history: SyncStore<History>,
     pub reload_generation: Signal<u64>,
@@ -44,7 +63,7 @@ pub struct DocumentLoader {
 
 pub fn make_doc_config(
     base_url: Option<String>,
-    net_provider: Arc<StdNetProvider>,
+    net_provider: Arc<dyn NetProvider>,
     history: SyncStore<History>,
     font_ctx: FontContext,
     abort_signal: Option<AbortSignal>,
@@ -52,7 +71,7 @@ pub fn make_doc_config(
     DocumentConfig {
         viewport: None,
         base_url,
-        net_provider: Some(net_provider as _),
+        net_provider: Some(net_provider),
         navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
         html_parser_provider: Some(Arc::new(HtmlProvider)),
@@ -71,9 +90,15 @@ impl DocumentLoader {
             .collection
             .register_fonts(Blob::new(Arc::new(blitz_dom::BULLET_FONT) as _), None);
 
+        #[cfg(feature = "devtools")]
+        let doc_net_provider = blitz_vibey_cdp_server::recording_net_provider(net_provider.clone());
+        #[cfg(not(feature = "devtools"))]
+        let doc_net_provider = net_provider.clone();
+
         Self {
             font_ctx,
             net_provider,
+            doc_net_provider,
             status: Signal::new(DocumentLoaderStatus::Idle),
             history,
             reload_generation: Signal::new(0),
@@ -114,15 +139,17 @@ impl DocumentLoader {
 
         let req = req.signal(signal.clone());
 
+        let mut recorder = DocumentLoadRecorder::start(&req);
         let response = net_provider.fetch_async(req).await;
 
         match response {
             Ok((resolved_url, bytes)) => {
                 tracing::info!("Loaded {}", resolved_url);
+                recorder.response(&resolved_url, &bytes);
                 let base_url = resolved_url.clone();
                 let config = make_doc_config(
                     Some(resolved_url),
-                    Arc::clone(&net_provider),
+                    Arc::clone(&self.doc_net_provider),
                     history,
                     font_ctx,
                     Some(signal.clone()),
@@ -136,8 +163,9 @@ impl DocumentLoader {
                     (&*body_text, false)
                 };
 
-                let (document, parsed_title, favicon_url) =
+                let (document, doc_id, parsed_title, favicon_url) =
                     build_page_document(html, config, &net_provider, &signal).await;
+                recorder.finish(doc_id);
                 let favicon_candidate =
                     favicon_candidate(base_url.as_str(), favicon_url.as_deref());
                 LoadedDocument {
@@ -152,8 +180,14 @@ impl DocumentLoader {
                 tracing::error!("Error loading document: {:?}", err);
 
                 let error_msg = format!("{err:?}");
-                let config =
-                    make_doc_config(None, net_provider, history, font_ctx, Some(signal.clone()));
+                recorder.failed(&error_msg);
+                let config = make_doc_config(
+                    None,
+                    Arc::clone(&self.doc_net_provider),
+                    history,
+                    font_ctx,
+                    Some(signal.clone()),
+                );
 
                 let error_html = include_str!("../assets/error.html");
                 let mut document = HtmlDocument::from_html(error_html, config).into_inner();
@@ -168,6 +202,7 @@ impl DocumentLoader {
                     .find_title_node()
                     .map(|n| n.text_content())
                     .unwrap_or_default();
+                recorder.finish(document.id());
                 LoadedDocument {
                     document: SubDocumentAttr::new(document),
                     html_source: error_html.to_string(),
@@ -187,21 +222,22 @@ impl Drop for DocumentLoader {
 }
 
 /// Build the document for a loaded page (without JavaScript support), returning
-/// the document, its title, and its favicon URL (if any).
+/// the document, its id, its title, and its favicon URL (if any).
 #[cfg(not(feature = "javascript"))]
 async fn build_page_document(
     html: &str,
     config: DocumentConfig,
     _net_provider: &Arc<StdNetProvider>,
     _signal: &AbortSignal,
-) -> (SubDocumentAttr, String, Option<String>) {
+) -> (SubDocumentAttr, usize, String, Option<String>) {
     let document = HtmlDocument::from_html(html, config).into_inner();
     let title = document
         .find_title_node()
         .map(|n| n.text_content())
         .unwrap_or_default();
     let favicon_url = document.favicon_url();
-    (SubDocumentAttr::new(document), title, favicon_url)
+    let id = document.id();
+    (SubDocumentAttr::new(document), id, title, favicon_url)
 }
 
 /// Build the document for a loaded page with JavaScript enabled: parse the page
@@ -214,7 +250,7 @@ async fn build_page_document(
     config: DocumentConfig,
     net_provider: &Arc<StdNetProvider>,
     signal: &AbortSignal,
-) -> (SubDocumentAttr, String, Option<String>) {
+) -> (SubDocumentAttr, usize, String, Option<String>) {
     use blitz_dom::Document as _;
     use blitz_vibey_script::ScriptDocument;
     use std::collections::HashMap;
@@ -249,9 +285,10 @@ async fn build_page_document(
         .map(|n| n.text_content())
         .unwrap_or_default();
     let favicon_url = inner.favicon_url();
+    let id = inner.id();
     drop(inner);
 
-    (SubDocumentAttr::new(document), title, favicon_url)
+    (SubDocumentAttr::new(document), id, title, favicon_url)
 }
 
 /// A [`blitz_vibey_script::ScriptFetcher`] which serves prefetched script sources from

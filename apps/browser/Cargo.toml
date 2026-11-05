@@ -41,7 +41,7 @@ mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
 writing-mode = ["blitz-dom/writing-mode", "dioxus-native/writing-mode"]
-devtools = ["dioxus-native/devtools", "blitz-dom/devtools"]
+devtools = ["dioxus-native/devtools", "blitz-dom/devtools", "dep:blitz-vibey-cdp-server"]
 embedded-devtools-frontend = ["devtools", "dioxus-native/embedded-devtools-frontend"]
 
 [dependencies]
@@ -57,6 +57,7 @@ blitz-dom = { workspace = true, features = ["woff", "parallel-construct", "float
 blitz-net = { workspace = true, features = ["http2"] }
 blitz-html = { workspace = true }
 blitz-vibey-script = { workspace = true, optional = true }
+blitz-vibey-cdp-server = { workspace = true, optional = true }
 browser-persistence = { workspace = true }
 linebender_resource_handle = { workspace = true }
 tracing = { workspace = true }

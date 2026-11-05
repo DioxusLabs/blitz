@@ -1437,6 +1437,7 @@ dependencies = [
  "blitz-net",
  "blitz-paint",
  "blitz-traits",
+ "blitz-vibey-cdp-server",
  "blitz-vibey-script",
  "browser-persistence",
  "dioxus-native",
