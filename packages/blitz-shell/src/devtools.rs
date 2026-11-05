@@ -119,11 +119,13 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         // The picker may be active on the window's document or on one of its
         // sub-documents (each an inspectable target of its own): find it and
         // translate window coordinates into its coordinate space
+        let Some(picking_doc_id) = documents::picking_document_id(&window.doc.inner()) else {
+            return false;
+        };
+        // Pointer events outside the picking document (e.g. over the browser
+        // toolbar around a sub-document) are delivered as usual
         let find_picking =
             |x: f32, y: f32| documents::find_picking_document(&window.doc.inner(), x, y);
-        if find_picking(0.0, 0.0).is_none() {
-            return false;
-        }
 
         let picker_event = match event {
             WindowEvent::PointerMoved { position, .. } => {
@@ -139,11 +141,11 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                 if *state != ElementState::Pressed {
                     return true;
                 }
-                self.devtools.picker_pressed_windows.insert(window_id);
                 let coords = window.pointer_coords(*position);
                 let Some((doc_id, x, y)) = find_picking(coords.page_x, coords.page_y) else {
                     return false;
                 };
+                self.devtools.picker_pressed_windows.insert(window_id);
                 PickerEvent::Picked { doc_id, x, y }
             }
             WindowEvent::KeyboardInput { event, .. } => {
@@ -152,10 +154,9 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                 {
                     return false;
                 }
-                let Some((doc_id, _, _)) = find_picking(0.0, 0.0) else {
-                    return false;
-                };
-                PickerEvent::Canceled { doc_id }
+                PickerEvent::Canceled {
+                    doc_id: picking_doc_id,
+                }
             }
             _ => return false,
         };

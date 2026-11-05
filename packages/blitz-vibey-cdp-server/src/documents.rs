@@ -36,23 +36,41 @@ pub fn with_document_in(
     false
 }
 
+/// The id of the document with the element picker active: the document itself
+/// or (recursively) one of its sub-documents
+pub fn picking_document_id(doc: &BaseDocument) -> Option<usize> {
+    if doc.devtools().element_picker {
+        return Some(doc.id());
+    }
+    doc.sub_document_node_ids().into_iter().find_map(|node_id| {
+        let sub_doc = doc.get_node(node_id)?.subdoc()?;
+        picking_document_id(&sub_doc.inner())
+    })
+}
+
 /// Find the document with the element picker active — the document itself or
 /// (recursively) one of its sub-documents — translating the given
 /// document-local page coordinates into the found document's coordinate
 /// space (by the sub-document host element's position and scroll offset,
-/// mirroring how pointer events are forwarded to sub-documents)
+/// mirroring how pointer events are forwarded to sub-documents). A
+/// sub-document is only found when its host element is hit at the point, so
+/// points over the UI around it (e.g. a browser toolbar) find nothing.
 pub fn find_picking_document(doc: &BaseDocument, x: f32, y: f32) -> Option<(usize, f32, f32)> {
     if doc.devtools().element_picker {
         return Some((doc.id(), x, y));
     }
+    let hit_node_id = doc.hit(x, y).map(|hit| hit.node_id);
     for node_id in doc.sub_document_node_ids() {
         let Some(node) = doc.get_node(node_id) else {
             continue;
         };
-        let pos = node.absolute_position(0.0, 0.0);
         let Some(sub_doc) = node.subdoc() else {
             continue;
         };
+        if hit_node_id != Some(node_id) {
+            continue;
+        }
+        let pos = node.absolute_position(0.0, 0.0);
         let inner = sub_doc.inner();
         let scroll = inner.viewport_scroll();
         let sub_x = x - pos.x + scroll.x as f32;
