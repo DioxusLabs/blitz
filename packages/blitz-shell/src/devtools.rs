@@ -2,6 +2,7 @@
 //! the CDP server, giving it access to the application's documents, and
 //! routing element-picker input to it.
 
+use blitz_traits::DocumentId;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,7 +38,7 @@ struct WindowsDocumentProvider<'a, Rend: WindowRenderer> {
 }
 
 impl<Rend: WindowRenderer> DocumentProvider for WindowsDocumentProvider<'_, Rend> {
-    fn document_ids(&self) -> Vec<usize> {
+    fn document_ids(&self) -> Vec<DocumentId> {
         let mut ids = Vec::new();
         for view in self.windows.values() {
             documents::collect_document_ids(&view.doc.inner(), &mut ids);
@@ -45,7 +46,7 @@ impl<Rend: WindowRenderer> DocumentProvider for WindowsDocumentProvider<'_, Rend
         ids
     }
 
-    fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument)) {
+    fn with_document(&mut self, id: DocumentId, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument)) {
         for view in self.windows.values_mut() {
             if documents::with_document_in(&mut view.doc.inner_mut(), id, cb) {
                 return;

@@ -1,3 +1,4 @@
+use blitz_traits::DocumentId;
 use blitz_traits::node_id::NodeId;
 use selectors::context::QuirksMode;
 use std::sync::atomic::Ordering as Ao;
@@ -71,7 +72,7 @@ pub enum Resource {
 }
 
 pub(crate) struct ResourceHandler<T: Send + Sync + 'static> {
-    doc_id: usize,
+    doc_id: DocumentId,
     request_id: usize,
     node_id: Option<NodeId>,
     tx: Sender<DocumentEvent>,
@@ -82,7 +83,7 @@ pub(crate) struct ResourceHandler<T: Send + Sync + 'static> {
 impl<T: Send + Sync + 'static> ResourceHandler<T> {
     pub(crate) fn new(
         tx: Sender<DocumentEvent>,
-        doc_id: usize,
+        doc_id: DocumentId,
         node_id: Option<NodeId>,
         shell_provider: Arc<dyn ShellProvider>,
         data: T,
@@ -100,7 +101,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
 
     pub(crate) fn boxed(
         tx: Sender<DocumentEvent>,
-        doc_id: usize,
+        doc_id: DocumentId,
         node_id: Option<NodeId>,
         shell_provider: Arc<dyn ShellProvider>,
         data: T,
@@ -187,7 +188,7 @@ const MAX_IMPORT_DEPTH: usize = 16;
 #[derive(Clone)]
 pub(crate) struct StylesheetLoader {
     pub(crate) tx: Sender<DocumentEvent>,
-    pub(crate) doc_id: usize,
+    pub(crate) doc_id: DocumentId,
     pub(crate) net_provider: Arc<dyn NetProvider>,
     pub(crate) shell_provider: Arc<dyn ShellProvider>,
     pub(crate) abort_signal: Option<AbortSignal>,
@@ -380,7 +381,7 @@ impl FontFaceHandler {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_font_face(
     tx: Sender<DocumentEvent>,
-    doc_id: usize,
+    doc_id: DocumentId,
     node_id: Option<NodeId>,
     sheet: &Stylesheet,
     network_provider: &Arc<dyn NetProvider>,
@@ -405,7 +406,7 @@ pub(crate) fn fetch_font_face(
 pub(crate) fn fetch_font_face_rules<'a>(
     rules: impl Iterator<Item = &'a CssRule>,
     tx: Sender<DocumentEvent>,
-    doc_id: usize,
+    doc_id: DocumentId,
     node_id: Option<NodeId>,
     network_provider: &Arc<dyn NetProvider>,
     shell_provider: &Arc<dyn ShellProvider>,

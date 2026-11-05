@@ -2,6 +2,7 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
+use blitz_traits::DocumentId;
 use blitz_traits::net::{AbortSignal, Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
 use data_url::DataUrl;
 use std::{
@@ -277,7 +278,7 @@ impl Provider {
 }
 
 impl NetProvider for Provider {
-    fn fetch(&self, doc_id: usize, mut request: Request, handler: Box<dyn NetHandler>) {
+    fn fetch(&self, doc_id: DocumentId, mut request: Request, handler: Box<dyn NetHandler>) {
         let client = self.client.clone();
         let per_host_limits = self.per_host_limits.clone();
 
@@ -459,7 +460,7 @@ impl ReqwestExt for RequestBuilder {
 
 struct DummyNetWaker;
 impl NetWaker for DummyNetWaker {
-    fn wake(&self, _client_id: usize) {}
+    fn wake(&self, _doc_id: DocumentId) {}
 }
 
 #[cfg(test)]
@@ -493,13 +494,14 @@ mod tests {
         runtime.block_on(async {
             let completed = Arc::new(AtomicBool::new(false));
             let observed = completed.clone();
+            let expected_doc_id = DocumentId::new();
             let provider = Provider::new(Some(Arc::new(move |doc_id| {
-                assert_eq!(doc_id, 42);
+                assert_eq!(doc_id, expected_doc_id);
                 assert!(observed.load(Ordering::SeqCst));
             })));
             let (tx, rx) = tokio::sync::oneshot::channel();
             provider.fetch(
-                42,
+                expected_doc_id,
                 Request::get(url.parse().unwrap()),
                 Box::new(Handler { tx, completed }),
             );

@@ -8,6 +8,7 @@
 
 use blitz_dom::{DocumentConfig, QualName, local_name, ns};
 use blitz_html::HtmlDocument;
+use blitz_traits::DocumentId;
 use blitz_traits::net::{NetHandler, NetProvider, Request};
 use std::sync::{Arc, Mutex};
 
@@ -18,7 +19,7 @@ struct RecordingNetProvider {
 }
 
 impl NetProvider for RecordingNetProvider {
-    fn fetch(&self, _doc_id: usize, request: Request, _handler: Box<dyn NetHandler>) {
+    fn fetch(&self, _doc_id: DocumentId, request: Request, _handler: Box<dyn NetHandler>) {
         self.requests.lock().unwrap().push(request.url.to_string());
     }
 }
