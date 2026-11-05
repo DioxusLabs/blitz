@@ -8,6 +8,7 @@ use super::{
     CdpError, Session, attr_name, cdp_node_id, no_document, no_node, no_style_sheet, node_id_param,
     str_param, with_doc,
 };
+use crate::style_sheets::StyleSheets;
 use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter};
 
 pub(super) fn dispatch(
@@ -18,12 +19,31 @@ pub(super) fn dispatch(
 ) -> Result<JsonValue, CdpError> {
     let method = command.method.as_str();
     let params = &command.params;
+    // Sheets added since the last command are reported before any reply
+    // that refers to them
+    session.sync_style_sheets(writer, docs);
     match method {
+        // Like Chrome, enabling the domain reports every style sheet with a
+        // `CSS.styleSheetAdded` event before the reply
+        "CSS.enable" => {
+            if session.style_sheets.is_none() {
+                session.style_sheets = Some(StyleSheets::default());
+                session.sync_style_sheets(writer, docs);
+            }
+            Ok(json!({}))
+        }
+
+        "CSS.disable" => {
+            session.style_sheets = None;
+            Ok(json!({}))
+        }
+
         "CSS.getMatchedStylesForNode" => {
             let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
             let node_id = node_id_param(params, "nodeId")?;
+            let sheets = session.style_sheets.as_mut();
             with_doc(docs, doc_id, |doc| {
-                crate::css::matched_styles_json(doc, node_id)
+                crate::css::matched_styles_json(doc, node_id, sheets)
             })
             .flatten()
             .ok_or_else(no_node)
@@ -55,6 +75,13 @@ pub(super) fn dispatch(
         "CSS.getStyleSheetText" => {
             let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
             let sheet_id = str_param(params, "styleSheetId")?;
+            if let Some(text) = session
+                .style_sheets
+                .as_ref()
+                .and_then(|sheets| sheets.text(&sheet_id))
+            {
+                return Ok(json!({ "text": text }));
+            }
             let node_id =
                 crate::css::parse_inline_style_sheet_id(&sheet_id).ok_or_else(no_style_sheet)?;
             let text = with_doc(docs, doc_id, |doc| {
@@ -89,12 +116,25 @@ pub(super) fn dispatch(
             }
             let mut sheets: Vec<SheetEdits> = Vec::new();
             let mut edit_sheets = Vec::new();
-            for edit in &edits {
+            // Edits to rules of reported style sheets, as (edit index,
+            // sheet id, splice)
+            let mut rule_edits: Vec<(usize, String, (usize, usize, String))> = Vec::new();
+            for (index, edit) in edits.iter().enumerate() {
                 let sheet_id = str_param(edit, "styleSheetId")?;
                 let text = str_param(edit, "text")?;
                 let range = edit
                     .get("range")
                     .ok_or_else(|| CdpError::invalid_params("Missing range"))?;
+                if let Some(sheet_text) = session
+                    .style_sheets
+                    .as_ref()
+                    .and_then(|style_sheets| style_sheets.text(&sheet_id))
+                {
+                    let (start, end) = range_offsets(sheet_text, range)
+                        .ok_or_else(|| CdpError::invalid_params("Invalid range"))?;
+                    rule_edits.push((index, sheet_id, (start, end, text)));
+                    continue;
+                }
                 let node_id = crate::css::parse_inline_style_sheet_id(&sheet_id)
                     .ok_or_else(no_style_sheet)?;
                 let sheet = match sheets.iter_mut().find(|s| s.node_id == node_id) {
@@ -152,7 +192,7 @@ pub(super) fn dispatch(
             }
             // One resulting style per edit, in the edits' order (edits to
             // the same sheet all report that sheet's final style)
-            let styles: Vec<JsonValue> = edit_sheets
+            let mut styles: Vec<JsonValue> = edit_sheets
                 .iter()
                 .map(|node_id| {
                     sheet_styles
@@ -162,6 +202,38 @@ pub(super) fn dispatch(
                         .unwrap()
                 })
                 .collect();
+
+            // Rule edits splice the DevTools copy of the sheet text and
+            // replace the edited rules' declarations. Like Chrome, no
+            // `CSS.styleSheetChanged` is sent to the session that made them.
+            let mut rule_sheet_ids: Vec<&str> =
+                rule_edits.iter().map(|(_, id, _)| id.as_str()).collect();
+            rule_sheet_ids.dedup();
+            let mut rule_styles = Vec::new();
+            for sheet_id in rule_sheet_ids {
+                let (indices, splices): (Vec<usize>, Vec<_>) = rule_edits
+                    .iter()
+                    .filter(|(_, id, _)| id == sheet_id)
+                    .map(|(index, _, splice)| (*index, splice.clone()))
+                    .unzip();
+                let style_sheets = session.style_sheets.as_mut().unwrap();
+                let results = with_doc(docs, doc_id, |doc| {
+                    let results = style_sheets.edit_rule_styles(doc, sheet_id, &splices);
+                    doc.shell_provider.request_redraw();
+                    results
+                })
+                .ok_or_else(no_document)?
+                .map_err(CdpError::server_error)?;
+                for (index, (text, (start, end))) in indices.into_iter().zip(results) {
+                    let style = crate::css::authored_style_json(&text, start, end, sheet_id);
+                    rule_styles.push((index, style));
+                }
+            }
+            // Merge the rule edits' styles back in at their edits' positions
+            rule_styles.sort_by_key(|(index, _)| *index);
+            for (index, style) in rule_styles {
+                styles.insert(index, style);
+            }
             for (sheet_id, node_id, value) in &modified {
                 writer.event("CSS.styleSheetChanged", json!({ "styleSheetId": sheet_id }));
                 writer.event(
