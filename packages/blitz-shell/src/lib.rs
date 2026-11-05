@@ -16,6 +16,8 @@ mod window;
 
 #[cfg(feature = "accessibility")]
 mod accessibility;
+#[cfg(feature = "devtools")]
+mod devtools;
 
 pub use crate::application::BlitzApplication;
 pub use crate::event::{BlitzShellEvent, BlitzShellProxy};

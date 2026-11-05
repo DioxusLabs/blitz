@@ -24,17 +24,40 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub proxy: BlitzShellProxy,
     pub event_queue: Receiver<BlitzShellEvent>,
     pending_clipboard: HashMap<AsyncRequestSerial, WindowId>,
+    #[cfg(feature = "devtools")]
+    pub(crate) devtools: crate::devtools::DevtoolsState,
+}
+
+/// Whether a document or (recursively) any of its sub-documents has the
+/// given id
+fn document_contains_id(doc: &blitz_dom::BaseDocument, doc_id: usize) -> bool {
+    if doc.id() == doc_id {
+        return true;
+    }
+    doc.sub_document_node_ids().iter().any(|&node_id| {
+        doc.get_node(node_id)
+            .and_then(|node| node.subdoc())
+            .is_some_and(|sub_doc| document_contains_id(&sub_doc.inner(), doc_id))
+    })
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     pub fn new(proxy: BlitzShellProxy, event_queue: Receiver<BlitzShellEvent>) -> Self {
-        BlitzApplication {
+        #[allow(unused_mut)]
+        let mut app = BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
             proxy,
             event_queue,
             pending_clipboard: HashMap::new(),
-        }
+            #[cfg(feature = "devtools")]
+            devtools: Default::default(),
+        };
+
+        #[cfg(feature = "devtools")]
+        app.start_cdp_server_from_env();
+
+        app
     }
 
     pub fn add_window(&mut self, window_config: WindowConfig<Rend>) {
@@ -42,7 +65,9 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     }
 
     fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Rend>> {
-        self.windows.values_mut().find(|w| w.doc.id() == doc_id)
+        self.windows
+            .values_mut()
+            .find(|w| document_contains_id(&w.doc.inner(), doc_id))
     }
 
     pub fn handle_blitz_shell_event(
@@ -113,6 +138,8 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                     }
                 }
             }
+            #[cfg(feature = "devtools")]
+            BlitzShellEvent::DevtoolsPoll => self.process_devtools_messages(),
             BlitzShellEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
@@ -203,6 +230,11 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
             if self.windows.is_empty() {
                 event_loop.exit();
             }
+            return;
+        }
+
+        #[cfg(feature = "devtools")]
+        if self.handle_picker_event(window_id, &event) {
             return;
         }
 

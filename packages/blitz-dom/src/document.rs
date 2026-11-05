@@ -441,6 +441,14 @@ pub struct BaseDocument {
     /// it cancels all in-flight fetches tied to this document. Set via
     /// [`DocumentConfig::abort_signal`].
     pub(crate) abort_signal: Option<AbortSignal>,
+    /// Devtools provider notified of DOM mutations. Set via
+    /// [`DocumentConfig::devtools_provider`] or [`Self::set_devtools_provider`].
+    #[cfg(feature = "devtools")]
+    pub(crate) devtools_provider: Option<Arc<dyn blitz_traits::devtools::DevtoolsProvider>>,
+    /// Title shown for this document in devtools (instead of its `<title>`).
+    /// Set via [`Self::set_devtools_title`].
+    #[cfg(feature = "devtools")]
+    pub(crate) devtools_title: Option<String>,
 }
 
 impl BaseDocument {
@@ -564,6 +572,10 @@ impl BaseDocument {
             shell_provider,
             html_parser_provider,
             abort_signal: config.abort_signal,
+            #[cfg(feature = "devtools")]
+            devtools_provider: config.devtools_provider,
+            #[cfg(feature = "devtools")]
+            devtools_title: None,
             last_mousedown_time: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
@@ -612,6 +624,30 @@ impl BaseDocument {
     /// Set the Document's shell provider
     pub fn set_shell_provider(&mut self, shell_provider: Arc<dyn ShellProvider>) {
         self.shell_provider = shell_provider;
+    }
+
+    /// Set (or clear) the Document's devtools provider, which is notified of DOM mutations
+    #[cfg(feature = "devtools")]
+    pub fn set_devtools_provider(
+        &mut self,
+        devtools_provider: Option<Arc<dyn blitz_traits::devtools::DevtoolsProvider>>,
+    ) {
+        self.devtools_provider = devtools_provider;
+    }
+
+    /// The title shown for this document in devtools, if overridden with
+    /// [`Self::set_devtools_title`]
+    #[cfg(feature = "devtools")]
+    pub fn devtools_title(&self) -> Option<&str> {
+        self.devtools_title.as_deref()
+    }
+
+    /// Set (or clear) the title shown for this document in devtools (e.g. as
+    /// the CDP target title). Defaults to the document's `<title>`, which an
+    /// application's UI document may use for its window title instead.
+    #[cfg(feature = "devtools")]
+    pub fn set_devtools_title(&mut self, title: Option<String>) {
+        self.devtools_title = title;
     }
 
     /// Set the Document's html parser provider
@@ -2897,6 +2933,15 @@ impl BoundingRect {
 /// otherwise end at `55.0000005` and appear to overflow their 55px container.
 fn snap_to_layout_unit(value: f64) -> f64 {
     (value * 64.0).round() / 64.0
+}
+
+impl Drop for BaseDocument {
+    fn drop(&mut self) {
+        #[cfg(feature = "devtools")]
+        if let Some(provider) = &self.devtools_provider {
+            provider.document_dropped();
+        }
+    }
 }
 
 impl AsRef<BaseDocument> for BaseDocument {
