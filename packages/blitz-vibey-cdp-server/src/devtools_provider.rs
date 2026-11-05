@@ -1,8 +1,11 @@
 //! Live DOM mutation events. A [`DevtoolsProvider`] installed on each
 //! inspected document buffers the batches of mutations reported by Blitz's
 //! `DocumentMutator`; the server later translates the buffered records into
-//! `DOM` domain events against the document's current state.
+//! `DOM` domain events against the document's current state. The provider
+//! also reports when an inspected document is dropped, so that sessions
+//! inspecting a sub-document can follow its host to the next document.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use blitz_traits::devtools::{DevtoolsProvider, MutationRecord};
@@ -12,6 +15,8 @@ use crate::DevtoolsWaker;
 /// Mutation records buffered for all inspected documents (keyed by document id)
 pub(crate) struct MutationLog {
     records: Mutex<Vec<(usize, MutationRecord)>>,
+    /// Whether an inspected document was dropped since the last check
+    documents_dropped: AtomicBool,
     waker: Arc<dyn DevtoolsWaker>,
 }
 
@@ -19,6 +24,7 @@ impl MutationLog {
     pub(crate) fn new(waker: Arc<dyn DevtoolsWaker>) -> Self {
         MutationLog {
             records: Mutex::new(Vec::new()),
+            documents_dropped: AtomicBool::new(false),
             waker,
         }
     }
@@ -34,6 +40,11 @@ impl MutationLog {
     /// Take all buffered records
     pub(crate) fn take(&self) -> Vec<(usize, MutationRecord)> {
         std::mem::take(&mut *self.records.lock().unwrap())
+    }
+
+    /// Whether an inspected document was dropped since the last call
+    pub(crate) fn take_documents_dropped(&self) -> bool {
+        self.documents_dropped.swap(false, Ordering::Relaxed)
     }
 }
 
@@ -53,5 +64,10 @@ impl DevtoolsProvider for DocumentRecorder {
         if was_empty {
             self.log.waker.wake();
         }
+    }
+
+    fn document_dropped(&self) {
+        self.log.documents_dropped.store(true, Ordering::Relaxed);
+        self.log.waker.wake();
     }
 }

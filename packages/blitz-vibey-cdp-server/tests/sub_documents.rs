@@ -2,6 +2,7 @@
 //! each sub-document (e.g. a browser tab or iframe-like element) is an
 //! inspectable target of its own.
 
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -252,4 +253,132 @@ fn sub_document_session() {
             }
         }
     });
+}
+
+/// A sub-document's target is named after its host element and follows the
+/// host as it navigates: the session is moved on to the new document with a
+/// `DOM.documentUpdated` event, after which `DOM.getDocument` returns it
+#[test]
+fn sub_document_target_follows_navigation() {
+    let (mut parent, _) = make_doc_tree();
+    parent.set_devtools_title(Some("App UI".to_string()));
+    let parent_id = parent.id();
+    let host_id = parent.query_selector("#host").unwrap().unwrap();
+    let target_id = format!("{parent_id}.{}", host_id.as_u64());
+    let mut provider = DocTreeProvider(parent);
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender))));
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+
+    let (navigate_sender, navigate_receiver) = channel::<()>();
+    let (picker_sender, picker_receiver) = channel::<(f32, f32)>();
+    let done = Arc::new(Mutex::new(false));
+    std::thread::scope(|scope| {
+        let done2 = Arc::clone(&done);
+        let target_id = target_id.clone();
+        scope.spawn(move || {
+            struct DoneGuard(Arc<Mutex<bool>>);
+            impl Drop for DoneGuard {
+                fn drop(&mut self) {
+                    *self.0.lock().unwrap() = true;
+                }
+            }
+            let _guard = DoneGuard(done2);
+
+            // The sub-document is listed under its host's target id
+            let parent_target = (parent_id.to_string(), "App UI".to_string());
+            assert_eq!(
+                list_targets(addr),
+                vec![
+                    parent_target.clone(),
+                    (target_id.clone(), "Sub Doc".to_string())
+                ]
+            );
+
+            let (mut ws, _response) =
+                tungstenite::connect(format!("ws://{addr}/devtools/page/{target_id}"))
+                    .expect("websocket connect");
+            let mut events = Vec::new();
+
+            send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+            let html = read_reply(&mut ws, 1, &mut events)["root"].to_string();
+            assert!(html.contains("inner"), "first document: {html}");
+
+            // Inspect mode stays active across the navigation
+            send_command(
+                &mut ws,
+                3,
+                "Overlay.setInspectMode",
+                json!({ "mode": "searchForNode", "highlightConfig": {} }),
+            );
+            read_reply(&mut ws, 3, &mut events);
+
+            navigate_sender.send(()).unwrap();
+            read_event(&mut ws, "DOM.documentUpdated", &mut events);
+
+            send_command(&mut ws, 2, "DOM.getDocument", json!({ "depth": -1 }));
+            let html = read_reply(&mut ws, 2, &mut events)["root"].to_string();
+            assert!(html.contains("second"), "second document: {html}");
+            assert!(!html.contains("inner"), "second document: {html}");
+
+            picker_sender.send((10.0, 10.0)).unwrap();
+            let params = read_event(&mut ws, "Overlay.nodeHighlightRequested", &mut events);
+            assert_ne!(params["nodeId"].as_u64().unwrap(), 0);
+
+            // The navigation changes neither target id nor the parent's title
+            assert_eq!(
+                list_targets(addr),
+                vec![parent_target, (target_id.clone(), String::new())]
+            );
+        });
+
+        while !*done.lock().unwrap() {
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_ok()
+            {
+                server.process_messages(&mut provider);
+            }
+            if navigate_receiver.try_recv().is_ok() {
+                // Navigate the host: the old sub-document is dropped
+                let next = make_doc(
+                    "<html><body style=\"margin: 0\">\
+                     <p id=\"second\" style=\"margin: 0; width: 100px; height: 20px\">Next</p>\
+                     </body></html>",
+                );
+                provider.0.set_sub_document(host_id, Box::new(next));
+            }
+            while let Ok((x, y)) = picker_receiver.try_recv() {
+                let event = find_picking_document(&provider.0, x + 50.0, y + 100.0)
+                    .map(|(doc_id, x, y)| PickerEvent::Hovered { doc_id, x, y });
+                assert!(event.is_some(), "no picking document after navigation");
+                server.notify_picker_event(event.unwrap(), &mut provider);
+            }
+        }
+    });
+}
+
+/// `(id, title)` of each target listed at `/json/list`
+fn list_targets(addr: std::net::SocketAddr) -> Vec<(String, String)> {
+    let mut stream = TcpStream::connect(addr).expect("http connect");
+    stream
+        .write_all(b"GET /json/list HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let body = response.split_once("\r\n\r\n").unwrap().1;
+    let list: serde_json::Value = serde_json::from_str(body).unwrap();
+    list.as_array()
+        .unwrap()
+        .iter()
+        .map(|target| {
+            let id = target["id"].as_str().unwrap().to_string();
+            let title = target["title"].as_str().unwrap().to_string();
+            (id, title)
+        })
+        .collect()
 }

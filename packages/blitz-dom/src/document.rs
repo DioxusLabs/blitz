@@ -2935,6 +2935,15 @@ fn snap_to_layout_unit(value: f64) -> f64 {
     (value * 64.0).round() / 64.0
 }
 
+impl Drop for BaseDocument {
+    fn drop(&mut self) {
+        #[cfg(feature = "devtools")]
+        if let Some(provider) = &self.devtools_provider {
+            provider.document_dropped();
+        }
+    }
+}
+
 impl AsRef<BaseDocument> for BaseDocument {
     fn as_ref(&self) -> &BaseDocument {
         self
