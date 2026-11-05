@@ -20,9 +20,11 @@ use tungstenite::Message;
 mod css;
 pub mod documents;
 mod dom;
+mod mutations;
 mod session;
 mod transport;
 
+use mutations::MutationLog;
 use session::Session;
 
 pub(crate) type JsonValue = serde_json::Value;
@@ -64,6 +66,7 @@ pub struct CdpServer {
     event_queue: Receiver<CdpEvent>,
     event_sender: Sender<CdpEvent>,
     local_addr: Arc<std::sync::Mutex<Option<std::net::SocketAddr>>>,
+    mutation_log: Arc<MutationLog>,
 }
 
 impl CdpServer {
@@ -71,6 +74,7 @@ impl CdpServer {
         let (sender, receiver) = channel();
         CdpServer {
             connections: HashMap::new(),
+            mutation_log: Arc::new(MutationLog::new(waker.clone())),
             waker,
             event_sender: sender,
             event_queue: receiver,
@@ -117,12 +121,40 @@ impl CdpServer {
         });
     }
 
-    /// Process any pending messages from CDP clients. Must be called on
-    /// the thread that owns the documents (typically the main/event-loop
-    /// thread) whenever the waker fires.
+    /// Process any pending messages from CDP clients and send events for
+    /// any DOM mutations made to inspected documents. Must be called on the
+    /// thread that owns the documents (typically the main/event-loop thread)
+    /// whenever the waker fires. The waker also fires after the first
+    /// mutation to an inspected document since the last call.
     pub fn process_messages(&mut self, docs: &mut dyn DocumentProvider) {
         while let Ok(event) = self.event_queue.try_recv() {
             self.handle_event(event, docs);
+        }
+        self.flush_mutations(docs);
+    }
+
+    /// Send the events for all buffered DOM mutations to the sessions
+    /// inspecting the mutated documents
+    fn flush_mutations(&mut self, docs: &mut dyn DocumentProvider) {
+        let mut records = self.mutation_log.take();
+        if records.is_empty() {
+            return;
+        }
+        records.sort_by_key(|(doc_id, _)| *doc_id);
+        for conn in self.connections.values_mut() {
+            let Some(doc_id) = conn.session.doc_id(docs) else {
+                continue;
+            };
+            let start = records.partition_point(|(id, _)| *id < doc_id);
+            let end = records.partition_point(|(id, _)| *id <= doc_id);
+            if start == end {
+                continue;
+            }
+            let doc_records = records[start..end].iter().map(|(_, record)| record);
+            with_document(docs, doc_id, |doc| {
+                conn.session
+                    .emit_mutations(&mut conn.writer, doc, doc_records.clone());
+            });
         }
     }
 
@@ -146,16 +178,47 @@ impl CdpServer {
             CdpEventData::ConnectionClosed => {
                 if let Some(mut conn) = self.connections.remove(&event.connection_id) {
                     conn.session.close(docs);
+                    // Stop recording mutations once no session inspects the document
+                    if let Some(doc_id) = conn.session.doc_id(docs)
+                        && !self
+                            .connections
+                            .values()
+                            .any(|other| other.session.doc_id(docs) == Some(doc_id))
+                    {
+                        with_document(docs, doc_id, |doc| doc.set_devtools_provider(None));
+                    }
                 }
             }
             CdpEventData::Command(command) => {
                 tracing::debug!("CDP: >> {}", command.method);
                 tracing::trace!("CDP: >> {} {}", command.method, command.params);
-                let Some(conn) = self.connections.get_mut(&event.connection_id) else {
+                if !self.connections.contains_key(&event.connection_id) {
                     tracing::warn!("CDP: message from closed connection");
                     return;
-                };
-                conn.session.handle_command(&mut conn.writer, docs, command);
+                }
+                // Events for mutations made before the command describe the
+                // tree the command sees, and those for mutations the command
+                // makes are sent before its reply (as Chrome does)
+                self.flush_mutations(docs);
+                let conn = self.connections.get_mut(&event.connection_id).unwrap();
+                let result = conn.session.dispatch(&mut conn.writer, docs, &command);
+                // Record mutations to the document from now on: the frontend
+                // has a tree to apply them to
+                if command.method == "DOM.getDocument"
+                    && result.is_ok()
+                    && let Some(doc_id) = conn.session.doc_id(docs)
+                {
+                    let recorder = self.mutation_log.recorder(doc_id);
+                    with_document(docs, doc_id, |doc| {
+                        doc.set_devtools_provider(Some(recorder.clone()))
+                    });
+                }
+                self.flush_mutations(docs);
+                let conn = self.connections.get_mut(&event.connection_id).unwrap();
+                match result {
+                    Ok(result) => conn.writer.reply(&command, result),
+                    Err(err) => conn.writer.reply_err(&command, err.code, &err.message),
+                }
             }
             CdpEventData::TargetListRequest(reply) => {
                 let mut targets = Vec::new();
@@ -243,4 +306,18 @@ impl MessageWriter {
     pub(crate) fn event(&mut self, method: &str, params: JsonValue) {
         self.send_json(json!({ "method": method, "params": params }));
     }
+}
+
+/// Run a callback with access to the document with the given id (if it exists)
+fn with_document(
+    docs: &mut dyn DocumentProvider,
+    doc_id: usize,
+    cb: impl FnOnce(&mut blitz_dom::BaseDocument),
+) {
+    let mut cb = Some(cb);
+    docs.with_document(doc_id, &mut |doc| {
+        if let Some(cb) = cb.take() {
+            cb(doc);
+        }
+    });
 }

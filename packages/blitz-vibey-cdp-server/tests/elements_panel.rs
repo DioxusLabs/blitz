@@ -1394,7 +1394,8 @@ fn set_outer_html() {
                 "DOM.childNodeInserted",
                 "DOM.childNodeInserted",
                 "DOM.childNodeInserted"
-            ]
+            ],
+            "{events:#?}"
         );
         assert_eq!(events[0]["params"]["nodeId"], a_id);
         let inserted: Vec<&serde_json::Value> = events[1..].iter().map(|e| &e["params"]).collect();
@@ -1570,5 +1571,267 @@ fn move_to() {
         assert_eq!(events[1]["method"], "DOM.childNodeCountUpdated");
         assert_eq!(events[1]["params"]["nodeId"], other_id);
         assert_eq!(events[1]["params"]["childNodeCount"], 2);
+    });
+}
+
+/// A mutation for the server thread to apply to the document, acknowledged
+/// once applied
+type Mutation = (Box<dyn FnOnce(&mut BaseDocument) + Send>, Sender<()>);
+
+/// Apply a mutation to the document (as the embedder would, outside of any
+/// CDP command) and wait until it has been applied
+fn mutate(mutations: &Sender<Mutation>, f: impl FnOnce(&mut BaseDocument) + Send + 'static) {
+    let (ack_sender, ack_receiver) = channel();
+    mutations.send((Box::new(f), ack_sender)).unwrap();
+    ack_receiver.recv().unwrap();
+}
+
+/// Like `run_structural_session`, but the client can also mutate the
+/// document directly
+fn run_mutation_session(
+    html: &str,
+    client: impl FnOnce(std::net::SocketAddr, usize, Sender<Mutation>) + Send,
+) {
+    let mut doc: BaseDocument = HtmlDocument::from_html(
+        html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(1200, 800, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        },
+    )
+    .into();
+    doc.resolve(0.0);
+    let mut provider = SingleDocProvider(doc);
+    let doc_id = provider.0.id();
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender))));
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+    let (mutation_sender, mutation_receiver) = channel::<Mutation>();
+
+    let done = Arc::new(Mutex::new(false));
+    std::thread::scope(|scope| {
+        let done2 = Arc::clone(&done);
+        scope.spawn(move || {
+            struct DoneGuard(Arc<Mutex<bool>>);
+            impl Drop for DoneGuard {
+                fn drop(&mut self) {
+                    *self.0.lock().unwrap() = true;
+                }
+            }
+            let _guard = DoneGuard(done2);
+            client(addr, doc_id, mutation_sender);
+        });
+
+        while !*done.lock().unwrap() {
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(10))
+                .is_ok()
+            {
+                server.process_messages(&mut provider);
+            }
+            while let Ok((mutation, ack)) = mutation_receiver.try_recv() {
+                mutation(&mut provider.0);
+                let _ = ack.send(());
+            }
+        }
+    });
+}
+
+/// The ids of the elements with the given "id" attributes
+fn element_ids(doc: &BaseDocument, ids: &[&str]) -> Vec<blitz_traits::node_id::NodeId> {
+    ids.iter()
+        .map(|id| doc.get_element_by_id(id).expect(id))
+        .collect()
+}
+
+/// The mutation events received before the reply to a no-op command
+fn mutation_events(ws: &mut Ws, id: u64) -> Vec<serde_json::Value> {
+    let mut events = Vec::new();
+    send_command(ws, id, "Runtime.runIfWaitingForDebugger", json!({}));
+    read_reply(ws, id, &mut events);
+    events
+}
+
+#[test]
+fn live_mutations() {
+    let html = "<html><body><div id=\"list\"><p id=\"a\">a</p><p id=\"b\">b</p></div>\
+         </body></html>";
+    run_mutation_session(html, |addr, doc_id, mutations| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        // Mutations made before the document is requested are not reported
+        mutate(&mutations, |doc| {
+            let [list] = element_ids(doc, &["list"])[..] else {
+                unreachable!()
+            };
+            let mut mutr = doc.mutate();
+            let p = mutr.create_element(blitz_dom::qual_name!("p"), vec![]);
+            mutr.append_children(list, &[p]);
+            mutr.remove_and_drop_node(p);
+        });
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        assert!(events.is_empty(), "{events:?}");
+        let list_id = node_id_of(&root, "list");
+        let b_id = node_id_of(&root, "b");
+        let b_text_id = find_by_id(&root, "b").unwrap()["children"][0]["nodeId"].clone();
+
+        // Insertion into a node whose children are known
+        mutate(&mutations, |doc| {
+            let [list] = element_ids(doc, &["list"])[..] else {
+                unreachable!()
+            };
+            let mut mutr = doc.mutate();
+            let attr = blitz_dom::Attribute {
+                name: blitz_dom::qual_name!("id"),
+                value: "c".into(),
+            };
+            let p = mutr.create_element(blitz_dom::qual_name!("p"), vec![attr]);
+            let text = mutr.create_text_node("c");
+            mutr.append_children(p, &[text]);
+            mutr.append_children(list, &[p]);
+        });
+        let event = read_event(&mut ws, "DOM.childNodeInserted", &mut events);
+        assert_eq!(event["parentNodeId"], list_id);
+        assert_eq!(event["previousNodeId"], b_id);
+        assert_eq!(event["node"]["attributes"], json!(["id", "c"]));
+        assert_eq!(event["node"]["children"][0]["nodeValue"], "c");
+        let c_id = event["node"]["nodeId"].clone();
+
+        // Attribute and text changes (repeated changes are reported once,
+        // with the current value)
+        mutate(&mutations, |doc| {
+            let [b] = element_ids(doc, &["b"])[..] else {
+                unreachable!()
+            };
+            let text = doc.get_node(b).unwrap().children[0];
+            let mut mutr = doc.mutate();
+            mutr.set_attribute(b, blitz_dom::qual_name!("class"), "x");
+            mutr.set_attribute(b, blitz_dom::qual_name!("class"), "y");
+            mutr.set_attribute(b, blitz_dom::qual_name!("title"), "t");
+            mutr.clear_attribute(b, blitz_dom::qual_name!("title"));
+            mutr.set_node_text(text, "bb");
+        });
+        let events = mutation_events(&mut ws, 2);
+        let summary: Vec<(String, serde_json::Value)> = events
+            .iter()
+            .map(|e| {
+                (
+                    e["method"].as_str().unwrap().to_string(),
+                    e["params"].clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (
+                    "DOM.attributeModified".to_string(),
+                    json!({ "nodeId": b_id, "name": "class", "value": "y" })
+                ),
+                (
+                    "DOM.attributeRemoved".to_string(),
+                    json!({ "nodeId": b_id, "name": "title" })
+                ),
+                (
+                    "DOM.characterDataModified".to_string(),
+                    json!({ "nodeId": b_text_id, "characterData": "bb" })
+                ),
+            ]
+        );
+
+        // An insertion undone in the same batch is not reported; a move is
+        // reported as a removal and an insertion
+        mutate(&mutations, |doc| {
+            let [list, a, c] = element_ids(doc, &["list", "a", "c"])[..] else {
+                unreachable!()
+            };
+            let mut mutr = doc.mutate();
+            let p = mutr.create_element(blitz_dom::qual_name!("p"), vec![]);
+            mutr.append_children(list, &[p]);
+            mutr.remove_and_drop_node(p);
+            mutr.insert_nodes_before(a, &[c]);
+        });
+        let events = mutation_events(&mut ws, 3);
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|e| e["method"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, ["DOM.childNodeRemoved", "DOM.childNodeInserted"]);
+        assert_eq!(events[0]["params"]["nodeId"], c_id);
+        assert_eq!(events[1]["params"]["node"]["nodeId"], c_id);
+        assert_eq!(events[1]["params"]["previousNodeId"], 0);
+
+        // Several insertions into one parent are reported in tree order
+        mutate(&mutations, |doc| {
+            let [list, b] = element_ids(doc, &["list", "b"])[..] else {
+                unreachable!()
+            };
+            let mut mutr = doc.mutate();
+            let x = mutr.create_element(blitz_dom::qual_name!("i"), vec![]);
+            let y = mutr.create_element(blitz_dom::qual_name!("u"), vec![]);
+            mutr.append_children(list, &[x]);
+            mutr.insert_nodes_before(b, &[y]);
+        });
+        let events = mutation_events(&mut ws, 4);
+        let names: Vec<&serde_json::Value> = events
+            .iter()
+            .map(|e| &e["params"]["node"]["localName"])
+            .collect();
+        assert_eq!(names, ["u", "i"]);
+        assert_eq!(
+            events[1]["params"]["previousNodeId"],
+            find_by_id(&root, "b").unwrap()["nodeId"]
+        );
+    });
+}
+
+#[test]
+fn live_mutations_in_unloaded_nodes() {
+    let html = "<html><body><div id=\"list\"><p id=\"a\">a</p></div></body></html>";
+    run_mutation_session(html, |addr, doc_id, mutations| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        // Only the document and its `<html>` child are known to the frontend
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": 1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let html_id = root["children"][0]["nodeId"].clone();
+
+        // Changes inside unknown nodes are not reported; a known node whose
+        // children aren't loaded gets its child count updated
+        mutate(&mutations, |doc| {
+            let [list] = element_ids(doc, &["list"])[..] else {
+                unreachable!()
+            };
+            let html = doc.root_element().id;
+            let mut mutr = doc.mutate();
+            let p = mutr.create_element(blitz_dom::qual_name!("p"), vec![]);
+            mutr.append_children(list, &[p]);
+            mutr.set_attribute(list, blitz_dom::qual_name!("class"), "x");
+            let body = mutr.create_element(blitz_dom::qual_name!("footer"), vec![]);
+            mutr.append_children(html, &[body]);
+        });
+        let events = mutation_events(&mut ws, 2);
+        let summary: Vec<(&str, &serde_json::Value)> = events
+            .iter()
+            .map(|e| (e["method"].as_str().unwrap(), &e["params"]))
+            .collect();
+        assert_eq!(
+            summary,
+            [(
+                "DOM.childNodeCountUpdated",
+                &json!({ "nodeId": html_id, "childNodeCount": 3 })
+            )]
+        );
     });
 }

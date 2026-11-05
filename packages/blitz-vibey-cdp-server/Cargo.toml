@@ -12,7 +12,7 @@ edition.workspace = true
 [dependencies]
 # Blitz dependencies
 blitz-traits = { workspace = true }
-blitz-dom = { workspace = true }
+blitz-dom = { workspace = true, features = ["devtools"] }
 
 # Style / layout dependencies
 style = { workspace = true }
