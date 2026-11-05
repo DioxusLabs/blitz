@@ -225,7 +225,14 @@ impl RenderedElementBacking for NodeHandle {
     }
 
     fn get_client_rect(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsRect>>>> {
-        let Some(bounding_rect) = self.doc_mut().get_client_bounding_rect(self.node_id) else {
+        let Some(doc) = self.try_doc() else {
+            let err = MountedError::OperationFailed(Box::new(std::io::Error::new(
+                std::io::ErrorKind::WouldBlock,
+                "Document currently mutably borrowed",
+            )));
+            return Box::pin(async move { Err(err) });
+        };
+        let Some(bounding_rect) = doc.get_client_bounding_rect(self.node_id) else {
             return self.node_not_exist_err();
         };
         let pixels_rect = PixelsRect::new(
@@ -297,17 +304,21 @@ impl RenderedElementBacking for NodeHandle {
     }
 
     fn set_focus(&self, focus: bool) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-        let mut doc = self.doc_mut();
-        if focus {
-            // TODO: queue focus events somehow
-            doc.set_focus_to(self.node_id);
-        } else if doc.get_focussed_node_id() == Some(self.node_id) {
-            // Q: Should this only clear focus if the node is focussed?
-            // TODO: queue blur events somehow
-            doc.clear_focus();
-        }
-
-        Box::pin(async { Ok(()) })
+        let node_id = self.node_id;
+        let doc = Rc::clone(&self.doc);
+        Box::pin(async move {
+            if let Ok(mut doc) = doc.try_borrow_mut() {
+                if focus {
+                    // TODO: queue focus events somehow
+                    doc.set_focus_to(node_id);
+                } else if doc.get_focussed_node_id() == Some(node_id) {
+                    // Q: Should this only clear focus if the node is focussed?
+                    // TODO: queue blur events somehow
+                    doc.clear_focus();
+                }
+            }
+            Ok(())
+        })
     }
 }
 
@@ -751,5 +762,72 @@ mod tests {
         let data = NativeTouchData(finger_event(0, 1.0, 2.0));
         assert!(data.touches().is_empty());
         assert_eq!(data.touches_changed().len(), 1);
+    }
+
+    #[test]
+    fn test_get_client_rect_when_document_mutably_borrowed() {
+        use blitz_dom::DocumentConfig;
+
+        let base_doc = BaseDocument::new(DocumentConfig::default());
+        let node_id = base_doc.root_node().id;
+        let handle = NodeHandle {
+            doc: Rc::new(RefCell::new(base_doc)),
+            node_id,
+        };
+
+        fn block_on<F: Future>(fut: F) -> F::Output {
+            let waker = std::task::Waker::noop();
+            let mut cx = std::task::Context::from_waker(waker);
+            let mut pinned = std::pin::pin!(fut);
+            match pinned.as_mut().poll(&mut cx) {
+                std::task::Poll::Ready(val) => val,
+                std::task::Poll::Pending => panic!("Future pending unexpectedly"),
+            }
+        }
+
+        // When document is mutably borrowed, get_client_rect must not panic
+        // and must return Err(MountedError::OperationFailed(_)).
+        let _guard = handle.doc_mut();
+        let res = block_on(async { handle.get_client_rect().await });
+        assert!(
+            matches!(res, Err(MountedError::OperationFailed(_))),
+            "Expected Err(MountedError::OperationFailed(_)), got {res:?}"
+        );
+        drop(_guard);
+
+        // Once mutable borrow is released, get_client_rect should succeed
+        let ok_res = block_on(async { handle.get_client_rect().await });
+        assert!(ok_res.is_ok(), "Expected Ok after guard drop, got {ok_res:?}");
+    }
+
+    #[test]
+    fn test_set_focus_when_document_mutably_borrowed() {
+        use blitz_dom::DocumentConfig;
+
+        let base_doc = BaseDocument::new(DocumentConfig::default());
+        let node_id = base_doc.root_node().id;
+        let handle = NodeHandle {
+            doc: Rc::new(RefCell::new(base_doc)),
+            node_id,
+        };
+
+        fn block_on<F: Future>(fut: F) -> F::Output {
+            let waker = std::task::Waker::noop();
+            let mut cx = std::task::Context::from_waker(waker);
+            let mut pinned = std::pin::pin!(fut);
+            match pinned.as_mut().poll(&mut cx) {
+                std::task::Poll::Ready(val) => val,
+                std::task::Poll::Pending => panic!("Future pending unexpectedly"),
+            }
+        }
+
+        // When document is mutably borrowed, set_focus must not panic.
+        let _guard = handle.doc_mut();
+        let res = block_on(async { handle.set_focus(true).await });
+        assert!(res.is_ok(), "Expected Ok(()), got {res:?}");
+        drop(_guard);
+
+        let ok_res = block_on(async { handle.set_focus(false).await });
+        assert!(ok_res.is_ok(), "Expected Ok(()) after guard drop, got {ok_res:?}");
     }
 }
