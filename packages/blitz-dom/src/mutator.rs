@@ -231,7 +231,10 @@ impl DocumentMutator<'_> {
                 if *contents != value {
                     *contents = value.to_string();
                     if node_is_in_document {
-                        devtools!(self, MutationRecord::CharacterDataChanged { node_id });
+                        devtools!(
+                            self,
+                            MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id })
+                        );
                     }
                 }
                 return;
@@ -1995,28 +1998,25 @@ mod test {
         use std::sync::Mutex;
 
         #[derive(Default)]
-        struct Recorder(Mutex<Vec<String>>);
+        struct Recorder(Mutex<Vec<MutationRecord>>);
         impl DevtoolsProvider for Recorder {
             fn mutations(&self, records: &[MutationRecord]) {
-                let mut log = self.0.lock().unwrap();
-                for record in records {
-                    log.push(match record {
-                        MutationRecord::NodeInserted(NodeInserted { parent_id, node_id }) => {
-                            format!("insert {} {}", parent_id.as_u64(), node_id.as_u64())
-                        }
-                        MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id }) => {
-                            format!("remove {} {}", parent_id.as_u64(), node_id.as_u64())
-                        }
-                        MutationRecord::AttributeChanged(AttributeChanged { node_id, name }) => {
-                            format!("attr {} {name}", node_id.as_u64())
-                        }
-                        MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id }) => {
-                            format!("text {}", node_id.as_u64())
-                        }
-                    });
-                }
+                self.0.lock().unwrap().extend_from_slice(records);
             }
         }
+
+        let inserted =
+            |parent_id, node_id| MutationRecord::NodeInserted(NodeInserted { parent_id, node_id });
+        let removed =
+            |parent_id, node_id| MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id });
+        let attr_changed = |node_id, name: &str| {
+            MutationRecord::AttributeChanged(AttributeChanged {
+                node_id,
+                name: name.into(),
+            })
+        };
+        let text_changed =
+            |node_id| MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id });
 
         let recorder = Arc::new(Recorder::default());
         let mut document = BaseDocument::new(DocumentConfig {
@@ -2025,8 +2025,6 @@ mod test {
         });
         let root_id = document.root_node().id;
         let take = || std::mem::take(&mut *recorder.0.lock().unwrap());
-        // Mutations are delivered when the mutator is flushed
-        let id = |node_id: NodeId| node_id.as_u64();
 
         // Building a detached subtree is not reported; inserting it reports its root only
         let mut mutator = document.mutate();
@@ -2037,10 +2035,11 @@ mod test {
         mutator.set_node_text(text, "b");
         mutator.flush();
         assert!(take().is_empty());
+        // Mutations are delivered when the mutator is flushed
         mutator.append_children(root_id, &[div]);
         assert!(take().is_empty());
         mutator.flush();
-        assert_eq!(take(), [format!("insert {} {}", id(root_id), id(div))]);
+        assert_eq!(take(), [inserted(root_id, div)]);
 
         mutator.set_attribute(div, qual_name!("class"), "c");
         mutator.clear_attribute(div, qual_name!("class"));
@@ -2057,12 +2056,12 @@ mod test {
         assert_eq!(
             take(),
             [
-                format!("attr {} class", id(div)),
-                format!("attr {} class", id(div)),
-                format!("text {}", id(text)),
-                format!("text {}", id(text)),
-                format!("insert {} {}", id(div), id(comment)),
-                format!("text {}", id(comment)),
+                attr_changed(div, "class"),
+                attr_changed(div, "class"),
+                text_changed(text),
+                text_changed(text),
+                inserted(div, comment),
+                text_changed(comment),
             ]
         );
         assert!(matches!(
@@ -2082,13 +2081,13 @@ mod test {
         assert_eq!(
             take(),
             [
-                format!("insert {} {}", id(root_id), id(span)),
-                format!("remove {} {}", id(div), id(text)),
-                format!("insert {} {}", id(span), id(text)),
-                format!("remove {} {}", id(root_id), id(span)),
-                format!("insert {} {}", id(root_id), id(span)),
-                format!("remove {} {}", id(span), id(text)),
-                format!("remove {} {}", id(root_id), id(div)),
+                inserted(root_id, span),
+                removed(div, text),
+                inserted(span, text),
+                removed(root_id, span),
+                inserted(root_id, span),
+                removed(span, text),
+                removed(root_id, div),
             ]
         );
         drop(mutator);
