@@ -275,6 +275,7 @@ dioxus-native = { workspace = true, features = [
     "floats",
     "svg",
     "prelude",
+    "net",
 ] }
 euclid = { workspace = true }
 url = { workspace = true }
@@ -282,6 +283,7 @@ reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 image = { workspace = true }
 png = { workspace = true }
+rand = "0.9"
 peniko = { workspace = true }
 color = { workspace = true }
 env_logger = "0.11"
