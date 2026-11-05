@@ -718,6 +718,8 @@ impl CodeEditor {
         self.buffer.reset_edit_type();
         let offset = self.offset_at_point(cx, pos);
         let granularity = match click_count {
+            // Clicking line numbers selects whole lines
+            _ if pos.x < self.gutter_width() => Granularity::Line,
             0 | 1 => Granularity::Char,
             2 => Granularity::Word,
             _ => Granularity::Line,

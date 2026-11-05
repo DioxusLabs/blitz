@@ -444,3 +444,29 @@ fn caret_stops_blinking_when_unfocused_or_disabled() {
     assert_eq!(resp.timer, None);
     assert!(editor.caret_visible);
 }
+
+#[test]
+fn clicking_and_dragging_in_the_gutter_selects_lines() {
+    let (mut editor, mut cx) = editor("one\ntwo\nthree\nfour");
+    editor.prepare(&mut cx);
+    let lh = editor.metrics.line_height;
+    let x = editor.gutter_width() / 2.0;
+    editor.handle_input(
+        &mut cx,
+        EditorInput::PointerDown {
+            pos: Point::new(x, lh * 1.5),
+            button: PointerButton::Primary,
+            mods: Modifiers::default(),
+            click_count: 1,
+        },
+    );
+    assert_eq!(editor.selections(), vec![(4, 8)]);
+
+    editor.handle_input(
+        &mut cx,
+        EditorInput::PointerMove {
+            pos: Point::new(x, lh * 2.5),
+        },
+    );
+    assert_eq!(editor.selections(), vec![(4, 14)]);
+}
