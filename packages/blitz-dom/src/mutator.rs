@@ -208,12 +208,23 @@ impl DocumentMutator<'_> {
 
     // Node mutation methods
 
+    /// Set the text of a text or comment node
     pub fn set_node_text(&mut self, node_id: NodeId, value: &str) {
         let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();
         let node = &mut self.doc.nodes[node_id];
 
         let text = match node.data {
             NodeData::Text(ref mut text) => text,
+            // Comments are not rendered, so changing one doesn't damage anything
+            NodeData::Comment { ref mut contents } => {
+                if *contents != value {
+                    *contents = value.to_string();
+                    if node_is_in_document {
+                        devtools!(self.doc, character_data_changed(node_id));
+                    }
+                }
+                return;
+            }
             // TODO: otherwise this is basically element.textContent which is a bit different - need to parse as html
             _ => return,
         };
@@ -1966,6 +1977,11 @@ mod test {
         mutator.set_node_text(text, "c");
         mutator.set_node_text(text, "c");
         mutator.append_text_to_node(text, "d").unwrap();
+        let comment = mutator.create_comment_node("e");
+        mutator.set_node_text(comment, "f");
+        mutator.append_children(div, &[comment]);
+        mutator.set_node_text(comment, "g");
+        mutator.set_node_text(comment, "g");
         assert_eq!(
             take(),
             [
@@ -1973,8 +1989,14 @@ mod test {
                 format!("attr {} class", id(div)),
                 format!("text {}", id(text)),
                 format!("text {}", id(text)),
+                format!("insert {} {}", id(div), id(comment)),
+                format!("text {}", id(comment)),
             ]
         );
+        assert!(matches!(
+            &mutator.doc.get_node(comment).unwrap().data,
+            NodeData::Comment { contents } if contents == "g"
+        ));
 
         // Moving a node reports its removal and insertion
         let span = mutator.create_element(qual_name!("span"), vec![]);
