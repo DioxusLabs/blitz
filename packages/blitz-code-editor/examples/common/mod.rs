@@ -1,0 +1,31 @@
+//! Setup shared by the examples
+
+use std::path::Path;
+
+use blitz_code_editor::{CodeEditor, SyntaxmateHighlighter};
+
+/// Opens `path` (or the editor example's own source) in an editor, with syntax highlighting
+/// and colors from the GitHub Dark theme
+pub fn open(path: Option<&str>) -> CodeEditor {
+    let (text, language) = match path {
+        Some(path) => {
+            let text = std::fs::read_to_string(path).expect("Failed to read file");
+            let language = SyntaxmateHighlighter::detect_language(Some(Path::new(path)), &text);
+            (text, language)
+        }
+        None => (
+            include_str!("../editor.rs").to_string(),
+            Some("rust".into()),
+        ),
+    };
+    let mut editor = CodeEditor::new(&text);
+    match language.map(|language| SyntaxmateHighlighter::new(&language, "github-dark")) {
+        Some(Ok(highlighter)) => {
+            editor.set_theme(highlighter.editor_theme());
+            editor.set_highlighter(highlighter);
+        }
+        Some(Err(err)) => eprintln!("No syntax highlighting: {err}"),
+        None => {}
+    }
+    editor
+}

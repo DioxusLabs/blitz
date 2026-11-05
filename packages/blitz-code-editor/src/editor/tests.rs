@@ -540,3 +540,40 @@ fn scrolling_through_a_long_file_drops_off_screen_layouts() {
     // Lines around the viewport are still cached
     assert!(lines > 0);
 }
+
+/// The text colors used by the glyphs of a line's layout
+fn line_colors(editor: &mut CodeEditor, cx: &mut TextContext, line: usize) -> Vec<peniko::Color> {
+    let layout = editor.cache.line(cx, &editor.buffer, line);
+    let mut colors = Vec::new();
+    for line in layout.lines() {
+        for item in line.items() {
+            if let parley::PositionedLayoutItem::GlyphRun(run) = item {
+                colors.push(run.style().brush.0);
+            }
+        }
+    }
+    colors
+}
+
+#[test]
+fn highlighting_restyles_cached_lines_after_an_edit_above() {
+    use crate::highlight::tests::{BlockComments, COMMENT};
+    let (mut editor, mut cx) = editor("a\nb\nc");
+    editor.set_highlighter(BlockComments {
+        calls: Default::default(),
+    });
+    let mut scene = anyrender::Scene::new();
+    editor.paint(&mut cx, &mut scene, Affine::IDENTITY);
+    let plain = editor.theme().foreground;
+    assert_eq!(line_colors(&mut editor, &mut cx, 2), vec![plain]);
+
+    type_text(&mut editor, &mut cx, "/*");
+    editor.paint(&mut cx, &mut scene, Affine::IDENTITY);
+    assert_eq!(
+        line_colors(&mut editor, &mut cx, 2),
+        vec![COMMENT.foreground.unwrap()]
+    );
+
+    editor.clear_highlighter();
+    assert_eq!(line_colors(&mut editor, &mut cx, 2), vec![plain]);
+}

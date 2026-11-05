@@ -25,6 +25,8 @@ use winit::window::{
     WindowId,
 };
 
+mod common;
+
 /// Maximum time and distance between clicks for them to count as a double/triple click
 const MULTI_CLICK_TIME: Duration = Duration::from_millis(500);
 const MULTI_CLICK_DISTANCE: f64 = 4.0;
@@ -371,11 +373,6 @@ fn main() {
             _ => path = Some(arg),
         }
     }
-    let text = match path {
-        Some(path) => std::fs::read_to_string(path).expect("Failed to read file"),
-        None => include_str!("editor.rs").to_string(),
-    };
-
     let renderer = if use_cpu {
         Renderer::Cpu(Box::new(VelloCpuWindowRenderer::new()))
     } else {
@@ -383,7 +380,7 @@ fn main() {
     };
 
     let app = App {
-        editor: CodeEditor::new(&text),
+        editor: common::open(path.as_deref()),
         text_cx: TextContext::new(),
         renderer,
         window: None,

@@ -910,6 +910,7 @@ dependencies = [
  "parley",
  "peniko",
  "png 0.18.1",
+ "syntaxmate",
  "winit",
 ]
 
@@ -8210,6 +8211,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "syntaxmate"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e1d270f0a1504760892da24e9ceeb9af6a8f84e905f34fbc53a4a386cb5558c"
+dependencies = [
+ "memchr",
+ "miniz_oxide 0.9.1",
+ "serde",
+ "serde_json",
+ "unicode-general-category",
+ "unicode-ident",
+ "unicode-script",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "system-deps"
 version = "7.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8912,6 +8929,12 @@ name = "unicode-bidi"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
+
+[[package]]
+name = "unicode-general-category"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b993bddc193ae5bd0d623b49ec06ac3e9312875fdae725a975c51db1cc1677f"
 
 [[package]]
 name = "unicode-ident"

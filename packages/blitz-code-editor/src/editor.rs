@@ -13,6 +13,7 @@ use floem_editor_core::{
 };
 use kurbo::{Point, Rect, Size, Vec2};
 
+use crate::highlight::{HighlightCache, SyntaxHighlighter};
 use crate::layout::{LineCache, Metrics, caret_x, col_at_x, line_range};
 use crate::{
     EditorInput, EditorStyle, ImeInput, Key, KeyInput, Modifiers, PointerButton, ScrollDelta,
@@ -187,6 +188,19 @@ impl CodeEditor {
 
     pub fn set_style(&mut self, style: EditorStyle) {
         self.style = style;
+    }
+
+    /// Highlights the text with `highlighter`
+    pub fn set_highlighter(&mut self, highlighter: impl SyntaxHighlighter + 'static) {
+        let num_lines = self.buffer.num_lines();
+        let highlights = HighlightCache::new(highlighter, num_lines);
+        self.cache
+            .set_highlights(Some(Box::new(highlights)), num_lines);
+    }
+
+    /// Stops highlighting the text
+    pub fn clear_highlighter(&mut self) {
+        self.cache.set_highlights(None, self.buffer.num_lines());
     }
 
     pub fn theme(&self) -> &Theme {

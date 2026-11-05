@@ -4,11 +4,12 @@ use std::ops::Range;
 
 use floem_editor_core::buffer::{Buffer, InvalLines, rope_text::RopeText};
 use parley::{
-    Affinity, Alignment, AlignmentOptions, BoundingBox, Cursor, FontFamily, Layout, LineHeight,
-    StyleProperty,
+    Affinity, Alignment, AlignmentOptions, BoundingBox, Cursor, FontFamily, FontStyle, FontWeight,
+    Layout, LineHeight, StyleProperty,
 };
 use peniko::Color;
 
+use crate::highlight::{LineHighlights, StyledSpan};
 use crate::{EditorStyle, TextBrush, TextContext};
 
 pub(crate) type TextLayout = Layout<TextBrush>;
@@ -25,10 +26,18 @@ pub(crate) struct Metrics {
 
 impl Metrics {
     pub(crate) fn measure(cx: &mut TextContext, style: &EditorStyle) -> Self {
-        let line_height = (style.font_size * style.line_height).round().max(1.0);
-        let layout = build_layout(cx, style, line_height, 0.0, Color::BLACK, "0");
+        let line_height = (style.font_size * style.line_height).round().max(1.0) as f64;
+        let config = LayoutConfig {
+            style: style.clone(),
+            metrics: Metrics {
+                line_height,
+                char_width: 0.0,
+            },
+            color: Color::BLACK,
+        };
+        let layout = build_layout(cx, &config, "0", &[]);
         Self {
-            line_height: line_height as f64,
+            line_height,
             char_width: layout.full_width() as f64,
         }
     }
@@ -40,12 +49,15 @@ impl Metrics {
 /// in the layout match the buffer.
 pub(crate) fn build_layout(
     cx: &mut TextContext,
-    style: &EditorStyle,
-    line_height: f32,
-    char_width: f64,
-    color: Color,
+    config: &LayoutConfig,
     text: &str,
+    spans: &[StyledSpan],
 ) -> TextLayout {
+    let LayoutConfig {
+        style,
+        metrics,
+        color,
+    } = config;
     let display: Cow<'_, str> = if text.contains('\t') {
         Cow::Owned(text.replace('\t', " "))
     } else {
@@ -58,8 +70,27 @@ pub(crate) fn build_layout(
         style.font_family.as_str().into(),
     )));
     builder.push_default(StyleProperty::FontSize(style.font_size));
-    builder.push_default(StyleProperty::LineHeight(LineHeight::Absolute(line_height)));
-    builder.push_default(StyleProperty::Brush(TextBrush(color)));
+    builder.push_default(StyleProperty::LineHeight(LineHeight::Absolute(
+        metrics.line_height as f32,
+    )));
+    builder.push_default(StyleProperty::Brush(TextBrush(*color)));
+
+    for span in spans {
+        let range = span.range.start.min(text.len())..span.range.end.min(text.len());
+        let style = span.style;
+        if let Some(color) = style.foreground {
+            builder.push(StyleProperty::Brush(TextBrush(color)), range.clone());
+        }
+        if style.bold {
+            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), range.clone());
+        }
+        if style.italic {
+            builder.push(StyleProperty::FontStyle(FontStyle::Italic), range.clone());
+        }
+        if style.underline {
+            builder.push(StyleProperty::Underline(true), range);
+        }
+    }
 
     if text.contains('\t') {
         let tab_size = style.tab_size.max(1);
@@ -67,7 +98,7 @@ pub(crate) fn build_layout(
         for (idx, ch) in text.char_indices() {
             if ch == '\t' {
                 let width = tab_size - col % tab_size;
-                let spacing = (width - 1) as f64 * char_width;
+                let spacing = (width - 1) as f64 * metrics.char_width;
                 builder.push(StyleProperty::LetterSpacing(spacing as f32), idx..idx + 1);
                 col += width;
             } else {
@@ -113,10 +144,11 @@ pub(crate) fn line_range(buffer: &Buffer, line: usize) -> Range<usize> {
 
 /// Settings that every cached layout was built with. Changing any of them clears the cache.
 #[derive(Clone, Debug, PartialEq)]
-struct LayoutConfig {
-    style: EditorStyle,
-    metrics: Metrics,
-    color: Color,
+pub(crate) struct LayoutConfig {
+    pub style: EditorStyle,
+    pub metrics: Metrics,
+    /// The default text color
+    pub color: Color,
 }
 
 /// Per-line layouts, built on demand and invalidated by edits
@@ -129,6 +161,7 @@ pub(crate) struct LineCache {
     numbers: HashMap<usize, TextLayout>,
     /// The widest line laid out so far
     max_width: f64,
+    highlights: Option<Box<dyn LineHighlights>>,
 }
 
 impl LineCache {
@@ -139,7 +172,18 @@ impl LineCache {
             cached: 0,
             numbers: HashMap::new(),
             max_width: 0.0,
+            highlights: None,
         }
+    }
+
+    /// Replaces the syntax highlighter, and drops layouts styled by the old one
+    pub(crate) fn set_highlights(
+        &mut self,
+        highlights: Option<Box<dyn LineHighlights>>,
+        num_lines: usize,
+    ) {
+        self.highlights = highlights;
+        self.reset(num_lines);
     }
 
     /// Clears the cache if the settings changed. Returns whether they did.
@@ -170,6 +214,9 @@ impl LineCache {
         self.cached = 0;
         self.numbers.clear();
         self.max_width = 0.0;
+        if let Some(highlights) = &mut self.highlights {
+            highlights.reset(num_lines);
+        }
     }
 
     /// Drops the layouts of lines an edit touched, and shifts the ones after them
@@ -186,6 +233,28 @@ impl LineCache {
             self.lines.resize_with(num_lines, || None);
             self.cached = self.lines.iter().flatten().count();
         }
+        if let Some(highlights) = &mut self.highlights {
+            highlights.invalidate(inval, num_lines);
+        }
+    }
+
+    /// Brings highlighting up to date through `line`, dropping the layouts of earlier lines
+    /// whose highlighting changed (e.g. after opening a block comment above them)
+    fn update_highlights(&mut self, buffer: &Buffer, line: usize) {
+        let Some(highlights) = &mut self.highlights else {
+            return;
+        };
+        let lines = &mut self.lines;
+        let cached = &mut self.cached;
+        highlights.ensure(buffer, line, &mut |changed| {
+            if lines.get_mut(changed).and_then(Option::take).is_some() {
+                *cached -= 1;
+            }
+        });
+    }
+
+    fn spans(&self, line: usize) -> &[StyledSpan] {
+        self.highlights.as_ref().map_or(&[], |h| h.spans(line))
     }
 
     /// Once more than [`MAX_CACHED_LINES`] layouts are cached, drops those for lines outside
@@ -225,30 +294,24 @@ impl LineCache {
         buffer: &Buffer,
         line: usize,
     ) -> &TextLayout {
-        let config = self
-            .config
-            .as_ref()
-            .expect("LineCache used before configure");
         if line >= self.lines.len() {
             self.lines
                 .resize_with(buffer.num_lines().max(line + 1), || None);
         }
-        let slot = &mut self.lines[line];
-        if slot.is_none() {
+        // This may drop this line's layout if an edit above changed its highlighting
+        self.update_highlights(buffer, line);
+        if self.lines[line].is_none() {
+            let config = self
+                .config
+                .as_ref()
+                .expect("LineCache used before configure");
             let text = buffer.slice_to_cow(line_range(buffer, line));
-            let layout = build_layout(
-                cx,
-                &config.style,
-                config.metrics.line_height as f32,
-                config.metrics.char_width,
-                config.color,
-                &text,
-            );
+            let layout = build_layout(cx, config, &text, self.spans(line));
             self.max_width = self.max_width.max(layout.full_width() as f64);
             self.cached += 1;
-            *slot = Some(layout);
+            self.lines[line] = Some(layout);
         }
-        slot.as_ref().unwrap()
+        self.lines[line].as_ref().unwrap()
     }
 
     pub(crate) fn number(&mut self, cx: &mut TextContext, number: usize) -> &TextLayout {
@@ -256,40 +319,44 @@ impl LineCache {
             .config
             .as_ref()
             .expect("LineCache used before configure");
-        self.numbers.entry(number).or_insert_with(|| {
-            build_layout(
-                cx,
-                &config.style,
-                config.metrics.line_height as f32,
-                config.metrics.char_width,
-                config.color,
-                &number.to_string(),
-            )
-        })
+        self.numbers
+            .entry(number)
+            .or_insert_with(|| build_layout(cx, config, &number.to_string(), &[]))
     }
 
     /// Lays out a line with IME composition text spliced in at byte `col`
     pub(crate) fn line_with_preedit(
-        &self,
+        &mut self,
         cx: &mut TextContext,
         buffer: &Buffer,
         line: usize,
         col: usize,
         preedit: &str,
     ) -> TextLayout {
+        self.update_highlights(buffer, line);
         let config = self
             .config
             .as_ref()
             .expect("LineCache used before configure");
         let mut text = buffer.slice_to_cow(line_range(buffer, line)).into_owned();
-        text.insert_str(col.min(text.len()), preedit);
-        build_layout(
-            cx,
-            &config.style,
-            config.metrics.line_height as f32,
-            config.metrics.char_width,
-            config.color,
-            &text,
-        )
+        let col = col.min(text.len());
+        text.insert_str(col, preedit);
+        // Shift highlighting after the composition text along with the text
+        let shift = |offset: usize| {
+            if offset >= col {
+                offset + preedit.len()
+            } else {
+                offset
+            }
+        };
+        let spans: Vec<_> = self
+            .spans(line)
+            .iter()
+            .map(|span| StyledSpan {
+                range: shift(span.range.start)..shift(span.range.end),
+                style: span.style,
+            })
+            .collect();
+        build_layout(cx, config, &text, &spans)
     }
 }

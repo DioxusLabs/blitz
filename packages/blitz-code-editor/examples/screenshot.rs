@@ -7,10 +7,10 @@ use std::io::BufWriter;
 
 use anyrender::render_to_buffer;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use blitz_code_editor::{
-    CodeEditor, EditorInput, Key, KeyInput, Modifiers, PointerButton, TextContext,
-};
+use blitz_code_editor::{EditorInput, Key, KeyInput, Modifiers, PointerButton, TextContext};
 use kurbo::{Affine, Point, Size};
+
+mod common;
 
 const WIDTH: f64 = 900.0;
 const HEIGHT: f64 = 600.0;
@@ -18,14 +18,11 @@ const SCALE: f64 = 2.0;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let text = match args.next() {
-        Some(path) => std::fs::read_to_string(path).expect("Failed to read file"),
-        None => include_str!("editor.rs").to_string(),
-    };
+    let path = args.next();
     let out_path = args.next().unwrap_or_else(|| "editor.png".into());
 
     let mut cx = TextContext::new();
-    let mut editor = CodeEditor::new(&text);
+    let mut editor = common::open(path.as_deref());
     editor.set_size(Size::new(WIDTH, HEIGHT));
     editor.handle_input(&mut cx, EditorInput::Focus(true));
 
