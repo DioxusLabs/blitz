@@ -318,3 +318,89 @@ fn tabs_advance_to_the_next_tab_stop() {
     assert!((tab_x - 4.0 * cw).abs() < 0.5, "{tab_x} vs {}", 4.0 * cw);
     assert!((tab_x2 - 4.0 * cw).abs() < 0.5, "{tab_x2} vs {}", 4.0 * cw);
 }
+
+fn multi_key(editor: &mut CodeEditor, cx: &mut TextContext, c: &str, shift: bool) {
+    let mods = Modifiers { shift, ..primary() };
+    key(editor, cx, Key::Character(c.into()), mods);
+}
+
+#[test]
+fn select_next_occurrence_starts_with_the_word_then_adds_matches() {
+    let (mut editor, mut cx) = editor("foo bar foo baz foo");
+    multi_key(&mut editor, &mut cx, "d", false);
+    assert_eq!(editor.selections(), vec![(0, 3)]);
+    multi_key(&mut editor, &mut cx, "d", false);
+    assert_eq!(editor.selections(), vec![(0, 3), (8, 11)]);
+    multi_key(&mut editor, &mut cx, "d", false);
+    assert_eq!(editor.selections(), vec![(0, 3), (8, 11), (16, 19)]);
+    // Every occurrence is selected, so there's nothing more to add
+    multi_key(&mut editor, &mut cx, "d", false);
+    assert_eq!(editor.selections().len(), 3);
+
+    // Typing replaces all of them
+    type_text(&mut editor, &mut cx, "x");
+    assert_eq!(editor.text(), "x bar x baz x");
+}
+
+#[test]
+fn select_next_occurrence_wraps_around() {
+    let (mut editor, mut cx) = editor("foo bar foo");
+    for _ in 0..8 {
+        key(&mut editor, &mut cx, Key::ArrowRight, Modifiers::default());
+    }
+    multi_key(&mut editor, &mut cx, "d", false);
+    assert_eq!(editor.selections(), vec![(8, 11)]);
+    multi_key(&mut editor, &mut cx, "d", false);
+    assert_eq!(editor.selections(), vec![(0, 3), (8, 11)]);
+}
+
+#[test]
+fn select_all_occurrences() {
+    let (mut editor, mut cx) = editor("ab\nab ab\nx");
+    multi_key(&mut editor, &mut cx, "l", true);
+    assert_eq!(editor.selections(), vec![(0, 2), (3, 5), (6, 8)]);
+}
+
+#[test]
+fn select_line_extends_by_a_line_each_time() {
+    let (mut editor, mut cx) = editor("one\ntwo\nthree");
+    multi_key(&mut editor, &mut cx, "l", false);
+    assert_eq!(editor.selections(), vec![(0, 4)]);
+    multi_key(&mut editor, &mut cx, "l", false);
+    assert_eq!(editor.selections(), vec![(0, 8)]);
+}
+
+#[test]
+fn add_cursors_above_and_below() {
+    let (mut editor, mut cx) = editor("abcdef\nabcdef\nabcdef");
+    key(&mut editor, &mut cx, Key::ArrowDown, Modifiers::default());
+    for _ in 0..3 {
+        key(&mut editor, &mut cx, Key::ArrowRight, Modifiers::default());
+    }
+    let mods = Modifiers {
+        alt: true,
+        ..primary()
+    };
+    key(&mut editor, &mut cx, Key::ArrowUp, mods);
+    key(&mut editor, &mut cx, Key::ArrowDown, mods);
+    assert_eq!(editor.selections(), vec![(3, 3), (10, 10), (17, 17)]);
+    // No line above the first one
+    key(&mut editor, &mut cx, Key::ArrowUp, mods);
+    assert_eq!(editor.selections().len(), 3);
+
+    type_text(&mut editor, &mut cx, "_");
+    assert_eq!(editor.text(), "abc_def\nabc_def\nabc_def");
+}
+
+#[test]
+fn selection_undo_steps_back_through_multi_selection_commands() {
+    let (mut editor, mut cx) = editor("foo foo foo");
+    multi_key(&mut editor, &mut cx, "d", false);
+    multi_key(&mut editor, &mut cx, "d", false);
+    multi_key(&mut editor, &mut cx, "d", false);
+    multi_key(&mut editor, &mut cx, "u", false);
+    assert_eq!(editor.selections(), vec![(0, 3), (4, 7)]);
+    multi_key(&mut editor, &mut cx, "u", false);
+    multi_key(&mut editor, &mut cx, "u", false);
+    assert_eq!(editor.selections(), vec![(0, 0)]);
+}

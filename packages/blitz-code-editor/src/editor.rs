@@ -16,6 +16,9 @@ use crate::{
     EditorInput, EditorStyle, ImeInput, Key, KeyInput, Modifiers, PointerButton, ScrollDelta,
     TextContext, Theme,
 };
+use multi_selection::MultiSelectCommand;
+
+mod multi_selection;
 
 /// Lines scrolled per wheel "line" step
 const WHEEL_LINES: f64 = 3.0;
@@ -59,6 +62,7 @@ enum Movement {
 enum KeyAction {
     Move(Movement),
     Edit(EditCommand),
+    MultiSelect(MultiSelectCommand),
     SelectAll,
     Paste,
     Collapse,
@@ -476,12 +480,14 @@ impl CodeEditor {
     // --- Keyboard
 
     fn key_action(&self, key: &Key, mods: Modifiers) -> Option<KeyAction> {
-        use KeyAction::{Edit, Move};
+        use KeyAction::{Edit, Move, MultiSelect};
         use Movement::*;
         let mac = cfg!(target_os = "macos");
         let primary = if mac { mods.meta } else { mods.ctrl };
         let word = if mac { mods.alt } else { mods.ctrl };
         Some(match key {
+            Key::ArrowUp if primary && mods.alt => MultiSelect(MultiSelectCommand::CursorAbove),
+            Key::ArrowDown if primary && mods.alt => MultiSelect(MultiSelectCommand::CursorBelow),
             Key::ArrowLeft if mac && mods.meta => Move(LineStart),
             Key::ArrowLeft if word => Move(WordLeft),
             Key::ArrowLeft => Move(Left),
@@ -518,6 +524,10 @@ impl CodeEditor {
                 "c" => Edit(EditCommand::ClipboardCopy),
                 "x" => Edit(EditCommand::ClipboardCut),
                 "v" => KeyAction::Paste,
+                "d" => MultiSelect(MultiSelectCommand::SelectNextOccurrence),
+                "l" if mods.shift => MultiSelect(MultiSelectCommand::SelectAllOccurrences),
+                "l" => MultiSelect(MultiSelectCommand::SelectLine),
+                "u" => MultiSelect(MultiSelectCommand::Undo),
                 _ => return None,
             },
             // Emacs-style line navigation, as in other macOS text views
@@ -535,6 +545,7 @@ impl CodeEditor {
         match self.key_action(&key, mods) {
             Some(KeyAction::Move(movement)) => self.move_selection(cx, movement, mods.shift),
             Some(KeyAction::Edit(cmd)) => self.run_command(cmd, resp),
+            Some(KeyAction::MultiSelect(cmd)) => self.multi_select(cx, cmd),
             Some(KeyAction::SelectAll) => {
                 self.set_selection(Selection::region(
                     0,
