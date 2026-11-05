@@ -8,6 +8,9 @@ use dioxus::prelude::*;
 use rand::prelude::*;
 use std::rc::Rc;
 
+/// Vendored Bootstrap 3.3.7, the stylesheet the benchmark spec uses.
+const BOOTSTRAP_CSS: &str = include_str!("./assets/bootstrap.min.css");
+
 const ADJECTIVES: &[&str] = &[
     "pretty",
     "large",
@@ -86,10 +89,7 @@ fn app() -> Element {
     let mut next_id = use_signal(|| 1);
 
     rsx! {
-        document::Link {
-            rel: "stylesheet",
-            href: "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css",
-        }
+        style { {BOOTSTRAP_CSS} }
         div { class: "container",
             div { class: "jumbotron",
                 div { class: "row",
