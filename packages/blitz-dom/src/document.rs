@@ -445,6 +445,10 @@ pub struct BaseDocument {
     /// [`DocumentConfig::devtools_provider`] or [`Self::set_devtools_provider`].
     #[cfg(feature = "devtools")]
     pub(crate) devtools_provider: Option<Arc<dyn blitz_traits::devtools::DevtoolsProvider>>,
+    /// Title shown for this document in devtools (instead of its `<title>`).
+    /// Set via [`Self::set_devtools_title`].
+    #[cfg(feature = "devtools")]
+    pub(crate) devtools_title: Option<String>,
 }
 
 impl BaseDocument {
@@ -570,6 +574,8 @@ impl BaseDocument {
             abort_signal: config.abort_signal,
             #[cfg(feature = "devtools")]
             devtools_provider: config.devtools_provider,
+            #[cfg(feature = "devtools")]
+            devtools_title: None,
             last_mousedown_time: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
@@ -627,6 +633,21 @@ impl BaseDocument {
         devtools_provider: Option<Arc<dyn blitz_traits::devtools::DevtoolsProvider>>,
     ) {
         self.devtools_provider = devtools_provider;
+    }
+
+    /// The title shown for this document in devtools, if overridden with
+    /// [`Self::set_devtools_title`]
+    #[cfg(feature = "devtools")]
+    pub fn devtools_title(&self) -> Option<&str> {
+        self.devtools_title.as_deref()
+    }
+
+    /// Set (or clear) the title shown for this document in devtools (e.g. as
+    /// the CDP target title). Defaults to the document's `<title>`, which an
+    /// application's UI document may use for its window title instead.
+    #[cfg(feature = "devtools")]
+    pub fn set_devtools_title(&mut self, title: Option<String>) {
+        self.devtools_title = title;
     }
 
     /// Set the Document's html parser provider

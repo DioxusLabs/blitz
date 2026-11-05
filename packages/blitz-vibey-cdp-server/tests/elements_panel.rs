@@ -348,6 +348,46 @@ fn unknown_target_id_errors() {
     });
 }
 
+/// A document's devtools title (if set) is advertised instead of its `<title>`
+#[test]
+fn devtools_title_overrides_target_title() {
+    let html = "<html><head><title>Page Title</title></head><body></body></html>";
+    let mut doc: BaseDocument = HtmlDocument::from_html(html, DocumentConfig::default()).into();
+    doc.set_devtools_title(Some("App UI".to_string()));
+    let mut provider = SingleDocProvider(doc);
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender))));
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+
+    std::thread::scope(|scope| {
+        let client = scope.spawn(move || {
+            let mut http = TcpStream::connect(addr).expect("connect for /json/list");
+            http.write_all(format!("GET /json/list HTTP/1.1\r\nHost: {addr}\r\n\r\n").as_bytes())
+                .unwrap();
+            let mut response = String::new();
+            http.read_to_string(&mut response).unwrap();
+            let body = response.split("\r\n\r\n").nth(1).expect("http body");
+            let list: serde_json::Value =
+                serde_json::from_str(body).expect("valid /json/list body");
+            assert_eq!(list[0]["title"], "App UI");
+        });
+
+        while !client.is_finished() {
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_ok()
+            {
+                server.process_messages(&mut provider);
+            }
+        }
+        client.join().unwrap();
+    });
+}
+
 /// Closing a connection must clear any inspect-mode/highlight state its
 /// session set on the document (e.g. DevTools window closed mid-picking)
 #[test]
