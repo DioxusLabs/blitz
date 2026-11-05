@@ -274,6 +274,7 @@ fn sub_document_target_follows_navigation() {
         .expect("server should start listening");
 
     let (navigate_sender, navigate_receiver) = channel::<()>();
+    let (picker_sender, picker_receiver) = channel::<(f32, f32)>();
     let done = Arc::new(Mutex::new(false));
     std::thread::scope(|scope| {
         let done2 = Arc::clone(&done);
@@ -313,6 +314,15 @@ fn sub_document_target_follows_navigation() {
             let html = read_reply(&mut ws, 1, &mut events)["root"].to_string();
             assert!(html.contains("inner"), "first document: {html}");
 
+            // Inspect mode stays active across the navigation
+            send_command(
+                &mut ws,
+                3,
+                "Overlay.setInspectMode",
+                json!({ "mode": "searchForNode", "highlightConfig": {} }),
+            );
+            read_reply(&mut ws, 3, &mut events);
+
             navigate_sender.send(()).unwrap();
             read_event(&mut ws, "DOM.documentUpdated", &mut events);
 
@@ -320,6 +330,10 @@ fn sub_document_target_follows_navigation() {
             let html = read_reply(&mut ws, 2, &mut events)["root"].to_string();
             assert!(html.contains("second"), "second document: {html}");
             assert!(!html.contains("inner"), "second document: {html}");
+
+            picker_sender.send((10.0, 10.0)).unwrap();
+            let params = read_event(&mut ws, "Overlay.nodeHighlightRequested", &mut events);
+            assert_ne!(params["nodeId"].as_u64().unwrap(), 0);
         });
 
         while !*done.lock().unwrap() {
@@ -331,8 +345,18 @@ fn sub_document_target_follows_navigation() {
             }
             if navigate_receiver.try_recv().is_ok() {
                 // Navigate the host: the old sub-document is dropped
-                let next = make_doc("<html><body><p id=\"second\">Next</p></body></html>");
+                let next = make_doc(
+                    "<html><body style=\"margin: 0\">\
+                     <p id=\"second\" style=\"margin: 0; width: 100px; height: 20px\">Next</p>\
+                     </body></html>",
+                );
                 provider.0.set_sub_document(host_id, Box::new(next));
+            }
+            while let Ok((x, y)) = picker_receiver.try_recv() {
+                let event = find_picking_document(&provider.0, x + 50.0, y + 100.0)
+                    .map(|(doc_id, x, y)| PickerEvent::Hovered { doc_id, x, y });
+                assert!(event.is_some(), "no picking document after navigation");
+                server.notify_picker_event(event.unwrap(), &mut provider);
             }
         }
     });

@@ -189,6 +189,10 @@ impl Session {
         if doc_id == self.bound_doc_id {
             return;
         }
+        tracing::debug!(
+            "CDP: target {target} now shows document {doc_id:?} (was {:?})",
+            self.bound_doc_id
+        );
         let was_bound = self.bound_doc_id.is_some();
         self.bound_doc_id = doc_id;
         self.children_sent.clear();
