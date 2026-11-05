@@ -100,4 +100,6 @@ pub enum EditorInput {
     Paste(String),
     /// The editor gained or lost focus
     Focus(bool),
+    /// The delay from [`EditorResponse::timer`](crate::EditorResponse::timer) elapsed
+    Timer,
 }

@@ -88,7 +88,7 @@ impl CodeEditor {
                 }
             }
 
-            if self.focused {
+            if self.focused && self.caret_visible {
                 for region in regions_on_line {
                     if region.end < range.start || region.end > range.end {
                         continue;

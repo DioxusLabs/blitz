@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use floem_editor_core::{
     buffer::{Buffer, InvalLines, rope_text::RopeText},
     command::EditCommand,
@@ -23,6 +25,9 @@ mod multi_selection;
 /// Lines scrolled per wheel "line" step
 const WHEEL_LINES: f64 = 3.0;
 
+/// How long the caret stays visible (or hidden) while blinking
+const DEFAULT_CARET_BLINK: Duration = Duration::from_millis(530);
+
 /// What the host should do after the editor handled an input
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EditorResponse {
@@ -41,6 +46,8 @@ pub struct EditorResponse {
     pub ime_enabled: Option<bool>,
     /// Where the IME candidate window should be placed (the caret), in editor coordinates
     pub ime_cursor_area: Option<Rect>,
+    /// Send [`EditorInput::Timer`] after this delay, replacing any timer requested earlier
+    pub timer: Option<Duration>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -122,6 +129,9 @@ pub struct CodeEditor {
     pub(crate) focused: bool,
     pub(crate) preedit: Option<Preedit>,
     drag: Option<Drag>,
+    caret_blink: Option<Duration>,
+    /// Whether the caret is in the visible half of its blink cycle
+    pub(crate) caret_visible: bool,
 }
 
 impl CodeEditor {
@@ -143,6 +153,8 @@ impl CodeEditor {
             focused: false,
             preedit: None,
             drag: None,
+            caret_blink: Some(DEFAULT_CARET_BLINK),
+            caret_visible: true,
         }
     }
 
@@ -194,6 +206,13 @@ impl CodeEditor {
         self.focused
     }
 
+    /// Sets how long the caret stays visible (and hidden) while blinking. `None` disables
+    /// blinking.
+    pub fn set_caret_blink(&mut self, interval: Option<Duration>) {
+        self.caret_blink = interval;
+        self.caret_visible = true;
+    }
+
     /// The selected byte ranges, as `(anchor, caret)` pairs
     pub fn selections(&self) -> Vec<(usize, usize)> {
         self.selection()
@@ -211,6 +230,8 @@ impl CodeEditor {
     pub fn handle_input(&mut self, cx: &mut TextContext, input: EditorInput) -> EditorResponse {
         self.prepare(cx);
         let mut resp = EditorResponse::default();
+        // Scrolling doesn't move the caret, so it doesn't restart the blink cycle
+        let restarts_blink = !matches!(input, EditorInput::Wheel { .. } | EditorInput::Timer);
         match input {
             EditorInput::Key(key) => self.handle_key(cx, key, &mut resp),
             EditorInput::Ime(ime) => self.handle_ime(cx, ime, &mut resp),
@@ -240,11 +261,26 @@ impl CodeEditor {
                 resp.handled = true;
                 resp.redraw = true;
             }
+            EditorInput::Timer => self.blink(&mut resp),
         }
-        if self.focused && resp.redraw {
+        if self.focused && resp.redraw && restarts_blink {
             resp.ime_cursor_area = Some(self.caret_rect(cx));
+            // Show the caret straight away after it moves or the text changes
+            self.caret_visible = true;
+            resp.timer = self.caret_blink;
         }
         resp
+    }
+
+    fn blink(&mut self, resp: &mut EditorResponse) {
+        let Some(interval) = self.caret_blink.filter(|_| self.focused) else {
+            return;
+        };
+        // Keep the caret steady while composing or dragging a selection
+        self.caret_visible = !self.caret_visible || self.preedit.is_some() || self.drag.is_some();
+        resp.handled = true;
+        resp.redraw = true;
+        resp.timer = Some(interval);
     }
 
     /// Measures the font and syncs the layout cache with the current style and theme

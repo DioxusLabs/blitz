@@ -404,3 +404,43 @@ fn selection_undo_steps_back_through_multi_selection_commands() {
     multi_key(&mut editor, &mut cx, "u", false);
     assert_eq!(editor.selections(), vec![(0, 0)]);
 }
+
+#[test]
+fn caret_blinks_on_timer_and_restarts_on_input() {
+    let (mut editor, mut cx) = editor("abc");
+    let resp = editor.handle_input(&mut cx, EditorInput::Focus(true));
+    let interval = resp.timer.expect("focusing starts the blink timer");
+    assert!(editor.caret_visible);
+
+    let resp = editor.handle_input(&mut cx, EditorInput::Timer);
+    assert!(!editor.caret_visible);
+    assert!(resp.redraw);
+    assert_eq!(resp.timer, Some(interval));
+
+    // Moving the caret shows it again and restarts the cycle
+    let resp = editor.handle_input(
+        &mut cx,
+        EditorInput::Key(KeyInput {
+            key: Key::ArrowRight,
+            mods: Modifiers::default(),
+            text: None,
+        }),
+    );
+    assert!(editor.caret_visible);
+    assert_eq!(resp.timer, Some(interval));
+}
+
+#[test]
+fn caret_stops_blinking_when_unfocused_or_disabled() {
+    let (mut editor, mut cx) = editor("abc");
+    editor.handle_input(&mut cx, EditorInput::Focus(true));
+    editor.handle_input(&mut cx, EditorInput::Focus(false));
+    let resp = editor.handle_input(&mut cx, EditorInput::Timer);
+    assert_eq!(resp.timer, None);
+    assert!(!resp.redraw);
+
+    editor.set_caret_blink(None);
+    let resp = editor.handle_input(&mut cx, EditorInput::Focus(true));
+    assert_eq!(resp.timer, None);
+    assert!(editor.caret_visible);
+}

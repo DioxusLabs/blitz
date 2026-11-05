@@ -18,7 +18,7 @@ use winit::cursor::{Cursor, CursorIcon};
 use winit::data_transfer::{DataTransferSendBuilder, TypeHint};
 use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition};
 use winit::event::{ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, AsyncRequestSerial, EventLoop};
+use winit::event_loop::{ActiveEventLoop, AsyncRequestSerial, ControlFlow, EventLoop};
 use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeRequest, ImeRequestData, Window, WindowAttributes,
@@ -74,6 +74,8 @@ struct App {
     last_click: Option<(Instant, Point, u8)>,
     pending_paste: Option<AsyncRequestSerial>,
     ime_enabled: bool,
+    /// When to send the editor its next `EditorInput::Timer`
+    timer_deadline: Option<Instant>,
 }
 
 impl App {
@@ -106,6 +108,9 @@ impl App {
         };
         if resp.redraw {
             window.request_redraw();
+        }
+        if let Some(delay) = resp.timer {
+            self.timer_deadline = Some(Instant::now() + delay);
         }
         if let Some(text) = resp.set_clipboard {
             let data = DataTransferSendBuilder::new(text)
@@ -247,6 +252,20 @@ impl ApplicationHandler for App {
         self.renderer.suspend();
     }
 
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        if self
+            .timer_deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.timer_deadline = None;
+            self.send(event_loop, EditorInput::Timer);
+        }
+        event_loop.set_control_flow(match self.timer_deadline {
+            Some(deadline) => ControlFlow::WaitUntil(deadline),
+            None => ControlFlow::Wait,
+        });
+    }
+
     fn window_event(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
@@ -373,6 +392,7 @@ fn main() {
         last_click: None,
         pending_paste: None,
         ime_enabled: false,
+        timer_deadline: None,
     };
 
     let event_loop = EventLoop::new().unwrap();
