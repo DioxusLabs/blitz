@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use blitz_dom::{DocumentConfig, FontContext, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
+    DocumentId,
     net::{AbortController, AbortSignal, Request, Url},
     shell::ShellProvider,
 };
@@ -43,6 +44,7 @@ pub struct DocumentLoader {
 }
 
 pub fn make_doc_config(
+    id: Option<DocumentId>,
     base_url: Option<String>,
     net_provider: Arc<StdNetProvider>,
     history: SyncStore<History>,
@@ -50,6 +52,7 @@ pub fn make_doc_config(
     abort_signal: Option<AbortSignal>,
 ) -> DocumentConfig {
     DocumentConfig {
+        id,
         viewport: None,
         base_url,
         net_provider: Some(net_provider as _),
@@ -114,13 +117,17 @@ impl DocumentLoader {
 
         let req = req.signal(signal.clone());
 
-        let response = net_provider.fetch_async(req).await;
+        // Reserve the id of the document created from the response, so that
+        // the request for it is attributed to it (e.g. by devtools)
+        let doc_id = DocumentId::new();
+        let response = net_provider.fetch_async(Some(doc_id), req).await;
 
         match response {
             Ok((resolved_url, bytes)) => {
                 tracing::info!("Loaded {}", resolved_url);
                 let base_url = resolved_url.clone();
                 let config = make_doc_config(
+                    Some(doc_id),
                     Some(resolved_url),
                     Arc::clone(&net_provider),
                     history,
@@ -152,8 +159,14 @@ impl DocumentLoader {
                 tracing::error!("Error loading document: {:?}", err);
 
                 let error_msg = format!("{err:?}");
-                let config =
-                    make_doc_config(None, net_provider, history, font_ctx, Some(signal.clone()));
+                let config = make_doc_config(
+                    Some(doc_id),
+                    None,
+                    net_provider,
+                    history,
+                    font_ctx,
+                    Some(signal.clone()),
+                );
 
                 let error_html = include_str!("../assets/error.html");
                 let mut document = HtmlDocument::from_html(error_html, config).into_inner();
@@ -219,6 +232,7 @@ async fn build_page_document(
     use blitz_vibey_script::ScriptDocument;
     use std::collections::HashMap;
 
+    let doc_id = config.id;
     let document = ScriptDocument::from_html(html, config);
 
     // The `ScriptFetcher` API is synchronous, so prefetch external script
@@ -229,7 +243,7 @@ async fn build_page_document(
             continue;
         }
         let request = Request::get(url.clone()).signal(signal.clone());
-        match net_provider.fetch_async(request).await {
+        match net_provider.fetch_async(doc_id, request).await {
             Ok((_, bytes)) => {
                 scripts.insert(url, String::from_utf8_lossy(&bytes).into_owned());
             }

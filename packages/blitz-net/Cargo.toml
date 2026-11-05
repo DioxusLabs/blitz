@@ -25,6 +25,7 @@ blitz-traits = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"] }
 reqwest = { workspace = true, features = ["charset", "form"] }
 data-url = { workspace = true }
+arc-swap = { workspace = true }
 
 # Caching
 reqwest-middleware = { workspace = true, optional = true, features = ["form"]}

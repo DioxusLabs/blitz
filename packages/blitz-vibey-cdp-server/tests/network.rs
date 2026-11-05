@@ -10,7 +10,7 @@ use std::time::Duration;
 use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
 use blitz_traits::DocumentId;
-use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request, Url};
+use blitz_traits::net::{Bytes, HeaderMap, NetHandler, NetProvider, Request, ResponseInfo, Url};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use blitz_vibey_cdp_server::documents::{collect_document_ids, with_document_in};
 use blitz_vibey_cdp_server::{CdpServer, DevtoolsWaker, DocumentProvider};
@@ -372,6 +372,155 @@ fn network_follows_sub_document_navigation() {
                     doc.net_provider
                         .fetch(doc.id(), request, Box::new(NoopHandler));
                 });
+            }
+        }
+    });
+}
+
+/// With the server's `NetObserver` installed, requests are reported with
+/// their real status and headers, documents' providers aren't wrapped, and
+/// a request made for a document that doesn't exist yet (e.g. its HTML) is
+/// reported once the document is created with the request's id
+#[test]
+fn net_observer_records_requests_for_documents_created_later() {
+    let mut parent = make_doc(
+        "<html><body><div id=\"host\"></div></body></html>",
+        "http://example.test/",
+    );
+    let host_id = parent.query_selector("#host").unwrap().unwrap();
+    let doc_id = parent.id();
+    let original = Arc::clone(&parent.net_provider);
+    let mut provider = DocTreeProvider(parent);
+    let reserved_id = DocumentId::new();
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender.clone()))));
+    let observer = server.net_observer();
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+
+    enum ObserverAction {
+        /// Observe a request for the reserved (not yet created) document
+        Request,
+        /// Create the reserved document as a sub-document
+        CreateDocument,
+    }
+    let (action_sender, action_receiver) = channel::<ObserverAction>();
+    let (ack_sender, ack_receiver) = channel::<()>();
+    let done = Arc::new(Mutex::new(false));
+    std::thread::scope(|scope| {
+        let done2 = Arc::clone(&done);
+        scope.spawn(move || {
+            struct DoneGuard(Arc<Mutex<bool>>, Sender<()>);
+            impl Drop for DoneGuard {
+                fn drop(&mut self) {
+                    *self.0.lock().unwrap() = true;
+                    let _ = self.1.send(());
+                }
+            }
+            let _guard = DoneGuard(done2, wake_sender.clone());
+            let act = |action| {
+                action_sender.send(action).unwrap();
+                wake_sender.send(()).unwrap();
+                ack_receiver.recv().unwrap();
+            };
+
+            let (mut ws, _) = tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("websocket connect");
+            let mut events = Vec::new();
+            send_command(&mut ws, 1, "Network.enable", json!({}));
+            read_reply(&mut ws, 1, &mut events);
+
+            act(ObserverAction::Request);
+            // Let the server see the records before the document exists
+            send_command(&mut ws, 2, "Network.setCacheDisabled", json!({}));
+            read_reply(&mut ws, 2, &mut events);
+            assert!(events.is_empty(), "{events:?}");
+
+            act(ObserverAction::CreateDocument);
+            send_command(&mut ws, 3, "Network.setCacheDisabled", json!({}));
+            read_reply(&mut ws, 3, &mut events);
+            read_events(&mut ws, &mut events, "Network.loadingFinished", 1);
+
+            let sent = events
+                .iter()
+                .find(|event| event["method"] == "Network.requestWillBeSent")
+                .unwrap();
+            assert_eq!(sent["params"]["frameId"], format!("frame-{reserved_id}"));
+            assert_eq!(sent["params"]["request"]["url"], "http://example.test/page");
+            let response = &events
+                .iter()
+                .find(|event| event["method"] == "Network.responseReceived")
+                .unwrap()["params"]["response"];
+            assert_eq!(response["status"], 404);
+            assert_eq!(response["statusText"], "Not Found");
+            assert_eq!(response["mimeType"], "text/html");
+            assert_eq!(
+                response["headers"]["content-type"],
+                "text/html; charset=utf-8"
+            );
+
+            let request_id = sent["params"]["requestId"].clone();
+            send_command(
+                &mut ws,
+                4,
+                "Network.getResponseBody",
+                json!({ "requestId": request_id }),
+            );
+            let body = read_reply(&mut ws, 4, &mut events);
+            assert_eq!(body, json!({ "body": "gone", "base64Encoded": false }));
+        });
+
+        while !*done.lock().unwrap() {
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_err()
+            {
+                continue;
+            }
+            server.process_messages(&mut provider);
+            provider.with_document(doc_id, &mut |doc| {
+                assert!(Arc::ptr_eq(&doc.net_provider, &original));
+            });
+            while let Ok(action) = action_receiver.try_recv() {
+                match action {
+                    ObserverAction::Request => {
+                        let request = Request::get(Url::parse("http://example.test/page").unwrap());
+                        let mut request_observer = observer
+                            .request(Some(reserved_id), &request)
+                            .expect("recording is active");
+                        let mut headers = HeaderMap::new();
+                        headers.insert("content-type", "text/html; charset=utf-8".parse().unwrap());
+                        request_observer.response(&ResponseInfo {
+                            url: "http://example.test/page",
+                            status: 404,
+                            status_text: "Not Found",
+                            headers: &headers,
+                        });
+                        request_observer.finished(&Bytes::from_static(b"gone"));
+                    }
+                    ObserverAction::CreateDocument => {
+                        let sub: BaseDocument = HtmlDocument::from_html(
+                            "<html><body></body></html>",
+                            DocumentConfig {
+                                id: Some(reserved_id),
+                                base_url: Some("http://example.test/page".to_string()),
+                                viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+                                net_provider: Some(Arc::new(TestNetProvider)),
+                                ..Default::default()
+                            },
+                        )
+                        .into();
+                        assert_eq!(sub.id(), reserved_id);
+                        let mut sub = Some(sub);
+                        provider.with_document(doc_id, &mut |doc| {
+                            doc.set_sub_document(host_id, Box::new(sub.take().unwrap()));
+                        });
+                    }
+                }
+                ack_sender.send(()).unwrap();
             }
         }
     });

@@ -1,10 +1,14 @@
 //! Network activity recording. While a CDP session has the `Network` domain
-//! enabled, the [`NetProvider`] of each document it inspects is wrapped in a
-//! [`RecordingNetProvider`], which logs each request and its outcome; the
-//! server later translates the logged records into `Network` domain events.
+//! enabled, requests and their outcomes are logged, and the server later
+//! translates the logged records into `Network` domain events.
 //!
+//! Requests are logged by the [`NetObserver`] returned by
+//! [`CdpServer::net_observer`](crate::CdpServer::net_observer), for
+//! embedders that install it on their net provider (e.g. `blitz_net::Provider`),
+//! which reports real statuses and headers. Otherwise the [`NetProvider`] of
+//! each inspected document is wrapped in a [`RecordingNetProvider`]. As
 //! `NetHandler` only reports the final URL and body of a successful response
-//! (or an error message), so responses are reported with status 200 and no
+//! (or an error message), its responses are reported with status 200 and no
 //! headers, and their MIME type is guessed from the URL and body.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -12,7 +16,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use blitz_traits::DocumentId;
-use blitz_traits::net::{AbortSignal, Bytes, NetHandler, NetProvider, Request};
+use blitz_traits::net::{
+    AbortSignal, Bytes, NetHandler, NetObserver, NetProvider, Request, RequestObserver,
+    ResponseInfo,
+};
 
 use crate::DevtoolsWaker;
 
@@ -67,7 +74,10 @@ pub(crate) struct RequestWillBeSent {
 pub(crate) struct ResponseReceived {
     pub(crate) request_id: u64,
     pub(crate) url: String,
-    pub(crate) mime_type: &'static str,
+    pub(crate) status: u16,
+    pub(crate) status_text: String,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) mime_type: String,
     pub(crate) resource_type: ResourceType,
     pub(crate) body: Bytes,
     pub(crate) timestamp: f64,
@@ -126,6 +136,102 @@ impl NetworkLog {
         std::mem::take(&mut *self.records.lock().unwrap())
     }
 
+    /// Log a request about to be sent, returning its id and (guessed) type
+    fn push_request(&self, doc_id: DocumentId, request: &Request) -> (u64, ResourceType) {
+        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let resource_type = guess_mime_type(request.url.as_str(), &[])
+            .map(ResourceType::from_mime_type)
+            .unwrap_or(ResourceType::Other);
+        let mut headers = header_list(&request.headers);
+        if let Some(content_type) = &request.content_type {
+            headers.push(("Content-Type".to_string(), content_type.clone()));
+        }
+        self.push(
+            doc_id,
+            NetworkRecord::RequestWillBeSent(RequestWillBeSent {
+                request_id,
+                url: request.url.to_string(),
+                method: request.method.to_string(),
+                headers,
+                resource_type,
+                timestamp: monotonic_time(),
+                wall_time: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|time| time.as_secs_f64())
+                    .unwrap_or(0.0),
+            }),
+        );
+        (request_id, resource_type)
+    }
+
+    /// Log a received response
+    fn push_response(
+        &self,
+        doc_id: DocumentId,
+        request_id: u64,
+        resource_type: ResourceType,
+        response: Option<&ResponseMeta>,
+        url: String,
+        body: Bytes,
+    ) {
+        let content_type = response.and_then(|response| {
+            let (_, value) = response
+                .headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))?;
+            let essence = value.split(';').next()?.trim().to_ascii_lowercase();
+            (!essence.is_empty()).then_some(essence)
+        });
+        let mime_type = content_type.unwrap_or_else(|| {
+            guess_mime_type(&url, &body)
+                .unwrap_or("application/octet-stream")
+                .to_string()
+        });
+        let resource_type = match ResourceType::from_mime_type(&mime_type) {
+            ResourceType::Other => resource_type,
+            sniffed => sniffed,
+        };
+        self.push(
+            doc_id,
+            NetworkRecord::ResponseReceived(ResponseReceived {
+                request_id,
+                url,
+                status: response.map_or(200, |response| response.status),
+                status_text: response
+                    .map_or("OK", |response| &response.status_text)
+                    .to_string(),
+                headers: response
+                    .map(|response| response.headers.clone())
+                    .unwrap_or_default(),
+                mime_type,
+                resource_type,
+                body,
+                timestamp: monotonic_time(),
+            }),
+        );
+    }
+
+    /// Log a failed request
+    fn push_failure(
+        &self,
+        doc_id: DocumentId,
+        request_id: u64,
+        resource_type: ResourceType,
+        error_text: String,
+        canceled: bool,
+    ) {
+        self.push(
+            doc_id,
+            NetworkRecord::LoadingFailed(LoadingFailed {
+                request_id,
+                resource_type,
+                error_text,
+                canceled,
+                timestamp: monotonic_time(),
+            }),
+        );
+    }
+
     fn push(&self, doc_id: DocumentId, record: NetworkRecord) {
         let mut records = self.records.lock().unwrap();
         let was_empty = records.is_empty();
@@ -157,36 +263,7 @@ impl NetProvider for RecordingNetProvider {
         if !self.log.is_active() {
             return self.inner.fetch(doc_id, request, handler);
         }
-        let request_id = self.log.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let resource_type = guess_mime_type(request.url.as_str(), &[])
-            .map(ResourceType::from_mime_type)
-            .unwrap_or(ResourceType::Other);
-        let mut headers: Vec<(String, String)> = request
-            .headers
-            .iter()
-            .map(|(name, value)| {
-                let value = String::from_utf8_lossy(value.as_bytes()).into_owned();
-                (name.to_string(), value)
-            })
-            .collect();
-        if let Some(content_type) = &request.content_type {
-            headers.push(("Content-Type".to_string(), content_type.clone()));
-        }
-        self.log.push(
-            doc_id,
-            NetworkRecord::RequestWillBeSent(RequestWillBeSent {
-                request_id,
-                url: request.url.to_string(),
-                method: request.method.to_string(),
-                headers,
-                resource_type,
-                timestamp: monotonic_time(),
-                wall_time: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|time| time.as_secs_f64())
-                    .unwrap_or(0.0),
-            }),
-        );
+        let (request_id, resource_type) = self.log.push_request(doc_id, &request);
         let handler = RecordingHandler {
             inner: handler,
             log: Arc::clone(&self.log),
@@ -215,22 +292,13 @@ struct RecordingHandler {
 impl NetHandler for RecordingHandler {
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
         if self.log.is_active() {
-            let mime_type =
-                guess_mime_type(&resolved_url, &bytes).unwrap_or("application/octet-stream");
-            let resource_type = match ResourceType::from_mime_type(mime_type) {
-                ResourceType::Other => self.resource_type,
-                sniffed => sniffed,
-            };
-            self.log.push(
+            self.log.push_response(
                 self.doc_id,
-                NetworkRecord::ResponseReceived(ResponseReceived {
-                    request_id: self.request_id,
-                    url: resolved_url.clone(),
-                    mime_type,
-                    resource_type,
-                    body: bytes.clone(),
-                    timestamp: monotonic_time(),
-                }),
+                self.request_id,
+                self.resource_type,
+                None,
+                resolved_url.clone(),
+                bytes.clone(),
             );
         }
         self.inner.bytes(resolved_url, bytes);
@@ -238,19 +306,110 @@ impl NetHandler for RecordingHandler {
 
     fn error(self: Box<Self>, url: String, error: String) {
         if self.log.is_active() {
-            self.log.push(
+            self.log.push_failure(
                 self.doc_id,
-                NetworkRecord::LoadingFailed(LoadingFailed {
-                    request_id: self.request_id,
-                    resource_type: self.resource_type,
-                    error_text: error.clone(),
-                    canceled: self.signal.as_ref().is_some_and(|signal| signal.aborted()),
-                    timestamp: monotonic_time(),
-                }),
+                self.request_id,
+                self.resource_type,
+                error.clone(),
+                self.signal.as_ref().is_some_and(|signal| signal.aborted()),
             );
         }
         self.inner.error(url, error);
     }
+}
+
+/// A [`NetObserver`] logging the requests of documents while recording is
+/// active (see [`CdpServer::net_observer`](crate::CdpServer::net_observer))
+pub(crate) struct LogObserver(pub(crate) Arc<NetworkLog>);
+
+impl NetObserver for LogObserver {
+    fn request(
+        &self,
+        doc_id: Option<DocumentId>,
+        request: &Request,
+    ) -> Option<Box<dyn RequestObserver>> {
+        let doc_id = doc_id?;
+        if !self.0.is_active() {
+            return None;
+        }
+        let (request_id, resource_type) = self.0.push_request(doc_id, request);
+        Some(Box::new(LogRequestObserver {
+            log: Arc::clone(&self.0),
+            doc_id,
+            request_id,
+            resource_type,
+            response: None,
+        }))
+    }
+}
+
+/// The status and headers of a response
+struct ResponseMeta {
+    url: String,
+    status: u16,
+    status_text: String,
+    headers: Vec<(String, String)>,
+}
+
+struct LogRequestObserver {
+    log: Arc<NetworkLog>,
+    doc_id: DocumentId,
+    request_id: u64,
+    resource_type: ResourceType,
+    response: Option<ResponseMeta>,
+}
+
+impl RequestObserver for LogRequestObserver {
+    fn response(&mut self, response: &ResponseInfo<'_>) {
+        self.response = Some(ResponseMeta {
+            url: response.url.to_string(),
+            status: response.status,
+            status_text: response.status_text.to_string(),
+            headers: header_list(response.headers),
+        });
+    }
+
+    fn finished(self: Box<Self>, body: &Bytes) {
+        if !self.log.is_active() {
+            return;
+        }
+        let url = self
+            .response
+            .as_ref()
+            .map(|response| response.url.clone())
+            .unwrap_or_default();
+        self.log.push_response(
+            self.doc_id,
+            self.request_id,
+            self.resource_type,
+            self.response.as_ref(),
+            url,
+            body.clone(),
+        );
+    }
+
+    fn failed(self: Box<Self>, error: &str, canceled: bool) {
+        if self.log.is_active() {
+            self.log.push_failure(
+                self.doc_id,
+                self.request_id,
+                self.resource_type,
+                error.to_string(),
+                canceled,
+            );
+        }
+    }
+}
+
+/// Headers as (name, value) pairs
+fn header_list(headers: &blitz_traits::net::HeaderMap) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let value = String::from_utf8_lossy(value.as_bytes()).into_owned();
+            (name.to_string(), value)
+        })
+        .collect()
 }
 
 /// Seconds since an arbitrary (process-wide) point in time, as used for CDP

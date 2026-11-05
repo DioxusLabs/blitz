@@ -186,14 +186,17 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     }
 
     #[cfg(all(feature = "net", not(target_arch = "wasm32")))]
-    let net_provider = {
+    let inner_net_provider = {
         let net_waker = Some(Arc::new(proxy.clone()) as _);
-        let inner_net_provider = Arc::new(blitz_net::Provider::new(net_waker));
+        Arc::new(blitz_net::Provider::new(net_waker))
+    };
+    #[cfg(all(feature = "net", not(target_arch = "wasm32")))]
+    let net_provider = {
         vdom.provide_root_context(Arc::clone(&inner_net_provider));
 
         Arc::new(DioxusNativeNetProvider::with_inner(
             proxy.clone(),
-            inner_net_provider as _,
+            Arc::clone(&inner_net_provider) as _,
         )) as Arc<dyn NetProvider>
     };
 
@@ -247,6 +250,8 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let mut application = DioxusNativeApplication::new(proxy, event_queue, config);
     #[cfg(feature = "devtools")]
     application.set_devtools_shortcuts(devtools_shortcuts);
+    #[cfg(all(feature = "devtools", feature = "net", not(target_arch = "wasm32")))]
+    inner_net_provider.set_observer(application.net_observer());
 
     // Run event loop
     event_loop.run_app(application).unwrap();

@@ -52,6 +52,41 @@ impl<F: Fn(DocumentId) + Send + Sync + 'static> NetWaker for F {
     }
 }
 
+/// Observes the requests made through a [`NetProvider`] that supports it
+/// (e.g. for a network inspector)
+pub trait NetObserver: Send + Sync + 'static {
+    /// Called when a request is about to be sent, with the id of the
+    /// document that made it (if any). Returns an observer for the rest of
+    /// the request's lifecycle, or `None` to not observe it.
+    fn request(
+        &self,
+        doc_id: Option<DocumentId>,
+        request: &Request,
+    ) -> Option<Box<dyn RequestObserver>>;
+}
+
+/// Observes the lifecycle of a single request (see [`NetObserver`])
+pub trait RequestObserver: Send + 'static {
+    /// The response's status and headers were received. Called at most
+    /// once, before [`finished`](Self::finished).
+    fn response(&mut self, response: &ResponseInfo<'_>);
+    /// The response's body was received, including for HTTP error statuses
+    fn finished(self: Box<Self>, body: &Bytes);
+    /// The request failed before its body was received (e.g. a network
+    /// error), or was `canceled` through its [`AbortSignal`]
+    fn failed(self: Box<Self>, error: &str, canceled: bool);
+}
+
+/// The status and headers of a response (see [`RequestObserver::response`])
+#[derive(Debug, Clone, Copy)]
+pub struct ResponseInfo<'a> {
+    /// The URL of the response (after any redirects)
+    pub url: &'a str,
+    pub status: u16,
+    pub status_text: &'a str,
+    pub headers: &'a HeaderMap,
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 /// A request type loosely representing <https://fetch.spec.whatwg.org/#requests>

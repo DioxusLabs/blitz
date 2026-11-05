@@ -27,12 +27,12 @@ pub(crate) struct NetworkState {
 
 struct StoredBody {
     request_id: u64,
-    mime_type: &'static str,
+    mime_type: String,
     bytes: Bytes,
 }
 
 impl NetworkState {
-    fn store_body(&mut self, request_id: u64, mime_type: &'static str, bytes: &Bytes) {
+    fn store_body(&mut self, request_id: u64, mime_type: &str, bytes: &Bytes) {
         if bytes.len() > self.max_resource_size || bytes.len() > self.max_total_size {
             return;
         }
@@ -45,7 +45,7 @@ impl NetworkState {
         self.total_size += bytes.len();
         self.bodies.push_back(StoredBody {
             request_id,
-            mime_type,
+            mime_type: mime_type.to_string(),
             bytes: bytes.clone(),
         });
     }
@@ -100,7 +100,7 @@ pub(super) fn dispatch(session: &mut Session, command: &CdpCommand) -> Result<Js
                 .ok_or_else(|| {
                     CdpError::server_error("No data found for resource with given identifier")
                 })?;
-            if is_text_mime_type(body.mime_type)
+            if is_text_mime_type(&body.mime_type)
                 && let Ok(text) = std::str::from_utf8(&body.bytes)
             {
                 return Ok(json!({ "body": text, "base64Encoded": false }));
@@ -166,6 +166,11 @@ impl Session {
             NetworkRecord::ResponseReceived(response) => {
                 let request_id = cdp_request_id(response.request_id);
                 let size = response.body.len();
+                let headers: serde_json::Map<String, JsonValue> = response
+                    .headers
+                    .iter()
+                    .map(|(name, value)| (name.clone(), json!(value)))
+                    .collect();
                 writer.event(
                     "Network.responseReceived",
                     json!({
@@ -175,9 +180,9 @@ impl Session {
                         "type": response.resource_type.as_str(),
                         "response": {
                             "url": response.url,
-                            "status": 200,
-                            "statusText": "OK",
-                            "headers": {},
+                            "status": response.status,
+                            "statusText": response.status_text,
+                            "headers": headers,
                             "mimeType": response.mime_type,
                             "connectionReused": false,
                             "connectionId": 0,
@@ -205,7 +210,7 @@ impl Session {
                         "encodedDataLength": size,
                     }),
                 );
-                network.store_body(response.request_id, response.mime_type, &response.body);
+                network.store_body(response.request_id, &response.mime_type, &response.body);
             }
             NetworkRecord::LoadingFailed(failure) => {
                 writer.event(

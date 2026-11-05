@@ -3,6 +3,7 @@
 //! routing element-picker input to it.
 
 use blitz_traits::DocumentId;
+use blitz_traits::net::NetObserver;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -122,6 +123,14 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         {
             eprintln!("CDP: failed to open devtools at {url}: {err}");
         }
+    }
+
+    /// The CDP server's network observer (if the server is started), to
+    /// install on the application's net provider (e.g. with
+    /// `blitz_net::Provider::set_observer`) so that it can record requests
+    /// with their real statuses and headers
+    pub fn net_observer(&mut self) -> Option<Box<dyn NetObserver>> {
+        self.devtools.cdp.as_mut().map(|cdp| cdp.net_observer())
     }
 
     /// Run `cb` with the CDP server (if started) and a provider for the
