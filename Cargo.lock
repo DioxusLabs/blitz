@@ -898,6 +898,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "blitz-code-editor"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_vello",
+ "anyrender_vello_cpu",
+ "bytemuck",
+ "floem-editor-core",
+ "kurbo",
+ "parley",
+ "peniko",
+ "png 0.18.1",
+ "winit",
+]
+
+[[package]]
 name = "blitz-dom"
 version = "0.3.0-beta.4"
 dependencies = [
@@ -1472,6 +1488,12 @@ name = "byte-slice-cast"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7575182f7272186991736b70173b0ea045398f984bf5ebbb3804736ce1330c9d"
+
+[[package]]
+name = "bytecount"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
 
 [[package]]
 name = "bytemuck"
@@ -3272,6 +3294,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "floem-editor-core"
+version = "0.2.0"
+source = "git+https://github.com/lapce/floem?rev=1351ffb162faeb8be983f1301d718a0d5fb59c27#1351ffb162faeb8be983f1301d718a0d5fb59c27"
+dependencies = [
+ "bitflags 2.13.2",
+ "itertools 0.14.0",
+ "lapce-xi-rope",
+ "memchr",
+ "strum",
+ "strum_macros",
+ "ui-events",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4722,6 +4758,18 @@ checksum = "b5baa5e9ff84f1aefd264e6869907646538a52147a755d494517a8007fb48733"
 dependencies = [
  "regex-automata",
  "rustversion",
+]
+
+[[package]]
+name = "lapce-xi-rope"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edc91b8df26aaa2700656a7c1a5b0aeb587aca512a44618974f79673dbe793ba"
+dependencies = [
+ "bytecount",
+ "memchr",
+ "regex",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -8822,6 +8870,17 @@ dependencies = [
  "memoffset",
  "tempfile",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "ui-events"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3e29e3e199888d594edd191c5917a2d5c1893b8bf20076c2bf4df7a40a2ee71"
+dependencies = [
+ "dpi",
+ "keyboard-types",
+ "kurbo",
 ]
 
 [[package]]
