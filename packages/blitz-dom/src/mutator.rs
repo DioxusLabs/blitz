@@ -553,7 +553,9 @@ impl DocumentMutator<'_> {
             element.set_checkbox_input_checked(false);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.recompute_is_animating = true;
-        } else if (tag, attr) == tag_and_attr!("link", "href") {
+        } else if (tag, attr) == tag_and_attr!("link", "href")
+            && matches!(element.special_data, SpecialElementData::Stylesheet(_))
+        {
             self.unload_stylesheet(node_id);
         } else if (tag, attr) == tag_and_attr!("iframe", "srcdoc") && node_is_in_document {
             // Fall back to loading from the `src` attribute (if any)
@@ -1669,6 +1671,42 @@ mod test {
         mutator.append_children(html, &[img, link]);
         mutator.append_children(root_id, &[html]);
         mutator.set_attribute(img, qual_name!("src"), "other.png");
+        drop(mutator);
+
+        document.resolve(0.0);
+    }
+
+    #[test]
+    fn removing_href_from_a_link_without_a_loaded_stylesheet() {
+        // An icon link never holds a stylesheet, and a stylesheet link holds none
+        // until its fetch completes (here it never starts, as the url is unresolvable).
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+        let attr = |name, value: &str| Attribute {
+            name,
+            value: value.to_string(),
+        };
+
+        let mut mutator = document.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let icon = mutator.create_element(
+            qual_name!("link"),
+            vec![
+                attr(qual_name!("rel"), "icon"),
+                attr(qual_name!("href"), "favicon.png"),
+            ],
+        );
+        let stylesheet = mutator.create_element(
+            qual_name!("link"),
+            vec![
+                attr(qual_name!("rel"), "stylesheet"),
+                attr(qual_name!("href"), "style.css"),
+            ],
+        );
+        mutator.append_children(html, &[icon, stylesheet]);
+        mutator.append_children(root_id, &[html]);
+        mutator.clear_attribute(icon, qual_name!("href"));
+        mutator.clear_attribute(stylesheet, qual_name!("href"));
         drop(mutator);
 
         document.resolve(0.0);
