@@ -1055,6 +1055,7 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "web-time",
+ "webbrowser",
  "winit",
 ]
 

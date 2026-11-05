@@ -21,8 +21,9 @@ tracing = ["dep:tracing", "blitz-dom/tracing"]
 file-dialog = ["dep:rfd"]
 # Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
 data-uri = ["dep:data-url"]
-# Enables the Chrome DevTools Protocol server (opt-in via the BLITZ_CDP_PORT env var)
-devtools = ["dep:blitz-vibey-cdp-server"]
+# Enables the Chrome DevTools Protocol server (started via the BLITZ_CDP_PORT env var
+# or on demand by `ShellProvider::open_devtools`)
+devtools = ["dep:blitz-vibey-cdp-server", "dep:webbrowser"]
 custom-widget = ["blitz-dom/custom-widget"]
 
 [dependencies]
@@ -44,6 +45,7 @@ atomic_refcell = { workspace = true }
 tracing = { workspace = true, optional = true }
 futures-util = { workspace = true }
 data-url = { workspace = true, optional = true }
+webbrowser = { workspace = true, optional = true }
 
 # WASM
 web-time = { workspace = true }

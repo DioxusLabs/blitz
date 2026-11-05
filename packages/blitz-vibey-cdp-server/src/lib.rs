@@ -36,6 +36,23 @@ use session::Session;
 
 pub(crate) type JsonValue = serde_json::Value;
 
+/// The revision (Chromium commit) of the Chrome DevTools frontend opened by
+/// [`frontend_url`]: Chrome 158 stable
+const FRONTEND_REVISION: &str = "6449d9f9a6a906edff724b7b220199b3fde4615c";
+
+/// The URL of a Chrome DevTools frontend inspecting the document `doc_id` of
+/// the server listening on `addr`.
+///
+/// Unlike the `devtools://` URL advertised at `/json/list`, this frontend is
+/// hosted by Google (at chrome-devtools-frontend.appspot.com), so it can be
+/// opened from outside Chrome by any Chromium-based browser, but needs an
+/// internet connection.
+pub fn frontend_url(addr: std::net::SocketAddr, doc_id: usize) -> String {
+    format!(
+        "https://chrome-devtools-frontend.appspot.com/serve_rev/@{FRONTEND_REVISION}/devtools_app.html?ws={addr}/devtools/page/{doc_id}"
+    )
+}
+
 /// Provides the CDP session with synchronous access to the current set of
 /// Blitz documents. Implemented by the embedder (e.g. `BlitzApplication`),
 /// which owns the documents.
