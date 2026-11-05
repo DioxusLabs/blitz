@@ -294,17 +294,17 @@ wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
 
-# vello main with linebender/vello#1718 (inverse blurred rounded rects, needed by anyrender's
+# vello main for inverse blurred rounded rects (linebender/vello#1718, needed by anyrender's
 # box shadows) and the glifo unhinted embolden fix (linebender/vello#2049). Drop once released.
 [patch.crates-io]
-vello = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_encoding = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_shaders = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_common = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_cpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_gpu = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-vello_gpu_shaders = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
-glifo = { git = "https://github.com/nicoburns/vello", branch = "inverse-blur-classic" }
+vello = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_encoding = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_shaders = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_common = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_cpu = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_gpu = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_gpu_shaders = { git = "https://github.com/linebender/vello", branch = "main" }
+glifo = { git = "https://github.com/linebender/vello", branch = "main" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
