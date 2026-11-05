@@ -18,13 +18,13 @@ use std::time::Duration;
 use tungstenite::Message;
 
 mod css;
+mod devtools_provider;
 pub mod documents;
 mod dom;
-mod mutations;
 mod session;
 mod transport;
 
-use mutations::MutationLog;
+use devtools_provider::MutationLog;
 use session::Session;
 
 pub(crate) type JsonValue = serde_json::Value;

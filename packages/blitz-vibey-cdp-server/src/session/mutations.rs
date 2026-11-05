@@ -11,7 +11,7 @@ use super::{
     is_known_to_frontend,
 };
 use crate::MessageWriter;
-use crate::mutations::MutationRecord;
+use crate::devtools_provider::MutationRecord;
 
 impl Session {
     /// Emit the events describing a batch of mutations to this session's
