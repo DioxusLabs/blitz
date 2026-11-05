@@ -1,3 +1,7 @@
+#[cfg(feature = "devtools")]
+use blitz_traits::devtools::{
+    AttributeChanged, CharacterDataChanged, MutationRecord, NodeInserted, NodeRemoved,
+};
 use blitz_traits::node_id::NodeId;
 use markup5ever::LocalName;
 use std::collections::HashSet;
@@ -26,12 +30,13 @@ macro_rules! tag_and_attr {
     };
 }
 
-/// Report a mutation to the document's devtools provider (if any)
+/// Buffer a mutation record for the document's devtools provider (if any).
+/// The record is only built if there is a provider.
 macro_rules! devtools {
-    ($doc:expr, $method:ident($($arg:expr),*)) => {
+    ($mutr:expr, $record:expr) => {
         #[cfg(feature = "devtools")]
-        if let Some(provider) = &$doc.devtools_provider {
-            provider.$method($($arg),*);
+        if $mutr.doc.devtools_provider.is_some() {
+            $mutr.devtools_records.push($record);
         }
     };
 }
@@ -77,6 +82,10 @@ pub struct DocumentMutator<'doc> {
     /// The (latest) node which has been mounted in and had autofocus=true, if any
     #[cfg(feature = "autofocus")]
     node_to_autofocus: Option<NodeId>,
+
+    /// Mutations to report to the document's devtools provider on flush
+    #[cfg(feature = "devtools")]
+    devtools_records: Vec<MutationRecord>,
 }
 
 impl Drop for DocumentMutator<'_> {
@@ -100,6 +109,8 @@ impl DocumentMutator<'_> {
             mutations_occurred: false,
             #[cfg(feature = "autofocus")]
             node_to_autofocus: None,
+            #[cfg(feature = "devtools")]
+            devtools_records: Vec::new(),
         }
     }
 
@@ -220,7 +231,10 @@ impl DocumentMutator<'_> {
                 if *contents != value {
                     *contents = value.to_string();
                     if node_is_in_document {
-                        devtools!(self.doc, character_data_changed(node_id));
+                        devtools!(
+                            self,
+                            MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id })
+                        );
                     }
                 }
                 return;
@@ -236,7 +250,10 @@ impl DocumentMutator<'_> {
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
             if node_is_in_document {
-                devtools!(self.doc, character_data_changed(node_id));
+                devtools!(
+                    self,
+                    MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id })
+                );
             }
             // Mark ancestors dirty so the style traversal visits this subtree.
             // Without this, the traversal may skip nodes with pending damage.
@@ -269,7 +286,10 @@ impl DocumentMutator<'_> {
                 data.content += text;
                 self.mutations_occurred |= node_is_in_document;
                 if node_is_in_document {
-                    devtools!(self.doc, character_data_changed(node_id));
+                    devtools!(
+                        self,
+                        MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id })
+                    );
                 }
                 if let Some(parent_id) = parent_id {
                     self.doc.nodes[parent_id].insert_damage(ALL_DAMAGE);
@@ -337,7 +357,13 @@ impl DocumentMutator<'_> {
 
         element.attrs.set(name.clone(), value);
         if node_is_in_document {
-            devtools!(self.doc, attribute_changed(node_id, &name.local));
+            devtools!(
+                self,
+                MutationRecord::AttributeChanged(AttributeChanged {
+                    node_id,
+                    name: blitz_traits::SmolStr::new(&*name.local),
+                })
+            );
         }
 
         // Focusability is cached on the element and comes from these
@@ -458,7 +484,13 @@ impl DocumentMutator<'_> {
         }
         self.mutations_occurred |= node_is_in_document;
         if node_is_in_document {
-            devtools!(self.doc, attribute_changed(node_id, &name.local));
+            devtools!(
+                self,
+                MutationRecord::AttributeChanged(AttributeChanged {
+                    node_id,
+                    name: blitz_traits::SmolStr::new(&*name.local),
+                })
+            );
         }
 
         // If element is a CustomWidget, then call attribute_changed on it
@@ -586,7 +618,10 @@ impl DocumentMutator<'_> {
             parent.children.retain(|id| *id != node_id);
             if node_is_in_document {
                 self.restyle_for_child_list_change(parent_id, index..index);
-                devtools!(self.doc, node_removed(parent_id, node_id));
+                devtools!(
+                    self,
+                    MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id })
+                );
             }
             self.maybe_record_node(parent_id);
         }
@@ -619,7 +654,10 @@ impl DocumentMutator<'_> {
 
             if parent_is_in_doc {
                 self.restyle_for_child_list_change(parent_id, index..index);
-                devtools!(self.doc, node_removed(parent_id, node_id));
+                devtools!(
+                    self,
+                    MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id })
+                );
             }
 
             self.maybe_record_node(parent_id);
@@ -642,7 +680,13 @@ impl DocumentMutator<'_> {
             self.process_removed_subtree(child_id);
             let _ = self.doc.drop_node_ignoring_parent(child_id);
             if parent_is_in_doc {
-                devtools!(self.doc, node_removed(node_id, child_id));
+                devtools!(
+                    self,
+                    MutationRecord::NodeRemoved(NodeRemoved {
+                        parent_id: node_id,
+                        node_id: child_id,
+                    })
+                );
             }
         }
         self.maybe_record_node(node_id);
@@ -853,7 +897,13 @@ impl DocumentMutator<'_> {
 
             if child_was_in_doc {
                 self.restyle_for_child_list_change(old_parent_id, index..index);
-                devtools!(self.doc, node_removed(old_parent_id, child_id));
+                devtools!(
+                    self,
+                    MutationRecord::NodeRemoved(NodeRemoved {
+                        parent_id: old_parent_id,
+                        node_id: child_id,
+                    })
+                );
             }
 
             self.maybe_record_node(old_parent_id);
@@ -877,7 +927,13 @@ impl DocumentMutator<'_> {
             }
 
             if new_parent_is_in_document {
-                devtools!(self.doc, node_inserted(parent_id, child_id));
+                devtools!(
+                    self,
+                    MutationRecord::NodeInserted(NodeInserted {
+                        parent_id,
+                        node_id: child_id,
+                    })
+                );
             }
 
             if new_parent_is_in_document && !child_was_in_doc {
@@ -1082,6 +1138,14 @@ impl<'doc> DocumentMutator<'doc> {
             if self.doc.get_node(node_id).is_some() {
                 self.doc.set_focus_to(node_id);
             }
+        }
+
+        #[cfg(feature = "devtools")]
+        if !self.devtools_records.is_empty() {
+            if let Some(provider) = &self.doc.devtools_provider {
+                provider.mutations(&self.devtools_records);
+            }
+            self.devtools_records.clear();
         }
     }
 
@@ -1927,29 +1991,32 @@ mod test {
     #[cfg(feature = "devtools")]
     #[test]
     fn devtools_provider_records_in_document_mutations() {
-        use blitz_traits::devtools::DevtoolsProvider;
+        use blitz_traits::devtools::{
+            AttributeChanged, CharacterDataChanged, DevtoolsProvider, MutationRecord, NodeInserted,
+            NodeRemoved,
+        };
         use std::sync::Mutex;
 
         #[derive(Default)]
-        struct Recorder(Mutex<Vec<String>>);
+        struct Recorder(Mutex<Vec<MutationRecord>>);
         impl DevtoolsProvider for Recorder {
-            fn node_inserted(&self, parent_id: NodeId, node_id: NodeId) {
-                let msg = format!("insert {} {}", parent_id.as_u64(), node_id.as_u64());
-                self.0.lock().unwrap().push(msg);
-            }
-            fn node_removed(&self, parent_id: NodeId, node_id: NodeId) {
-                let msg = format!("remove {} {}", parent_id.as_u64(), node_id.as_u64());
-                self.0.lock().unwrap().push(msg);
-            }
-            fn attribute_changed(&self, node_id: NodeId, name: &str) {
-                let msg = format!("attr {} {name}", node_id.as_u64());
-                self.0.lock().unwrap().push(msg);
-            }
-            fn character_data_changed(&self, node_id: NodeId) {
-                let msg = format!("text {}", node_id.as_u64());
-                self.0.lock().unwrap().push(msg);
+            fn mutations(&self, records: &[MutationRecord]) {
+                self.0.lock().unwrap().extend_from_slice(records);
             }
         }
+
+        let inserted =
+            |parent_id, node_id| MutationRecord::NodeInserted(NodeInserted { parent_id, node_id });
+        let removed =
+            |parent_id, node_id| MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id });
+        let attr_changed = |node_id, name: &str| {
+            MutationRecord::AttributeChanged(AttributeChanged {
+                node_id,
+                name: name.into(),
+            })
+        };
+        let text_changed =
+            |node_id| MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id });
 
         let recorder = Arc::new(Recorder::default());
         let mut document = BaseDocument::new(DocumentConfig {
@@ -1958,7 +2025,6 @@ mod test {
         });
         let root_id = document.root_node().id;
         let take = || std::mem::take(&mut *recorder.0.lock().unwrap());
-        let id = |node_id: NodeId| node_id.as_u64();
 
         // Building a detached subtree is not reported; inserting it reports its root only
         let mut mutator = document.mutate();
@@ -1967,9 +2033,13 @@ mod test {
         mutator.append_children(div, &[text]);
         mutator.set_attribute(div, qual_name!("id"), "x");
         mutator.set_node_text(text, "b");
+        mutator.flush();
         assert!(take().is_empty());
+        // Mutations are delivered when the mutator is flushed
         mutator.append_children(root_id, &[div]);
-        assert_eq!(take(), [format!("insert {} {}", id(root_id), id(div))]);
+        assert!(take().is_empty());
+        mutator.flush();
+        assert_eq!(take(), [inserted(root_id, div)]);
 
         mutator.set_attribute(div, qual_name!("class"), "c");
         mutator.clear_attribute(div, qual_name!("class"));
@@ -1982,15 +2052,16 @@ mod test {
         mutator.append_children(div, &[comment]);
         mutator.set_node_text(comment, "g");
         mutator.set_node_text(comment, "g");
+        mutator.flush();
         assert_eq!(
             take(),
             [
-                format!("attr {} class", id(div)),
-                format!("attr {} class", id(div)),
-                format!("text {}", id(text)),
-                format!("text {}", id(text)),
-                format!("insert {} {}", id(div), id(comment)),
-                format!("text {}", id(comment)),
+                attr_changed(div, "class"),
+                attr_changed(div, "class"),
+                text_changed(text),
+                text_changed(text),
+                inserted(div, comment),
+                text_changed(comment),
             ]
         );
         assert!(matches!(
@@ -2006,16 +2077,17 @@ mod test {
         mutator.append_children(root_id, &[span]);
         mutator.remove_and_drop_all_children(span);
         mutator.remove_and_drop_node(div);
+        mutator.flush();
         assert_eq!(
             take(),
             [
-                format!("insert {} {}", id(root_id), id(span)),
-                format!("remove {} {}", id(div), id(text)),
-                format!("insert {} {}", id(span), id(text)),
-                format!("remove {} {}", id(root_id), id(span)),
-                format!("insert {} {}", id(root_id), id(span)),
-                format!("remove {} {}", id(span), id(text)),
-                format!("remove {} {}", id(root_id), id(div)),
+                inserted(root_id, span),
+                removed(div, text),
+                inserted(span, text),
+                removed(root_id, span),
+                inserted(root_id, span),
+                removed(span, text),
+                removed(root_id, div),
             ]
         );
         drop(mutator);
