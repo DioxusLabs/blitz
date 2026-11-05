@@ -165,23 +165,9 @@ pub(super) fn dispatch(
             let node_id = node_id_param(params, "nodeId")?;
             let value = str_param(params, "value")?;
             with_doc(docs, doc_id, |doc| {
-                let node = doc.get_node_mut(node_id).ok_or_else(no_node)?;
-                match &mut node.data {
-                    NodeData::Text(_) => {}
-                    // Comments are edited directly rather than through the
-                    // mutator, so their change is not reported to the
-                    // devtools provider
-                    NodeData::Comment { contents } => {
-                        *contents = value.clone();
-                        writer.event(
-                            "DOM.characterDataModified",
-                            json!({ "nodeId": cdp_node_id(node_id), "characterData": value }),
-                        );
-                        return Ok(());
-                    }
-                    _ => {
-                        return Err(CdpError::server_error("Node is not a character data node"));
-                    }
+                let node = doc.get_node(node_id).ok_or_else(no_node)?;
+                if !matches!(node.data, NodeData::Text(_) | NodeData::Comment { .. }) {
+                    return Err(CdpError::server_error("Node is not a character data node"));
                 }
                 doc.mutate().set_node_text(node_id, &value);
                 doc.shell_provider.request_redraw();

@@ -161,12 +161,14 @@ impl Session {
                     {
                         continue;
                     }
-                    let Some(NodeData::Text(text)) = doc.get_node(node_id).map(|n| &n.data) else {
-                        continue;
+                    let data = match doc.get_node(node_id).map(|n| &n.data) {
+                        Some(NodeData::Text(text)) => &text.content,
+                        Some(NodeData::Comment { contents }) => contents,
+                        _ => continue,
                     };
                     writer.event(
                         "DOM.characterDataModified",
-                        json!({ "nodeId": cdp_node_id(node_id), "characterData": text.content }),
+                        json!({ "nodeId": cdp_node_id(node_id), "characterData": data }),
                     );
                 }
                 _ => {}
