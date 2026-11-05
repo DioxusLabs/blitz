@@ -11,7 +11,7 @@ use super::{
     is_known_to_frontend,
 };
 use crate::MessageWriter;
-use crate::devtools_provider::MutationRecord;
+use blitz_traits::devtools::MutationRecord;
 
 impl Session {
     /// Emit the events describing a batch of mutations to this session's
@@ -138,16 +138,16 @@ impl Session {
                     let value = element
                         .attrs()
                         .iter()
-                        .find(|attr| &*attr.name.local == name)
+                        .find(|attr| &*attr.name.local == name.as_str())
                         .map(|attr| attr.value.to_string());
                     match value {
                         Some(value) => writer.event(
                             "DOM.attributeModified",
-                            json!({ "nodeId": cdp_node_id(node_id), "name": name, "value": value }),
+                            json!({ "nodeId": cdp_node_id(node_id), "name": name.as_str(), "value": value }),
                         ),
                         None => writer.event(
                             "DOM.attributeRemoved",
-                            json!({ "nodeId": cdp_node_id(node_id), "name": name }),
+                            json!({ "nodeId": cdp_node_id(node_id), "name": name.as_str() }),
                         ),
                     }
                 }
