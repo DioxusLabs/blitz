@@ -7,6 +7,7 @@
 
 use blitz_dom::BaseDocument;
 use blitz_dom::node::SpecialElementData;
+use blitz_traits::DocumentId;
 use blitz_traits::node_id::NodeId;
 use cssparser::{ParseError, Parser, SourceLocation, ToCss as _, Token};
 use serde_json::json;
@@ -77,7 +78,12 @@ pub(crate) struct RuleSource<'a> {
 impl StyleSheets {
     /// Report sheets added to or removed from the document since the last
     /// sync with `CSS.styleSheetAdded` / `CSS.styleSheetRemoved` events
-    pub(crate) fn sync(&mut self, doc: &BaseDocument, doc_id: usize, writer: &mut MessageWriter) {
+    pub(crate) fn sync(
+        &mut self,
+        doc: &BaseDocument,
+        doc_id: DocumentId,
+        writer: &mut MessageWriter,
+    ) {
         let generation = doc.stylesheet_generation();
         if self.generation == Some(generation) {
             return;
@@ -422,7 +428,7 @@ fn initial_sheet_text(doc: &BaseDocument, owner: NodeId, sheet: &DocumentStyleSh
 }
 
 /// A CDP `CSS.CSSStyleSheetHeader` for a sheet
-fn header_json(doc: &BaseDocument, doc_id: usize, entry: &SheetEntry) -> JsonValue {
+fn header_json(doc: &BaseDocument, doc_id: DocumentId, entry: &SheetEntry) -> JsonValue {
     let is_inline = is_inline(doc, entry.owner);
     let source_url = if is_inline {
         doc.url().to_string()
