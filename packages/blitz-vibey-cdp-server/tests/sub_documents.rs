@@ -260,7 +260,8 @@ fn sub_document_session() {
 /// `DOM.documentUpdated` event, after which `DOM.getDocument` returns it
 #[test]
 fn sub_document_target_follows_navigation() {
-    let (parent, _) = make_doc_tree();
+    let (mut parent, _) = make_doc_tree();
+    parent.set_devtools_title(Some("App UI".to_string()));
     let parent_id = parent.id();
     let host_id = parent.query_selector("#host").unwrap().unwrap();
     let target_id = format!("{parent_id}.{}", host_id.as_u64());
@@ -289,21 +290,14 @@ fn sub_document_target_follows_navigation() {
             let _guard = DoneGuard(done2);
 
             // The sub-document is listed under its host's target id
-            let mut stream = TcpStream::connect(addr).expect("http connect");
-            stream
-                .write_all(b"GET /json/list HTTP/1.1\r\nHost: localhost\r\n\r\n")
-                .unwrap();
-            let mut response = String::new();
-            stream.read_to_string(&mut response).unwrap();
-            let body = response.split_once("\r\n\r\n").unwrap().1;
-            let list: serde_json::Value = serde_json::from_str(body).unwrap();
-            let ids: Vec<&str> = list
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|target| target["id"].as_str().unwrap())
-                .collect();
-            assert_eq!(ids, vec![parent_id.to_string(), target_id.clone()]);
+            let parent_target = (parent_id.to_string(), "App UI".to_string());
+            assert_eq!(
+                list_targets(addr),
+                vec![
+                    parent_target.clone(),
+                    (target_id.clone(), "Sub Doc".to_string())
+                ]
+            );
 
             let (mut ws, _response) =
                 tungstenite::connect(format!("ws://{addr}/devtools/page/{target_id}"))
@@ -334,6 +328,12 @@ fn sub_document_target_follows_navigation() {
             picker_sender.send((10.0, 10.0)).unwrap();
             let params = read_event(&mut ws, "Overlay.nodeHighlightRequested", &mut events);
             assert_ne!(params["nodeId"].as_u64().unwrap(), 0);
+
+            // The navigation changes neither target id nor the parent's title
+            assert_eq!(
+                list_targets(addr),
+                vec![parent_target, (target_id.clone(), String::new())]
+            );
         });
 
         while !*done.lock().unwrap() {
@@ -360,4 +360,25 @@ fn sub_document_target_follows_navigation() {
             }
         }
     });
+}
+
+/// `(id, title)` of each target listed at `/json/list`
+fn list_targets(addr: std::net::SocketAddr) -> Vec<(String, String)> {
+    let mut stream = TcpStream::connect(addr).expect("http connect");
+    stream
+        .write_all(b"GET /json/list HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let body = response.split_once("\r\n\r\n").unwrap().1;
+    let list: serde_json::Value = serde_json::from_str(body).unwrap();
+    list.as_array()
+        .unwrap()
+        .iter()
+        .map(|target| {
+            let id = target["id"].as_str().unwrap().to_string();
+            let title = target["title"].as_str().unwrap().to_string();
+            (id, title)
+        })
+        .collect()
 }
