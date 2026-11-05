@@ -1,14 +1,14 @@
 //! Renders the editor to a PNG without opening a window.
 //!
-//! Usage: `cargo run -p blitz-code-editor --example screenshot [--wrap] [file] [output.png]`
+//! Usage: `cargo run -p parley_code_editor --example screenshot [--wrap] [file] [output.png]`
 
 use std::fs::File;
 use std::io::BufWriter;
 
 use anyrender::render_to_buffer;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use blitz_code_editor::{EditorInput, Key, KeyInput, Modifiers, PointerButton, TextContext};
 use kurbo::{Affine, Point, Size};
+use parley_code_editor::{EditorInput, Key, KeyInput, Modifiers, PointerButton, TextContext};
 
 mod common;
 

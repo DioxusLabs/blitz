@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use blitz_code_editor::{CodeEditor, EditorStyle, SyntaxmateHighlighter};
+use parley_code_editor::{CodeEditor, EditorStyle, SyntaxmateHighlighter};
 
 /// Opens `path` (or the editor example's own source) in an editor, with syntax highlighting
 /// and colors from the GitHub Dark theme

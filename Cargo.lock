@@ -898,23 +898,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blitz-code-editor"
-version = "0.1.0"
-dependencies = [
- "anyrender",
- "anyrender_vello",
- "anyrender_vello_cpu",
- "bytemuck",
- "floem-editor-core",
- "kurbo",
- "parley",
- "peniko",
- "png 0.18.1",
- "syntaxmate",
- "winit",
-]
-
-[[package]]
 name = "blitz-dom"
 version = "0.3.0-beta.4"
 dependencies = [
@@ -6138,6 +6121,23 @@ dependencies = [
  "parlance",
  "parley_engine",
  "smallvec",
+]
+
+[[package]]
+name = "parley_code_editor"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_vello",
+ "anyrender_vello_cpu",
+ "bytemuck",
+ "floem-editor-core",
+ "kurbo",
+ "parley",
+ "peniko",
+ "png 0.18.1",
+ "syntaxmate",
+ "winit",
 ]
 
 [[package]]

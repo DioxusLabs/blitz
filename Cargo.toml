@@ -15,7 +15,7 @@ members = [
     "packages/dioxus-native",
     "packages/dioxus-native-dom",
     "packages/blitz-test-harness",
-    "packages/blitz-code-editor",
+    "packages/parley_code_editor",
     "apps/browser",
     "apps/browser/persistence",
     "apps/readme",

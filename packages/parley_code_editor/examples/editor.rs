@@ -1,6 +1,6 @@
 //! A window containing a code editor, using winit and AnyRender directly (no Blitz document).
 //!
-//! Usage: `cargo run -p blitz-code-editor --example editor [--cpu] [--wrap] [file]`
+//! Usage: `cargo run -p parley_code_editor --example editor [--cpu] [--wrap] [file]`
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 use anyrender::WindowRenderer;
 use anyrender_vello::VelloWindowRenderer;
 use anyrender_vello_cpu::VelloCpuWindowRenderer;
-use blitz_code_editor::{
+use kurbo::{Affine, Point, Size};
+use parley_code_editor::{
     CodeEditor, EditorInput, EditorResponse, ImeInput, Key, KeyInput, Modifiers, PointerButton,
     ScrollDelta, TextContext,
 };
-use kurbo::{Affine, Point, Size};
 use winit::application::ApplicationHandler;
 use winit::cursor::{Cursor, CursorIcon};
 use winit::data_transfer::{DataTransferSendBuilder, TypeHint};

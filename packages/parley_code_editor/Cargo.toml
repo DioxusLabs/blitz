@@ -1,5 +1,5 @@
 [package]
-name = "blitz-code-editor"
+name = "parley_code_editor"
 description = "A code editing control built on floem-editor-core, Parley and AnyRender"
 version = "0.1.0"
 license.workspace = true
