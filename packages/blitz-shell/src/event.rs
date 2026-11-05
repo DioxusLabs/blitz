@@ -106,13 +106,6 @@ impl BlitzShellProxy {
     }
 }
 
-#[cfg(feature = "devtools")]
-impl blitz_vibey_cdp_server::DevtoolsWaker for BlitzShellProxy {
-    fn wake(&self) {
-        self.send_event_impl(BlitzShellEvent::DevtoolsPoll)
-    }
-}
-
 impl NetWaker for BlitzShellProxy {
     fn wake(&self, client_id: usize) {
         self.send_event_impl(BlitzShellEvent::RequestRedraw { doc_id: client_id })
