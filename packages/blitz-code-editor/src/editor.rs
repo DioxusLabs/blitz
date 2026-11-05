@@ -265,8 +265,10 @@ impl CodeEditor {
         }
     }
 
+    /// Replaces the selection. Unlike `Cursor::set_insert`, this doesn't record the previous
+    /// selection in `history_selections`, which would otherwise grow on every caret move.
     fn set_selection(&mut self, selection: Selection) {
-        self.cursor.set_insert(selection);
+        self.cursor.mode = CursorMode::Insert(selection);
     }
 
     // --- Geometry
@@ -418,6 +420,8 @@ impl CodeEditor {
             self.cache.invalidate(inval, num_lines);
         }
         if !deltas.is_empty() {
+            // Earlier selections refer to offsets in the old text
+            self.cursor.history_selections.clear();
             resp.text_changed = true;
         }
     }

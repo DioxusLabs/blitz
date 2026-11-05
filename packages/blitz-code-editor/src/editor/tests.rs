@@ -94,6 +94,16 @@ fn moving_the_caret_starts_a_new_undo_group() {
 }
 
 #[test]
+fn caret_moves_do_not_grow_the_selection_history() {
+    let (mut editor, mut cx) = editor("hello\nworld");
+    for _ in 0..10 {
+        key(&mut editor, &mut cx, Key::ArrowRight, Modifiers::default());
+    }
+    key(&mut editor, &mut cx, Key::ArrowUp, SHIFT);
+    assert!(editor.cursor.history_selections.is_empty());
+}
+
+#[test]
 fn shift_arrows_extend_the_selection() {
     let (mut editor, mut cx) = editor("hello world");
     key(&mut editor, &mut cx, Key::ArrowRight, SHIFT);
