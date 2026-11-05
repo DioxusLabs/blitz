@@ -136,21 +136,21 @@ impl CdpServer {
     /// Send the events for all buffered DOM mutations to the sessions
     /// inspecting the mutated documents
     fn flush_mutations(&mut self, docs: &mut dyn DocumentProvider) {
-        let mut records = self.mutation_log.take();
+        let records = self.mutation_log.take();
         if records.is_empty() {
             return;
         }
-        records.sort_by_key(|(doc_id, _)| *doc_id);
         for conn in self.connections.values_mut() {
             let Some(doc_id) = conn.session.doc_id(docs) else {
                 continue;
             };
-            let start = records.partition_point(|(id, _)| *id < doc_id);
-            let end = records.partition_point(|(id, _)| *id <= doc_id);
-            if start == end {
+            let doc_records = records
+                .iter()
+                .filter(move |(id, _)| *id == doc_id)
+                .map(|(_, record)| record);
+            if doc_records.clone().next().is_none() {
                 continue;
             }
-            let doc_records = records[start..end].iter().map(|(_, record)| record);
             with_document(docs, doc_id, |doc| {
                 conn.session
                     .emit_mutations(&mut conn.writer, doc, doc_records.clone());

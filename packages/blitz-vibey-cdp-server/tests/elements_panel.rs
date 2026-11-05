@@ -1374,8 +1374,8 @@ fn set_outer_html() {
         let list_id = node_id_of(&root, "list");
         let a_id = node_id_of(&root, "a");
 
-        // The node is replaced by the parsed nodes: a removal followed by
-        // insertions, each after the previous one
+        // The node is replaced by the parsed nodes: insertions (each after the
+        // previous one) followed by its removal, in the order they were made
         send_command(
             &mut ws,
             2,
@@ -1390,15 +1390,15 @@ fn set_outer_html() {
         assert_eq!(
             kinds,
             [
-                "DOM.childNodeRemoved",
                 "DOM.childNodeInserted",
                 "DOM.childNodeInserted",
-                "DOM.childNodeInserted"
+                "DOM.childNodeInserted",
+                "DOM.childNodeRemoved"
             ],
             "{events:#?}"
         );
-        assert_eq!(events[0]["params"]["nodeId"], a_id);
-        let inserted: Vec<&serde_json::Value> = events[1..].iter().map(|e| &e["params"]).collect();
+        assert_eq!(events[3]["params"]["nodeId"], a_id);
+        let inserted: Vec<&serde_json::Value> = events[..3].iter().map(|e| &e["params"]).collect();
         assert!(inserted.iter().all(|p| p["parentNodeId"] == list_id));
         assert_eq!(inserted[0]["previousNodeId"], 0);
         assert_eq!(inserted[0]["node"]["nodeName"], "H1");
@@ -1769,7 +1769,7 @@ fn live_mutations() {
         assert_eq!(events[1]["params"]["node"]["nodeId"], c_id);
         assert_eq!(events[1]["params"]["previousNodeId"], 0);
 
-        // Several insertions into one parent are reported in tree order
+        // Insertions are reported in the order they were made
         mutate(&mutations, |doc| {
             let [list, b] = element_ids(doc, &["list", "b"])[..] else {
                 unreachable!()
@@ -1785,9 +1785,9 @@ fn live_mutations() {
             .iter()
             .map(|e| &e["params"]["node"]["localName"])
             .collect();
-        assert_eq!(names, ["u", "i"]);
+        assert_eq!(names, ["i", "u"]);
         assert_eq!(
-            events[1]["params"]["previousNodeId"],
+            events[0]["params"]["previousNodeId"],
             find_by_id(&root, "b").unwrap()["nodeId"]
         );
     });
