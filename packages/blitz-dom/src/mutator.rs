@@ -26,6 +26,16 @@ macro_rules! tag_and_attr {
     };
 }
 
+/// Report a mutation to the document's devtools provider (if any)
+macro_rules! devtools {
+    ($doc:expr, $method:ident($($arg:expr),*)) => {
+        #[cfg(feature = "devtools")]
+        if let Some(provider) = &$doc.devtools_provider {
+            provider.$method($($arg),*);
+        }
+    };
+}
+
 #[derive(Debug, Clone)]
 pub enum AppendTextErr {
     /// The node is not a text node
@@ -214,6 +224,9 @@ impl DocumentMutator<'_> {
             text.content.clear();
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
+            if node_is_in_document {
+                devtools!(self.doc, character_data_changed(node_id));
+            }
             // Mark ancestors dirty so the style traversal visits this subtree.
             // Without this, the traversal may skip nodes with pending damage.
             node.mark_ancestors_dirty();
@@ -244,6 +257,9 @@ impl DocumentMutator<'_> {
             Some(data) => {
                 data.content += text;
                 self.mutations_occurred |= node_is_in_document;
+                if node_is_in_document {
+                    devtools!(self.doc, character_data_changed(node_id));
+                }
                 if let Some(parent_id) = parent_id {
                     self.doc.nodes[parent_id].insert_damage(ALL_DAMAGE);
                 }
@@ -309,6 +325,9 @@ impl DocumentMutator<'_> {
         }
 
         element.attrs.set(name.clone(), value);
+        if node_is_in_document {
+            devtools!(self.doc, attribute_changed(node_id, &name.local));
+        }
 
         // Focusability is cached on the element and comes from these
         // attributes, so it has to follow a change to one of them: a widget
@@ -427,6 +446,9 @@ impl DocumentMutator<'_> {
             return;
         }
         self.mutations_occurred |= node_is_in_document;
+        if node_is_in_document {
+            devtools!(self.doc, attribute_changed(node_id, &name.local));
+        }
 
         // If element is a CustomWidget, then call attribute_changed on it
         #[cfg(feature = "custom-widget")]
@@ -553,6 +575,7 @@ impl DocumentMutator<'_> {
             parent.children.retain(|id| *id != node_id);
             if node_is_in_document {
                 self.restyle_for_child_list_change(parent_id, index..index);
+                devtools!(self.doc, node_removed(parent_id, node_id));
             }
             self.maybe_record_node(parent_id);
         }
@@ -585,6 +608,7 @@ impl DocumentMutator<'_> {
 
             if parent_is_in_doc {
                 self.restyle_for_child_list_change(parent_id, index..index);
+                devtools!(self.doc, node_removed(parent_id, node_id));
             }
 
             self.maybe_record_node(parent_id);
@@ -606,6 +630,9 @@ impl DocumentMutator<'_> {
         for child_id in children {
             self.process_removed_subtree(child_id);
             let _ = self.doc.drop_node_ignoring_parent(child_id);
+            if parent_is_in_doc {
+                devtools!(self.doc, node_removed(node_id, child_id));
+            }
         }
         self.maybe_record_node(node_id);
     }
@@ -815,6 +842,7 @@ impl DocumentMutator<'_> {
 
             if child_was_in_doc {
                 self.restyle_for_child_list_change(old_parent_id, index..index);
+                devtools!(self.doc, node_removed(old_parent_id, child_id));
             }
 
             self.maybe_record_node(old_parent_id);
@@ -835,6 +863,10 @@ impl DocumentMutator<'_> {
             // A moved or re-attached subtree keeps its styles, but everything above it changed.
             if new_parent_is_in_document && child.primary_styles().is_some() {
                 child.set_restyle_hint(RestyleHint::restyle_subtree());
+            }
+
+            if new_parent_is_in_document {
+                devtools!(self.doc, node_inserted(parent_id, child_id));
             }
 
             if new_parent_is_in_document && !child_was_in_doc {
@@ -1879,6 +1911,92 @@ mod test {
             mutator.append_children(detached_target_id, &[child_id]);
         }
         assert_eq!(shell.redraw_requests.load(Ordering::Relaxed), 3);
+    }
+
+    #[cfg(feature = "devtools")]
+    #[test]
+    fn devtools_provider_records_in_document_mutations() {
+        use blitz_traits::devtools::DevtoolsProvider;
+        use std::sync::Mutex;
+
+        #[derive(Default)]
+        struct Recorder(Mutex<Vec<String>>);
+        impl DevtoolsProvider for Recorder {
+            fn node_inserted(&self, parent_id: NodeId, node_id: NodeId) {
+                let msg = format!("insert {} {}", parent_id.as_u64(), node_id.as_u64());
+                self.0.lock().unwrap().push(msg);
+            }
+            fn node_removed(&self, parent_id: NodeId, node_id: NodeId) {
+                let msg = format!("remove {} {}", parent_id.as_u64(), node_id.as_u64());
+                self.0.lock().unwrap().push(msg);
+            }
+            fn attribute_changed(&self, node_id: NodeId, name: &str) {
+                let msg = format!("attr {} {name}", node_id.as_u64());
+                self.0.lock().unwrap().push(msg);
+            }
+            fn character_data_changed(&self, node_id: NodeId) {
+                let msg = format!("text {}", node_id.as_u64());
+                self.0.lock().unwrap().push(msg);
+            }
+        }
+
+        let recorder = Arc::new(Recorder::default());
+        let mut document = BaseDocument::new(DocumentConfig {
+            devtools_provider: Some(recorder.clone()),
+            ..Default::default()
+        });
+        let root_id = document.root_node().id;
+        let take = || std::mem::take(&mut *recorder.0.lock().unwrap());
+        let id = |node_id: NodeId| node_id.as_u64();
+
+        // Building a detached subtree is not reported; inserting it reports its root only
+        let mut mutator = document.mutate();
+        let div = mutator.create_element(qual_name!("div"), vec![]);
+        let text = mutator.create_text_node("a");
+        mutator.append_children(div, &[text]);
+        mutator.set_attribute(div, qual_name!("id"), "x");
+        mutator.set_node_text(text, "b");
+        assert!(take().is_empty());
+        mutator.append_children(root_id, &[div]);
+        assert_eq!(take(), [format!("insert {} {}", id(root_id), id(div))]);
+
+        mutator.set_attribute(div, qual_name!("class"), "c");
+        mutator.clear_attribute(div, qual_name!("class"));
+        mutator.clear_attribute(div, qual_name!("class"));
+        mutator.set_node_text(text, "c");
+        mutator.set_node_text(text, "c");
+        mutator.append_text_to_node(text, "d").unwrap();
+        assert_eq!(
+            take(),
+            [
+                format!("attr {} class", id(div)),
+                format!("attr {} class", id(div)),
+                format!("text {}", id(text)),
+                format!("text {}", id(text)),
+            ]
+        );
+
+        // Moving a node reports its removal and insertion
+        let span = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(root_id, &[span]);
+        mutator.append_children(span, &[text]);
+        mutator.remove_node(span);
+        mutator.append_children(root_id, &[span]);
+        mutator.remove_and_drop_all_children(span);
+        mutator.remove_and_drop_node(div);
+        assert_eq!(
+            take(),
+            [
+                format!("insert {} {}", id(root_id), id(span)),
+                format!("remove {} {}", id(div), id(text)),
+                format!("insert {} {}", id(span), id(text)),
+                format!("remove {} {}", id(root_id), id(span)),
+                format!("insert {} {}", id(root_id), id(span)),
+                format!("remove {} {}", id(span), id(text)),
+                format!("remove {} {}", id(root_id), id(div)),
+            ]
+        );
+        drop(mutator);
     }
 
     #[test]
