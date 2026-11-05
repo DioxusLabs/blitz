@@ -20,7 +20,7 @@ use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, SyncSender, channel};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use blitz_traits::node_id::NodeId;
 use tungstenite::Message;
@@ -35,10 +35,10 @@ mod session;
 mod style_sheets;
 mod transport;
 
-use blitz_traits::net::NetProvider;
+use blitz_traits::net::{NetObserver, NetProvider};
 use devtools_provider::MutationLog;
 pub use frontend::frontend_url;
-use network::{NetworkLog, RecordingNetProvider};
+use network::{LogObserver, NetworkLog, NetworkRecord, RecordingNetProvider};
 use session::Session;
 
 pub(crate) type JsonValue = serde_json::Value;
@@ -85,7 +85,17 @@ pub struct CdpServer {
     /// The recording providers currently installed on documents, keyed by
     /// their address
     net_recorders: HashMap<*const (), Arc<RecordingNetProvider>>,
+    /// Whether the embedder installed [`Self::net_observer`] (so documents'
+    /// providers aren't wrapped)
+    net_observer_installed: bool,
+    /// Network records of documents that don't exist (yet), with the time
+    /// they were logged: a document's requests (e.g. for its HTML) can be
+    /// observed before it is created
+    pending_network: Vec<(Instant, DocumentId, NetworkRecord)>,
 }
+
+/// How long records of documents that don't exist are kept
+const PENDING_NETWORK_RECORD_LIFETIME: Duration = Duration::from_secs(30);
 
 impl CdpServer {
     pub fn new(waker: Arc<dyn DevtoolsWaker>) -> Self {
@@ -95,11 +105,27 @@ impl CdpServer {
             mutation_log: Arc::new(MutationLog::new(waker.clone())),
             network_log: Arc::new(NetworkLog::new(waker.clone())),
             net_recorders: HashMap::new(),
+            net_observer_installed: false,
+            pending_network: Vec::new(),
             waker,
             event_sender: sender,
             event_queue: receiver,
             local_addr: Arc::new(std::sync::Mutex::new(None)),
         }
+    }
+
+    /// A [`NetObserver`] recording the requests of inspected documents, to
+    /// install on the embedder's net provider (e.g. with
+    /// `blitz_net::Provider::set_observer`). It reports real response
+    /// statuses and headers, and requests made for documents that don't
+    /// exist yet (if they are created with the id the request was made with).
+    ///
+    /// Once this has been called, the server relies on the observer and no
+    /// longer wraps the `NetProvider` of inspected documents to record
+    /// their requests.
+    pub fn net_observer(&mut self) -> Box<dyn NetObserver> {
+        self.net_observer_installed = true;
+        Box::new(LogObserver(Arc::clone(&self.network_log)))
     }
 
     /// The address the server is listening on (available once the listener
@@ -183,10 +209,16 @@ impl CdpServer {
                 });
             }
         }
+        self.network_log.set_active(!recorded.is_empty());
+        if recorded.is_empty() {
+            self.pending_network.clear();
+        }
+        if self.net_observer_installed {
+            recorded.clear();
+        }
         if recorded.is_empty() && self.net_recorders.is_empty() {
             return;
         }
-        self.network_log.set_active(!recorded.is_empty());
         let recorders = &mut self.net_recorders;
         let log = &self.network_log;
         for doc_id in docs.document_ids() {
@@ -219,7 +251,26 @@ impl CdpServer {
     /// Send the events for all logged network activity to the sessions
     /// recording the documents that issued the requests
     fn flush_network(&mut self, docs: &mut dyn DocumentProvider) {
-        let records = self.network_log.take();
+        let logged = self.network_log.take();
+        if logged.is_empty() && self.pending_network.is_empty() {
+            return;
+        }
+        // Keep the records of documents that don't exist (yet) for later
+        let now = Instant::now();
+        let existing: HashSet<DocumentId> = docs.document_ids().into_iter().collect();
+        let mut records = Vec::new();
+        let mut pending = Vec::new();
+        let logged = logged
+            .into_iter()
+            .map(|(doc_id, record)| (now, doc_id, record));
+        for (time, doc_id, record) in self.pending_network.drain(..).chain(logged) {
+            if existing.contains(&doc_id) {
+                records.push((doc_id, record));
+            } else if now.duration_since(time) < PENDING_NETWORK_RECORD_LIFETIME {
+                pending.push((time, doc_id, record));
+            }
+        }
+        self.pending_network = pending;
         if records.is_empty() {
             return;
         }

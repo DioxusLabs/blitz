@@ -191,6 +191,7 @@ async fn fetch_url(
 
     let request = Request::get(url);
     net_provider.fetch_with_callback(
+        None,
         request,
         Box::new(move |result| {
             let result = result.unwrap();

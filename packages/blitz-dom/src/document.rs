@@ -468,7 +468,7 @@ impl BaseDocument {
     pub fn new(config: DocumentConfig) -> Self {
         init_stylo_prefs();
 
-        let id = DocumentId::new();
+        let id = config.id.unwrap_or_else(DocumentId::new);
 
         let font_ctx = config
             .font_ctx

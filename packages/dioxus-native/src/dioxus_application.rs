@@ -109,6 +109,12 @@ impl DioxusNativeApplication {
         false
     }
 
+    /// The CDP server's network observer (if the server is started)
+    #[cfg(feature = "devtools")]
+    pub fn net_observer(&mut self) -> Option<Box<dyn blitz_traits::net::NetObserver>> {
+        self.inner.net_observer()
+    }
+
     pub fn add_window(&mut self, window_config: WindowConfig<DioxusNativeWindowRenderer>) {
         self.inner.add_window(window_config);
     }
