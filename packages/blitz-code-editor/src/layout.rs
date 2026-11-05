@@ -13,6 +13,9 @@ use crate::{EditorStyle, TextBrush, TextContext};
 
 pub(crate) type TextLayout = Layout<TextBrush>;
 
+/// How many line (and line number) layouts to keep before dropping off-screen ones
+const MAX_CACHED_LINES: usize = 1000;
+
 /// Measurements derived from the [`EditorStyle`] and the resolved font
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Metrics {
@@ -120,6 +123,8 @@ struct LayoutConfig {
 pub(crate) struct LineCache {
     config: Option<LayoutConfig>,
     lines: Vec<Option<TextLayout>>,
+    /// How many entries of `lines` hold a layout
+    cached: usize,
     /// Gutter line number layouts, keyed by line number. These never change with edits.
     numbers: HashMap<usize, TextLayout>,
     /// The widest line laid out so far
@@ -131,6 +136,7 @@ impl LineCache {
         Self {
             config: None,
             lines: Vec::new(),
+            cached: 0,
             numbers: HashMap::new(),
             max_width: 0.0,
         }
@@ -161,6 +167,7 @@ impl LineCache {
     pub(crate) fn reset(&mut self, num_lines: usize) {
         self.lines.clear();
         self.lines.resize_with(num_lines, || None);
+        self.cached = 0;
         self.numbers.clear();
         self.max_width = 0.0;
     }
@@ -169,12 +176,32 @@ impl LineCache {
     pub(crate) fn invalidate(&mut self, inval: &InvalLines, num_lines: usize) {
         let start = inval.start_line.min(self.lines.len());
         let end = (inval.start_line + inval.inval_count).min(self.lines.len());
+        self.cached -= self.lines[start..end].iter().flatten().count();
         self.lines.splice(
             start..end,
             std::iter::repeat_with(|| None).take(inval.new_count),
         );
         // Guard against the edit's line accounting disagreeing with the buffer
-        self.lines.resize_with(num_lines, || None);
+        if self.lines.len() != num_lines {
+            self.lines.resize_with(num_lines, || None);
+            self.cached = self.lines.iter().flatten().count();
+        }
+    }
+
+    /// Once more than [`MAX_CACHED_LINES`] layouts are cached, drops those for lines outside
+    /// `keep`. Checking only past that limit keeps the cost of scanning the cache low.
+    pub(crate) fn evict_outside(&mut self, keep: Range<usize>) {
+        if self.cached > MAX_CACHED_LINES {
+            for (line, slot) in self.lines.iter_mut().enumerate() {
+                if !keep.contains(&line) && slot.take().is_some() {
+                    self.cached -= 1;
+                }
+            }
+        }
+        if self.numbers.len() > MAX_CACHED_LINES {
+            self.numbers
+                .retain(|number, _| keep.contains(&(number - 1)));
+        }
     }
 
     pub(crate) fn max_width(&self) -> f64 {
@@ -184,6 +211,12 @@ impl LineCache {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.lines.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cached(&self) -> (usize, usize) {
+        debug_assert_eq!(self.cached, self.lines.iter().flatten().count());
+        (self.cached, self.numbers.len())
     }
 
     pub(crate) fn line(
@@ -212,6 +245,7 @@ impl LineCache {
                 &text,
             );
             self.max_width = self.max_width.max(layout.full_width() as f64);
+            self.cached += 1;
             *slot = Some(layout);
         }
         slot.as_ref().unwrap()

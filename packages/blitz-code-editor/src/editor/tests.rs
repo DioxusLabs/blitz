@@ -294,6 +294,7 @@ fn edits_keep_the_line_cache_in_sync() {
     key(&mut editor, &mut cx, Key::Backspace, Modifiers::default());
     assert_eq!(editor.cache.len(), 1);
     editor.paint(&mut cx, &mut scene, Affine::IDENTITY);
+    assert_eq!(editor.cache.cached().0, 1);
 }
 
 #[test]
@@ -516,4 +517,26 @@ fn dragging_below_the_editor_keeps_scrolling() {
     let scroll = editor.scroll_offset();
     editor.handle_input(&mut cx, EditorInput::Timer);
     assert_eq!(editor.scroll_offset(), scroll);
+}
+
+#[test]
+fn scrolling_through_a_long_file_drops_off_screen_layouts() {
+    let text = (0..5000).map(|i| format!("line {i}\n")).collect::<String>();
+    let (mut editor, mut cx) = editor(&text);
+    let mut scene = anyrender::Scene::new();
+    for _ in 0..200 {
+        editor.paint(&mut cx, &mut scene, Affine::IDENTITY);
+        editor.handle_input(
+            &mut cx,
+            EditorInput::Wheel {
+                delta: crate::ScrollDelta::Pixels(0.0, -600.0),
+            },
+        );
+        anyrender::PaintScene::reset(&mut scene);
+    }
+    let (lines, numbers) = editor.cache.cached();
+    assert!(lines <= 1000, "{lines} line layouts cached");
+    assert!(numbers <= 1000, "{numbers} number layouts cached");
+    // Lines around the viewport are still cached
+    assert!(lines > 0);
 }

@@ -135,6 +135,11 @@ impl CodeEditor {
         }
 
         scene.pop_layer();
+
+        // Keep a screen's worth of layouts either side of the viewport for scrolling
+        let margin = last_visible - first_visible + 1;
+        self.cache
+            .evict_outside(first_visible.saturating_sub(margin)..last_visible + margin + 1);
     }
 }
 
