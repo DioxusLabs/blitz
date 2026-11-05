@@ -207,6 +207,11 @@ impl CdpServer {
         }
         if recorded.is_empty() {
             self.net_recorders.clear();
+        } else {
+            // Forget the recorders of documents that have been dropped (e.g.
+            // replaced by navigating their host element)
+            self.net_recorders
+                .retain(|_, recorder| Arc::strong_count(recorder) > 1);
         }
     }
 

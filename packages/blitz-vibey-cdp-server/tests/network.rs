@@ -281,3 +281,97 @@ fn network_events_and_bodies() {
         }
     });
 }
+
+/// A sub-document target keeps recording as its host navigates: requests of
+/// the document that replaced the recorded one are reported under its frame
+#[test]
+fn network_follows_sub_document_navigation() {
+    let mut parent = make_doc(
+        "<html><body><div id=\"host\"></div></body></html>",
+        "http://example.test/",
+    );
+    let sub = make_doc("<html><body></body></html>", "http://example.test/a/");
+    let host_id = parent.query_selector("#host").unwrap().unwrap();
+    parent.set_sub_document(host_id, Box::new(sub));
+    let target_id = format!("{}.{}", parent.id(), host_id.as_u64());
+    let mut provider = DocTreeProvider(parent);
+
+    let (wake_sender, wake_receiver) = channel();
+    let mut server = CdpServer::new(Arc::new(TestWaker(Mutex::new(wake_sender.clone()))));
+    server.start_listening("127.0.0.1:0");
+    let addr = server
+        .wait_for_local_addr(Duration::from_secs(10))
+        .expect("server should start listening");
+
+    let (navigate_sender, navigate_receiver) = channel::<()>();
+    let (fetch_sender, fetch_receiver) = channel::<&'static str>();
+    let next_doc_id = Arc::new(Mutex::new(None));
+    let done = Arc::new(Mutex::new(false));
+    std::thread::scope(|scope| {
+        let done2 = Arc::clone(&done);
+        let next_doc_id2 = Arc::clone(&next_doc_id);
+        scope.spawn(move || {
+            struct DoneGuard(Arc<Mutex<bool>>, Sender<()>);
+            impl Drop for DoneGuard {
+                fn drop(&mut self) {
+                    *self.0.lock().unwrap() = true;
+                    let _ = self.1.send(());
+                }
+            }
+            let _guard = DoneGuard(done2, wake_sender.clone());
+
+            let (mut ws, _) =
+                tungstenite::connect(format!("ws://{addr}/devtools/page/{target_id}"))
+                    .expect("websocket connect");
+            let mut events = Vec::new();
+            send_command(&mut ws, 1, "DOM.getDocument", json!({}));
+            read_reply(&mut ws, 1, &mut events);
+            send_command(&mut ws, 2, "Network.enable", json!({}));
+            read_reply(&mut ws, 2, &mut events);
+
+            navigate_sender.send(()).unwrap();
+            wake_sender.send(()).unwrap();
+            read_events(&mut ws, &mut events, "DOM.documentUpdated", 1);
+
+            fetch_sender.send("http://example.test/style.css").unwrap();
+            wake_sender.send(()).unwrap();
+            read_events(&mut ws, &mut events, "Network.loadingFinished", 1);
+
+            let sent = events
+                .iter()
+                .find(|event| event["method"] == "Network.requestWillBeSent")
+                .unwrap();
+            let next_doc_id = next_doc_id2.lock().unwrap().unwrap();
+            assert_eq!(
+                sent["params"]["request"]["url"],
+                "http://example.test/style.css"
+            );
+            assert_eq!(sent["params"]["frameId"], format!("frame-{next_doc_id}"));
+            assert_eq!(sent["params"]["documentURL"], "http://example.test/b/");
+        });
+
+        while !*done.lock().unwrap() {
+            if wake_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_err()
+            {
+                continue;
+            }
+            if navigate_receiver.try_recv().is_ok() {
+                // Navigate the host: the recorded sub-document is dropped
+                let next = make_doc("<html><body></body></html>", "http://example.test/b/");
+                *next_doc_id.lock().unwrap() = Some(next.id());
+                provider.0.set_sub_document(host_id, Box::new(next));
+            }
+            server.process_messages(&mut provider);
+            while let Ok(url) = fetch_receiver.try_recv() {
+                let doc_id = next_doc_id.lock().unwrap().unwrap();
+                provider.with_document(doc_id, &mut |doc| {
+                    let request = Request::get(Url::parse(url).unwrap());
+                    doc.net_provider
+                        .fetch(doc.id(), request, Box::new(NoopHandler));
+                });
+            }
+        }
+    });
+}
