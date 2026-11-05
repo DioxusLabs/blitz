@@ -224,10 +224,13 @@ impl CdpServer {
                 let mut targets = Vec::new();
                 for doc_id in docs.document_ids() {
                     docs.with_document(doc_id, &mut |doc| {
-                        let title = doc
-                            .find_title_node()
-                            .map(|node| node.text_content())
-                            .unwrap_or_default();
+                        let title = match doc.devtools_title() {
+                            Some(title) => title.to_string(),
+                            None => doc
+                                .find_title_node()
+                                .map(|node| node.text_content())
+                                .unwrap_or_default(),
+                        };
                         targets.push(TargetInfo {
                             id: doc_id,
                             title,
