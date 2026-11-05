@@ -11,7 +11,7 @@ use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use blitz_vibey_cdp_server::documents::{
-    collect_document_ids, find_picking_document, with_document_in,
+    collect_document_ids, find_picking_document, picking_document_id, with_document_in,
 };
 use blitz_vibey_cdp_server::{CdpServer, DevtoolsWaker, DocumentProvider, PickerEvent};
 use serde_json::json;
@@ -145,6 +145,11 @@ fn sub_document_helpers() {
         find_picking_document(&parent, 60.0, 110.0),
         Some((sub_id, 10.0, 10.0))
     );
+    assert_eq!(picking_document_id(&parent), Some(sub_id));
+
+    // Points outside the host element (e.g. over a browser toolbar) are not
+    // in the sub-document
+    assert!(find_picking_document(&parent, 10.0, 10.0).is_none());
 }
 
 /// A sub-document is enumerated as its own target and a session attached to
