@@ -1,6 +1,6 @@
 //! Renders the editor to a PNG without opening a window.
 //!
-//! Usage: `cargo run -p blitz-code-editor --example screenshot [file] [output.png]`
+//! Usage: `cargo run -p blitz-code-editor --example screenshot [--wrap] [file] [output.png]`
 
 use std::fs::File;
 use std::io::BufWriter;
@@ -17,12 +17,20 @@ const HEIGHT: f64 = 600.0;
 const SCALE: f64 = 2.0;
 
 fn main() {
-    let mut args = std::env::args().skip(1);
+    let mut wrap = false;
+    let mut args = Vec::new();
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--wrap" => wrap = true,
+            _ => args.push(arg),
+        }
+    }
+    let mut args = args.into_iter();
     let path = args.next();
     let out_path = args.next().unwrap_or_else(|| "editor.png".into());
 
     let mut cx = TextContext::new();
-    let mut editor = common::open(path.as_deref());
+    let mut editor = common::open(path.as_deref(), wrap);
     editor.set_size(Size::new(WIDTH, HEIGHT));
     editor.handle_input(&mut cx, EditorInput::Focus(true));
 

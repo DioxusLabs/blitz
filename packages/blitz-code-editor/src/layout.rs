@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use floem_editor_core::buffer::{Buffer, InvalLines, rope_text::RopeText};
+use kurbo::Point;
 use parley::{
     Affinity, Alignment, AlignmentOptions, BoundingBox, Cursor, FontFamily, FontStyle, FontWeight,
     Layout, LineHeight, StyleProperty,
@@ -34,6 +35,7 @@ impl Metrics {
                 char_width: 0.0,
             },
             color: Color::BLACK,
+            wrap_width: None,
         };
         let layout = build_layout(cx, &config, "0", &[]);
         Self {
@@ -57,6 +59,7 @@ pub(crate) fn build_layout(
         style,
         metrics,
         color,
+        wrap_width,
     } = config;
     let display: Cow<'_, str> = if text.contains('\t') {
         Cow::Owned(text.replace('\t', " "))
@@ -108,22 +111,21 @@ pub(crate) fn build_layout(
     }
 
     let mut layout = builder.build(&display);
-    layout.break_all_lines(None);
+    layout.break_all_lines(*wrap_width);
     layout.align(Alignment::Start, AlignmentOptions::default());
     layout
 }
 
-/// The x position of the caret before byte `col` of a line layout
-pub(crate) fn caret_x(layout: &TextLayout, col: usize) -> f64 {
-    Cursor::from_byte_index(layout, col, Affinity::Downstream)
-        .geometry(layout, 0.0)
-        .x0
+/// The top-left corner of the caret before byte `col` of a line layout. With soft wrapping, the
+/// y position picks out the visual row.
+pub(crate) fn caret_point(layout: &TextLayout, col: usize) -> Point {
+    let rect = Cursor::from_byte_index(layout, col, Affinity::Downstream).geometry(layout, 0.0);
+    Point::new(rect.x0, rect.y0)
 }
 
-/// The byte offset within a line layout closest to `x`
-pub(crate) fn col_at_x(layout: &TextLayout, x: f64) -> usize {
-    let y = layout.height() / 2.0;
-    Cursor::from_point(layout, x as f32, y).index()
+/// The byte offset within a line layout closest to a point in it
+pub(crate) fn col_at_point(layout: &TextLayout, point: Point) -> usize {
+    Cursor::from_point(layout, point.x as f32, point.y as f32).index()
 }
 
 /// Highlight rectangles for the byte range `cols` of a line layout
@@ -149,6 +151,111 @@ pub(crate) struct LayoutConfig {
     pub metrics: Metrics,
     /// The default text color
     pub color: Color,
+    /// The width to wrap lines at, if soft wrapping
+    pub wrap_width: Option<f32>,
+}
+
+/// How many visual rows each line takes up (more than one when it soft wraps), with fast
+/// prefix sums for converting between rows and lines. Lines that haven't been laid out yet
+/// count as one row.
+pub(crate) struct RowCounts {
+    counts: Vec<u32>,
+    /// A Fenwick tree over `counts`, 1-indexed
+    tree: Vec<u64>,
+}
+
+impl RowCounts {
+    fn new() -> Self {
+        Self {
+            counts: Vec::new(),
+            tree: vec![0],
+        }
+    }
+
+    fn reset(&mut self, num_lines: usize) {
+        self.counts.clear();
+        self.counts.resize(num_lines, 1);
+        self.rebuild();
+    }
+
+    fn splice(&mut self, lines: Range<usize>, new_count: usize, num_lines: usize) {
+        self.counts.splice(lines, std::iter::repeat_n(1, new_count));
+        self.counts.resize(num_lines, 1);
+        self.rebuild();
+    }
+
+    fn rebuild(&mut self) {
+        let n = self.counts.len();
+        self.tree.clear();
+        self.tree.push(0);
+        self.tree.extend(self.counts.iter().map(|&c| c as u64));
+        for i in 1..=n {
+            let parent = i + (i & i.wrapping_neg());
+            if parent <= n {
+                self.tree[parent] += self.tree[i];
+            }
+        }
+    }
+
+    fn set(&mut self, line: usize, rows: u32) {
+        let Some(count) = self.counts.get_mut(line) else {
+            return;
+        };
+        let (old, new) = (*count as u64, rows.max(1) as u64);
+        if old == new {
+            return;
+        }
+        *count = new as u32;
+        let mut i = line + 1;
+        while i < self.tree.len() {
+            self.tree[i] = self.tree[i] + new - old;
+            i += i & i.wrapping_neg();
+        }
+    }
+
+    /// The number of rows before `line`
+    pub(crate) fn before(&self, line: usize) -> usize {
+        let mut i = line.min(self.counts.len());
+        let mut sum = 0;
+        while i > 0 {
+            sum += self.tree[i];
+            i &= i - 1;
+        }
+        sum as usize
+    }
+
+    pub(crate) fn total(&self) -> usize {
+        self.before(self.counts.len())
+    }
+
+    pub(crate) fn of(&self, line: usize) -> usize {
+        self.counts.get(line).map_or(1, |&c| c as usize)
+    }
+
+    /// The line containing `row`, and the row within that line. Rows past the end are in the
+    /// last line.
+    pub(crate) fn line_at(&self, row: usize) -> (usize, usize) {
+        let n = self.counts.len();
+        if n == 0 {
+            return (0, 0);
+        }
+        // Find the most lines whose rows total at most `row`
+        let mut line = 0;
+        let mut rest = row as u64;
+        let mut step = n.next_power_of_two();
+        while step > 0 {
+            if line + step <= n && self.tree[line + step] <= rest {
+                line += step;
+                rest -= self.tree[line];
+            }
+            step /= 2;
+        }
+        if line >= n {
+            (n - 1, self.of(n - 1) - 1)
+        } else {
+            (line, rest as usize)
+        }
+    }
 }
 
 /// Per-line layouts, built on demand and invalidated by edits
@@ -162,6 +269,7 @@ pub(crate) struct LineCache {
     /// The widest line laid out so far
     max_width: f64,
     highlights: Option<Box<dyn LineHighlights>>,
+    rows: RowCounts,
 }
 
 impl LineCache {
@@ -173,7 +281,12 @@ impl LineCache {
             numbers: HashMap::new(),
             max_width: 0.0,
             highlights: None,
+            rows: RowCounts::new(),
         }
+    }
+
+    pub(crate) fn rows(&self) -> &RowCounts {
+        &self.rows
     }
 
     /// Replaces the syntax highlighter, and drops layouts styled by the old one
@@ -187,18 +300,7 @@ impl LineCache {
     }
 
     /// Clears the cache if the settings changed. Returns whether they did.
-    pub(crate) fn configure(
-        &mut self,
-        style: &EditorStyle,
-        metrics: Metrics,
-        color: Color,
-        num_lines: usize,
-    ) -> bool {
-        let config = LayoutConfig {
-            style: style.clone(),
-            metrics,
-            color,
-        };
+    pub(crate) fn configure(&mut self, config: LayoutConfig, num_lines: usize) -> bool {
         if self.config.as_ref() == Some(&config) {
             return false;
         }
@@ -212,6 +314,7 @@ impl LineCache {
         self.lines.clear();
         self.lines.resize_with(num_lines, || None);
         self.cached = 0;
+        self.rows.reset(num_lines);
         self.numbers.clear();
         self.max_width = 0.0;
         if let Some(highlights) = &mut self.highlights {
@@ -228,6 +331,7 @@ impl LineCache {
             start..end,
             std::iter::repeat_with(|| None).take(inval.new_count),
         );
+        self.rows.splice(start..end, inval.new_count, num_lines);
         // Guard against the edit's line accounting disagreeing with the buffer
         if self.lines.len() != num_lines {
             self.lines.resize_with(num_lines, || None);
@@ -297,6 +401,8 @@ impl LineCache {
         if line >= self.lines.len() {
             self.lines
                 .resize_with(buffer.num_lines().max(line + 1), || None);
+            self.rows.counts.resize(self.lines.len(), 1);
+            self.rows.rebuild();
         }
         // This may drop this line's layout if an edit above changed its highlighting
         self.update_highlights(buffer, line);
@@ -308,6 +414,7 @@ impl LineCache {
             let text = buffer.slice_to_cow(line_range(buffer, line));
             let layout = build_layout(cx, config, &text, self.spans(line));
             self.max_width = self.max_width.max(layout.full_width() as f64);
+            self.rows.set(line, layout.len() as u32);
             self.cached += 1;
             self.lines[line] = Some(layout);
         }
@@ -358,5 +465,46 @@ impl LineCache {
             })
             .collect();
         build_layout(cx, config, &text, &spans)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RowCounts;
+
+    fn rows(counts: &[u32]) -> RowCounts {
+        let mut rows = RowCounts::new();
+        rows.reset(counts.len());
+        for (line, &count) in counts.iter().enumerate() {
+            rows.set(line, count);
+        }
+        rows
+    }
+
+    #[test]
+    fn prefix_sums_and_lookup_match_a_linear_scan() {
+        let counts = [1, 3, 1, 2, 1, 1, 4, 1, 1];
+        let rows = rows(&counts);
+        let mut before = 0;
+        for (line, &count) in counts.iter().enumerate() {
+            assert_eq!(rows.before(line), before);
+            for row in 0..count as usize {
+                assert_eq!(rows.line_at(before + row), (line, row));
+            }
+            before += count as usize;
+        }
+        assert_eq!(rows.total(), before);
+        // Rows past the end are in the last row of the last line
+        assert_eq!(rows.line_at(before + 10), (8, 0));
+    }
+
+    #[test]
+    fn splicing_resets_the_new_lines_to_one_row() {
+        let mut rows = rows(&[2, 2, 2, 2]);
+        rows.splice(1..3, 3, 5);
+        assert_eq!(rows.total(), 2 + 3 + 2);
+        assert_eq!(rows.line_at(4), (3, 0));
+        rows.set(2, 5);
+        assert_eq!(rows.before(4), 2 + 1 + 5 + 1);
     }
 }

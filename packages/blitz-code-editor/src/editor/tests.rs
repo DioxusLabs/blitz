@@ -314,8 +314,8 @@ fn tabs_advance_to_the_next_tab_stop() {
     let (mut editor, mut cx) = editor("\tx\nab\tx");
     editor.prepare(&mut cx);
     let cw = editor.metrics.char_width;
-    let tab_x = super::caret_x(editor.cache.line(&mut cx, &editor.buffer, 0), 1);
-    let tab_x2 = super::caret_x(editor.cache.line(&mut cx, &editor.buffer, 1), 3);
+    let tab_x = super::caret_point(editor.cache.line(&mut cx, &editor.buffer, 0), 1).x;
+    let tab_x2 = super::caret_point(editor.cache.line(&mut cx, &editor.buffer, 1), 3).x;
     assert!((tab_x - 4.0 * cw).abs() < 0.5, "{tab_x} vs {}", 4.0 * cw);
     assert!((tab_x2 - 4.0 * cw).abs() < 0.5, "{tab_x2} vs {}", 4.0 * cw);
 }
@@ -576,4 +576,88 @@ fn highlighting_restyles_cached_lines_after_an_edit_above() {
 
     editor.clear_highlighter();
     assert_eq!(line_colors(&mut editor, &mut cx, 2), vec![plain]);
+}
+
+/// An editor with soft wrapping, sized so a line wraps after about `columns` characters
+fn wrapping_editor(text: &str, columns: f64) -> (CodeEditor, TextContext) {
+    let (mut editor, mut cx) = editor(text);
+    editor.set_style(crate::EditorStyle {
+        soft_wrap: true,
+        ..Default::default()
+    });
+    editor.prepare(&mut cx);
+    let cw = editor.metrics.char_width;
+    editor.set_size(Size::new(editor.text_x() + (columns + 1.5) * cw, 600.0));
+    let mut scene = anyrender::Scene::new();
+    editor.paint(&mut cx, &mut scene, Affine::IDENTITY);
+    (editor, cx)
+}
+
+#[test]
+fn long_lines_wrap_into_several_rows() {
+    let words = "word ".repeat(12);
+    let (editor, _) = wrapping_editor(&format!("{words}\nshort"), 20.0);
+    // 60 characters at about 20 per row
+    assert_eq!(editor.cache.rows().of(0), 3);
+    assert_eq!(editor.cache.rows().of(1), 1);
+    assert_eq!(editor.line_top(1), 3.0 * editor.metrics.line_height);
+    assert_eq!(editor.max_scroll().x, 0.0);
+}
+
+#[test]
+fn up_and_down_move_through_wrapped_rows() {
+    let words = "word ".repeat(12);
+    let (mut editor, mut cx) = wrapping_editor(&format!("{words}\nshort"), 20.0);
+    key(&mut editor, &mut cx, Key::ArrowRight, Modifiers::default());
+    key(&mut editor, &mut cx, Key::ArrowDown, Modifiers::default());
+    // Still in the first line, one row down
+    assert_eq!(editor.caret(), 21);
+    key(&mut editor, &mut cx, Key::ArrowDown, Modifiers::default());
+    key(&mut editor, &mut cx, Key::ArrowDown, Modifiers::default());
+    assert_eq!(editor.caret(), 61 + 1);
+    key(&mut editor, &mut cx, Key::ArrowUp, Modifiers::default());
+    assert_eq!(editor.caret(), 41);
+}
+
+#[test]
+fn clicks_hit_wrapped_rows() {
+    let words = "word ".repeat(12);
+    let (mut editor, mut cx) = wrapping_editor(&format!("{words}\nshort"), 20.0);
+    let lh = editor.metrics.line_height;
+    let cw = editor.metrics.char_width;
+    let pos = Point::new(editor.text_x() + 2.25 * cw, lh * 1.5);
+    editor.handle_input(
+        &mut cx,
+        EditorInput::PointerDown {
+            pos,
+            button: PointerButton::Primary,
+            mods: Modifiers::default(),
+            click_count: 1,
+        },
+    );
+    assert_eq!(editor.caret(), 22);
+    // The line after the wrapped one starts three rows down
+    let pos = Point::new(editor.text_x() + 2.25 * cw, lh * 3.5);
+    editor.handle_input(
+        &mut cx,
+        EditorInput::PointerDown {
+            pos,
+            button: PointerButton::Primary,
+            mods: Modifiers::default(),
+            click_count: 1,
+        },
+    );
+    assert_eq!(editor.caret(), 61 + 2);
+}
+
+#[test]
+fn resizing_rewraps() {
+    let words = "word ".repeat(12);
+    let (mut editor, mut cx) = wrapping_editor(&words, 20.0);
+    assert_eq!(editor.cache.rows().of(0), 3);
+    let cw = editor.metrics.char_width;
+    editor.set_size(Size::new(editor.text_x() + 31.5 * cw, 600.0));
+    let mut scene = anyrender::Scene::new();
+    editor.paint(&mut cx, &mut scene, Affine::IDENTITY);
+    assert_eq!(editor.cache.rows().of(0), 2);
 }

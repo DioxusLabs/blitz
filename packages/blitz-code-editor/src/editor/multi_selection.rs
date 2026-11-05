@@ -78,9 +78,9 @@ impl CodeEditor {
             selection.last()
         };
         let edge = *edge?;
-        // Up/Down on the first/last line move to the start/end of the document instead
-        let line = self.buffer.line_of_offset(edge.end);
-        if (above && line == 0) || (!above && line == self.buffer.last_line()) {
+        // Up/Down on the first/last row move to the start/end of the document instead
+        let row = self.offset_row(cx, edge.end);
+        if (above && row == 0) || (!above && row + 1 >= self.cache.rows().total()) {
             return None;
         }
         let caret = SelRegion::new(edge.end, edge.end, edge.affinity, edge.horiz);

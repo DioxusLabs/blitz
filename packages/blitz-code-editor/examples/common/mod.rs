@@ -2,11 +2,11 @@
 
 use std::path::Path;
 
-use blitz_code_editor::{CodeEditor, SyntaxmateHighlighter};
+use blitz_code_editor::{CodeEditor, EditorStyle, SyntaxmateHighlighter};
 
 /// Opens `path` (or the editor example's own source) in an editor, with syntax highlighting
 /// and colors from the GitHub Dark theme
-pub fn open(path: Option<&str>) -> CodeEditor {
+pub fn open(path: Option<&str>, soft_wrap: bool) -> CodeEditor {
     let (text, language) = match path {
         Some(path) => {
             let text = std::fs::read_to_string(path).expect("Failed to read file");
@@ -19,6 +19,10 @@ pub fn open(path: Option<&str>) -> CodeEditor {
         ),
     };
     let mut editor = CodeEditor::new(&text);
+    editor.set_style(EditorStyle {
+        soft_wrap,
+        ..Default::default()
+    });
     match language.map(|language| SyntaxmateHighlighter::new(&language, "github-dark")) {
         Some(Ok(highlighter)) => {
             editor.set_theme(highlighter.editor_theme());

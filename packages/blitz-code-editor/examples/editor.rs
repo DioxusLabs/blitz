@@ -1,6 +1,6 @@
 //! A window containing a code editor, using winit and AnyRender directly (no Blitz document).
 //!
-//! Usage: `cargo run -p blitz-code-editor --example editor [--cpu] [file]`
+//! Usage: `cargo run -p blitz-code-editor --example editor [--cpu] [--wrap] [file]`
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -366,10 +366,12 @@ impl ApplicationHandler for App {
 
 fn main() {
     let mut use_cpu = false;
+    let mut wrap = false;
     let mut path = None;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--cpu" => use_cpu = true,
+            "--wrap" => wrap = true,
             _ => path = Some(arg),
         }
     }
@@ -380,7 +382,7 @@ fn main() {
     };
 
     let app = App {
-        editor: common::open(path.as_deref()),
+        editor: common::open(path.as_deref(), wrap),
         text_cx: TextContext::new(),
         renderer,
         window: None,

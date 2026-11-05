@@ -14,7 +14,7 @@ use floem_editor_core::{
 use kurbo::{Point, Rect, Size, Vec2};
 
 use crate::highlight::{HighlightCache, SyntaxHighlighter};
-use crate::layout::{LineCache, Metrics, caret_x, col_at_x, line_range};
+use crate::layout::{LayoutConfig, LineCache, Metrics, caret_point, col_at_point};
 use crate::{
     EditorInput, EditorStyle, ImeInput, Key, KeyInput, Modifiers, PointerButton, ScrollDelta,
     TextContext, Theme,
@@ -320,11 +320,20 @@ impl CodeEditor {
             self.metrics = Metrics::measure(cx, &self.style);
             self.measured_style = Some(self.style.clone());
         }
-        let num_lines = self.buffer.num_lines();
-        if self
-            .cache
-            .configure(&self.style, self.metrics, self.theme.foreground, num_lines)
-        {
+        // Leave a column free at the right edge for the caret. Wrapping is off until the editor
+        // has a size, rather than wrapping at every character.
+        let wrap_width = (self.style.soft_wrap && self.size.width > 0.0)
+            .then(|| {
+                (self.text_area_width() - self.metrics.char_width).max(self.metrics.char_width)
+            })
+            .map(|width| width as f32);
+        let config = LayoutConfig {
+            style: self.style.clone(),
+            metrics: self.metrics,
+            color: self.theme.foreground,
+            wrap_width,
+        };
+        if self.cache.configure(config, self.buffer.num_lines()) {
             self.clamp_scroll();
         }
     }
@@ -361,52 +370,62 @@ impl CodeEditor {
         (self.size.width - self.text_x()).max(0.0)
     }
 
-    /// The x position (in text coordinates) of the caret at `offset`
-    fn offset_x(&mut self, cx: &mut TextContext, offset: usize) -> f64 {
-        let line = self.buffer.line_of_offset(offset);
-        let col = offset - self.buffer.offset_of_line(line);
-        caret_x(self.cache.line(cx, &self.buffer, line), col)
+    // Text coordinates have their origin at the start of the first line, before scrolling.
+    // Lines are a whole number of rows tall: more than one when they soft wrap.
+
+    /// The top of `line` in text coordinates
+    pub(crate) fn line_top(&self, line: usize) -> f64 {
+        self.cache.rows().before(line) as f64 * self.metrics.line_height
     }
 
-    /// The offset on `line` closest to `x` (in text coordinates)
-    fn offset_at_x(&mut self, cx: &mut TextContext, line: usize, x: f64) -> usize {
-        let range = line_range(&self.buffer, line);
-        let col = col_at_x(self.cache.line(cx, &self.buffer, line), x);
-        (range.start + col).min(range.end)
+    /// The top-left corner of the caret at `offset`, in text coordinates
+    fn offset_point(&mut self, cx: &mut TextContext, offset: usize) -> Point {
+        let line = self.buffer.line_of_offset(offset);
+        let col = offset - self.buffer.offset_of_line(line);
+        let point = caret_point(self.cache.line(cx, &self.buffer, line), col);
+        Point::new(point.x, self.line_top(line) + point.y)
+    }
+
+    /// The row (counting from the top of the text) of the caret at `offset`
+    fn offset_row(&mut self, cx: &mut TextContext, offset: usize) -> usize {
+        (self.offset_point(cx, offset).y / self.metrics.line_height).round() as usize
+    }
+
+    /// The offset closest to a point in text coordinates
+    fn offset_at_text_point(&mut self, cx: &mut TextContext, point: Point) -> usize {
+        let lh = self.metrics.line_height;
+        let (line, row) = self.cache.rows().line_at((point.y.max(0.0) / lh) as usize);
+        let line_start = self.buffer.offset_of_line(line);
+        let layout = self.cache.line(cx, &self.buffer, line);
+        let col = col_at_point(layout, Point::new(point.x, (row as f64 + 0.5) * lh));
+        (line_start + col).min(self.buffer.line_end_offset(line, true))
     }
 
     /// The offset closest to a point in editor coordinates
     fn offset_at_point(&mut self, cx: &mut TextContext, pos: Point) -> usize {
-        let y = pos.y + self.scroll.y;
-        let line = if y < 0.0 {
-            0
-        } else {
-            ((y / self.metrics.line_height) as usize).min(self.buffer.last_line())
-        };
-        let x = pos.x - self.text_x() + self.scroll.x;
-        self.offset_at_x(cx, line, x)
+        let point = Point::new(pos.x - self.text_x(), pos.y) + self.scroll;
+        self.offset_at_text_point(cx, point)
     }
 
     /// The primary caret's rectangle in editor coordinates
     fn caret_rect(&mut self, cx: &mut TextContext) -> Rect {
         let offset = self.caret();
-        let line = self.buffer.line_of_offset(offset);
-        let mut x = self.offset_x(cx, offset);
+        let mut point = self.offset_point(cx, offset);
         if let Some(preedit) = &self.preedit {
+            let line = self.buffer.line_of_offset(offset);
             let col = offset - self.buffer.offset_of_line(line);
             let ime_col = col + preedit.cursor.map_or(preedit.text.len(), |c| c.1);
             let text = preedit.text.clone();
             let layout = self
                 .cache
                 .line_with_preedit(cx, &self.buffer, line, col, &text);
-            x = caret_x(&layout, ime_col);
+            point = caret_point(&layout, ime_col) + Vec2::new(0.0, self.line_top(line));
         }
-        let x = self.text_x() + x - self.scroll.x;
-        let y = line as f64 * self.metrics.line_height - self.scroll.y;
-        Rect::new(x, y, x + 1.0, y + self.metrics.line_height)
+        let origin = Point::new(self.text_x() + point.x, point.y) - self.scroll;
+        Rect::from_origin_size(origin, Size::new(1.0, self.metrics.line_height))
     }
 
-    fn page_lines(&self) -> usize {
+    fn page_rows(&self) -> usize {
         ((self.size.height / self.metrics.line_height) as usize)
             .saturating_sub(1)
             .max(1)
@@ -416,10 +435,14 @@ impl CodeEditor {
 
     fn max_scroll(&self) -> Vec2 {
         let lh = self.metrics.line_height;
-        // Allow scrolling the last line to the top of the viewport
-        let y = self.buffer.last_line() as f64 * lh;
-        let content_width = self.cache.max_width() + 2.0 * self.metrics.char_width;
-        let x = (content_width - self.text_area_width()).max(0.0);
+        // Allow scrolling the last row to the top of the viewport
+        let y = self.cache.rows().total().saturating_sub(1) as f64 * lh;
+        let x = if self.style.soft_wrap {
+            0.0
+        } else {
+            let content_width = self.cache.max_width() + 2.0 * self.metrics.char_width;
+            (content_width - self.text_area_width()).max(0.0)
+        };
         Vec2::new(x, y)
     }
 
@@ -431,15 +454,13 @@ impl CodeEditor {
 
     fn scroll_to_offset(&mut self, cx: &mut TextContext, offset: usize) {
         let lh = self.metrics.line_height;
-        let line = self.buffer.line_of_offset(offset);
-        let top = line as f64 * lh;
+        let Point { x, y: top } = self.offset_point(cx, offset);
         if top < self.scroll.y {
             self.scroll.y = top;
         } else if top + lh > self.scroll.y + self.size.height {
             self.scroll.y = top + lh - self.size.height;
         }
 
-        let x = self.offset_x(cx, offset);
         let margin = 2.0 * self.metrics.char_width;
         let width = self.text_area_width();
         if x - margin < self.scroll.x {
@@ -697,24 +718,27 @@ impl CodeEditor {
             Movement::DocStart => 0,
             Movement::DocEnd => self.buffer.len(),
             Movement::Up | Movement::Down | Movement::PageUp | Movement::PageDown => {
+                // Move by visual rows, so the caret steps through wrapped lines
+                let point = self.offset_point(cx, offset);
                 let x = match region.horiz {
                     Some(ColPosition::Col(x)) => x,
-                    _ => self.offset_x(cx, offset),
+                    _ => point.x,
                 };
                 horiz = Some(ColPosition::Col(x));
                 let delta = match movement {
                     Movement::Up => -1,
                     Movement::Down => 1,
-                    Movement::PageUp => -(self.page_lines() as isize),
-                    _ => self.page_lines() as isize,
+                    Movement::PageUp => -(self.page_rows() as isize),
+                    _ => self.page_rows() as isize,
                 };
-                let target = line as isize + delta;
+                let lh = self.metrics.line_height;
+                let target = (point.y / lh).round() as isize + delta;
                 if target < 0 {
                     0
-                } else if target as usize > self.buffer.last_line() {
+                } else if target as usize >= self.cache.rows().total() {
                     self.buffer.len()
                 } else {
-                    self.offset_at_x(cx, target as usize, x)
+                    self.offset_at_text_point(cx, Point::new(x, target as f64 * lh))
                 }
             }
         };

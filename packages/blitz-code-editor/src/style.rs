@@ -13,6 +13,8 @@ pub struct EditorStyle {
     pub tab_size: usize,
     /// Whether to show the line number gutter
     pub show_gutter: bool,
+    /// Whether to wrap long lines at the edge of the editor instead of scrolling horizontally
+    pub soft_wrap: bool,
 }
 
 impl Default for EditorStyle {
@@ -23,6 +25,7 @@ impl Default for EditorStyle {
             line_height: 1.5,
             tab_size: 4,
             show_gutter: true,
+            soft_wrap: false,
         }
     }
 }
