@@ -18,7 +18,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use blitz_traits::DocumentId;
 use blitz_traits::net::{
     AbortSignal, Bytes, NetHandler, NetObserver, NetProvider, Request, RequestObserver,
-    ResponseInfo,
+    ResponseInfo, http,
 };
 
 use crate::DevtoolsWaker;
@@ -139,9 +139,18 @@ impl NetworkLog {
     /// Log a request about to be sent, returning its id and (guessed) type
     fn push_request(&self, doc_id: DocumentId, request: &Request) -> (u64, ResourceType) {
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let resource_type = guess_mime_type(request.url.as_str(), &[])
-            .map(ResourceType::from_mime_type)
-            .unwrap_or(ResourceType::Other);
+        let accepts_html = request
+            .headers
+            .get(http::header::ACCEPT)
+            .and_then(|accept| accept.to_str().ok())
+            .is_some_and(|accept| accept.starts_with("text/html"));
+        let resource_type = if accepts_html {
+            ResourceType::Document
+        } else {
+            guess_mime_type(request.url.as_str(), &[])
+                .map(ResourceType::from_mime_type)
+                .unwrap_or(ResourceType::Other)
+        };
         let mut headers = header_list(&request.headers);
         if let Some(content_type) = &request.content_type {
             headers.push(("Content-Type".to_string(), content_type.clone()));
@@ -187,9 +196,11 @@ impl NetworkLog {
                 .unwrap_or("application/octet-stream")
                 .to_string()
         });
-        let resource_type = match ResourceType::from_mime_type(&mime_type) {
-            ResourceType::Other => resource_type,
-            sniffed => sniffed,
+        // The response's type only refines an unknown request type: e.g. a
+        // missing image's HTML error page is still an image request
+        let resource_type = match resource_type {
+            ResourceType::Other => ResourceType::from_mime_type(&mime_type),
+            requested => requested,
         };
         self.push(
             doc_id,

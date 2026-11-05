@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use blitz_dom::{DocumentConfig, FontContext, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
+use blitz_traits::net::http;
 use blitz_traits::{
     DocumentId,
     net::{AbortController, AbortSignal, Request, Url},
@@ -115,7 +116,13 @@ impl DocumentLoader {
             *slot = Some(controller);
         }
 
-        let req = req.signal(signal.clone());
+        let mut req = req.signal(signal.clone());
+        if !req.headers.contains_key(http::header::ACCEPT) {
+            req.headers.insert(
+                http::header::ACCEPT,
+                http::HeaderValue::from_static("text/html,application/xhtml+xml,*/*;q=0.8"),
+            );
+        }
 
         // Reserve the id of the document created from the response, so that
         // the request for it is attributed to it (e.g. by devtools)
