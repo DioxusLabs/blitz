@@ -48,6 +48,9 @@ pub enum MutationRecord {
 pub struct NodeInserted {
     pub parent_id: NodeId,
     pub node_id: NodeId,
+    /// The nearest preceding sibling at the time of insertion that devtools
+    /// show (skipping whitespace-only text nodes and anonymous blocks), if any
+    pub previous_sibling_id: Option<NodeId>,
 }
 
 /// `node_id` was removed from the child list of `parent_id` (it may since

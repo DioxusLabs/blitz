@@ -932,6 +932,7 @@ impl DocumentMutator<'_> {
                     MutationRecord::NodeInserted(NodeInserted {
                         parent_id,
                         node_id: child_id,
+                        previous_sibling_id: self.devtools_previous_sibling(parent_id, child_id),
                     })
                 );
             }
@@ -971,6 +972,18 @@ impl DocumentMutator<'_> {
         }
 
         self.maybe_record_node(parent_id);
+    }
+
+    /// The nearest preceding sibling of `node_id` in `parent_id`'s children
+    /// that devtools show (not a whitespace-only text node or anonymous block)
+    #[cfg(feature = "devtools")]
+    fn devtools_previous_sibling(&self, parent_id: NodeId, node_id: NodeId) -> Option<NodeId> {
+        let parent = &self.doc.nodes[parent_id];
+        let index = parent.index_of_child(node_id)?;
+        parent.children[..index].iter().rev().copied().find(|id| {
+            let node = &self.doc.nodes[*id];
+            !node.is_whitespace_node() && !node.is_anonymous()
+        })
     }
 
     // Tree mutation methods (that defer to other methods)
@@ -2005,8 +2018,13 @@ mod test {
             }
         }
 
-        let inserted =
-            |parent_id, node_id| MutationRecord::NodeInserted(NodeInserted { parent_id, node_id });
+        let inserted = |parent_id, node_id, previous_sibling_id| {
+            MutationRecord::NodeInserted(NodeInserted {
+                parent_id,
+                node_id,
+                previous_sibling_id,
+            })
+        };
         let removed =
             |parent_id, node_id| MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id });
         let attr_changed = |node_id, name: &str| {
@@ -2039,7 +2057,7 @@ mod test {
         mutator.append_children(root_id, &[div]);
         assert!(take().is_empty());
         mutator.flush();
-        assert_eq!(take(), [inserted(root_id, div)]);
+        assert_eq!(take(), [inserted(root_id, div, None)]);
 
         mutator.set_attribute(div, qual_name!("class"), "c");
         mutator.clear_attribute(div, qual_name!("class"));
@@ -2060,7 +2078,7 @@ mod test {
                 attr_changed(div, "class"),
                 text_changed(text),
                 text_changed(text),
-                inserted(div, comment),
+                inserted(div, comment, Some(text)),
                 text_changed(comment),
             ]
         );
@@ -2081,15 +2099,22 @@ mod test {
         assert_eq!(
             take(),
             [
-                inserted(root_id, span),
+                inserted(root_id, span, Some(div)),
                 removed(div, text),
-                inserted(span, text),
+                inserted(span, text, None),
                 removed(root_id, span),
-                inserted(root_id, span),
+                inserted(root_id, span, Some(div)),
                 removed(span, text),
                 removed(root_id, div),
             ]
         );
+
+        // Whitespace-only text is skipped when finding the previous sibling
+        let ws = mutator.create_text_node(" ");
+        let b = mutator.create_element(qual_name!("b"), vec![]);
+        mutator.append_children(span, &[ws, b]);
+        mutator.flush();
+        assert_eq!(take(), [inserted(span, ws, None), inserted(span, b, None)]);
         drop(mutator);
     }
 
