@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 /// Vendored Bootstrap 3.3.7, the stylesheet the benchmark spec uses.
 const BOOTSTRAP_CSS: &str = include_str!("./assets/bootstrap.min.css");
+const GLYPHICONS_CSS: &str = include_str!("./assets/glyphicons.css");
 
 const ADJECTIVES: &[&str] = &[
     "pretty",
@@ -90,6 +91,7 @@ fn app() -> Element {
 
     rsx! {
         style { {BOOTSTRAP_CSS} }
+        style { {GLYPHICONS_CSS} }
         div { class: "container",
             div { class: "jumbotron",
                 div { class: "row",
