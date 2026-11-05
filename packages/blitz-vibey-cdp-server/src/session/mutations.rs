@@ -11,7 +11,9 @@ use super::{
     is_known_to_frontend,
 };
 use crate::MessageWriter;
-use blitz_traits::devtools::MutationRecord;
+use blitz_traits::devtools::{
+    AttributeChanged, CharacterDataChanged, MutationRecord, NodeInserted, NodeRemoved,
+};
 
 impl Session {
     /// Emit the events describing a batch of mutations to this session's
@@ -34,10 +36,10 @@ impl Session {
         let mut pending_inserts = HashMap::new();
         for (index, record) in records.clone().enumerate() {
             match record {
-                MutationRecord::Inserted { parent_id, node_id } => {
+                MutationRecord::NodeInserted(NodeInserted { parent_id, node_id }) => {
                     pending_inserts.insert((*parent_id, *node_id), index);
                 }
-                MutationRecord::Removed { parent_id, node_id } => {
+                MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id }) => {
                     if let Some(insert_index) = pending_inserts.remove(&(*parent_id, *node_id)) {
                         cancelled.insert(insert_index);
                         cancelled.insert(index);
@@ -51,7 +53,7 @@ impl Session {
         // siblings, which removed nodes no longer are
         let mut count_updates = Vec::new();
         for (index, record) in records.clone().enumerate() {
-            let MutationRecord::Removed { parent_id, node_id } = *record else {
+            let MutationRecord::NodeRemoved(NodeRemoved { parent_id, node_id }) = *record else {
                 continue;
             };
             if cancelled.contains(&index) {
@@ -73,7 +75,7 @@ impl Session {
         // Insertions of nodes still in the parent they were inserted into
         let mut inserted: Vec<(NodeId, usize, NodeId)> = Vec::new();
         for (index, record) in records.clone().enumerate() {
-            let MutationRecord::Inserted { parent_id, node_id } = *record else {
+            let MutationRecord::NodeInserted(NodeInserted { parent_id, node_id }) = *record else {
                 continue;
             };
             if cancelled.contains(&index) {
@@ -124,7 +126,7 @@ impl Session {
         let mut changed = HashSet::new();
         for record in records {
             match record {
-                MutationRecord::AttributeChanged { node_id, name } => {
+                MutationRecord::AttributeChanged(AttributeChanged { node_id, name }) => {
                     let node_id = *node_id;
                     if !changed.insert((node_id, Some(name.as_str())))
                         || in_inserted_subtree(node_id)
@@ -151,7 +153,7 @@ impl Session {
                         ),
                     }
                 }
-                MutationRecord::CharacterDataChanged { node_id } => {
+                MutationRecord::CharacterDataChanged(CharacterDataChanged { node_id }) => {
                     let node_id = *node_id;
                     if !changed.insert((node_id, None))
                         || in_inserted_subtree(node_id)
