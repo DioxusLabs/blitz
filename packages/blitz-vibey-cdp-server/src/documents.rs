@@ -4,9 +4,10 @@
 //! own.
 
 use blitz_dom::BaseDocument;
+use blitz_traits::DocumentId;
 
 /// Collect the id of a document and (recursively) all of its sub-documents
-pub fn collect_document_ids(doc: &BaseDocument, ids: &mut Vec<usize>) {
+pub fn collect_document_ids(doc: &BaseDocument, ids: &mut Vec<DocumentId>) {
     ids.push(doc.id());
     for node_id in doc.sub_document_node_ids() {
         if let Some(sub_doc) = doc.get_node(node_id).and_then(|node| node.subdoc()) {
@@ -19,7 +20,7 @@ pub fn collect_document_ids(doc: &BaseDocument, ids: &mut Vec<usize>) {
 /// itself and (recursively) its sub-documents. Returns whether it was found.
 pub fn with_document_in(
     doc: &mut BaseDocument,
-    id: usize,
+    id: DocumentId,
     cb: &mut dyn FnMut(&mut BaseDocument),
 ) -> bool {
     if doc.id() == id {
@@ -38,7 +39,7 @@ pub fn with_document_in(
 
 /// The id of the document with the element picker active: the document itself
 /// or (recursively) one of its sub-documents
-pub fn picking_document_id(doc: &BaseDocument) -> Option<usize> {
+pub fn picking_document_id(doc: &BaseDocument) -> Option<DocumentId> {
     if doc.devtools().element_picker {
         return Some(doc.id());
     }
@@ -55,7 +56,7 @@ pub fn picking_document_id(doc: &BaseDocument) -> Option<usize> {
 /// mirroring how pointer events are forwarded to sub-documents). A
 /// sub-document is only found when its host element is hit at the point, so
 /// points over the UI around it (e.g. a browser toolbar) find nothing.
-pub fn find_picking_document(doc: &BaseDocument, x: f32, y: f32) -> Option<(usize, f32, f32)> {
+pub fn find_picking_document(doc: &BaseDocument, x: f32, y: f32) -> Option<(DocumentId, f32, f32)> {
     if doc.devtools().element_picker {
         return Some((doc.id(), x, y));
     }

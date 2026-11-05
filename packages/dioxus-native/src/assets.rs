@@ -1,4 +1,5 @@
 use blitz_shell::BlitzShellProxy;
+use blitz_traits::DocumentId;
 use std::sync::Arc;
 
 use blitz_traits::net::{NetHandler, NetProvider, Request};
@@ -39,7 +40,7 @@ impl DioxusNativeNetProvider {
 }
 
 impl NetProvider for DioxusNativeNetProvider {
-    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+    fn fetch(&self, doc_id: DocumentId, request: Request, handler: Box<dyn NetHandler>) {
         if request.url.scheme() == "dioxus" {
             #[allow(clippy::single_match)] // cfg'd code
             match dioxus_asset_resolver::native::serve_asset(request.url.path()) {

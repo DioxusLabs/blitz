@@ -13,11 +13,13 @@ use std::sync::{
 use std::{ops::Deref, path::PathBuf};
 pub use url::Url;
 
+use crate::DocumentId;
+
 /// A type that fetches resources for a Document.
 ///
 /// This may be over the network via http(s), via the filesystem, or some other method.
 pub trait NetProvider: Send + Sync + 'static {
-    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>);
+    fn fetch(&self, doc_id: DocumentId, request: Request, handler: Box<dyn NetHandler>);
 
     /// Whether this provider is a no-op (e.g. `DummyNetProvider`) that will never
     /// deliver resources. When true, callers must NOT register resources as
@@ -41,11 +43,11 @@ pub trait NetHandler: Send + Sync + 'static {
 /// A callback which gets called every time a network request completes
 // Q: Should we use std::task::Waker for this?
 pub trait NetWaker: Send + Sync + 'static {
-    fn wake(&self, client_id: usize);
+    fn wake(&self, doc_id: DocumentId);
 }
 
-impl<F: Fn(usize) + Send + Sync + 'static> NetWaker for F {
-    fn wake(&self, doc_id: usize) {
+impl<F: Fn(DocumentId) + Send + Sync + 'static> NetWaker for F {
+    fn wake(&self, doc_id: DocumentId) {
         self(doc_id)
     }
 }
@@ -169,7 +171,7 @@ impl From<PathBuf> for EntryValue {
 #[derive(Default)]
 pub struct DummyNetProvider;
 impl NetProvider for DummyNetProvider {
-    fn fetch(&self, _doc_id: usize, _request: Request, _handler: Box<dyn NetHandler>) {}
+    fn fetch(&self, _doc_id: DocumentId, _request: Request, _handler: Box<dyn NetHandler>) {}
     fn is_noop(&self) -> bool {
         true
     }
