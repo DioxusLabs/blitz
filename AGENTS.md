@@ -33,6 +33,10 @@ WPT is the main correctness signal; results are deterministic.
 - `apps/browser` paints pages as sub-documents (`draw_sub_document` runs its own `paint_scene`). Any extra top-level paint pass also has to run per sub-document, or it works in examples but not in the browser.
 - Generated form-control content must be layout-only anonymous content, not real DOM children (those are visible to selectors/scripts and break WPT).
 
+## Code editor (`packages/parley_code_editor`)
+- Standalone code editing control (floem-editor-core + Parley + AnyRender); doesn't depend on blitz-dom. It may move out of this repo.
+- `cargo test -p parley_code_editor`; render to a PNG with `cargo run -p parley_code_editor --example screenshot [--wrap] [file] [out.png]`; open a window with `--example editor [--cpu] [--wrap] [file]`.
+
 ## Pull requests
 - Human-written PR descriptions are preferred. Write a short plain-prose explanation of what changed and why, the way a person would. Skip generated boilerplate, heading templates and file-by-file change lists.
 - One feature per PR; follow-ups go in a new PR. Don't implement unrelated features to fix WPT losses. Note the losses in the PR description instead.
