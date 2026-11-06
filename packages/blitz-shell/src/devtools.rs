@@ -2,6 +2,8 @@
 //! the CDP server, giving it access to the application's documents, and
 //! routing element-picker input to it.
 
+use blitz_traits::DocumentId;
+use blitz_traits::net::NetObserver;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,7 +39,7 @@ struct WindowsDocumentProvider<'a, Rend: WindowRenderer> {
 }
 
 impl<Rend: WindowRenderer> DocumentProvider for WindowsDocumentProvider<'_, Rend> {
-    fn document_ids(&self) -> Vec<usize> {
+    fn document_ids(&self) -> Vec<DocumentId> {
         let mut ids = Vec::new();
         for view in self.windows.values() {
             documents::collect_document_ids(&view.doc.inner(), &mut ids);
@@ -45,7 +47,7 @@ impl<Rend: WindowRenderer> DocumentProvider for WindowsDocumentProvider<'_, Rend
         ids
     }
 
-    fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument)) {
+    fn with_document(&mut self, id: DocumentId, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument)) {
         for view in self.windows.values_mut() {
             if documents::with_document_in(&mut view.doc.inner_mut(), id, cb) {
                 return;
@@ -91,7 +93,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     /// the CDP server doesn't embed a frontend, open Chrome's bundled frontend
     /// instead, which only Chrome can open (and only where it can be launched
     /// directly, e.g. not on Linux), printing its URL if it can't be.
-    pub fn open_devtools(&mut self, doc_id: usize) {
+    pub fn open_devtools(&mut self, doc_id: DocumentId) {
         if self.devtools.cdp.is_none() {
             self.start_cdp_server(0);
         }
@@ -121,6 +123,14 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         {
             eprintln!("CDP: failed to open devtools at {url}: {err}");
         }
+    }
+
+    /// The CDP server's network observer (if the server is started), to
+    /// install on the application's net provider (e.g. with
+    /// `blitz_net::Provider::set_observer`) so that it can record requests
+    /// with their real statuses and headers
+    pub fn net_observer(&mut self) -> Option<Box<dyn NetObserver>> {
+        self.devtools.cdp.as_mut().map(|cdp| cdp.net_observer())
     }
 
     /// Run `cb` with the CDP server (if started) and a provider for the

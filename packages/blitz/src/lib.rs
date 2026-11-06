@@ -63,7 +63,7 @@ pub fn launch_url(url: &str) {
     let application = BlitzApplication::new(proxy, reciever);
 
     let (url, bytes) = rt
-        .block_on(net_provider.fetch_async(blitz_traits::net::Request::get(url)))
+        .block_on(net_provider.fetch_async(None, blitz_traits::net::Request::get(url)))
         .unwrap();
     let html = std::str::from_utf8(bytes.as_ref()).unwrap();
 

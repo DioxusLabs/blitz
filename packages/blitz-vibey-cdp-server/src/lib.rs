@@ -15,11 +15,12 @@
 //!
 //! [Chrome DevTools Protocol]: https://chromedevtools.github.io/devtools-protocol/
 
+use blitz_traits::DocumentId;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, SyncSender, channel};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use blitz_traits::node_id::NodeId;
 use tungstenite::Message;
@@ -34,10 +35,10 @@ mod session;
 mod style_sheets;
 mod transport;
 
-use blitz_traits::net::NetProvider;
+use blitz_traits::net::{NetObserver, NetProvider};
 use devtools_provider::MutationLog;
 pub use frontend::frontend_url;
-use network::{NetworkLog, RecordingNetProvider};
+use network::{LogObserver, NetworkLog, NetworkRecord, RecordingNetProvider};
 use session::Session;
 
 pub(crate) type JsonValue = serde_json::Value;
@@ -47,10 +48,10 @@ pub(crate) type JsonValue = serde_json::Value;
 /// which owns the documents.
 pub trait DocumentProvider {
     /// The ids of the currently open documents (in tab order)
-    fn document_ids(&self) -> Vec<usize>;
+    fn document_ids(&self) -> Vec<DocumentId>;
     /// Run a callback with mutable access to the document with the given id.
     /// The callback is not run if no such document exists.
-    fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument));
+    fn with_document(&mut self, id: DocumentId, cb: &mut dyn FnMut(&mut blitz_dom::BaseDocument));
 }
 
 /// A waker used to notify the embedder's event loop that there are devtools
@@ -66,11 +67,11 @@ pub trait DevtoolsWaker: Send + Sync {
 #[derive(Debug, Clone, Copy)]
 pub enum PickerEvent {
     /// The mouse moved over the document
-    Hovered { doc_id: usize, x: f32, y: f32 },
+    Hovered { doc_id: DocumentId, x: f32, y: f32 },
     /// The primary mouse button was pressed over the document
-    Picked { doc_id: usize, x: f32, y: f32 },
+    Picked { doc_id: DocumentId, x: f32, y: f32 },
     /// Picking was cancelled (e.g. the user pressed Escape)
-    Canceled { doc_id: usize },
+    Canceled { doc_id: DocumentId },
 }
 
 pub struct CdpServer {
@@ -84,7 +85,17 @@ pub struct CdpServer {
     /// The recording providers currently installed on documents, keyed by
     /// their address
     net_recorders: HashMap<*const (), Arc<RecordingNetProvider>>,
+    /// Whether the embedder installed [`Self::net_observer`] (so documents'
+    /// providers aren't wrapped)
+    net_observer_installed: bool,
+    /// Network records of documents that don't exist (yet), with the time
+    /// they were logged: a document's requests (e.g. for its HTML) can be
+    /// observed before it is created
+    pending_network: Vec<(Instant, DocumentId, NetworkRecord)>,
 }
+
+/// How long records of documents that don't exist are kept
+const PENDING_NETWORK_RECORD_LIFETIME: Duration = Duration::from_secs(30);
 
 impl CdpServer {
     pub fn new(waker: Arc<dyn DevtoolsWaker>) -> Self {
@@ -94,11 +105,27 @@ impl CdpServer {
             mutation_log: Arc::new(MutationLog::new(waker.clone())),
             network_log: Arc::new(NetworkLog::new(waker.clone())),
             net_recorders: HashMap::new(),
+            net_observer_installed: false,
+            pending_network: Vec::new(),
             waker,
             event_sender: sender,
             event_queue: receiver,
             local_addr: Arc::new(std::sync::Mutex::new(None)),
         }
+    }
+
+    /// A [`NetObserver`] recording the requests of inspected documents, to
+    /// install on the embedder's net provider (e.g. with
+    /// `blitz_net::Provider::set_observer`). It reports real response
+    /// statuses and headers, and requests made for documents that don't
+    /// exist yet (if they are created with the id the request was made with).
+    ///
+    /// Once this has been called, the server relies on the observer and no
+    /// longer wraps the `NetProvider` of inspected documents to record
+    /// their requests.
+    pub fn net_observer(&mut self) -> Box<dyn NetObserver> {
+        self.net_observer_installed = true;
+        Box::new(LogObserver(Arc::clone(&self.network_log)))
     }
 
     /// The address the server is listening on (available once the listener
@@ -182,10 +209,16 @@ impl CdpServer {
                 });
             }
         }
+        self.network_log.set_active(!recorded.is_empty());
+        if recorded.is_empty() {
+            self.pending_network.clear();
+        }
+        if self.net_observer_installed {
+            recorded.clear();
+        }
         if recorded.is_empty() && self.net_recorders.is_empty() {
             return;
         }
-        self.network_log.set_active(!recorded.is_empty());
         let recorders = &mut self.net_recorders;
         let log = &self.network_log;
         for doc_id in docs.document_ids() {
@@ -218,7 +251,26 @@ impl CdpServer {
     /// Send the events for all logged network activity to the sessions
     /// recording the documents that issued the requests
     fn flush_network(&mut self, docs: &mut dyn DocumentProvider) {
-        let records = self.network_log.take();
+        let logged = self.network_log.take();
+        if logged.is_empty() && self.pending_network.is_empty() {
+            return;
+        }
+        // Keep the records of documents that don't exist (yet) for later
+        let now = Instant::now();
+        let existing: HashSet<DocumentId> = docs.document_ids().into_iter().collect();
+        let mut records = Vec::new();
+        let mut pending = Vec::new();
+        let logged = logged
+            .into_iter()
+            .map(|(doc_id, record)| (now, doc_id, record));
+        for (time, doc_id, record) in self.pending_network.drain(..).chain(logged) {
+            if existing.contains(&doc_id) {
+                records.push((doc_id, record));
+            } else if now.duration_since(time) < PENDING_NETWORK_RECORD_LIFETIME {
+                pending.push((time, doc_id, record));
+            }
+        }
+        self.pending_network = pending;
         if records.is_empty() {
             return;
         }
@@ -404,7 +456,7 @@ pub(crate) struct CdpCommand {
 /// The id of a debuggable target
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TargetId {
-    /// A top-level document, by document id
+    /// A top-level document, by the numeric value of its document id
     Document(usize),
     /// Whichever document is hosted by an element (e.g. a browser tab's
     /// web view or an iframe), which stays the same target as the element
@@ -415,6 +467,7 @@ pub(crate) enum TargetId {
 /// An element hosting a sub-document
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SubDocumentHost {
+    /// The numeric value of the host document's id
     pub(crate) doc_id: usize,
     pub(crate) node_id: NodeId,
 }
@@ -432,12 +485,13 @@ impl TargetId {
     }
 
     /// The id of the document the target currently shows (if it exists)
-    pub(crate) fn resolve(&self, docs: &mut dyn DocumentProvider) -> Option<usize> {
+    pub(crate) fn resolve(&self, docs: &mut dyn DocumentProvider) -> Option<DocumentId> {
         match self {
-            TargetId::Document(doc_id) => docs.document_ids().contains(doc_id).then_some(*doc_id),
+            TargetId::Document(doc_id) => find_document_id(docs, *doc_id),
             TargetId::SubDocument(host) => {
+                let host_doc_id = find_document_id(docs, host.doc_id)?;
                 let mut sub_doc_id = None;
-                with_document(docs, host.doc_id, |doc| {
+                with_document(docs, host_doc_id, |doc| {
                     sub_doc_id = doc
                         .get_node(host.node_id)
                         .and_then(|node| node.subdoc())
@@ -464,23 +518,36 @@ impl std::fmt::Display for TargetId {
 /// `/devtools/page/{target_id}` WebSocket address, e.g. with [`frontend_url`]).
 /// A sub-document's target is its host element, so a session attached to it
 /// follows the host as it navigates to new documents.
-pub fn target_id(docs: &mut dyn DocumentProvider, doc_id: usize) -> Option<String> {
+pub fn target_id(docs: &mut dyn DocumentProvider, doc_id: DocumentId) -> Option<String> {
     list_targets(docs)
         .into_iter()
         .find(|&(_, id)| id == doc_id)
         .map(|(target_id, _)| target_id.to_string())
 }
 
+/// The id of the existing document whose id has the given numeric value
+fn find_document_id(docs: &dyn DocumentProvider, id: usize) -> Option<DocumentId> {
+    docs.document_ids()
+        .into_iter()
+        .find(|doc_id| doc_id.get() == id)
+}
+
 /// The current targets (in document order), each with the id of the
 /// document it shows
-fn list_targets(docs: &mut dyn DocumentProvider) -> Vec<(TargetId, usize)> {
+fn list_targets(docs: &mut dyn DocumentProvider) -> Vec<(TargetId, DocumentId)> {
     let doc_ids = docs.document_ids();
     let mut hosts = HashMap::new();
     for &doc_id in &doc_ids {
         with_document(docs, doc_id, |doc| {
             for node_id in doc.sub_document_node_ids() {
                 if let Some(sub_doc) = doc.get_node(node_id).and_then(|node| node.subdoc()) {
-                    hosts.insert(sub_doc.id(), SubDocumentHost { doc_id, node_id });
+                    hosts.insert(
+                        sub_doc.id(),
+                        SubDocumentHost {
+                            doc_id: doc_id.get(),
+                            node_id,
+                        },
+                    );
                 }
             }
         });
@@ -489,7 +556,7 @@ fn list_targets(docs: &mut dyn DocumentProvider) -> Vec<(TargetId, usize)> {
         .into_iter()
         .map(|doc_id| match hosts.get(&doc_id) {
             Some(host) => (TargetId::SubDocument(*host), doc_id),
-            None => (TargetId::Document(doc_id), doc_id),
+            None => (TargetId::Document(doc_id.get()), doc_id),
         })
         .collect()
 }
@@ -535,7 +602,7 @@ impl MessageWriter {
 /// Run a callback with access to the document with the given id (if it exists)
 fn with_document(
     docs: &mut dyn DocumentProvider,
-    doc_id: usize,
+    doc_id: DocumentId,
     cb: impl FnOnce(&mut blitz_dom::BaseDocument),
 ) {
     let mut cb = Some(cb);

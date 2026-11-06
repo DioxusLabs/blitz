@@ -64,7 +64,7 @@ pub trait ShellProvider: Send + Sync + 'static {
     fn drag_window(&self) {}
 
     /// Open developer tools inspecting the document with the given id
-    fn open_devtools(&self, doc_id: usize) {
+    fn open_devtools(&self, doc_id: crate::DocumentId) {
         let _ = doc_id;
     }
 }

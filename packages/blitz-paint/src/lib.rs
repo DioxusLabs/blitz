@@ -14,6 +14,7 @@ mod render;
 mod sizing;
 mod text;
 
+use blitz_traits::DocumentId;
 use std::collections::HashMap;
 
 use anyrender::{PaintScene, Scene};
@@ -30,7 +31,7 @@ const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
 const SELECTION_COLOR: Color = Color::from_rgb8(180, 213, 255);
 
 /// Pre-computed `Scene`s for each CustomWidget, keyed by `(document id, node id)`
-type CustomWidgetSceneMap = HashMap<(usize, NodeId), Scene>;
+type CustomWidgetSceneMap = HashMap<(DocumentId, NodeId), Scene>;
 
 /// Paint a [`blitz_dom::BaseDocument`] by pushing drawing commands into
 /// an impl [`anyrender::PaintScene`].

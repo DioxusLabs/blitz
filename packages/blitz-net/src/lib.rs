@@ -2,7 +2,12 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-use blitz_traits::net::{AbortSignal, Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
+use arc_swap::ArcSwapOption;
+use blitz_traits::DocumentId;
+use blitz_traits::net::{
+    AbortSignal, Body, Bytes, HeaderMap, NetHandler, NetObserver, NetProvider, NetWaker, Request,
+    RequestObserver, ResponseInfo,
+};
 use data_url::DataUrl;
 use std::{
     collections::HashMap,
@@ -79,6 +84,7 @@ pub struct Provider {
     client: Client,
     waker: Arc<dyn NetWaker>,
     per_host_limits: HostLimits,
+    observer: ArcSwapOption<Box<dyn NetObserver>>,
     #[cfg(feature = "cache")]
     cache_manager: CACacheManager,
 }
@@ -120,9 +126,23 @@ impl Provider {
             client,
             waker,
             per_host_limits: Arc::new(Mutex::new(HashMap::new())),
+            observer: ArcSwapOption::empty(),
             #[cfg(feature = "cache")]
             cache_manager,
         }
+    }
+
+    /// Set (or replace, or with `None` clear) the observer notified of every
+    /// request made through this provider
+    pub fn set_observer(&self, observer: Option<Box<dyn NetObserver>>) {
+        self.observer.store(observer.map(Arc::new));
+    }
+
+    fn observe(&self, doc_id: Option<DocumentId>, request: &Request) -> ObservedRequest {
+        let observer = self.observer.load();
+        let observer =
+            Option::as_ref(&observer).and_then(|observer| observer.request(doc_id, request));
+        ObservedRequest(observer.map(|observer| Arc::new(Mutex::new(Some(observer)))))
     }
     pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
         Arc::new(Self::new(waker))
@@ -149,11 +169,33 @@ impl Provider {
         client: Client,
         request: Request,
         per_host_limits: HostLimits,
+        observed: ObservedRequest,
+    ) -> Result<(String, Bytes), ProviderError> {
+        let signal = request.signal.clone();
+        let result = Self::fetch_resource(client, request, per_host_limits, &observed).await;
+        let canceled = matches!(result, Err(ProviderError::Abort))
+            || signal.is_some_and(|signal| signal.aborted());
+        observed.complete(&result, canceled);
+        result
+    }
+
+    async fn fetch_resource(
+        client: Client,
+        request: Request,
+        per_host_limits: HostLimits,
+        observed: &ObservedRequest,
     ) -> Result<(String, Bytes), ProviderError> {
         match request.url.scheme() {
             "data" => {
                 let data_url = DataUrl::process(request.url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
+                if observed.is_observed() {
+                    let mut headers = HeaderMap::new();
+                    if let Ok(mime_type) = data_url.mime_type().to_string().parse() {
+                        headers.insert(reqwest::header::CONTENT_TYPE, mime_type);
+                    }
+                    observed.response(request.url.as_str(), 200, "OK", &headers);
+                }
                 Ok((request.url.to_string(), Bytes::from(decoded.0)))
             }
             "file" => {
@@ -167,9 +209,10 @@ impl Provider {
                 #[cfg(target_arch = "wasm32")]
                 let path = request.url.path();
                 let file_content = std::fs::read(path)?;
+                observed.response(request.url.as_str(), 200, "OK", &HeaderMap::new());
                 Ok((request.url.to_string(), Bytes::from(file_content)))
             }
-            _ => Self::fetch_http(client, request, per_host_limits).await,
+            _ => Self::fetch_http(client, request, per_host_limits, observed).await,
         }
     }
 
@@ -177,6 +220,7 @@ impl Provider {
         client: Client,
         request: Request,
         per_host_limits: HostLimits,
+        observed: &ObservedRequest,
     ) -> Result<(String, Bytes), ProviderError> {
         // Acquire a per-host permit, held for the duration of the request, to
         // keep total in-flight requests per origin bounded.
@@ -211,9 +255,22 @@ impl Provider {
         let response = req.send().await?;
         let status = response.status();
         let final_url = response.url().to_string();
+        observed.response(
+            &final_url,
+            status.as_u16(),
+            status.canonical_reason().unwrap_or(""),
+            response.headers(),
+        );
 
         if status.is_success() {
             return Ok((final_url, response.bytes().await?));
+        }
+
+        // An observer sees the body of an error response too (but the
+        // request still fails)
+        if observed.is_observed() {
+            let body = response.bytes().await?;
+            observed.finished(&body);
         }
 
         #[cfg(feature = "tracing")]
@@ -229,18 +286,22 @@ impl Provider {
     }
 
     #[allow(clippy::type_complexity)]
+    /// Fetch a resource, calling `callback` with the result. `doc_id` is the
+    /// document the request is for (if any), as reported to the observer.
     pub fn fetch_with_callback(
         &self,
+        doc_id: Option<DocumentId>,
         request: Request,
         callback: Box<dyn FnOnce(Result<(String, Bytes), ProviderError>) + Send + Sync + 'static>,
     ) {
         #[cfg(feature = "tracing")]
         let url = request.url.to_string();
 
+        let observed = self.observe(doc_id, &request);
         let client = self.client.clone();
         let per_host_limits = self.per_host_limits.clone();
         spawn(async move {
-            let result = Self::fetch_inner(client, request, per_host_limits).await;
+            let result = Self::fetch_inner(client, request, per_host_limits, observed).await;
 
             #[cfg(feature = "tracing")]
             if let Err(e) = &result {
@@ -255,13 +316,21 @@ impl Provider {
         });
     }
 
-    pub async fn fetch_async(&self, request: Request) -> Result<(String, Bytes), ProviderError> {
+    /// Fetch a resource. `doc_id` is the document the request is for (if
+    /// any), as reported to the observer: it may be reserved for a document
+    /// that will be created from the response.
+    pub async fn fetch_async(
+        &self,
+        doc_id: Option<DocumentId>,
+        request: Request,
+    ) -> Result<(String, Bytes), ProviderError> {
         #[cfg(feature = "tracing")]
         let url = request.url.to_string();
 
+        let observed = self.observe(doc_id, &request);
         let client = self.client.clone();
         let per_host_limits = self.per_host_limits.clone();
-        let result = Self::fetch_inner(client, request, per_host_limits).await;
+        let result = Self::fetch_inner(client, request, per_host_limits, observed).await;
 
         #[cfg(feature = "tracing")]
         if let Err(e) = &result {
@@ -277,28 +346,33 @@ impl Provider {
 }
 
 impl NetProvider for Provider {
-    fn fetch(&self, doc_id: usize, mut request: Request, handler: Box<dyn NetHandler>) {
+    fn fetch(&self, doc_id: DocumentId, mut request: Request, handler: Box<dyn NetHandler>) {
         let client = self.client.clone();
         let per_host_limits = self.per_host_limits.clone();
 
         #[cfg(feature = "tracing")]
         tracing::info!(url = request.url.as_str(), "Fetching");
 
+        let observed = self.observe(Some(doc_id), &request);
         let waker = self.waker.clone();
         spawn(async move {
             let url = request.url.to_string();
 
             let signal = request.signal.take();
             let result = if let Some(signal) = signal {
-                AbortFetch::new(
+                let inner_observed = observed.clone();
+                let result = AbortFetch::new(
                     signal,
-                    Box::pin(
-                        async move { Self::fetch_inner(client, request, per_host_limits).await },
-                    ),
+                    Box::pin(async move {
+                        Self::fetch_inner(client, request, per_host_limits, inner_observed).await
+                    }),
                 )
-                .await
+                .await;
+                // An aborted fetch is dropped before it can notify the observer
+                observed.complete(&result, true);
+                result
             } else {
-                Self::fetch_inner(client, request, per_host_limits).await
+                Self::fetch_inner(client, request, per_host_limits, observed).await
             };
 
             match result {
@@ -315,6 +389,49 @@ impl NetProvider for Provider {
             };
             waker.wake(doc_id);
         });
+    }
+}
+
+/// The observer of a request (if it is observed), notified as the request
+/// progresses. Only the first of `finished`/`failed` is reported.
+#[derive(Clone)]
+struct ObservedRequest(Option<Arc<Mutex<PendingObserver>>>);
+
+type PendingObserver = Option<Box<dyn RequestObserver>>;
+
+impl ObservedRequest {
+    fn is_observed(&self) -> bool {
+        self.0.is_some()
+    }
+
+    fn response(&self, url: &str, status: u16, status_text: &str, headers: &HeaderMap) {
+        let Some(observer) = &self.0 else { return };
+        if let Some(observer) = observer.lock().unwrap().as_mut() {
+            observer.response(&ResponseInfo {
+                url,
+                status,
+                status_text,
+                headers,
+            });
+        }
+    }
+
+    fn take(&self) -> Option<Box<dyn RequestObserver>> {
+        self.0.as_ref()?.lock().unwrap().take()
+    }
+
+    fn finished(&self, body: &Bytes) {
+        if let Some(observer) = self.take() {
+            observer.finished(body);
+        }
+    }
+
+    fn complete(&self, result: &Result<(String, Bytes), ProviderError>, canceled: bool) {
+        let Some(observer) = self.take() else { return };
+        match result {
+            Ok((_, body)) => observer.finished(body),
+            Err(err) => observer.failed(&err.to_string(), canceled),
+        }
     }
 }
 
@@ -459,7 +576,7 @@ impl ReqwestExt for RequestBuilder {
 
 struct DummyNetWaker;
 impl NetWaker for DummyNetWaker {
-    fn wake(&self, _client_id: usize) {}
+    fn wake(&self, _doc_id: DocumentId) {}
 }
 
 #[cfg(test)]
@@ -493,13 +610,14 @@ mod tests {
         runtime.block_on(async {
             let completed = Arc::new(AtomicBool::new(false));
             let observed = completed.clone();
+            let expected_doc_id = DocumentId::new();
             let provider = Provider::new(Some(Arc::new(move |doc_id| {
-                assert_eq!(doc_id, 42);
+                assert_eq!(doc_id, expected_doc_id);
                 assert!(observed.load(Ordering::SeqCst));
             })));
             let (tx, rx) = tokio::sync::oneshot::channel();
             provider.fetch(
-                42,
+                expected_doc_id,
                 Request::get(url.parse().unwrap()),
                 Box::new(Handler { tx, completed }),
             );
@@ -527,6 +645,97 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         drop(listener);
         assert!(fetch(&format!("http://{addr}/missing.css")).is_err());
+    }
+
+    /// Records the events of observed requests
+    #[derive(Clone, Default)]
+    struct TestObserver(Arc<Mutex<Vec<String>>>);
+    impl NetObserver for TestObserver {
+        fn request(
+            &self,
+            doc_id: Option<DocumentId>,
+            request: &Request,
+        ) -> Option<Box<dyn RequestObserver>> {
+            let events = Arc::clone(&self.0);
+            events
+                .lock()
+                .unwrap()
+                .push(format!("request {} {}", doc_id.is_some(), request.url));
+            Some(Box::new(TestRequestObserver(events)))
+        }
+    }
+    struct TestRequestObserver(Arc<Mutex<Vec<String>>>);
+    impl RequestObserver for TestRequestObserver {
+        fn response(&mut self, response: &ResponseInfo<'_>) {
+            let content_type = response
+                .headers
+                .get("content-type")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("");
+            self.0.lock().unwrap().push(format!(
+                "response {} {} {content_type}",
+                response.status, response.status_text
+            ));
+        }
+        fn finished(self: Box<Self>, body: &Bytes) {
+            let body = String::from_utf8_lossy(body);
+            self.0.lock().unwrap().push(format!("finished {body}"));
+        }
+        fn failed(self: Box<Self>, _error: &str, canceled: bool) {
+            self.0.lock().unwrap().push(format!("failed {canceled}"));
+        }
+    }
+
+    #[test]
+    fn observer_sees_status_headers_and_error_bodies() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 4\r\nConnection: close\r\n\r\ngone").unwrap();
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let observer = TestObserver::default();
+        let provider = Provider::new(None);
+        provider.set_observer(Some(Box::new(observer.clone())));
+        runtime.block_on(async {
+            let data_url = "data:text/css,p{}".parse().unwrap();
+            provider
+                .fetch_async(Some(DocumentId::new()), Request::get(data_url))
+                .await
+                .unwrap();
+            let url = format!("http://{addr}/missing").parse().unwrap();
+            assert!(provider.fetch_async(None, Request::get(url)).await.is_err());
+        });
+        server.join().unwrap();
+        let events = observer.0.lock().unwrap().clone();
+        assert_eq!(
+            events,
+            [
+                "request true data:text/css,p{}".to_string(),
+                "response 200 OK text/css".to_string(),
+                "finished p{}".to_string(),
+                format!("request false http://{addr}/missing"),
+                "response 404 Not Found text/html".to_string(),
+                "finished gone".to_string(),
+            ]
+        );
+
+        // Clearing the observer stops observing
+        provider.set_observer(None);
+        runtime.block_on(async {
+            let data_url = "data:text/css,p{}".parse().unwrap();
+            provider
+                .fetch_async(None, Request::get(data_url))
+                .await
+                .unwrap();
+        });
+        assert_eq!(observer.0.lock().unwrap().len(), 6);
     }
 
     #[test]

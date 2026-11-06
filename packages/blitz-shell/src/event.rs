@@ -1,3 +1,4 @@
+use blitz_traits::DocumentId;
 use blitz_traits::navigation::NavigationOptions;
 use blitz_traits::net::NetWaker;
 use futures_util::task::ArcWake;
@@ -28,7 +29,7 @@ pub enum BlitzShellEvent {
     },
 
     RequestRedraw {
-        doc_id: usize,
+        doc_id: DocumentId,
     },
 
     /// Close a window programmatically (e.g. a custom titlebar close button).
@@ -51,7 +52,7 @@ pub enum BlitzShellEvent {
     /// Open devtools inspecting the document with the given id
     #[cfg(feature = "devtools")]
     OpenDevtools {
-        doc_id: usize,
+        doc_id: DocumentId,
     },
 
     /// An arbitary event from the Blitz embedder
@@ -113,8 +114,8 @@ impl BlitzShellProxy {
 }
 
 impl NetWaker for BlitzShellProxy {
-    fn wake(&self, client_id: usize) {
-        self.send_event_impl(BlitzShellEvent::RequestRedraw { doc_id: client_id })
+    fn wake(&self, doc_id: DocumentId) {
+        self.send_event_impl(BlitzShellEvent::RequestRedraw { doc_id })
     }
 }
 
