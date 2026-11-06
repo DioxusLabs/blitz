@@ -42,6 +42,8 @@ file-input = []
 scrollbars = []
 parallel-construct = []
 log-phase-times = ["debug_timer/enable"]
+# Report DOM mutations to a `DevtoolsProvider` (e.g. for a remote inspector)
+devtools = []
 
 [dependencies]
 # Blitz dependencies

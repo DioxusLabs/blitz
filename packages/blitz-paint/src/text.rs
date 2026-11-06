@@ -655,15 +655,16 @@ pub(crate) fn stroke_text<'a>(
                 let fill_color = brush_override
                     .unwrap_or_else(|| stack.last().map(|e| e.fill_color).unwrap_or(Color::BLACK));
 
-                // Approximates macOS font smoothing (stem dilation). The amounts are in device
-                // pixels per side, fitted to Safari's ink at 9-72px and 1x-3x scale. Safari keeps
-                // dilating at large sizes, so there is no ppem cutoff.
                 let (embolden, hint) = if FONT_EMBOLDEN_ENABLED {
-                    let fs = font_size as f64 * embolden_scale(fill_color);
-                    let e = kurbo::Vec2::new((0.0121 * fs).min(0.35), (0.015125 * fs).min(0.35));
-                    (e, false)
+                    (
+                        font_embolden(font_size as f64, fill_color, transform),
+                        false,
+                    )
                 } else if WINDOWS_FONT_EMBOLDEN_ENABLED {
-                    windows_embolden(font_size as f64, fill_color)
+                    (
+                        windows_embolden(font_size as f64, fill_color, transform),
+                        true,
+                    )
                 } else {
                     (kurbo::Vec2::default(), true)
                 };
@@ -773,6 +774,34 @@ pub(crate) fn draw_text_selection(
     });
 }
 
+/// Approximates macOS font smoothing (stem dilation). CoreGraphics dilates each side by an amount
+/// in device pixels that grows with the device ppem up to 0.3px (fitted to Safari's ink at 9-72px
+/// and 1x-3x scale), and keeps dilating at large sizes, so there is no ppem cutoff. glifo applies
+/// the embolden in user units, so the device amounts are divided by the transform's scale.
+fn font_embolden(font_size: f64, color: Color, transform: Affine) -> kurbo::Vec2 {
+    const MAX_DEVICE_EMBOLDEN: f64 = 0.3;
+    let Some((device_ppem, scale_x, scale_y)) = device_ppem_and_scale(font_size, transform) else {
+        return kurbo::Vec2::default();
+    };
+    let fs = device_ppem * embolden_scale(color);
+    kurbo::Vec2::new(
+        (0.0121 * fs).min(MAX_DEVICE_EMBOLDEN) / scale_x,
+        (0.015125 * fs).min(MAX_DEVICE_EMBOLDEN) / scale_y,
+    )
+}
+
+/// The font's device ppem and the transform's x/y scale, which device-pixel embolden amounts are
+/// divided by because glifo applies the embolden in user units.
+fn device_ppem_and_scale(font_size: f64, transform: Affine) -> Option<(f64, f64, f64)> {
+    let [a, b, c, d, _, _] = transform.as_coeffs();
+    let (scale_x, scale_y) = (a.hypot(b), c.hypot(d));
+    let device_ppem = font_size * (a * d - b * c).abs().sqrt();
+    if scale_x == 0.0 || scale_y == 0.0 || !device_ppem.is_finite() {
+        return None;
+    }
+    Some((device_ppem, scale_x, scale_y))
+}
+
 /// Scales Pathfinder's stem-darkening factors by the text's relative luminance. CoreText
 /// dilates light text more than dark text; the points are fitted to Safari's ink for text
 /// colours from black to white on black and white backgrounds.
@@ -796,14 +825,17 @@ fn embolden_scale(color: Color) -> f64 {
 /// `SK_GAMMA_CONTRAST` 1.0. Skia picks its coverage tables by the text's luma (Rec. 709 weights on
 /// sRGB-encoded channels), quantized to 3 bits, so the scale steps per luma bucket. Light text
 /// stays hinted; the embolden is in device pixels per side, mostly constant, wider in x than y.
-fn windows_embolden(font_size: f64, color: Color) -> (kurbo::Vec2, bool) {
+fn windows_embolden(font_size: f64, color: Color, transform: Affine) -> kurbo::Vec2 {
     const SCALE: [f64; 8] = [0.0, 0.0, 0.0, 0.17, 0.34, 0.51, 0.75, 1.0];
     let [r, g, b, _] = color.discard_alpha().to_rgba8().to_u8_array();
     let luma = (54 * r as u32 + 183 * g as u32 + 19 * b as u32) >> 8;
     let scale = SCALE[(luma >> 5) as usize];
     if scale == 0.0 {
-        return (kurbo::Vec2::default(), true);
+        return kurbo::Vec2::default();
     }
-    let amount = scale * (0.15 + 0.0015 * font_size);
-    (kurbo::Vec2::new(1.5 * amount, 0.5 * amount), true)
+    let Some((device_ppem, scale_x, scale_y)) = device_ppem_and_scale(font_size, transform) else {
+        return kurbo::Vec2::default();
+    };
+    let amount = scale * (0.15 + 0.0015 * device_ppem);
+    kurbo::Vec2::new(1.5 * amount / scale_x, 0.5 * amount / scale_y)
 }

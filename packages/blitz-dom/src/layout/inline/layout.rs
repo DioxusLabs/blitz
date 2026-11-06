@@ -101,7 +101,9 @@ const FIT_TOLERANCE: f32 = 0.001;
 /// Lay out the next line into `slot` (content-box relative, in CSS px)
 #[cfg(feature = "floats")]
 fn set_line_slot(state: &mut BreakerState, slot: &ContentSlot, scale: f32) {
-    state.set_line_max_advance(slot.width * scale);
+    // With huge insets, f32 rounding can make the slot slightly wider than the layout
+    let max_advance = (slot.width * scale).min(state.layout_max_advance());
+    state.set_line_max_advance(max_advance);
     state.set_line_x(slot.x * scale);
     state.set_line_y((slot.y * scale) as f64);
 }
@@ -542,9 +544,8 @@ impl LayoutPassState<'_> {
                     .flags
                     .intersects(StyleFlags::IS_BUTTON | StyleFlags::IS_BUTTON_INPUT);
             let contain_layout = box_style.slow_clone_contain().contains(Contain::LAYOUT);
-            let exports_baseline = !(baseline_source == BaselineSource::Auto
-                && is_block_axis_scroll_container)
-                && !contain_layout;
+            let exports_baseline = !(contain_layout
+                || (baseline_source == BaselineSource::Auto && is_block_axis_scroll_container));
             let box_inputs = inline_box_inputs(style.size().width, margin, child_inputs);
             drop(style);
 

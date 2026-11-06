@@ -42,6 +42,7 @@ font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
 windows-font-embolden = ["dioxus-native/windows-font-embolden"]
 writing-mode = ["blitz-dom/writing-mode", "dioxus-native/writing-mode"]
+devtools = ["dioxus-native/devtools", "blitz-dom/devtools"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
