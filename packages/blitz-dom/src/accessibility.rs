@@ -187,10 +187,12 @@ impl BlitzDomNode {
         self.try_stylo_element_data()
             .as_ref()
             .and_then(|s| s.get())
-            .map(|s| {
-                s.styles.is_display_none()
-                    || s.styles.primary().clone_visibility()
-                        == visibility::computed_value::T::Hidden
+            .and_then(|s| {
+                let style = s.styles.get_primary()?;
+                Some(
+                    style.get_box().get_display().is_none()
+                        || style.clone_visibility() == visibility::computed_value::T::Hidden,
+                )
             })
             .unwrap_or(false)
     }
