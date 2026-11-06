@@ -25,7 +25,7 @@ fn synthesize_duckduckgo_search_req(query: &str) -> Request {
     NavigationOptions::new(
         url,
         Some(String::from("application/x-www-form-urlencoded")),
-        0,
+        None,
     )
     .set_method(Method::GET)
     .into_request()

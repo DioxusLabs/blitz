@@ -1,6 +1,7 @@
 //! A CDP client session: per-connection protocol state and command
 //! dispatch, with the command handlers split into sub-modules by domain
 
+use blitz_traits::DocumentId;
 use std::collections::HashSet;
 
 use blitz_dom::{BaseDocument, LocalName, QualName, ns};
@@ -140,7 +141,7 @@ pub(crate) struct Session {
     /// The target requested via the WebSocket path
     target: Option<TargetId>,
     /// The id of the document the target showed when last checked
-    bound_doc_id: Option<usize>,
+    bound_doc_id: Option<DocumentId>,
     /// Whether inspect mode (the element picker) is currently active
     pub(crate) picking: bool,
     /// Whether this session currently has a node highlighted on the document
@@ -174,7 +175,7 @@ impl Session {
     /// The id of the document this session is inspecting: the one the
     /// requested target showed when last bound (`None` if it has closed),
     /// or the first document if no target was requested
-    pub(crate) fn doc_id(&self, docs: &dyn DocumentProvider) -> Option<usize> {
+    pub(crate) fn doc_id(&self, docs: &dyn DocumentProvider) -> Option<DocumentId> {
         let ids = docs.document_ids();
         match self.target {
             Some(_) => self.bound_doc_id.filter(|id| ids.contains(id)),
@@ -418,7 +419,7 @@ fn any_node_id_param(params: &JsonValue) -> Result<NodeId, CdpError> {
 /// `None` if no such document exists
 pub(crate) fn with_doc<R>(
     docs: &mut dyn DocumentProvider,
-    doc_id: usize,
+    doc_id: DocumentId,
     cb: impl FnOnce(&mut BaseDocument) -> R,
 ) -> Option<R> {
     let mut cb = Some(cb);
