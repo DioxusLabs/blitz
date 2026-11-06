@@ -1586,6 +1586,9 @@ impl Node {
                     child_x -= viewport_scroll.x as f32;
                     child_y -= viewport_scroll.y as f32;
                 }
+            } else if let Some(offset) = child.lifted_paint_offset(self.id) {
+                child_x -= offset.x;
+                child_y -= offset.y;
             }
             if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar) {
                 return Some(hit);

@@ -9,10 +9,18 @@ repository.workspace = true
 categories.workspace = true
 edition.workspace = true
 
+[features]
+default = ["embedded-frontend"]
+# Embed a DevTools frontend (about 2 MB) and serve it, so that `frontend_url`
+# is a local URL any Chromium-based browser can open. Without it, `frontend_url`
+# is a `devtools://` URL that has to be pasted into Chrome.
+embedded-frontend = ["dep:blitz-chrome-devtools-frontend"]
+
 [dependencies]
 # Blitz dependencies
 blitz-traits = { workspace = true }
 blitz-dom = { workspace = true, features = ["devtools"] }
+blitz-chrome-devtools-frontend = { workspace = true, optional = true }
 
 # Style / layout dependencies
 style = { workspace = true }

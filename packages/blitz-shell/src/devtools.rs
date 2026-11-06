@@ -4,9 +4,11 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyrender::WindowRenderer;
 use blitz_vibey_cdp_server::{CdpServer, DevtoolsWaker, DocumentProvider, PickerEvent, documents};
+use webbrowser::Browser;
 use winit::event::{ElementState, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
@@ -66,7 +68,8 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     }
 
     /// Start a Chrome DevTools Protocol server listening on localhost at
-    /// the given port. Connect to it by opening
+    /// the given port (`0` picks a free port). Connect to it with
+    /// [`open_devtools`](Self::open_devtools), or by opening
     /// `devtools://devtools/bundled/devtools_app.html?ws=127.0.0.1:PORT/devtools/page/DOC_ID`
     /// in Chrome, or via chrome://inspect (note: chrome://inspect opens the
     /// "screencast" devtools app, which routes element picking and node
@@ -80,6 +83,40 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         let mut server = CdpServer::new(Arc::new(self.proxy.clone()));
         server.start_listening(&format!("127.0.0.1:{port}"));
         self.devtools.cdp = Some(server);
+    }
+
+    /// Open a Chrome DevTools frontend inspecting the document with the given
+    /// id (in Chrome if it is installed, otherwise in the default browser),
+    /// first starting the CDP server on a free port if it isn't running. If
+    /// the CDP server doesn't embed a frontend, print a URL to open instead.
+    pub fn open_devtools(&mut self, doc_id: usize) {
+        if self.devtools.cdp.is_none() {
+            self.start_cdp_server(0);
+        }
+        // Inspect the document's target, which for a sub-document (e.g. a
+        // browser tab) follows its host element across navigations
+        let mut target_id = None;
+        self.with_cdp(|_, docs| target_id = blitz_vibey_cdp_server::target_id(docs, doc_id));
+        let Some(target_id) = target_id else {
+            eprintln!("CDP: can't open devtools: no document {doc_id}");
+            return;
+        };
+        let cdp = self.devtools.cdp.as_ref().unwrap();
+        let Some(addr) = cdp.wait_for_local_addr(Duration::from_secs(1)) else {
+            eprintln!("CDP: can't open devtools: the server isn't listening");
+            return;
+        };
+        let url = blitz_vibey_cdp_server::frontend_url(addr, &target_id);
+        // Browsers can't be launched with Chrome's bundled frontend
+        if url.starts_with("devtools://") {
+            eprintln!("CDP: to open devtools, paste this URL into Chrome: {url}");
+            return;
+        }
+        if webbrowser::open_browser(Browser::Chrome, &url).is_err()
+            && let Err(err) = webbrowser::open(&url)
+        {
+            eprintln!("CDP: failed to open devtools at {url}: {err}");
+        }
     }
 
     /// Run `cb` with the CDP server (if started) and a provider for the
