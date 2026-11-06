@@ -1,16 +1,40 @@
 use crate::{
-    BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId, local_name,
+    BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId,
+    layout::replaced::is_inline_box_element, local_name,
 };
 use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
-use style::properties::longhands::visibility;
+use markup5ever::LocalName;
+use std::borrow::Cow;
+use style::{
+    properties::longhands::visibility,
+    values::specified::box_::{DisplayInside, DisplayOutside},
+};
 use stylo_taffy::CopyStyleGetters;
+
+/// An element together with the nodes which provide its label.
+struct LabelSources {
+    labelled: BlitzDomNodeId,
+    labels: Vec<BlitzDomNodeId>,
+    /// Whether `labels` are `<label>` elements, as opposed to targets of `aria-labelledby`.
+    from_label_elements: bool,
+}
+
+/// How the text alternative of a subtree is written.
+#[derive(Clone, Copy, Default)]
+struct TextContext {
+    /// A node whose content is left out.
+    skip: Option<BlitzDomNodeId>,
+    /// Whether hidden nodes are included. This is the case when the root of the computation is
+    /// itself hidden.
+    include_hidden: bool,
+}
 
 impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
         let mut nodes = std::collections::HashMap::new();
         let mut window = AccessKitNode::new(Role::Window);
         let mut hidden_nodes = std::collections::HashSet::new();
-        let mut labelled_by_nodes = Vec::new();
+        let mut labelled_by_nodes: Vec<LabelSources> = Vec::new();
         let mut described_by_nodes = Vec::new();
 
         self.visit(|node_id, node| {
@@ -30,8 +54,32 @@ impl BaseDocument {
                 .unwrap_or(&mut window);
             let (id, builder) = self.build_accessibility_node(node, parent);
 
-            if node.attr(local_name!("aria-labelledby")).is_some() {
-                labelled_by_nodes.push(node_id);
+            if let Some(id_refs) = node.attr(local_name!("aria-labelledby")) {
+                labelled_by_nodes.push(LabelSources {
+                    labelled: node_id,
+                    labels: self.referenced_dom_ids_to_node_ids(id_refs).collect(),
+                    from_label_elements: false,
+                });
+            } else if node.is_element_named(local_name!("label"))
+                && let Some(target) = self.label_control(node)
+                // aria-labelledby on the target takes precedence over <label>.
+                && self.nodes[target].attr(local_name!("aria-labelledby")).is_none()
+                // So does aria-label.
+                && self.nodes[target]
+                    .attr(local_name!("aria-label"))
+                    .is_none_or(|aria_label| aria_label.trim_ascii().is_empty())
+            {
+                match labelled_by_nodes
+                    .iter_mut()
+                    .find(|sources| sources.labelled == target)
+                {
+                    Some(sources) => sources.labels.push(node_id),
+                    None => labelled_by_nodes.push(LabelSources {
+                        labelled: target,
+                        labels: vec![node_id],
+                        from_label_elements: true,
+                    }),
+                }
             }
             if node.attr(local_name!("aria-describedby")).is_some() {
                 described_by_nodes.push(node_id);
@@ -40,24 +88,25 @@ impl BaseDocument {
         });
 
         let mut label = FlatText::default();
-        for node_id in labelled_by_nodes {
-            let Some(id_refs) = self.nodes[node_id].attr(local_name!("aria-labelledby")) else {
-                continue;
-            };
+        for LabelSources {
+            labelled: node_id,
+            labels,
+            from_label_elements,
+        } in labelled_by_nodes
+        {
             let Some((id, mut builder)) = nodes.remove(&node_id) else {
                 continue;
             };
-            let mut has_target = false;
             label.clear();
-            for target in self.referenced_dom_ids_to_node_ids(id_refs) {
-                if !has_target {
-                    builder.clear_labelled_by();
-                    has_target = true;
-                }
+            for target in labels {
                 if target == node_id || nodes.contains_key(&target) {
                     builder.push_labelled_by(NodeId(target.as_u64()));
                 }
-                self.nodes[target].write_text_alternative(&mut label);
+                self.nodes[target].write_text_alternative(
+                    &mut label,
+                    // A <label> does not contribute the content of the element it labels.
+                    from_label_elements.then_some(node_id),
+                );
                 label.break_word();
             }
             if !label.text.is_empty() {
@@ -96,13 +145,28 @@ impl BaseDocument {
         }
     }
 
+    /// The element labelled by the given `<label>` element, if any.
+    ///
+    /// https://html.spec.whatwg.org/multipage/forms.html#dom-label-control
+    fn label_control(&self, label: &BlitzDomNode) -> Option<BlitzDomNodeId> {
+        match label.attr(local_name!("for")) {
+            // The spec restricts which elements can be labelled. If the first element with the id
+            // is not labelable, no later element with the same id is used and the descendants of
+            // the label are not considered either.
+            Some(for_id) => self
+                .get_element_by_id(for_id)
+                .filter(|&target| self.nodes[target].is_labelable()),
+            None => label.first_labelable_descendant(),
+        }
+    }
+
     fn referenced_dom_ids_to_node_ids<'a>(
         &'a self,
         nodes_reference: &'a str,
     ) -> impl Iterator<Item = BlitzDomNodeId> + 'a {
         nodes_reference
             .split_ascii_whitespace()
-            .filter_map(|dom_id| self.nodes_to_id.get(dom_id)?.first().copied())
+            .filter_map(|dom_id| self.get_element_by_id(dom_id))
     }
 
     fn build_accessibility_node(
@@ -117,16 +181,26 @@ impl BaseDocument {
             builder.set_role(Role::Window)
         } else if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();
-            let role_attr = element_data.attr(local_name!("role"));
-
             // TODO: The roles of elements with strong native semantics cannot be overridden; see
             // https://www.w3.org/TR/wai-aria-1.2/#host_general_conflict.
-            let role = role_attr
-                .and_then(role_from_name)
-                .or_else(|| role_from_element_data(element_data))
-                .unwrap_or(Role::Unknown);
+            let role = element_role(element_data);
 
             builder.set_role(role);
+
+            // AccessKit expects the text of a node with this role in its value, not its label.
+            // This is also what `accesskit_consumer` reads when the node labels another node.
+            if role == Role::Label {
+                let mut text = FlatText::default();
+                // A control wrapped by a <label> is not part of the text of the label.
+                let skip = node
+                    .is_element_named(local_name!("label"))
+                    .then(|| self.label_control(node))
+                    .flatten();
+                node.write_text_alternative(&mut text, skip);
+                if !text.text.is_empty() {
+                    builder.set_value(text.text);
+                }
+            }
 
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
@@ -149,8 +223,17 @@ impl BaseDocument {
                 builder.set_selected(aria_selected);
             }
 
-            if let Some(aria_label) = element_data.attr(local_name!("aria-label")) {
+            if let Some(aria_label) = element_data
+                .attr(local_name!("aria-label"))
+                .filter(|aria_label| !aria_label.trim_ascii().is_empty())
+            {
                 builder.set_label(aria_label);
+            } else if let Some(host_language_label) = node.host_language_label(element_data) {
+                builder.set_label(host_language_label);
+            } else if names_from_content(role, element_data)
+                && let Some(content) = node.subtree_text()
+            {
+                builder.set_label(content);
             }
             if let Some(aria_description) = element_data.attr(local_name!("aria-description")) {
                 builder.set_description(aria_description);
@@ -172,7 +255,6 @@ impl BaseDocument {
         } else if node.is_text_node() {
             builder.set_role(Role::TextRun);
             builder.set_value(node.text_content());
-            parent.push_labelled_by(id)
         }
 
         parent.push_child(id);
@@ -195,27 +277,408 @@ impl BlitzDomNode {
             .unwrap_or(false)
     }
 
-    fn write_text_alternative(&self, out: &mut FlatText) {
-        match self
-            .attr(local_name!("aria-label"))
-            .filter(|aria_label| !aria_label.trim_ascii().is_empty())
-        {
-            Some(aria_label) => out.push(aria_label),
-            None => self.write_flat_text_content(out),
+    // https://www.w3.org/TR/accname-1.2/#comp_hidden_not_referenced
+    fn is_hidden_for_naming(&self) -> bool {
+        self.is_hidden_from_accessibility_tree()
+            || self.attr(local_name!("aria-hidden")) == Some("true")
+    }
+
+    fn is_in_hidden_subtree(&self) -> bool {
+        let mut node = self;
+        loop {
+            if node.is_hidden_for_naming() {
+                return true;
+            }
+            match node.parent {
+                Some(parent_id) => node = self.with(parent_id),
+                None => return false,
+            }
         }
     }
 
-    fn write_flat_text_content(&self, out: &mut FlatText) {
-        match &self.data {
-            NodeData::Text(data) => out.push(&data.content),
-            NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
-                for &child_id in &self.children {
-                    self.with(child_id).write_flat_text_content(out);
-                }
+    /// Writes the text alternative of this node, leaving out the content of the node `skip`.
+    ///
+    /// If this node is itself hidden, as is possible when it is referenced by `aria-labelledby`,
+    /// its whole subtree is included, hidden parts and all.
+    fn write_text_alternative(&self, out: &mut FlatText, skip: Option<BlitzDomNodeId>) {
+        let context = TextContext {
+            skip,
+            include_hidden: self.is_in_hidden_subtree(),
+        };
+        self.write_flat_text_content(out, context);
+    }
+
+    /// Writes the text alternative of this node, following the steps of
+    /// https://www.w3.org/TR/accname-1.2/#computation-steps which apply to a node reached by
+    /// `aria-labelledby` or by name from content.
+    fn write_flat_text_content(&self, out: &mut FlatText, context: TextContext) {
+        if context.skip == Some(self.id) {
+            return;
+        }
+        let element_data = match &self.data {
+            NodeData::Text(data) => {
+                out.push(&data.content);
+                return;
             }
-            _ => {}
+            NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
+                element_data
+            }
+            _ => return,
+        };
+        if !context.include_hidden && self.is_hidden_for_naming() {
+            return;
+        }
+        if self.write_embedded_control_text(element_data, out) {
+            return;
+        }
+        if let Some(aria_label) = non_blank(element_data.attr(local_name!("aria-label"))) {
+            out.push(aria_label);
+            return;
+        }
+        if element_data.name.local == local_name!("br") {
+            out.break_word();
+            return;
+        }
+        if element_data.name.local == local_name!("img") {
+            if let Some(alt) = non_blank(element_data.attr(local_name!("alt"))) {
+                out.push(alt);
+            }
+            return;
+        }
+
+        // Generated content is part of the content of the element: `::before` comes before the
+        // children and `::after` after them. The accname spec joins it to the content of the
+        // element without a space, and so do we, unless the pseudo-element is itself block-level
+        // or an atomic inline. Those are separated like any other child; the spec leaves this
+        // open (https://github.com/w3c/accname/issues/225).
+        let before = self.before();
+        let after = self.after();
+        for &child_id in before
+            .iter()
+            .chain(self.children.iter())
+            .chain(after.iter())
+        {
+            let child = self.with(child_id);
+            let separate_child_from_siblings = child.should_separate_from_siblings();
+            if separate_child_from_siblings {
+                out.break_word();
+            }
+            child.write_flat_text_content(out, context);
+            if separate_child_from_siblings {
+                out.break_word();
+            }
         }
     }
+
+    fn should_separate_from_siblings(&self) -> bool {
+        (self.is_block_or_atomic_inline() || self.is_inline_box_element())
+            && !self.is_hidden_for_naming()
+    }
+
+    fn is_block_or_atomic_inline(&self) -> bool {
+        self.display_style()
+            .is_some_and(|display| match display.outside() {
+                DisplayOutside::Block
+                | DisplayOutside::TableCaption
+                | DisplayOutside::InternalTable => true,
+                DisplayOutside::Inline => display.inside() != DisplayInside::Flow,
+                DisplayOutside::None => false,
+            })
+    }
+
+    fn is_inline_box_element(&self) -> bool {
+        self.element_data()
+            .is_some_and(|element_data| is_inline_box_element(&element_data.name.local))
+    }
+
+    /// Writes the value of this element, if it is a control the user can adjust, in place of
+    /// its content. Returns whether it did.
+    ///
+    /// Password inputs are deliberately not included, so as not to expose their value.
+    ///
+    /// https://www.w3.org/TR/accname-1.2/#comp_embedded_control
+    fn write_embedded_control_text(&self, element_data: &ElementData, out: &mut FlatText) -> bool {
+        let role = element_role(element_data);
+        match role {
+            Role::TextInput
+            | Role::MultilineTextInput
+            | Role::EmailInput
+            | Role::SearchInput
+            | Role::PhoneNumberInput => {
+                // Only native controls have a value distinct from their content.
+                let Some(text_input) = element_data.text_input_data() else {
+                    return false;
+                };
+                out.push(&text_input.editor.text().to_string());
+                true
+            }
+            Role::Slider | Role::SpinButton | Role::NumberInput => {
+                let value = element_data
+                    .attr(local_name!("aria-valuetext"))
+                    .or_else(|| element_data.attr(local_name!("aria-valuenow")))
+                    .or_else(|| element_data.attr(local_name!("value")));
+                if let Some(value) = value {
+                    out.push(value);
+                }
+                true
+            }
+            Role::ComboBox | Role::ListBox => {
+                let options = self.option_descendants();
+                let mut chosen: Vec<_> = options
+                    .iter()
+                    .filter(|option| {
+                        option.attr(local_name!("selected")).is_some()
+                            || option.attr(local_name!("aria-selected")) == Some("true")
+                    })
+                    .collect();
+                // A drop-down `select` always has a chosen option, which is the first one unless
+                // another is marked as selected.
+                let is_single_select = element_data.name.local == local_name!("select")
+                    && element_data.attr(local_name!("multiple")).is_none();
+                if chosen.is_empty() && is_single_select {
+                    chosen.extend(options.first());
+                }
+                for (index, option) in chosen.into_iter().enumerate() {
+                    // The specification only describes a single chosen option. Several are
+                    // separated by a space, as browsers do.
+                    if index > 0 {
+                        out.break_word();
+                    }
+                    // The options of a collapsed `select` are not rendered, but the chosen one is
+                    // still the value of the control.
+                    let context = TextContext {
+                        skip: None,
+                        include_hidden: true,
+                    };
+                    option.write_flat_text_content(out, context);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The `option` elements in the subtree of this node, in tree order.
+    fn option_descendants(&self) -> Vec<&BlitzDomNode> {
+        let mut options = Vec::new();
+        let mut pending: Vec<_> = self.children.iter().rev().copied().collect();
+        while let Some(node_id) = pending.pop() {
+            let node = self.with(node_id);
+            if node
+                .element_data()
+                .is_some_and(|element_data| element_role(element_data) == Role::ListBoxOption)
+            {
+                options.push(node);
+            } else {
+                pending.extend(node.children.iter().rev().copied());
+            }
+        }
+        options
+    }
+
+    /// The text alternative provided by the host language markup of this element itself, such as
+    /// the `alt` text of an `img`.
+    ///
+    /// Sources which AccessKit exposes through other properties than `label`, namely `title` and
+    /// `placeholder`, are not covered, nor are the strings which user agents supply for
+    /// `input` elements of the submit, reset and image types lacking any other source. `area`
+    /// elements, whose `alt` is also a source, are never exposed in the accessibility tree
+    /// because the user agent stylesheet hides them.
+    ///
+    /// https://www.w3.org/TR/html-aam-1.0/#accessible-name-and-description-computation
+    fn host_language_label<'a>(&'a self, element_data: &'a ElementData) -> Option<Cow<'a, str>> {
+        match &*element_data.name.local {
+            "img" => match element_data.attr(local_name!("alt")) {
+                // An explicit `alt` attribute, even an empty one, rules out the other sources.
+                Some(alt) => non_blank(Some(alt)).map(Cow::Borrowed),
+                // Per HTML-AAM, the order of sources is `alt`, then `title`, then `figcaption`.
+                // `title` is deliberately not exposed as the label here: AccessKit expects a name
+                // which comes only from a tooltip in `Node::tooltip`, not `Node::label`. Its
+                // presence still has to be checked, because it ranks above `figcaption`: with a
+                // `title`, the `figcaption` is not the name, so it must not become the label.
+                None if element_data.attr(local_name!("title")).is_none() => {
+                    self.figcaption_text().map(Cow::Owned)
+                }
+                None => None,
+            },
+            "input" => {
+                let input_type = element_data.attr(local_name!("type")).unwrap_or_default();
+                let source = if ["button", "submit", "reset"]
+                    .iter()
+                    .any(|button_type| input_type.eq_ignore_ascii_case(button_type))
+                {
+                    local_name!("value")
+                } else if input_type.eq_ignore_ascii_case("image") {
+                    local_name!("alt")
+                } else {
+                    return None;
+                };
+                non_blank(element_data.attr(source)).map(Cow::Borrowed)
+            }
+            "fieldset" => self
+                .first_child_named(local_name!("legend"))?
+                .subtree_text()
+                .map(Cow::Owned),
+            "table" => self
+                .first_child_named(local_name!("caption"))?
+                .subtree_text()
+                .map(Cow::Owned),
+            "summary" if self.is_first_summary_of_details() => self.subtree_text().map(Cow::Owned),
+            _ => None,
+        }
+    }
+
+    /// The text of the `figcaption` of the closest `figure` ancestor of this element, provided
+    /// that this element and the `figcaption` are the only non-whitespace content of that `figure`.
+    fn figcaption_text(&self) -> Option<String> {
+        let mut path_to_figure = Vec::new();
+        let mut current = self.parent;
+        let figure = loop {
+            let ancestor = self.with(current?);
+            if ancestor.is_element_named(local_name!("figure")) {
+                break ancestor;
+            }
+            path_to_figure.push(ancestor.id);
+            current = ancestor.parent;
+        };
+        let figcaption = figure.first_child_named(local_name!("figcaption"))?;
+        if figure.has_content_other_than(self.id, figcaption.id, &path_to_figure) {
+            return None;
+        }
+        figcaption.subtree_text()
+    }
+
+    /// The first child of this node which is an element with the given name.
+    fn first_child_named(&self, name: LocalName) -> Option<&BlitzDomNode> {
+        self.children
+            .iter()
+            .map(|&child_id| self.with(child_id))
+            .find(|child| child.is_element_named(name.clone()))
+    }
+
+    /// Whether this is the first `summary` child of a `details` element.
+    fn is_first_summary_of_details(&self) -> bool {
+        self.parent
+            .map(|parent_id| self.with(parent_id))
+            .filter(|parent| parent.is_element_named(local_name!("details")))
+            .and_then(|details| details.first_child_named(local_name!("summary")))
+            .is_some_and(|summary| summary.id == self.id)
+    }
+
+    /// The text alternative of the subtree of this node, if it is not empty.
+    fn subtree_text(&self) -> Option<String> {
+        let mut text = FlatText::default();
+        self.write_flat_text_content(&mut text, TextContext::default());
+        (!text.text.is_empty()).then_some(text.text)
+    }
+
+    /// Whether the subtree of this node has non-whitespace text or elements besides `exempt` and
+    /// `exempt_caption`. Elements in `ancestors_of_exempt` are searched rather than counted.
+    fn has_content_other_than(
+        &self,
+        exempt: BlitzDomNodeId,
+        exempt_caption: BlitzDomNodeId,
+        ancestors_of_exempt: &[BlitzDomNodeId],
+    ) -> bool {
+        self.children.iter().any(|&child_id| {
+            let child = self.with(child_id);
+            if child_id == exempt || child_id == exempt_caption {
+                false
+            } else if ancestors_of_exempt.contains(&child_id) {
+                child.has_content_other_than(exempt, exempt_caption, ancestors_of_exempt)
+            } else {
+                match &child.data {
+                    NodeData::Text(data) => !data.content.trim_ascii().is_empty(),
+                    NodeData::Element(..) => true,
+                    _ => false,
+                }
+            }
+        })
+    }
+
+    fn is_element_named(&self, name: LocalName) -> bool {
+        self.element_data()
+            .is_some_and(|element_data| element_data.name.local == name)
+    }
+
+    /// Whether a `<label>` can be associated with this element.
+    ///
+    /// Form-associated custom elements are also labelable per the HTML specification, but cannot
+    /// be recognized here. `input type="hidden"` is not labelable either, but it is never exposed
+    /// in the accessibility tree, so it needs no handling.
+    ///
+    /// https://html.spec.whatwg.org/multipage/forms.html#category-label
+    fn is_labelable(&self) -> bool {
+        self.element_data().is_some_and(|element_data| {
+            matches!(
+                &*element_data.name.local,
+                "button" | "input" | "meter" | "output" | "progress" | "select" | "textarea"
+            )
+        })
+    }
+
+    /// The first labelable element in the subtree of this node, in tree order.
+    fn first_labelable_descendant(&self) -> Option<BlitzDomNodeId> {
+        self.children.iter().find_map(|&child_id| {
+            let child = self.with(child_id);
+            if child.is_labelable() {
+                Some(child_id)
+            } else {
+                child.first_labelable_descendant()
+            }
+        })
+    }
+}
+
+fn non_blank(text: Option<&str>) -> Option<&str> {
+    text.filter(|text| !text.trim_ascii().is_empty())
+}
+
+/// The role of an element: its `role` attribute if it has a valid one, or else its native role.
+fn element_role(element_data: &ElementData) -> Role {
+    element_data
+        .attr(local_name!("role"))
+        .and_then(role_from_name)
+        .or_else(|| role_from_element_data(element_data))
+        .unwrap_or(Role::Unknown)
+}
+
+/// Whether the name of an element with the given role is computed from its content.
+///
+/// https://www.w3.org/TR/wai-aria-1.2/#namefromcontent
+///
+/// HTML-AAM names the native `tr`, `td` and `th` elements from their `title` only, so they are
+/// exceptions unless a `role` attribute gives them a role.
+fn names_from_content(role: Role, element_data: &ElementData) -> bool {
+    let is_native_table_part = matches!(&*element_data.name.local, "tr" | "td" | "th")
+        && element_data
+            .attr(local_name!("role"))
+            .and_then(role_from_name)
+            .is_none();
+    !is_native_table_part
+        && matches!(
+            role,
+            Role::Button
+                | Role::Cell
+                | Role::CheckBox
+                | Role::ColumnHeader
+                | Role::DefaultButton
+                | Role::GridCell
+                | Role::Heading
+                | Role::Link
+                | Role::ListBoxOption
+                | Role::MenuItem
+                | Role::MenuItemCheckBox
+                | Role::MenuItemRadio
+                | Role::MenuListOption
+                | Role::RadioButton
+                | Role::Row
+                | Role::RowHeader
+                | Role::Switch
+                | Role::Tab
+                | Role::Tooltip
+                | Role::TreeItem
+        )
 }
 
 #[derive(Default)]
