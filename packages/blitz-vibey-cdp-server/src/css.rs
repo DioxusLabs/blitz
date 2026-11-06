@@ -10,9 +10,10 @@ use style::properties::{
     LonghandId, NonCustomPropertyId, PropertyDeclarationBlock, PropertyDeclarationId, PropertyId,
 };
 use style::rule_tree::CascadeOrigin;
-use style::stylesheets::{CssRule, Origin};
+use style::stylesheets::{CssRule, CssRules, Origin};
 
 use crate::JsonValue;
+use crate::style_sheets::{RuleSource, StyleSheets, owner_sheet, visit_style_rules};
 
 /// A single declaration in a matched rule
 struct Declaration {
@@ -27,6 +28,8 @@ struct MatchedRule {
     selector_text: String,
     is_user_agent: bool,
     declarations: Vec<Declaration>,
+    /// The owner node of the author sheet the rule is in, and its rule path
+    location: Option<(NodeId, Vec<usize>)>,
 }
 
 /// Metadata about the style rule that a declaration block came from,
@@ -34,60 +37,48 @@ struct MatchedRule {
 struct RuleMetadata {
     selector_text: String,
     origin: Origin,
+    location: Option<(NodeId, Vec<usize>)>,
 }
+
+type RuleMetadataMap = HashMap<*const std::ffi::c_void, RuleMetadata>;
 
 /// Build a map from declaration-block pointer to rule metadata by walking
 /// all of the document's stylesheets
-fn rule_metadata(doc: &BaseDocument) -> HashMap<*const std::ffi::c_void, RuleMetadata> {
+fn rule_metadata(doc: &BaseDocument) -> RuleMetadataMap {
     let guard_holder = doc.guard();
     let guard = guard_holder.read();
 
     let mut map = HashMap::new();
+    let mut visit = |rules: &CssRules, origin: Origin, owner: Option<NodeId>| {
+        visit_style_rules(rules, &guard, &mut Vec::new(), &mut |path, rule| {
+            let CssRule::Style(locked_rule) = rule else {
+                return;
+            };
+            let style_rule = locked_rule.read_with(&guard);
+            map.insert(
+                style_rule.block.heap_ptr(),
+                RuleMetadata {
+                    selector_text: style_rule.selectors.to_css_string(),
+                    origin,
+                    location: owner.map(|owner| (owner, path.to_vec())),
+                },
+            );
+        });
+    };
 
-    fn visit_rules(
-        rules: &[CssRule],
-        guard: &style::shared_lock::SharedRwLockReadGuard,
-        origin: Origin,
-        map: &mut HashMap<*const std::ffi::c_void, RuleMetadata>,
-    ) {
-        for rule in rules {
-            match rule {
-                CssRule::Style(locked_rule) => {
-                    let style_rule = locked_rule.read_with(guard);
-                    let key = style_rule.block.heap_ptr();
-                    map.insert(
-                        key,
-                        RuleMetadata {
-                            selector_text: style_rule.selectors.to_css_string(),
-                            origin,
-                        },
-                    );
-                    if let Some(nested) = &style_rule.rules {
-                        visit_rules(&nested.read_with(guard).0, guard, origin, map);
-                    }
-                }
-                CssRule::Media(media_rule) => {
-                    visit_rules(&media_rule.rules.read_with(guard).0, guard, origin, map);
-                }
-                CssRule::Supports(supports_rule) => {
-                    visit_rules(&supports_rule.rules.read_with(guard).0, guard, origin, map);
-                }
-                _ => {}
-            }
+    for owner in doc.stylesheet_owner_nodes() {
+        if let Some(sheet) = owner_sheet(doc, owner) {
+            let contents = sheet.0.contents.read_with(&guard);
+            visit(
+                contents.rules.read_with(&guard),
+                Origin::Author,
+                Some(owner),
+            );
         }
     }
-
-    for (origin, sheet) in doc
-        .author_stylesheets()
-        .map(|sheet| (Origin::Author, sheet))
-        .chain(
-            doc.useragent_stylesheets()
-                .map(|sheet| (Origin::UserAgent, sheet)),
-        )
-    {
+    for sheet in doc.useragent_stylesheets() {
         let contents = sheet.0.contents.read_with(&guard);
-        let rules = contents.rules.read_with(&guard);
-        visit_rules(&rules.0, &guard, origin, &mut map);
+        visit(contents.rules.read_with(&guard), Origin::UserAgent, None);
     }
 
     map
@@ -156,8 +147,25 @@ fn css_style_json(declarations: &[Declaration]) -> JsonValue {
     })
 }
 
-/// Serialize a matched rule to a CDP `CSS.RuleMatch` object
-fn rule_match_json(rule: &MatchedRule) -> JsonValue {
+/// Serialize a matched rule to a CDP `CSS.RuleMatch` object. Rules located
+/// in a sheet reported to the session carry its id and source ranges,
+/// which makes them editable.
+fn rule_match_json(
+    doc: &BaseDocument,
+    rule: &MatchedRule,
+    sheets: &mut Option<&mut StyleSheets>,
+) -> JsonValue {
+    let source = match (sheets.as_deref_mut(), &rule.location) {
+        (Some(sheets), Some((owner, path))) => {
+            sheets.rule_source(doc, *owner, path, &rule.selector_text)
+        }
+        _ => None,
+    };
+    if let Some(source) = source {
+        let matching: Vec<usize> = (0..source.ranges.selectors.len()).collect();
+        return json!({ "rule": sheet_rule_json(&source), "matchingSelectors": matching });
+    }
+
     // An empty selector confuses the frontend's rule display: fall back to "*"
     let selector_text = if rule.selector_text.is_empty() {
         "*".to_string()
@@ -179,13 +187,45 @@ fn rule_match_json(rule: &MatchedRule) -> JsonValue {
     })
 }
 
+/// A CDP `CSS.CSSRule` for a style rule located in a reported sheet
+pub(crate) fn sheet_rule_json(source: &RuleSource) -> JsonValue {
+    let RuleSource {
+        sheet_id,
+        text,
+        ranges,
+    } = source;
+    json!({
+        "styleSheetId": sheet_id,
+        "selectorList": selector_list_json(source),
+        "origin": "regular",
+        "style": authored_style_json(text, ranges.style.0, ranges.style.1, sheet_id),
+    })
+}
+
+/// A CDP `CSS.SelectorList`, with source ranges, for a style rule located
+/// in a reported sheet
+pub(crate) fn selector_list_json(source: &RuleSource) -> JsonValue {
+    let RuleSource { text, ranges, .. } = source;
+    let selectors: Vec<JsonValue> = ranges
+        .selectors
+        .iter()
+        .map(|&(start, end)| {
+            json!({ "text": &text[start..end], "range": source_range_json(text, start, end) })
+        })
+        .collect();
+    let selector_text = ranges
+        .selector_list()
+        .map_or("", |(start, end)| &text[start..end]);
+    json!({ "selectors": selectors, "text": selector_text })
+}
+
 /// Collect the style rules matching a node from Stylo's rule tree,
 /// in ascending cascade order (least to most important, as CDP expects).
 /// The inline style attribute is excluded (it is reported separately).
 fn matched_rules(
     doc: &BaseDocument,
     node_id: NodeId,
-    metadata: &HashMap<*const std::ffi::c_void, RuleMetadata>,
+    metadata: &RuleMetadataMap,
     inherited_only: bool,
 ) -> Vec<MatchedRule> {
     let guard_holder = doc.guard();
@@ -230,6 +270,7 @@ fn matched_rules(
                     .map(|m| m.origin == Origin::UserAgent)
                     .unwrap_or(origin_is_ua),
                 declarations,
+                location: meta.and_then(|m| m.location.clone()),
             });
         }
     }
@@ -348,7 +389,7 @@ fn parse_authored_declarations(text: &str) -> Vec<AuthoredDeclaration> {
 }
 
 /// The line/column position of a byte offset within the given text
-fn line_col(text: &str, offset: usize) -> (usize, usize) {
+pub(crate) fn line_col(text: &str, offset: usize) -> (usize, usize) {
     let prefix = &text[..offset];
     let line = prefix.matches('\n').count();
     let column = offset - prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
@@ -374,7 +415,19 @@ fn source_range_json(text: &str, start: usize, end: usize) -> JsonValue {
 /// source ranges into it, making it editable via `CSS.setStyleTexts`.
 pub(crate) fn inline_style_json(doc: &BaseDocument, node_id: NodeId) -> JsonValue {
     let text = inline_style_text(doc, node_id);
-    let properties: Vec<JsonValue> = parse_authored_declarations(&text)
+    authored_style_json(&text, 0, text.len(), &inline_style_sheet_id(node_id))
+}
+
+/// A CDP `CSS.CSSStyle` for the authored declarations in the byte range
+/// `start..end` of a style sheet's text, with source ranges into the text
+pub(crate) fn authored_style_json(
+    text: &str,
+    start: usize,
+    end: usize,
+    sheet_id: &str,
+) -> JsonValue {
+    let style_text = &text[start..end];
+    let properties: Vec<JsonValue> = parse_authored_declarations(style_text)
         .iter()
         .map(|decl| {
             json!({
@@ -383,17 +436,17 @@ pub(crate) fn inline_style_json(doc: &BaseDocument, node_id: NodeId) -> JsonValu
                 "important": decl.important,
                 "implicit": false,
                 "disabled": decl.disabled,
-                "text": &text[decl.start..decl.end],
-                "range": source_range_json(&text, decl.start, decl.end),
+                "text": &style_text[decl.start..decl.end],
+                "range": source_range_json(text, start + decl.start, start + decl.end),
             })
         })
         .collect();
     json!({
         "cssProperties": properties,
         "shorthandEntries": [],
-        "cssText": text,
-        "range": source_range_json(&text, 0, text.len()),
-        "styleSheetId": inline_style_sheet_id(node_id),
+        "cssText": style_text,
+        "range": source_range_json(text, start, end),
+        "styleSheetId": sheet_id,
     })
 }
 
@@ -419,13 +472,17 @@ pub(crate) fn parse_inline_style_sheet_id(id: &str) -> Option<NodeId> {
 }
 
 /// Build the `CSS.getMatchedStylesForNode` response for a node
-pub(crate) fn matched_styles_json(doc: &BaseDocument, node_id: NodeId) -> Option<JsonValue> {
+pub(crate) fn matched_styles_json(
+    doc: &BaseDocument,
+    node_id: NodeId,
+    mut sheets: Option<&mut StyleSheets>,
+) -> Option<JsonValue> {
     let node = doc.get_node(node_id)?;
     let metadata = rule_metadata(doc);
 
     let matched: Vec<JsonValue> = matched_rules(doc, node_id, &metadata, false)
         .iter()
-        .map(rule_match_json)
+        .map(|rule| rule_match_json(doc, rule, &mut sheets))
         .collect();
 
     // Inherited styles: one entry per ancestor, from the direct parent upward
@@ -438,7 +495,7 @@ pub(crate) fn matched_styles_json(doc: &BaseDocument, node_id: NodeId) -> Option
         if ancestor.element_data().is_some() {
             let rules: Vec<JsonValue> = matched_rules(doc, ancestor_id, &metadata, true)
                 .iter()
-                .map(rule_match_json)
+                .map(|rule| rule_match_json(doc, rule, &mut sheets))
                 .collect();
             let inline = inline_declarations(doc, ancestor_id, true);
             let mut entry = json!({ "matchedCSSRules": rules });

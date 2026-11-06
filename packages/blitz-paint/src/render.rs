@@ -1207,6 +1207,11 @@ impl ElementCx<'_, '_> {
                         x: scroll.x * self.scale,
                         y: scroll.y * self.scale,
                     })
+                } else if let Some(offset) = child.lifted_paint_offset(self.node.id) {
+                    parent_style_transform.pre_translate(kurbo::Vec2 {
+                        x: offset.x as f64 * self.scale,
+                        y: offset.y as f64 * self.scale,
+                    })
                 } else {
                     parent_style_transform
                 };

@@ -28,6 +28,7 @@ mod devtools_provider;
 pub mod documents;
 mod dom;
 mod session;
+mod style_sheets;
 mod transport;
 
 use devtools_provider::MutationLog;
@@ -144,6 +145,9 @@ impl CdpServer {
             self.handle_event(event, docs);
         }
         self.flush_mutations(docs);
+        for conn in self.connections.values_mut() {
+            conn.session.sync_style_sheets(&mut conn.writer, docs);
+        }
     }
 
     /// Send the events for all buffered DOM mutations to the sessions

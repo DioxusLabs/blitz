@@ -1875,3 +1875,405 @@ fn live_mutations_in_unloaded_nodes() {
         );
     });
 }
+
+/// The matched rule with the given selector text
+fn matched_rule<'a>(matched: &'a serde_json::Value, selector: &str) -> &'a serde_json::Value {
+    matched["matchedCSSRules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|rule_match| &rule_match["rule"])
+        .find(|rule| rule["selectorList"]["text"] == selector)
+        .unwrap_or_else(|| panic!("no matched rule {selector}: {matched}"))
+}
+
+fn computed_value(ws: &mut Ws, id: u64, node_id: u64, name: &str) -> serde_json::Value {
+    send_command(
+        ws,
+        id,
+        "CSS.getComputedStyleForNode",
+        json!({ "nodeId": node_id }),
+    );
+    let result = read_reply(ws, id, &mut Vec::new());
+    result["computedStyle"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == name)
+        .unwrap()["value"]
+        .clone()
+}
+
+#[test]
+fn style_sheet_rule_editing() {
+    let html = "<html><head><style id=\"sheet\">/* header */\n\
+         .a, .b { color: red; /* margin: 0; */ }\n\
+         @media (min-width: 1px) {\n  #t { padding: 1px }\n}\n</style></head>\
+         <body><div id=\"t\" class=\"a\">x</div></body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let style_id = node_id_of(&root, "sheet");
+        let t_id = node_id_of(&root, "t");
+
+        // Enabling the CSS domain reports the document's style sheets
+        events.clear();
+        send_command(&mut ws, 2, "CSS.enable", json!({}));
+        read_reply(&mut ws, 2, &mut events);
+        let headers: Vec<_> = events
+            .iter()
+            .filter(|e| e["method"] == "CSS.styleSheetAdded")
+            .map(|e| e["params"]["header"].clone())
+            .collect();
+        assert_eq!(headers.len(), 1, "{events:?}");
+        let header = &headers[0];
+        assert_eq!(header["ownerNode"], style_id);
+        assert_eq!(header["isInline"], true);
+        let sheet_id = header["styleSheetId"].as_str().unwrap().to_string();
+
+        // Matched rules carry the sheet id and source ranges into its text
+        send_command(
+            &mut ws,
+            3,
+            "CSS.getMatchedStylesForNode",
+            json!({ "nodeId": t_id }),
+        );
+        let matched = read_reply(&mut ws, 3, &mut events);
+        let rule = matched_rule(&matched, ".a, .b");
+        assert_eq!(rule["styleSheetId"], sheet_id.as_str());
+        assert_eq!(rule["selectorList"]["selectors"][1]["text"], ".b");
+        assert_eq!(
+            rule["selectorList"]["selectors"][0]["range"],
+            json!({ "startLine": 1, "startColumn": 0, "endLine": 1, "endColumn": 2 })
+        );
+        let style = &rule["style"];
+        assert_eq!(style["cssText"], " color: red; /* margin: 0; */ ");
+        assert_eq!(
+            style["range"],
+            json!({ "startLine": 1, "startColumn": 8, "endLine": 1, "endColumn": 38 })
+        );
+        let props = style["cssProperties"].as_array().unwrap();
+        assert!(
+            props
+                .iter()
+                .any(|p| p["name"] == "color" && p["disabled"] == false)
+        );
+        assert!(
+            props
+                .iter()
+                .any(|p| p["name"] == "margin" && p["disabled"] == true)
+        );
+        let media_rule = matched_rule(&matched, "#t");
+        assert_eq!(media_rule["style"]["cssText"], " padding: 1px ");
+
+        // Editing a rule's declarations restyles the document, without
+        // changing the `<style>` element
+        events.clear();
+        send_command(
+            &mut ws,
+            4,
+            "CSS.setStyleTexts",
+            json!({ "edits": [{
+                "styleSheetId": sheet_id,
+                "range": style["range"],
+                "text": " color: rgb(0, 128, 0); /* margin: 0; */ ",
+            }] }),
+        );
+        let result = read_reply(&mut ws, 4, &mut events);
+        assert_eq!(
+            result["styles"][0]["cssText"],
+            " color: rgb(0, 128, 0); /* margin: 0; */ "
+        );
+        assert_eq!(result["styles"][0]["styleSheetId"], sheet_id.as_str());
+        assert!(
+            !events
+                .iter()
+                .any(|e| e["method"] == "CSS.styleSheetChanged"),
+            "{events:?}"
+        );
+        assert_eq!(computed_value(&mut ws, 5, t_id, "color"), "rgb(0, 128, 0)");
+        send_command(
+            &mut ws,
+            6,
+            "DOM.getOuterHTML",
+            json!({ "nodeId": style_id }),
+        );
+        let outer = read_reply(&mut ws, 6, &mut events);
+        assert!(outer["outerHTML"].as_str().unwrap().contains("color: red"));
+
+        // The sheet text keeps the edit and the comments
+        send_command(
+            &mut ws,
+            7,
+            "CSS.getStyleSheetText",
+            json!({ "styleSheetId": sheet_id }),
+        );
+        let text = read_reply(&mut ws, 7, &mut events)["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(text.starts_with("/* header */\n.a, .b { color: rgb(0, 128, 0);"));
+
+        // Ranges after the edit are shifted: edit one property of the
+        // rule nested in `@media`
+        send_command(
+            &mut ws,
+            8,
+            "CSS.getMatchedStylesForNode",
+            json!({ "nodeId": t_id }),
+        );
+        let matched = read_reply(&mut ws, 8, &mut events);
+        let padding_range =
+            matched_rule(&matched, "#t")["style"]["cssProperties"][0]["range"].clone();
+        send_command(
+            &mut ws,
+            9,
+            "CSS.setStyleTexts",
+            json!({ "edits": [{
+                "styleSheetId": sheet_id,
+                "range": padding_range,
+                "text": "padding: 5px",
+            }] }),
+        );
+        let result = read_reply(&mut ws, 9, &mut events);
+        assert_eq!(result["styles"][0]["cssText"], " padding: 5px ");
+        assert_eq!(computed_value(&mut ws, 10, t_id, "padding-top"), "5px");
+
+        // Edits must stay within a rule's declarations and keep the rules
+        let selector_range =
+            matched_rule(&matched, "#t")["selectorList"]["selectors"][0]["range"].clone();
+        send_command(
+            &mut ws,
+            11,
+            "CSS.setStyleTexts",
+            json!({ "edits": [{ "styleSheetId": sheet_id, "range": selector_range, "text": "#u" }] }),
+        );
+        expect_error(&mut ws, 11);
+        send_command(
+            &mut ws,
+            12,
+            "CSS.setStyleTexts",
+            json!({ "edits": [{
+                "styleSheetId": sheet_id,
+                "range": padding_range,
+                "text": "} .c { color: blue",
+            }] }),
+        );
+        expect_error(&mut ws, 12);
+
+        // Removing the owner element removes the sheet
+        events.clear();
+        send_command(&mut ws, 13, "DOM.removeNode", json!({ "nodeId": style_id }));
+        read_reply(&mut ws, 13, &mut events);
+        send_command(
+            &mut ws,
+            14,
+            "CSS.getMatchedStylesForNode",
+            json!({ "nodeId": t_id }),
+        );
+        read_reply(&mut ws, 14, &mut events);
+        assert!(
+            events.iter().any(|e| e["method"] == "CSS.styleSheetRemoved"
+                && e["params"]["styleSheetId"] == sheet_id.as_str()),
+            "{events:?}"
+        );
+    });
+}
+
+#[test]
+fn style_sheet_rule_selector_editing() {
+    let html = "<html><head><style id=\"sheet\">.a { color: red }\n\
+         .c { color: blue }\n</style></head>\
+         <body><div id=\"t\" class=\"a\">x</div></body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let t_id = node_id_of(&root, "t");
+        send_command(&mut ws, 2, "CSS.enable", json!({}));
+        read_reply(&mut ws, 2, &mut events);
+        let sheet_id = events
+            .iter()
+            .find(|e| e["method"] == "CSS.styleSheetAdded")
+            .map(|e| e["params"]["header"]["styleSheetId"].clone())
+            .unwrap();
+
+        // Selecting the element with the second rule restyles it
+        send_command(
+            &mut ws,
+            3,
+            "CSS.setRuleSelector",
+            json!({
+                "styleSheetId": sheet_id,
+                "range": { "startLine": 1, "startColumn": 0, "endLine": 1, "endColumn": 2 },
+                "selector": "#t,  .z",
+            }),
+        );
+        let result = read_reply(&mut ws, 3, &mut events);
+        assert_eq!(result["selectorList"]["text"], "#t,  .z");
+        assert_eq!(result["selectorList"]["selectors"][1]["text"], ".z");
+        assert_eq!(
+            result["selectorList"]["selectors"][1]["range"],
+            json!({ "startLine": 1, "startColumn": 5, "endLine": 1, "endColumn": 7 })
+        );
+        assert_eq!(computed_value(&mut ws, 4, t_id, "color"), "rgb(0, 0, 255)");
+
+        // The edited rule is reported with ranges into the new text
+        send_command(
+            &mut ws,
+            5,
+            "CSS.getMatchedStylesForNode",
+            json!({ "nodeId": t_id }),
+        );
+        let matched = read_reply(&mut ws, 5, &mut events);
+        let rule = matched_rule(&matched, "#t,  .z");
+        assert_eq!(rule["styleSheetId"], sheet_id);
+        assert_eq!(rule["style"]["cssText"], " color: blue ");
+
+        // Invalid selectors, and ranges that are not a selector list, are
+        // rejected and leave the sheet unchanged
+        for (id, range, selector) in [
+            (
+                6,
+                rule["selectorList"]["selectors"][0]["range"].clone(),
+                "!!",
+            ),
+            (
+                7,
+                rule["selectorList"]["selectors"][0]["range"].clone(),
+                ".y {} .x",
+            ),
+            (
+                8,
+                rule["selectorList"]["selectors"][1]["range"].clone(),
+                ".y",
+            ),
+        ] {
+            send_command(
+                &mut ws,
+                id,
+                "CSS.setRuleSelector",
+                json!({ "styleSheetId": sheet_id, "range": range, "selector": selector }),
+            );
+            expect_error(&mut ws, id);
+        }
+        send_command(
+            &mut ws,
+            9,
+            "CSS.getStyleSheetText",
+            json!({ "styleSheetId": sheet_id }),
+        );
+        assert_eq!(
+            read_reply(&mut ws, 9, &mut events)["text"],
+            ".a { color: red }\n#t,  .z { color: blue }\n"
+        );
+        assert_eq!(computed_value(&mut ws, 10, t_id, "color"), "rgb(0, 0, 255)");
+    });
+}
+
+#[test]
+fn style_sheet_add_rule() {
+    let html = "<html><head><style id=\"sheet\">.a { color: red }\n\
+         @media (min-width: 1px) {\n  .b { color: blue }\n}\n</style></head>\
+         <body><div id=\"t\" class=\"a\">x</div></body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let t_id = node_id_of(&root, "t");
+        send_command(&mut ws, 2, "CSS.enable", json!({}));
+        read_reply(&mut ws, 2, &mut events);
+        let sheet_id = events
+            .iter()
+            .find(|e| e["method"] == "CSS.styleSheetAdded")
+            .map(|e| e["params"]["header"]["styleSheetId"].clone())
+            .unwrap();
+        let at = |line: u64, column: u64| json!({ "startLine": line, "startColumn": column, "endLine": line, "endColumn": column });
+
+        // A rule added at the end of the sheet
+        send_command(
+            &mut ws,
+            3,
+            "CSS.addRule",
+            json!({ "styleSheetId": sheet_id, "ruleText": "\n#t { color: green }", "location": at(4, 0) }),
+        );
+        let rule = read_reply(&mut ws, 3, &mut events)["rule"].clone();
+        assert_eq!(rule["styleSheetId"], sheet_id);
+        assert_eq!(rule["selectorList"]["text"], "#t");
+        assert_eq!(rule["style"]["cssText"], " color: green ");
+        assert_eq!(
+            rule["style"]["range"],
+            json!({ "startLine": 5, "startColumn": 4, "endLine": 5, "endColumn": 18 })
+        );
+        assert_eq!(computed_value(&mut ws, 4, t_id, "color"), "rgb(0, 128, 0)");
+
+        // A rule added inside `@media`, after its rule
+        send_command(
+            &mut ws,
+            5,
+            "CSS.addRule",
+            json!({
+                "styleSheetId": sheet_id,
+                "ruleText": "\n  #t#t { color: rgb(1, 2, 3) }",
+                "location": at(2, 20),
+            }),
+        );
+        let rule = read_reply(&mut ws, 5, &mut events)["rule"].clone();
+        assert_eq!(
+            rule["selectorList"]["selectors"][0]["range"],
+            json!({
+                "startLine": 3, "startColumn": 2, "endLine": 3, "endColumn": 6
+            })
+        );
+        assert_eq!(computed_value(&mut ws, 6, t_id, "color"), "rgb(1, 2, 3)");
+
+        // Added rules can be edited like the others
+        send_command(
+            &mut ws,
+            7,
+            "CSS.setStyleTexts",
+            json!({ "edits": [{
+                "styleSheetId": sheet_id,
+                "range": rule["style"]["range"],
+                "text": " color: rgb(4, 5, 6) ",
+            }] }),
+        );
+        read_reply(&mut ws, 7, &mut events);
+        assert_eq!(computed_value(&mut ws, 8, t_id, "color"), "rgb(4, 5, 6)");
+
+        // Text that is not a single valid style rule is rejected
+        for (id, rule_text) in [(9, "!! { color: red }"), (10, ".x {} .y {}"), (11, ".x {")] {
+            send_command(
+                &mut ws,
+                id,
+                "CSS.addRule",
+                json!({ "styleSheetId": sheet_id, "ruleText": rule_text, "location": at(0, 0) }),
+            );
+            expect_error(&mut ws, id);
+        }
+        send_command(
+            &mut ws,
+            12,
+            "CSS.getStyleSheetText",
+            json!({ "styleSheetId": sheet_id }),
+        );
+        assert_eq!(
+            read_reply(&mut ws, 12, &mut events)["text"],
+            ".a { color: red }\n@media (min-width: 1px) {\n  .b { color: blue }\n  \
+             #t#t { color: rgb(4, 5, 6) }\n}\n\n#t { color: green }"
+        );
+    });
+}

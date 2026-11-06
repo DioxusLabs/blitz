@@ -7,6 +7,7 @@ use blitz_dom::{BaseDocument, LocalName, QualName, ns};
 use blitz_traits::node_id::NodeId;
 use serde_json::json;
 
+use crate::style_sheets::StyleSheets;
 use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter, TargetId};
 
 mod css;
@@ -152,6 +153,9 @@ pub(crate) struct Session {
     /// children replaces the frontend's node objects, breaking tree state
     /// such as revealing a picked node, so they are only sent once.
     children_sent: HashSet<NodeId>,
+    /// The style sheets reported to the frontend, while the `CSS` domain
+    /// is enabled
+    pub(crate) style_sheets: Option<StyleSheets>,
 }
 
 impl Session {
@@ -163,6 +167,7 @@ impl Session {
             highlighting: false,
             last_picker_node: None,
             children_sent: HashSet::new(),
+            style_sheets: None,
         }
     }
 
@@ -196,6 +201,10 @@ impl Session {
         let was_bound = self.bound_doc_id.is_some();
         self.bound_doc_id = doc_id;
         self.children_sent.clear();
+        // The frontend drops its style sheets with the old document
+        if self.style_sheets.is_some() {
+            self.style_sheets = Some(StyleSheets::default());
+        }
         self.highlighting = false;
         self.last_picker_node = None;
         let Some(doc_id) = doc_id else {
@@ -210,6 +219,20 @@ impl Session {
         }
     }
 
+    /// Report style sheets added to or removed from the document, if the
+    /// `CSS` domain is enabled
+    pub(crate) fn sync_style_sheets(
+        &mut self,
+        writer: &mut MessageWriter,
+        docs: &mut dyn DocumentProvider,
+    ) {
+        let doc_id = self.doc_id(docs);
+        let (Some(sheets), Some(doc_id)) = (&mut self.style_sheets, doc_id) else {
+            return;
+        };
+        with_doc(docs, doc_id, |doc| sheets.sync(doc, doc_id, writer));
+    }
+
     pub(crate) fn dispatch(
         &mut self,
         writer: &mut MessageWriter,
@@ -217,6 +240,10 @@ impl Session {
         command: &CdpCommand,
     ) -> Result<JsonValue, CdpError> {
         let method = command.method.as_str();
+
+        if method.starts_with("CSS.") && !STUB_METHODS.contains(&method) {
+            return css::dispatch(self, writer, docs, command);
+        }
 
         // Generic stubs: domain enable/disable commands and commands from
         // domains irrelevant to the Elements panel
@@ -235,7 +262,6 @@ impl Session {
                 overlay::dispatch(self, writer, docs, command)
             }
             m if m.starts_with("DOM.") => dom::dispatch(self, writer, docs, command),
-            m if m.starts_with("CSS.") => css::dispatch(self, writer, docs, command),
             _ => page::dispatch(self, writer, docs, command),
         }
     }
