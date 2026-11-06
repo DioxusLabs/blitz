@@ -116,14 +116,14 @@ skrifa = { version = "0.44", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1793985184-glifo-png" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1793985184-glifo-png" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1793985184-glifo-png" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1793985184-glifo-png" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1793985184-glifo-png" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1793985184-glifo-png" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1793985184-glifo-png" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1793985184-glifo-png" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
