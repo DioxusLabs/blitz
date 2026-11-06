@@ -397,8 +397,8 @@ pub struct BaseDocument {
     /// Load state (abort controller and in-flight request id) for each
     /// `<iframe>` element whose sub-document is loaded automatically
     pub(crate) iframe_loads: HashMap<NodeId, crate::iframe::IframeLoad>,
-    /// Set of changed nodes for updating the accessibility tree
-    pub(crate) changed_nodes: HashSet<NodeId>,
+    /// Whether the DOM or focus changed since the accessibility tree was last pushed
+    pub(crate) has_changes: bool,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
@@ -572,7 +572,7 @@ impl BaseDocument {
             #[cfg(feature = "custom-widget")]
             pending_resource_deallocations: Vec::new(),
 
-            changed_nodes: HashSet::new(),
+            has_changes: false,
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
@@ -967,8 +967,7 @@ impl BaseDocument {
             .nodes
             .insert_with_key(|id| Node::new(tree_ptr, id, guard, node_data));
 
-        // Mark the new node as changed.
-        self.changed_nodes.insert(id);
+        self.has_changes = true;
         id
     }
 
@@ -1128,9 +1127,15 @@ impl BaseDocument {
         self.remove_node_from_tree(anon_id);
     }
 
-    /// Whether the document has been mutated
+    /// Whether the DOM or focus changed since the last [`Self::clear_changes`]
+    /// (i.e. whether the accessibility tree is out of date)
     pub fn has_changes(&self) -> bool {
-        self.changed_nodes.is_empty()
+        self.has_changes
+    }
+
+    /// Mark the accessibility tree as up to date
+    pub fn clear_changes(&mut self) {
+        self.has_changes = false;
     }
 
     pub fn create_text_node(&mut self, text: &str) -> NodeId {
@@ -1806,6 +1811,7 @@ impl BaseDocument {
                 });
             }
             self.focus_node_id = None;
+            self.has_changes = true;
             self.shell_provider.request_redraw();
         }
     }
@@ -1864,6 +1870,7 @@ impl BaseDocument {
         }
 
         self.focus_node_id = Some(focus_node_id);
+        self.has_changes = true;
 
         // The focus is styled (:focus, :focus-visible, :focus-within), so
         // moving it changes what is on screen. Nothing else asks for the
@@ -3779,5 +3786,46 @@ mod font_face_override_tests {
             "registered family should report the CSS-declared name, \
              not the font file's internal `name` table entry",
         );
+    }
+}
+
+#[cfg(test)]
+mod change_tracking_tests {
+    use super::*;
+    use crate::qual_name;
+    use blitz_traits::shell::ColorScheme;
+
+    #[test]
+    fn mutations_and_focus_changes_are_tracked() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let button = mutator.create_element(qual_name!("button"), vec![]);
+        mutator.append_children(body, &[button]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(doc.has_changes());
+
+        doc.clear_changes();
+        assert!(!doc.has_changes());
+
+        doc.mutate()
+            .set_attribute(button, qual_name!("aria-label"), "Submit");
+        assert!(doc.has_changes());
+
+        doc.clear_changes();
+        assert!(doc.set_focus_to(button));
+        assert!(doc.has_changes());
+
+        doc.clear_changes();
+        doc.clear_focus();
+        assert!(doc.has_changes());
     }
 }
