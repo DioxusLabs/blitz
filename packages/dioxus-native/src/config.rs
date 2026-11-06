@@ -4,12 +4,16 @@ use dioxus_core::LaunchConfig;
 use peniko::Color;
 use winit::window::WindowAttributes;
 
+use crate::KeyboardShortcut;
+
 /// Launch-time configuration for a dioxus-native application.
 pub struct Config {
     pub(crate) window_attributes: WindowAttributes,
     pub(crate) font_ctx: Option<FontContext>,
     pub(crate) alpha_mode: Option<CompositeAlphaMode>,
     pub(crate) base_color: Option<Color>,
+    #[cfg_attr(not(feature = "devtools"), allow(dead_code))]
+    pub(crate) devtools_shortcuts: Vec<KeyboardShortcut>,
 }
 
 impl LaunchConfig for Config {}
@@ -38,6 +42,7 @@ impl Default for Config {
             font_ctx: None,
             alpha_mode: None,
             base_color: None,
+            devtools_shortcuts: Vec::new(),
         }
     }
 }
@@ -76,6 +81,25 @@ impl Config {
     /// Set the base (background) color used to clear each frame.
     pub fn with_base_color(mut self, base_color: Color) -> Self {
         self.base_color = Some(base_color);
+        self
+    }
+
+    /// Open devtools inspecting a window's document when one of `shortcuts`
+    /// is pressed in it. The key press isn't delivered to the app.
+    ///
+    /// ```no_run
+    /// # use dioxus_native::{Config, KeyboardShortcut};
+    /// let config = Config::new().with_devtools_shortcuts(KeyboardShortcut::chrome_devtools());
+    /// ```
+    ///
+    /// This needs the `devtools` feature, and does nothing without it. With
+    /// the `embedded-devtools-frontend` feature too, devtools open in a
+    /// browser; otherwise a `devtools://` URL to paste into Chrome is printed.
+    pub fn with_devtools_shortcuts(
+        mut self,
+        shortcuts: impl IntoIterator<Item = KeyboardShortcut>,
+    ) -> Self {
+        self.devtools_shortcuts.extend(shortcuts);
         self
     }
 }
