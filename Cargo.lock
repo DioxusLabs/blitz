@@ -900,6 +900,8 @@ dependencies = [
 [[package]]
 name = "blitz-chrome-devtools-frontend"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ada3ec885d75ed1e8863112a511a10ac117be388f1801c43aefd4289d9b6a1af"
 dependencies = [
  "brotli-decompressor",
 ]

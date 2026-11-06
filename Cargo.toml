@@ -308,8 +308,6 @@ glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4
 vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
 vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
 vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
-# TEMPORARY: until blitz-chrome-devtools-frontend is published to crates.io
-blitz-chrome-devtools-frontend = { path = "../blitz-chrome-devtools-frontend" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
