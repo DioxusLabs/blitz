@@ -318,8 +318,7 @@ impl BaseDocument {
 
             let is_layer_root =
                 stacking_context.is_none() || self.nodes[node_id].is_paint_layer_root();
-            let mut keyed_children: Vec<((i32, i32), NodeId)> =
-                Vec::with_capacity(children.len() + hoisted_past_parent.len());
+            let keyed_base = self.scratch.keyed_children.len();
 
             for (index, &child_id) in children.iter().enumerate() {
                 if owned_here(self, child_id) {
@@ -347,7 +346,7 @@ impl BaseDocument {
                         // of their parent: lift them out of this static box.
                         entries.push(HoistedPaintChild::new(child_id, 0))
                     } else {
-                        keyed_children.push((paint_order, child_id));
+                        self.scratch.keyed_children.push((paint_order, child_id));
                     }
 
                     // Positioned descendants lifted out of the static boxes of
@@ -357,7 +356,9 @@ impl BaseDocument {
                         let subtree_entries: ThinVec<_> = entries.drain(first_entry..).collect();
                         for entry in subtree_entries {
                             if entry.z_index == 0 {
-                                keyed_children.push(((2, paint_order.1), entry.node_id));
+                                self.scratch
+                                    .keyed_children
+                                    .push(((2, paint_order.1), entry.node_id));
                             } else {
                                 entries.push(entry);
                             }
@@ -368,25 +369,15 @@ impl BaseDocument {
                 while let Some(&(anchor, hoisted_id)) = hoisted_past_parent.get(next_hoisted)
                     && anchor == index
                 {
-                    self.attach_hoisted_past_parent(
-                        hoisted_id,
-                        is_flex_or_grid,
-                        &mut keyed_children,
-                        &mut entries,
-                    );
+                    self.attach_hoisted_past_parent(hoisted_id, is_flex_or_grid, &mut entries);
                     next_hoisted += 1;
                 }
             }
             for &(_, hoisted_id) in &hoisted_past_parent[next_hoisted..] {
-                self.attach_hoisted_past_parent(
-                    hoisted_id,
-                    is_flex_or_grid,
-                    &mut keyed_children,
-                    &mut entries,
-                );
+                self.attach_hoisted_past_parent(hoisted_id, is_flex_or_grid, &mut entries);
             }
 
-            keyed_children.sort_by_key(|&(paint_order, _)| paint_order);
+            self.scratch.keyed_children[keyed_base..].sort_by_key(|&(paint_order, _)| paint_order);
 
             let mut paint_children = self.nodes[node_id]
                 .paint_children
@@ -394,7 +385,12 @@ impl BaseDocument {
                 .take()
                 .unwrap_or_default();
             paint_children.clear();
-            paint_children.extend(keyed_children.into_iter().map(|(_, id)| id));
+            paint_children.extend(
+                self.scratch
+                    .keyed_children
+                    .drain(keyed_base..)
+                    .map(|(_, id)| id),
+            );
 
             let node = &self.nodes[node_id];
             *node.paint_children.borrow_mut() = Some(paint_children);
@@ -434,7 +430,6 @@ impl BaseDocument {
         &mut self,
         child_id: NodeId,
         is_flex_or_grid: bool,
-        paint_children: &mut Vec<((i32, i32), NodeId)>,
         entries: &mut ThinVec<HoistedPaintChild>,
     ) {
         self.build_paint_tree_impl(
@@ -450,7 +445,7 @@ impl BaseDocument {
             entries.push(HoistedPaintChild::new(child_id, z_index));
         } else {
             let paint_order = node_to_paint_order(&self.nodes[child_id], is_flex_or_grid);
-            paint_children.push((paint_order, child_id));
+            self.scratch.keyed_children.push((paint_order, child_id));
         }
     }
 }
