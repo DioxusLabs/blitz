@@ -196,6 +196,11 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
+        #[cfg(feature = "accessibility")]
+        if self.accessibility.tracking {
+            self.mark_accessibility_inline_content(node_id);
+        }
+
         let LayoutInput {
             known_dimensions,
             parent_size,

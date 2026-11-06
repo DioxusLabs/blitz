@@ -332,6 +332,10 @@ impl BaseDocument {
                 let scroll_height = node.scroll_height();
                 let layout = *node.final_layout();
                 self.nodes.bump_geometry_generation();
+                if self.accessibility.tracking {
+                    self.accessibility.scrolled.insert(node_id);
+                    self.has_changes = true;
+                }
                 let event = BlitzScrollEvent {
                     scroll_top: offset.y,
                     scroll_left: offset.x,

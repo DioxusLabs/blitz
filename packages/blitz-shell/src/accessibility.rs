@@ -13,6 +13,8 @@ use winit::{
 pub struct AccessibilityState {
     // /// Adapter to connect to the [`EventLoop`](`winit::event_loop::EventLoop`).
     adapter: Adapter,
+    /// Whether the next update must contain the full tree (the adapter was inactive)
+    needs_full_tree: bool,
 }
 
 struct Handler {
@@ -39,12 +41,32 @@ impl AccessibilityState {
                 window.window_handle().unwrap().as_raw(),
                 Arc::new(Handler { window_id, proxy }),
             ),
+            needs_full_tree: true,
         }
     }
-    pub fn update_tree(&mut self, doc: &BaseDocument) {
-        let _ = doc;
-        self.adapter
-            .update_if_active(|| doc.build_accessibility_tree());
+
+    /// Push the nodes that changed to the adapter, or the full tree if it was not
+    /// active. While it is inactive, the document stops recording changes.
+    pub fn update_tree(&mut self, doc: &mut BaseDocument) {
+        let full = self.needs_full_tree || !doc.is_tracking_accessibility_changes();
+        let mut updated = false;
+        self.adapter.update_if_active(|| {
+            updated = true;
+            if full {
+                doc.build_accessibility_tree()
+            } else {
+                doc.build_accessibility_tree_update()
+            }
+        });
+        self.needs_full_tree = !updated;
+        if !updated {
+            doc.stop_accessibility_tracking();
+        }
+    }
+
+    /// Send the full tree with the next update
+    pub fn invalidate_tree(&mut self) {
+        self.needs_full_tree = true;
     }
 
     /// Allows reacting to window events.
