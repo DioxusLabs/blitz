@@ -593,6 +593,10 @@ impl ImageHandler {
 }
 
 impl NetHandler for ResourceHandler<ImageHandler> {
+    fn error(self: Box<Self>, url: String, error: String) {
+        self.respond(url, Err(error));
+    }
+
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
         let result = self.data.parse(bytes);
         self.respond(resolved_url, result)
