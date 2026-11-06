@@ -449,6 +449,18 @@ pub struct BaseDocument {
     /// Set via [`Self::set_devtools_title`].
     #[cfg(feature = "devtools")]
     pub(crate) devtools_title: Option<String>,
+    /// Reusable buffers for document-wide passes.
+    pub(crate) scratch: DocumentScratch,
+}
+
+/// Buffers reused across runs of document-wide passes to avoid reallocating
+/// them. Recursive passes use them as stacks: each level pushes above the
+/// length it found and truncates back to it before returning.
+#[derive(Default)]
+pub(crate) struct DocumentScratch {
+    /// `(paint order, node)` pairs of the paint lists under construction in
+    /// `build_paint_tree_impl`.
+    pub(crate) keyed_children: Vec<((i32, i32), NodeId)>,
 }
 
 impl BaseDocument {
@@ -584,6 +596,7 @@ impl BaseDocument {
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
+            scratch: DocumentScratch::default(),
         };
 
         // Initialise document with root Document node
