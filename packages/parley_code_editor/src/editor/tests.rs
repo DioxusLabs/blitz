@@ -124,6 +124,7 @@ fn select_all_then_type_replaces_everything() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn up_and_down_keep_the_column() {
     let (mut editor, mut cx) = editor("abcdef\nab\nabcdef");
     for _ in 0..4 {
@@ -217,6 +218,7 @@ fn focus_toggles_the_ime() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn clicks_place_the_caret() {
     let (mut editor, mut cx) = editor("first line\nsecond line\nthird line");
     editor.prepare(&mut cx);
@@ -256,6 +258,7 @@ fn clicks_place_the_caret() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn drag_extends_the_selection() {
     let (mut editor, mut cx) = editor("first line\nsecond line");
     editor.prepare(&mut cx);
@@ -372,6 +375,7 @@ fn select_line_extends_by_a_line_each_time() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn add_cursors_above_and_below() {
     let (mut editor, mut cx) = editor("abcdef\nabcdef\nabcdef");
     key(&mut editor, &mut cx, Key::ArrowDown, Modifiers::default());
@@ -447,6 +451,7 @@ fn caret_stops_blinking_when_unfocused_or_disabled() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn clicking_and_dragging_in_the_gutter_selects_lines() {
     let (mut editor, mut cx) = editor("one\ntwo\nthree\nfour");
     editor.prepare(&mut cx);
@@ -556,6 +561,7 @@ fn line_colors(editor: &mut CodeEditor, cx: &mut TextContext, line: usize) -> Ve
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn highlighting_restyles_cached_lines_after_an_edit_above() {
     use crate::highlight::tests::{BlockComments, COMMENT};
     let (mut editor, mut cx) = editor("a\nb\nc");
@@ -594,6 +600,7 @@ fn wrapping_editor(text: &str, columns: f64) -> (CodeEditor, TextContext) {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn long_lines_wrap_into_several_rows() {
     let words = "word ".repeat(12);
     let (editor, _) = wrapping_editor(&format!("{words}\nshort"), 20.0);
@@ -605,6 +612,7 @@ fn long_lines_wrap_into_several_rows() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn up_and_down_move_through_wrapped_rows() {
     let words = "word ".repeat(12);
     let (mut editor, mut cx) = wrapping_editor(&format!("{words}\nshort"), 20.0);
@@ -620,6 +628,7 @@ fn up_and_down_move_through_wrapped_rows() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn clicks_hit_wrapped_rows() {
     let words = "word ".repeat(12);
     let (mut editor, mut cx) = wrapping_editor(&format!("{words}\nshort"), 20.0);
@@ -651,6 +660,7 @@ fn clicks_hit_wrapped_rows() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "system-fonts"), ignore = "needs fonts for line metrics")]
 fn resizing_rewraps() {
     let words = "word ".repeat(12);
     let (mut editor, mut cx) = wrapping_editor(&words, 20.0);
