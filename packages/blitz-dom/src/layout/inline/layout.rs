@@ -101,7 +101,9 @@ const FIT_TOLERANCE: f32 = 0.001;
 /// Lay out the next line into `slot` (content-box relative, in CSS px)
 #[cfg(feature = "floats")]
 fn set_line_slot(state: &mut BreakerState, slot: &ContentSlot, scale: f32) {
-    state.set_line_max_advance(slot.width * scale);
+    // With huge insets, f32 rounding can make the slot slightly wider than the layout
+    let max_advance = (slot.width * scale).min(state.layout_max_advance());
+    state.set_line_max_advance(max_advance);
     state.set_line_x(slot.x * scale);
     state.set_line_y((slot.y * scale) as f64);
 }
