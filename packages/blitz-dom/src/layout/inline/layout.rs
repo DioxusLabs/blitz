@@ -100,9 +100,9 @@ const FIT_TOLERANCE: f32 = 0.001;
 
 /// Lay out the next line into `slot` (content-box relative, in CSS px)
 #[cfg(feature = "floats")]
-fn set_line_slot(state: &mut BreakerState, slot: &ContentSlot, scale: f32, rounding_slack: f32) {
+fn set_line_slot(state: &mut BreakerState, slot: &ContentSlot, scale: f32, slack: f32) {
     // With huge insets, f32 rounding can make the slot slightly wider than the layout
-    let max_advance = (slot.width * scale + rounding_slack).min(state.layout_max_advance());
+    let max_advance = (slot.width * scale + slack).min(state.layout_max_advance());
     state.set_line_max_advance(max_advance);
     state.set_line_x(slot.x * scale);
     state.set_line_y((slot.y * scale) as f64);
@@ -775,11 +775,22 @@ impl LayoutPassState<'_> {
             .layout
             .set_text_indent(resolved_text_indent * scale, indent_options);
 
-        // A shrink-to-fit width can come back a few ulps narrower than the content after the
-        // round trips through CSS px, which would wrap content that exactly fits. Kept to a few
-        // ulps so that it doesn't visibly shift aligned text.
-        let rounding_slack = (width + pbw).abs() * 8.0 * f32::EPSILON;
-        let max_advance = width + rounding_slack;
+        // Content sized to fit exactly (e.g. shrink-to-fit) can end up a few ulps wider than
+        // `width`: the width goes through round trips in CSS px, and the line breaker sums
+        // advances in a different order to `calculate_content_widths`. Give the line breaker a
+        // few ulps of slack in that case so that the content doesn't wrap.
+        let max_advance = {
+            let max_content_width = inline_layout.layout.calculate_content_widths().max;
+            let fit_width = width.max(max_content_width);
+            let rounding_error = (fit_width + pbw).abs() * 8.0 * f32::EPSILON;
+            if (max_content_width - width).abs() <= rounding_error {
+                fit_width + rounding_error
+            } else {
+                width
+            }
+        };
+        #[cfg(feature = "floats")]
+        let slack = max_advance - width;
 
         #[cfg(not(feature = "floats"))]
         {
@@ -810,7 +821,7 @@ impl LayoutPassState<'_> {
             let mut pending_floats: Vec<PendingFloat> = Vec::new();
             let state = breaker.state_mut();
             state.set_layout_max_advance(max_advance);
-            set_line_slot(state, &line_slot, scale, rounding_slack);
+            set_line_slot(state, &line_slot, scale, slack);
 
             // The state at the start of the current line, which is reverted to when the line
             // needs to be retried lower down (or narrower) to avoid floats.
@@ -835,7 +846,7 @@ impl LayoutPassState<'_> {
                             line_slot = retry_slot;
                             has_active_floats = line_slot.segment_id.is_some();
                             breaker.revert_to(saved_state);
-                            set_line_slot(breaker.state_mut(), &line_slot, scale, rounding_slack);
+                            set_line_slot(breaker.state_mut(), &line_slot, scale, slack);
                             line_start_state = has_active_floats.then(|| breaker.state().clone());
                             continue;
                         }
@@ -863,7 +874,7 @@ impl LayoutPassState<'_> {
                             line_slot =
                                 block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
                             has_active_floats = line_slot.segment_id.is_some();
-                            set_line_slot(state, &line_slot, scale, rounding_slack);
+                            set_line_slot(state, &line_slot, scale, slack);
                         } else {
                             state.set_line_x(0.0);
                             state.set_line_max_advance(max_advance);
@@ -933,7 +944,7 @@ impl LayoutPassState<'_> {
                             line_slot =
                                 block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
                             has_active_floats = line_slot.segment_id.is_some();
-                            set_line_slot(state, &line_slot, scale, rounding_slack);
+                            set_line_slot(state, &line_slot, scale, slack);
 
                             // The float can't be unplaced, so the line can no longer be retried
                             line_start_state = None;
