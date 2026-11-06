@@ -41,6 +41,7 @@ log-frame-times = [
 log-phase-times = ["blitz-dom/log-phase-times"]
 tracing = ["dep:tracing-subscriber", "blitz-shell/tracing", "blitz-net/tracing", "blitz-html/tracing"]
 devtools = ["blitz-shell/devtools"]
+embedded-devtools-frontend = ["devtools", "blitz-shell/embedded-devtools-frontend"]
 
 [dependencies]
 blitz-traits = { workspace = true }

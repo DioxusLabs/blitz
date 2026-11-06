@@ -14,7 +14,7 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use blitz_vibey_cdp_server::documents::{
     collect_document_ids, find_picking_document, picking_document_id, with_document_in,
 };
-use blitz_vibey_cdp_server::{CdpServer, DevtoolsWaker, DocumentProvider, PickerEvent};
+use blitz_vibey_cdp_server::{CdpServer, DevtoolsWaker, DocumentProvider, PickerEvent, target_id};
 use serde_json::json;
 use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 
@@ -258,6 +258,26 @@ fn sub_document_session() {
             }
         }
     });
+}
+
+/// A top-level document's target id is its document id, and a sub-document's
+/// is its host element's
+#[test]
+fn target_ids_of_documents() {
+    let (parent, sub_id) = make_doc_tree();
+    let parent_id = parent.id();
+    let host_id = parent.query_selector("#host").unwrap().unwrap();
+    let mut provider = DocTreeProvider(parent);
+
+    assert_eq!(
+        target_id(&mut provider, parent_id),
+        Some(parent_id.to_string())
+    );
+    assert_eq!(
+        target_id(&mut provider, sub_id),
+        Some(format!("{parent_id}.{}", host_id.as_u64()))
+    );
+    assert_eq!(target_id(&mut provider, usize::MAX), None);
 }
 
 /// A sub-document's target is named after its host element and follows the

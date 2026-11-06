@@ -140,6 +140,8 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
             }
             #[cfg(feature = "devtools")]
             BlitzShellEvent::DevtoolsPoll => self.process_devtools_messages(),
+            #[cfg(feature = "devtools")]
+            BlitzShellEvent::OpenDevtools { doc_id } => self.open_devtools(doc_id),
             BlitzShellEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }

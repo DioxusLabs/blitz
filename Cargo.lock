@@ -898,6 +898,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "blitz-chrome-devtools-frontend"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ada3ec885d75ed1e8863112a511a10ac117be388f1801c43aefd4289d9b6a1af"
+dependencies = [
+ "brotli-decompressor",
+]
+
+[[package]]
 name = "blitz-dom"
 version = "0.3.0-beta.4"
 dependencies = [
@@ -1055,6 +1064,7 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "web-time",
+ "webbrowser",
  "winit",
 ]
 
@@ -1114,6 +1124,7 @@ dependencies = [
 name = "blitz-vibey-cdp-server"
 version = "0.3.0-beta.4"
 dependencies = [
+ "blitz-chrome-devtools-frontend",
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
@@ -8242,7 +8253,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=fca167cf659b8bf48019d0dea90624109a78103f#fca167cf659b8bf48019d0dea90624109a78103f"
+source = "git+https://github.com/DioxusLabs/taffy?rev=4aca4f4933aa9cb7a3266050c788aad4c90288d2#4aca4f4933aa9cb7a3266050c788aad4c90288d2"
 dependencies = [
  "serde",
  "slotmap",

@@ -17,6 +17,7 @@ mod dioxus_renderer;
 mod event_handlers;
 mod hooks;
 mod link_handler;
+mod shortcut;
 
 #[cfg(feature = "prelude")]
 pub mod prelude;
@@ -65,6 +66,7 @@ pub use blitz_dom::{FontContext, Widget, build_single_font_ctx};
 pub use config::Config;
 pub use event_handlers::WinitEventHandlerId;
 pub use hooks::{use_back_button, use_window_event};
+pub use shortcut::KeyboardShortcut;
 pub use winit;
 pub use winit::dpi::{LogicalSize, PhysicalSize};
 pub use winit::window::WindowAttributes;
@@ -235,11 +237,16 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         base_color: config.base_color,
         alpha_mode: config.alpha_mode,
     });
+    #[cfg(feature = "devtools")]
+    let devtools_shortcuts = std::mem::take(&mut config.devtools_shortcuts);
     let config =
         WindowConfig::with_attributes(Box::new(doc) as _, renderer, config.window_attributes);
 
     // Create application
-    let application = DioxusNativeApplication::new(proxy, event_queue, config);
+    #[allow(unused_mut)]
+    let mut application = DioxusNativeApplication::new(proxy, event_queue, config);
+    #[cfg(feature = "devtools")]
+    application.set_devtools_shortcuts(devtools_shortcuts);
 
     // Run event loop
     event_loop.run_app(application).unwrap();
