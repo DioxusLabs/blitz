@@ -22,7 +22,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev libfontconfig-dev \
+          sudo apt-get install -y build-essential pkg-config libssl-dev libfontconfig-dev libegl-dev libgl-dev libgles-dev \
             libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
             libx11-xcb-dev libxcb1-dev libvulkan-dev libasound2-dev
       - uses: Swatinem/rust-cache@v2
