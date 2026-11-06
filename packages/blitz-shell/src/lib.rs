@@ -161,6 +161,12 @@ impl ShellProvider for BlitzShellProvider {
         let _ = self.window.drag_window();
     }
 
+    #[cfg(feature = "devtools")]
+    fn open_devtools(&self, doc_id: usize) {
+        self.proxy
+            .send_event(BlitzShellEvent::OpenDevtools { doc_id });
+    }
+
     fn request_clipboard_text(&self) -> Result<(), blitz_traits::shell::ClipboardError> {
         self.proxy
             .send_event(BlitzShellEvent::RequestClipboardText {

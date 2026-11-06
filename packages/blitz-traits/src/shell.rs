@@ -62,6 +62,11 @@ pub trait ShellProvider: Send + Sync + 'static {
     /// Begin an interactive user-driven move of the window (call from a
     /// mousedown handler on a drag region)
     fn drag_window(&self) {}
+
+    /// Open developer tools inspecting the document with the given id
+    fn open_devtools(&self, doc_id: usize) {
+        let _ = doc_id;
+    }
 }
 
 pub struct DummyShellProvider;
