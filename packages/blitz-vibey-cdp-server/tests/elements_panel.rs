@@ -2179,3 +2179,101 @@ fn style_sheet_rule_selector_editing() {
         assert_eq!(computed_value(&mut ws, 10, t_id, "color"), "rgb(0, 0, 255)");
     });
 }
+
+#[test]
+fn style_sheet_add_rule() {
+    let html = "<html><head><style id=\"sheet\">.a { color: red }\n\
+         @media (min-width: 1px) {\n  .b { color: blue }\n}\n</style></head>\
+         <body><div id=\"t\" class=\"a\">x</div></body></html>";
+    run_structural_session(html, |addr, doc_id| {
+        let (mut ws, _response) =
+            tungstenite::connect(format!("ws://{addr}/devtools/page/{doc_id}"))
+                .expect("ws connect");
+        let mut events = Vec::new();
+
+        send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": -1 }));
+        let root = read_reply(&mut ws, 1, &mut events)["root"].clone();
+        let t_id = node_id_of(&root, "t");
+        send_command(&mut ws, 2, "CSS.enable", json!({}));
+        read_reply(&mut ws, 2, &mut events);
+        let sheet_id = events
+            .iter()
+            .find(|e| e["method"] == "CSS.styleSheetAdded")
+            .map(|e| e["params"]["header"]["styleSheetId"].clone())
+            .unwrap();
+        let at = |line: u64, column: u64| json!({ "startLine": line, "startColumn": column, "endLine": line, "endColumn": column });
+
+        // A rule added at the end of the sheet
+        send_command(
+            &mut ws,
+            3,
+            "CSS.addRule",
+            json!({ "styleSheetId": sheet_id, "ruleText": "\n#t { color: green }", "location": at(4, 0) }),
+        );
+        let rule = read_reply(&mut ws, 3, &mut events)["rule"].clone();
+        assert_eq!(rule["styleSheetId"], sheet_id);
+        assert_eq!(rule["selectorList"]["text"], "#t");
+        assert_eq!(rule["style"]["cssText"], " color: green ");
+        assert_eq!(
+            rule["style"]["range"],
+            json!({ "startLine": 5, "startColumn": 4, "endLine": 5, "endColumn": 18 })
+        );
+        assert_eq!(computed_value(&mut ws, 4, t_id, "color"), "rgb(0, 128, 0)");
+
+        // A rule added inside `@media`, after its rule
+        send_command(
+            &mut ws,
+            5,
+            "CSS.addRule",
+            json!({
+                "styleSheetId": sheet_id,
+                "ruleText": "\n  #t#t { color: rgb(1, 2, 3) }",
+                "location": at(2, 20),
+            }),
+        );
+        let rule = read_reply(&mut ws, 5, &mut events)["rule"].clone();
+        assert_eq!(
+            rule["selectorList"]["selectors"][0]["range"],
+            json!({
+                "startLine": 3, "startColumn": 2, "endLine": 3, "endColumn": 6
+            })
+        );
+        assert_eq!(computed_value(&mut ws, 6, t_id, "color"), "rgb(1, 2, 3)");
+
+        // Added rules can be edited like the others
+        send_command(
+            &mut ws,
+            7,
+            "CSS.setStyleTexts",
+            json!({ "edits": [{
+                "styleSheetId": sheet_id,
+                "range": rule["style"]["range"],
+                "text": " color: rgb(4, 5, 6) ",
+            }] }),
+        );
+        read_reply(&mut ws, 7, &mut events);
+        assert_eq!(computed_value(&mut ws, 8, t_id, "color"), "rgb(4, 5, 6)");
+
+        // Text that is not a single valid style rule is rejected
+        for (id, rule_text) in [(9, "!! { color: red }"), (10, ".x {} .y {}"), (11, ".x {")] {
+            send_command(
+                &mut ws,
+                id,
+                "CSS.addRule",
+                json!({ "styleSheetId": sheet_id, "ruleText": rule_text, "location": at(0, 0) }),
+            );
+            expect_error(&mut ws, id);
+        }
+        send_command(
+            &mut ws,
+            12,
+            "CSS.getStyleSheetText",
+            json!({ "styleSheetId": sheet_id }),
+        );
+        assert_eq!(
+            read_reply(&mut ws, 12, &mut events)["text"],
+            ".a { color: red }\n@media (min-width: 1px) {\n  .b { color: blue }\n  \
+             #t#t { color: rgb(4, 5, 6) }\n}\n\n#t { color: green }"
+        );
+    });
+}
