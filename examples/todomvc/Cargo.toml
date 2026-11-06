@@ -30,8 +30,8 @@ hot-reload = ["dioxus-native/hot-reload"]
 # where Chrome can be launched directly, e.g. on macOS; elsewhere they print
 # a `devtools://` URL to paste into Chrome)
 devtools = ["dioxus-native/devtools"]
-# Serve devtools' frontend from the app, so the shortcuts open it in any
-# Chromium-based browser on any platform
+# Serve devtools' frontend from the app, so the shortcuts open it in your
+# browser (e.g. Chrome or Firefox) on any platform
 embedded-devtools-frontend = ["devtools", "dioxus-native/embedded-devtools-frontend"]
 
 [dependencies]

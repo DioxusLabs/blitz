@@ -12,8 +12,9 @@ edition.workspace = true
 [features]
 default = ["embedded-frontend"]
 # Embed a DevTools frontend (about 2 MB) and serve it, so that `frontend_url`
-# is a local URL any Chromium-based browser can open. Without it, `frontend_url`
-# is a `devtools://` URL to Chrome's own frontend, which only Chrome can open.
+# is a local URL that browsers such as Chrome and Firefox can open. Without it,
+# `frontend_url` is a `devtools://` URL to Chrome's own frontend, which only
+# Chrome can open.
 embedded-frontend = ["dep:blitz-chrome-devtools-frontend"]
 
 [dependencies]

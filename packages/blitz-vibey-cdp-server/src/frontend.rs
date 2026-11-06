@@ -17,10 +17,11 @@ const ENTRY_PATH: &str = "devtools_app.html";
 ///
 /// When the `embedded-frontend` feature is enabled (or
 /// `BLITZ_DEVTOOLS_FRONTEND_DIR` is set), this is the frontend served by the
-/// server itself, which any Chromium-based browser can open. Otherwise it's the
-/// frontend bundled with Chrome (a `devtools://` URL, as advertised at
-/// `/json/list`), which only Chrome can open: by launching Chrome with it
-/// (where that's possible, e.g. on macOS) or pasting it into the address bar.
+/// server itself, which browsers such as Chrome and Firefox can open.
+/// Otherwise it's the frontend bundled with Chrome (a `devtools://` URL, as
+/// advertised at `/json/list`), which only Chrome can open: by launching Chrome
+/// with it (where that's possible, e.g. on macOS) or pasting it into the
+/// address bar.
 pub fn frontend_url(addr: std::net::SocketAddr, target_id: &str) -> String {
     let serves_frontend =
         cfg!(feature = "embedded-frontend") || std::env::var_os(FRONTEND_DIR_VAR).is_some();
