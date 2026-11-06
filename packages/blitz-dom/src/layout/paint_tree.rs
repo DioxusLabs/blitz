@@ -214,16 +214,25 @@ impl BaseDocument {
     /// own lists are still valid and the entries they contributed to the
     /// enclosing stacking context are replayed from `Node::sc_contribution_cache`.
     pub(crate) fn build_paint_tree(&mut self, root_id: NodeId) {
-        self.build_paint_tree_impl(root_id, None);
+        self.build_paint_tree_impl(root_id, None, None);
     }
 
     /// `stacking_context` is the entry list of the nearest ancestor stacking
     /// context, or `None` when `node_id` is itself a stacking-context root.
+    ///
+    /// `lifted` is the list of the nearest ancestor that collects the positioned
+    /// (`z-index: auto` or `0`) block-level boxes of the static block containers
+    /// below it (see [`passes_positioned_through`]), or `None` when the parent
+    /// collects nothing.
     fn build_paint_tree_impl(
         &mut self,
         node_id: NodeId,
         stacking_context: Option<&mut ThinVec<HoistedPaintChild>>,
+        mut lifted: Option<&mut ThinVec<NodeId>>,
     ) {
+        let passes_through = lifted.is_some()
+            && stacking_context.is_some()
+            && passes_positioned_through(&self.nodes[node_id]);
         {
             let node = &self.nodes[node_id];
             // `propagate_damage_flags` stores the union of a node's own and
@@ -237,7 +246,8 @@ impl BaseDocument {
             // parent (z-indexed flex/grid items), which does not damage the
             // node itself, so the role the caller resolved must match the one
             // this node was last built with.
-            let role_unchanged = node.stacking_context.is_some() == stacking_context.is_none();
+            let role_unchanged = node.stacking_context.is_some() == stacking_context.is_none()
+                && node.passes_positioned_through.get() == passes_through;
             let clean = role_unchanged
                 && !node
                     .damage()
@@ -247,6 +257,9 @@ impl BaseDocument {
             if clean {
                 if let Some(stacking_context) = stacking_context {
                     stacking_context.extend(node.sc_contribution_cache.borrow().iter().cloned());
+                }
+                if passes_through && let Some(lifted) = lifted {
+                    lifted.extend(node.lifted_contribution_cache.borrow().iter().copied());
                 }
                 return;
             }
@@ -273,6 +286,15 @@ impl BaseDocument {
             entries.clear();
             entries
         };
+
+        self.nodes[node_id]
+            .passes_positioned_through
+            .set(passes_through);
+        // A block container that does not pass its positioned boxes through
+        // collects those of the static block containers below it.
+        let collects = !passes_through && collects_positioned(&self.nodes[node_id]);
+        let mut own_lifted: ThinVec<NodeId> = ThinVec::new();
+        let lifted_start = lifted.as_ref().map_or(0, |lifted| lifted.len());
 
         let children = self.nodes[node_id].layout_children.borrow_mut().take();
         if let Some(children) = children {
@@ -327,23 +349,44 @@ impl BaseDocument {
             for (index, &child_id) in children.iter().enumerate() {
                 if owned_here(self, child_id) {
                     let is_sc_root = self.nodes[child_id].is_stacking_context_root(is_flex_or_grid);
+                    let z_index = self.nodes[child_id].z_index();
+                    // Only stacking contexts with a non-zero z-index are lifted
+                    // out of tree order into the enclosing stacking context's
+                    // z-sorted list (CSS 2.1 Appendix E). A positioned box with
+                    // `z-index: auto` or `0` in a static block container that
+                    // passes them through is painted by the nearest collecting
+                    // ancestor, in tree order with its own positioned boxes.
+                    let lift_child = passes_through
+                        && (!is_sc_root || z_index == 0)
+                        && is_lifted_positioned_box(&self.nodes[child_id]);
+                    if lift_child {
+                        lifted.as_deref_mut().unwrap().push(child_id);
+                    }
+
+                    let own_lifted_start = own_lifted.len();
+                    let child_lifted = if passes_through {
+                        lifted.as_deref_mut()
+                    } else if collects {
+                        Some(&mut own_lifted)
+                    } else {
+                        None
+                    };
                     self.build_paint_tree_impl(
                         child_id,
                         match is_sc_root {
                             true => None,
                             false => Some(&mut entries),
                         },
+                        child_lifted,
                     );
 
-                    // Only stacking contexts with a non-zero z-index are lifted
-                    // out of tree order into the enclosing stacking context's
-                    // z-sorted list (CSS 2.1 Appendix E).
-                    let z_index = self.nodes[child_id].z_index();
                     if is_sc_root && z_index != 0 {
                         entries.push(HoistedPaintChild::new(child_id, z_index))
-                    } else {
+                    } else if !lift_child {
                         paint_children.push(child_id);
                     }
+                    // Boxes lifted out of this child's subtree follow it in tree order
+                    paint_children.extend(own_lifted.drain(own_lifted_start..));
                 }
 
                 while let Some(&(anchor, hoisted_id)) = hoisted_past_parent.get(next_hoisted)
@@ -366,6 +409,12 @@ impl BaseDocument {
         }
 
         let node = &mut self.nodes[node_id];
+        let mut lifted_contribution_cache = node.lifted_contribution_cache.borrow_mut();
+        lifted_contribution_cache.clear();
+        if passes_through && let Some(lifted) = lifted {
+            lifted_contribution_cache.extend(lifted[lifted_start..].iter().copied());
+        }
+        drop(lifted_contribution_cache);
         if let Some(stacking_context) = stacking_context {
             node.stacking_context = None;
             stacking_context.extend(entries.iter().cloned());
@@ -406,6 +455,7 @@ impl BaseDocument {
                 true => None,
                 false => Some(entries),
             },
+            None,
         );
 
         let z_index = self.nodes[child_id].z_index();
@@ -415,6 +465,63 @@ impl BaseDocument {
             paint_children.push(child_id);
         }
     }
+}
+
+/// Whether `node` is a static block container that leaves its positioned
+/// (`z-index: auto` or `0`) block-level boxes to an ancestor to paint (CSS 2.1
+/// Appendix E step 8 paints them in tree order above all the in-flow content of
+/// the stacking context, not just that of their parent). Boxes that clip their
+/// overflow, inline formatting contexts, flex and grid containers and tables
+/// paint their own.
+fn passes_positioned_through(node: &Node) -> bool {
+    use style::values::computed::Overflow;
+    use style::values::specified::box_::DisplayOutside;
+
+    if node.flags.is_inline_root() || node.flags.is_table_root() {
+        return false;
+    }
+    let Some(style) = node.primary_styles() else {
+        return false;
+    };
+    let display = style.clone_display();
+    display.outside() == DisplayOutside::Block
+        && matches!(
+            display.inside(),
+            DisplayInside::Flow | DisplayInside::FlowRoot
+        )
+        && style.clone_position() == Position::Static
+        && style.clone_overflow_x() == Overflow::Visible
+        && style.clone_overflow_y() == Overflow::Visible
+        && !style
+            .clone_contain()
+            .contains(style::values::computed::Contain::PAINT)
+}
+
+/// Whether `node` collects the positioned boxes passed through by the static
+/// block containers below it: a block container that does not pass its own
+/// through.
+fn collects_positioned(node: &Node) -> bool {
+    if node.flags.is_inline_root() || node.flags.is_table_root() {
+        return false;
+    }
+    node.display_style().is_some_and(|display| {
+        matches!(
+            display.inside(),
+            DisplayInside::Flow | DisplayInside::FlowRoot
+        )
+    })
+}
+
+/// A block-level, in-flow positioned box (`relative` or `sticky`).
+fn is_lifted_positioned_box(node: &Node) -> bool {
+    use style::values::specified::box_::DisplayOutside;
+
+    node.primary_styles().is_some_and(|style| {
+        matches!(
+            style.clone_position(),
+            Position::Relative | Position::Sticky
+        ) && style.clone_display().outside() == DisplayOutside::Block
+    })
 }
 
 #[inline(always)]
@@ -458,5 +565,72 @@ fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
             position_to_order(position) + float_to_order(style.clone_float()),
             0,
         )
+    }
+}
+
+#[cfg(test)]
+mod positioned_paint_order_tests {
+    use crate::{Attribute, BaseDocument, DocumentConfig, NodeId, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    fn style(value: &str) -> Attribute {
+        Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        }
+    }
+
+    /// `<body>` holding a static wrapper (with a `position: relative` box of the
+    /// given `z-index` inside it) and then a static sibling pulled up over that
+    /// box by a negative margin. Returns (document, the relative box, the sibling).
+    fn make_doc(z_index: &str) -> (BaseDocument, NodeId, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut m = doc.mutate();
+        let html = m.create_element(qual_name!("html"), vec![style("display:block")]);
+        let body = m.create_element(qual_name!("body"), vec![style("display:block;margin:0")]);
+        let wrapper = m.create_element(
+            qual_name!("div"),
+            vec![style("display:block;padding-left:10px;padding-top:5px")],
+        );
+        let relative = m.create_element(
+            qual_name!("div"),
+            vec![style(&format!(
+                "display:block;position:relative;left:20px;width:100px;height:50px;z-index:{z_index}"
+            ))],
+        );
+        let sibling = m.create_element(
+            qual_name!("div"),
+            vec![style(
+                "display:block;width:200px;height:50px;margin-top:-40px",
+            )],
+        );
+        m.append_children(wrapper, &[relative]);
+        m.append_children(body, &[wrapper, sibling]);
+        m.append_children(html, &[body]);
+        m.append_children(root_id, &[html]);
+        drop(m);
+        doc.resolve(0.0);
+        (doc, relative, sibling)
+    }
+
+    /// CSS 2.1 Appendix E step 8: a positioned box with `z-index: auto` (or `0`)
+    /// paints above the in-flow content of its stacking context in tree order,
+    /// even when it sits in a static wrapper and a later static box overlaps it.
+    #[test]
+    fn a_relative_box_in_a_static_wrapper_paints_above_later_in_flow_content() {
+        for z_index in ["auto", "0"] {
+            let (doc, relative, sibling) = make_doc(z_index);
+            let at = |x: f32, y: f32| doc.hit(x, y).map(|hit| hit.node_id);
+            // Where the relative box (x 30..130, y 5..55) and the sibling (y 15..65) overlap
+            assert_eq!(at(60.0, 30.0), Some(relative), "z-index: {z_index}");
+            // The sibling where it is not covered
+            assert_eq!(at(160.0, 30.0), Some(sibling), "z-index: {z_index}");
+            // The relative box above the sibling
+            assert_eq!(at(60.0, 10.0), Some(relative), "z-index: {z_index}");
+        }
     }
 }
