@@ -298,7 +298,8 @@ impl ElementCx<'_, '_> {
                 ]
             })
             .collect();
-        let row_colors: Vec<[Option<Color>; 2]> = table
+        let info = blitz_dom::table_layout_info(self.context.dom, self.node.id);
+        let row_colors: Vec<[Option<Color>; 2]> = info
             .rows
             .iter()
             .map(|row| {
@@ -314,14 +315,13 @@ impl ElementCx<'_, '_> {
             return;
         }
 
-        let cell_rect = |cell_id: NodeId| -> Option<Rect> {
-            let layout = self.context.dom.get_node(cell_id)?.final_layout();
-            Some(Rect::new(
-                layout.location.x as f64,
-                layout.location.y as f64,
-                (layout.location.x + layout.size.width) as f64,
-                (layout.location.y + layout.size.height) as f64,
-            ))
+        let cell_rect = |cell: &blitz_dom::TableCell| -> Rect {
+            Rect::new(
+                cell.location.x as f64,
+                cell.location.y as f64,
+                (cell.location.x + cell.size.width) as f64,
+                (cell.location.y + cell.size.height) as f64,
+            )
         };
 
         // In the collapsed borders model the borders are laid out as gutters between the
@@ -330,20 +330,16 @@ impl ElementCx<'_, '_> {
         // backgrounds of adjacent cells tile exactly.
         let collapsed = table.border_collapse == BorderCollapse::Collapse;
         let (gutter, bounds) = if collapsed {
-            let gap = table.style.gap.map(|gap| gap.into_raw().value() as f64);
-            let bounds = table
-                .cells
-                .iter()
-                .filter_map(|cell| cell_rect(cell.node_id))
-                .reduce(|a, b| a.union(b));
-            (Size::new(gap.width, gap.height), bounds)
+            let gap = table.collapsed_gutter;
+            let bounds = info.cells.iter().map(cell_rect).reduce(|a, b| a.union(b));
+            (Size::new(gap.width as f64, gap.height as f64), bounds)
         } else {
             (Size::ZERO, None)
         };
         let before = Size::new((gutter.width / 2.0).ceil(), (gutter.height / 2.0).ceil());
         let after = gutter - before;
 
-        for cell in &table.cells {
+        for cell in &info.cells {
             let no_colors = [None, None];
             let column = column_colors
                 .get(cell.column as usize)
@@ -353,9 +349,7 @@ impl ElementCx<'_, '_> {
             if colors.peek().is_none() {
                 continue;
             }
-            let Some(mut rect) = cell_rect(cell.node_id) else {
-                continue;
-            };
+            let mut rect = cell_rect(cell);
             if let Some(bounds) = bounds {
                 rect = Rect::new(
                     rect.x0 - before.width,
