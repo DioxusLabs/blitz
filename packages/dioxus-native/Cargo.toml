@@ -10,7 +10,7 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "file-dialog", "vello-hybrid", "woff", "text-transform-icu", "apple-font-embolden"]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "file-dialog", "vello-hybrid", "woff", "text-transform-icu", "apple-font-embolden", "windows-font-embolden"]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
@@ -45,6 +45,7 @@ vello-cpu-base = ["dep:anyrender_vello_cpu"]
 
 font-embolden = ["blitz-paint/font-embolden"]
 apple-font-embolden = ["blitz-paint/apple-font-embolden"]
+windows-font-embolden = ["blitz-paint/windows-font-embolden"]
 scrollbars = ["blitz-paint/scrollbars"]
 
 # Other features

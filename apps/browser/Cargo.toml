@@ -10,7 +10,7 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["hybrid", "cookies", "cache", "screenshot", "apple-font-embolden", "scrollbars", "mimalloc", "devtools", "embedded-devtools-frontend"]
+default = ["hybrid", "cookies", "cache", "screenshot", "apple-font-embolden", "windows-font-embolden", "scrollbars", "mimalloc", "devtools", "embedded-devtools-frontend"]
 android-defaults = ["skia", "cookies"]
 
 screenshot = ["dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
@@ -40,6 +40,7 @@ scrollbars = ["blitz-dom/scrollbars", "blitz-paint/scrollbars"]
 mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
 apple-font-embolden = ["dioxus-native/apple-font-embolden"]
+windows-font-embolden = ["dioxus-native/windows-font-embolden"]
 writing-mode = ["blitz-dom/writing-mode", "dioxus-native/writing-mode"]
 devtools = ["dioxus-native/devtools", "blitz-dom/devtools"]
 embedded-devtools-frontend = ["devtools", "dioxus-native/embedded-devtools-frontend"]

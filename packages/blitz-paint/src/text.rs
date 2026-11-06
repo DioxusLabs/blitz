@@ -12,7 +12,7 @@ use style::values::computed::{
 use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 
 use crate::color::{Color, ToColorColor as _};
-use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
+use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR, WINDOWS_FONT_EMBOLDEN_ENABLED};
 
 /// Draw the backgrounds of inline elements (e.g. `<span style="background: ...">`).
 ///
@@ -655,10 +655,18 @@ pub(crate) fn stroke_text<'a>(
                 let fill_color = brush_override
                     .unwrap_or_else(|| stack.last().map(|e| e.fill_color).unwrap_or(Color::BLACK));
 
-                let embolden = if FONT_EMBOLDEN_ENABLED {
-                    font_embolden(font_size as f64, fill_color, transform)
+                let (embolden, hint) = if FONT_EMBOLDEN_ENABLED {
+                    (
+                        font_embolden(font_size as f64, fill_color, transform),
+                        false,
+                    )
+                } else if WINDOWS_FONT_EMBOLDEN_ENABLED {
+                    (
+                        windows_embolden(font_size as f64, fill_color, transform),
+                        true,
+                    )
                 } else {
-                    kurbo::Vec2::default()
+                    (kurbo::Vec2::default(), true)
                 };
 
                 let normalized_coords: &[i16] = bytemuck::cast_slice(run.normalized_coords());
@@ -667,7 +675,7 @@ pub(crate) fn stroke_text<'a>(
                     scene.draw_glyphs(
                         font,
                         font_size,
-                        !FONT_EMBOLDEN_ENABLED, // hint
+                        hint,
                         normalized_coords,
                         embolden,
                         Fill::NonZero,
@@ -772,17 +780,26 @@ pub(crate) fn draw_text_selection(
 /// the embolden in user units, so the device amounts are divided by the transform's scale.
 fn font_embolden(font_size: f64, color: Color, transform: Affine) -> kurbo::Vec2 {
     const MAX_DEVICE_EMBOLDEN: f64 = 0.3;
-    let [a, b, c, d, _, _] = transform.as_coeffs();
-    let (scale_x, scale_y) = (a.hypot(b), c.hypot(d));
-    let device_ppem = font_size * (a * d - b * c).abs().sqrt();
-    if scale_x == 0.0 || scale_y == 0.0 || !device_ppem.is_finite() {
+    let Some((device_ppem, scale_x, scale_y)) = device_ppem_and_scale(font_size, transform) else {
         return kurbo::Vec2::default();
-    }
+    };
     let fs = device_ppem * embolden_scale(color);
     kurbo::Vec2::new(
         (0.0121 * fs).min(MAX_DEVICE_EMBOLDEN) / scale_x,
         (0.015125 * fs).min(MAX_DEVICE_EMBOLDEN) / scale_y,
     )
+}
+
+/// The font's device ppem and the transform's x/y scale, which device-pixel embolden amounts are
+/// divided by because glifo applies the embolden in user units.
+fn device_ppem_and_scale(font_size: f64, transform: Affine) -> Option<(f64, f64, f64)> {
+    let [a, b, c, d, _, _] = transform.as_coeffs();
+    let (scale_x, scale_y) = (a.hypot(b), c.hypot(d));
+    let device_ppem = font_size * (a * d - b * c).abs().sqrt();
+    if scale_x == 0.0 || scale_y == 0.0 || !device_ppem.is_finite() {
+        return None;
+    }
+    Some((device_ppem, scale_x, scale_y))
 }
 
 /// Scales Pathfinder's stem-darkening factors by the text's relative luminance. CoreText
@@ -802,4 +819,23 @@ fn embolden_scale(color: Color) -> f64 {
         prev = *point;
     }
     prev.1
+}
+
+/// Approximates the extra weight Chrome gives light text on Windows, where Skia is built with
+/// `SK_GAMMA_CONTRAST` 1.0. Skia picks its coverage tables by the text's luma (Rec. 709 weights on
+/// sRGB-encoded channels), quantized to 3 bits, so the scale steps per luma bucket. Light text
+/// stays hinted; the embolden is in device pixels per side, mostly constant, wider in x than y.
+fn windows_embolden(font_size: f64, color: Color, transform: Affine) -> kurbo::Vec2 {
+    const SCALE: [f64; 8] = [0.0, 0.0, 0.0, 0.17, 0.34, 0.51, 0.75, 1.0];
+    let [r, g, b, _] = color.discard_alpha().to_rgba8().to_u8_array();
+    let luma = (54 * r as u32 + 183 * g as u32 + 19 * b as u32) >> 8;
+    let scale = SCALE[(luma >> 5) as usize];
+    if scale == 0.0 {
+        return kurbo::Vec2::default();
+    }
+    let Some((device_ppem, scale_x, scale_y)) = device_ppem_and_scale(font_size, transform) else {
+        return kurbo::Vec2::default();
+    };
+    let amount = scale * (0.15 + 0.0015 * device_ppem);
+    kurbo::Vec2::new(1.5 * amount / scale_x, 0.5 * amount / scale_y)
 }
