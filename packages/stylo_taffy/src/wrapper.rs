@@ -40,6 +40,9 @@ bitflags! {
         /// The box is a table laid out with the collapsing border model, which has no padding
         /// (CSS 2.1 §17.6.2)
         const COLLAPSED_BORDER_TABLE = 1 << 6;
+        /// Whether the node is a replaced element or form control, to which table display
+        /// values don't apply
+        const IGNORES_TABLE_DISPLAY = 1 << 7;
     }
 }
 
@@ -77,10 +80,13 @@ pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>> {
 }
 
 impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
-    /// The display used for contents layout, including button-input fixups.
+    /// The display used for contents layout, including replaced-element and button-input fixups.
     #[inline]
     pub fn effective_display(&self) -> stylo::Display {
-        let display = self.style.clone_display();
+        let mut display = self.style.clone_display();
+        if self.flags.contains(StyleFlags::IGNORES_TABLE_DISPLAY) {
+            display = convert::replaced_element_display(display);
+        }
         if self.flags.contains(StyleFlags::IS_BUTTON_INPUT) {
             convert::button_input_display(display)
         } else {
@@ -402,7 +408,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::TableContainerStyle for TaffyStyl
 impl<T: Deref<Target = ComputedValues>> taffy::TableItemStyle for TaffyStyloStyle<T> {
     #[inline]
     fn table_role(&self) -> taffy::TableRole {
-        convert::table_role(self.style.clone_display())
+        convert::table_role(self.effective_display())
     }
 
     #[inline]

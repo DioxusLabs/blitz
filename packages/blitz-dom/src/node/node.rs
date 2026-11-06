@@ -478,15 +478,17 @@ impl Node {
         }
     }
 
-    pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
-        let display = self.primary_styles().as_ref()?.clone_display();
-        Some(
-            if self.element_data().is_some_and(|el| el.is_button_input()) {
-                stylo_taffy::convert::button_input_display(display)
-            } else {
-                display
-            },
-        )
+    pub fn display_style(&self) -> Option<StyloDisplay> {
+        let mut display = self.primary_styles().as_ref()?.clone_display();
+        if let Some(el) = self.element_data() {
+            if el.ignores_table_display() {
+                display = stylo_taffy::convert::replaced_element_display(display);
+            }
+            if el.is_button_input() {
+                display = stylo_taffy::convert::button_input_display(display);
+            }
+        }
+        Some(display)
     }
 
     pub fn is_or_contains_block(&self) -> bool {
@@ -1175,6 +1177,9 @@ impl Node {
             if el.is_button_input() {
                 flags |= stylo_taffy::StyleFlags::IS_BUTTON_INPUT;
             }
+            if el.ignores_table_display() {
+                flags |= stylo_taffy::StyleFlags::IGNORES_TABLE_DISPLAY;
+            }
             if let Some(inline_layout) = el.inline_layout_data.as_deref() {
                 flags |= inline_layout.span_cb_flags;
             }
@@ -1182,7 +1187,7 @@ impl Node {
 
         // In the collapsed borders model the borders of the table and its cells are laid out
         // by the table as gutters between the cells, so contribute nothing to their own boxes
-        let display_inside = styles.clone_display().inside();
+        let display_inside = self.display_style().unwrap_or(StyloDisplay::Block).inside();
         let is_table_part = matches!(
             display_inside,
             DisplayInside::Table | DisplayInside::TableCell
@@ -1281,9 +1286,8 @@ impl Node {
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
     /// for nodes without computed styles (e.g. text nodes).
     pub fn taffy_display(&self) -> taffy::Display {
-        self.primary_styles()
-            .map(|style| {
-                let display = style.clone_display();
+        self.display_style()
+            .map(|display| {
                 if self.element_data().is_some_and(|el| el.is_button_input())
                     && !matches!(
                         display.inside(),

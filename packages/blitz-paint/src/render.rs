@@ -258,7 +258,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // `overflow` does not apply to internal table boxes other than cells (rows and row
         // groups are not block containers), so they never clip their content
         let is_internal_table_box_other_than_cell = {
-            let display = styles.clone_display();
+            let display = node.display_style().unwrap_or(styles.clone_display());
             display.outside() == DisplayOutside::InternalTable
                 && display.inside() != DisplayInside::TableCell
         };
@@ -537,7 +537,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Internal table boxes other than cells (rows, row groups) have their backgrounds
         // painted under their cells by the table, and no borders of their own.
-        let display = styles.clone_display();
+        let display = node.display_style().unwrap_or(styles.clone_display());
         let is_internal_table_box_other_than_cell = display.outside()
             == DisplayOutside::InternalTable
             && display.inside() != DisplayInside::TableCell;
