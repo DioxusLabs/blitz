@@ -116,14 +116,14 @@ skrifa = { version = "0.44", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -301,12 +301,17 @@ wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 rustc-hash = { workspace = true }
 
-# glifo 0.4.0 with the unhinted embolden fix (linebender/vello#2049). Drop once it ships.
+# vello main for inverse blurred rounded rects (linebender/vello#1718, needed by anyrender's
+# box shadows) and the glifo unhinted embolden fix (linebender/vello#2049). Drop once released.
 [patch.crates-io]
-glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
-vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
-vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
-vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
+vello = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_encoding = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_shaders = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_common = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_cpu = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_gpu = { git = "https://github.com/linebender/vello", branch = "main" }
+vello_gpu_shaders = { git = "https://github.com/linebender/vello", branch = "main" }
+glifo = { git = "https://github.com/linebender/vello", branch = "main" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }

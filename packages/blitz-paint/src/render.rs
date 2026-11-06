@@ -343,9 +343,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         }
         let cx = self.element_cx(node, *node.final_layout(), transform, None);
         let clip = if cx.text_input.is_some() {
-            cx.frame.text_input_clip_path()
+            cx.frame.text_input_clip_shape()
         } else {
-            cx.frame.padding_box_path()
+            cx.frame.padding_box_shape()
         };
         let pushed = self.layer_manager.maybe_push_layer(
             scene,
@@ -530,9 +530,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // here matches the clip applied to the content below.
         let child_clip_rect = if should_clip {
             let clip_box = if is_text_input {
-                cx.frame.text_input_clip_path()
+                cx.frame.text_input_clip_shape()
             } else {
-                cx.frame.padding_box_path()
+                cx.frame.padding_box_shape()
             };
             clip_rect.intersect(screen_transform.transform_rect_bbox(clip_box.bounding_box()))
         } else {
@@ -655,9 +655,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
                         let clip = if is_text_input {
-                            &cx.frame.text_input_clip_path()
+                            &cx.frame.text_input_clip_shape()
                         } else {
-                            &cx.frame.padding_box_path()
+                            &cx.frame.padding_box_shape()
                         };
 
                         // Clip layer if box requires clipping. Opacity set to 1.0

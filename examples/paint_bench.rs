@@ -219,6 +219,7 @@ async fn main() {
 
             let (mut renderer, mut resources) = vello_gpu::Renderer::new(
                 &device_handle.device,
+                &device_handle.queue,
                 &vello_gpu::RenderTargetConfig {
                     format: wgpu::TextureFormat::Bgra8Unorm,
                     width: render_width as u16,
@@ -229,8 +230,7 @@ async fn main() {
                 width: render_width as u16,
                 height: render_height as u16,
             };
-            let depth_texture_view =
-                vello_gpu::Renderer::create_depth_texture_view(&device_handle.device, &render_size);
+            let depth_texture_view = renderer.create_depth_texture_view(&render_size);
             let mut scene = vello_gpu::Scene::new(render_width as u16, render_height as u16);
             let mut image_cache = ImageCache::default();
             let mut texture_bindings = FxHashMap::default();
@@ -262,8 +262,6 @@ async fn main() {
                 let image_manager = ImageManager::new(
                     &mut renderer,
                     &mut resources,
-                    &device_handle.device,
-                    &device_handle.queue,
                     &mut encoder,
                     &mut image_cache,
                 );
@@ -298,14 +296,13 @@ async fn main() {
                     .render(
                         &scene,
                         &mut resources,
-                        &device_handle.device,
-                        &device_handle.queue,
                         &mut encoder,
-                        &render_size,
-                        &target_texture_view,
-                        Some(&depth_texture_view),
+                        vello_gpu::RenderTarget {
+                            view: &target_texture_view,
+                            depth_view: Some(&depth_texture_view),
+                        },
                         &hybrid_texture_bindings,
-                        vello_gpu::TargetInit::Clear(vello_gpu::ClearSettings::default()),
+                        vello_gpu::RenderOptions::default(),
                     )
                     .expect("Failed to render to texture");
                 device_handle.queue.submit([encoder.finish()]);
