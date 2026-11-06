@@ -520,7 +520,17 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::PlaceholderShown => false,
             NonTSPseudoClass::ReadWrite => false,
             NonTSPseudoClass::ReadOnly => false,
-            NonTSPseudoClass::ServoNonZeroBorder => false,
+            // A table whose `border` attribute is not "equivalent to zero":
+            // present, and either non-zero or unparseable.
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+            NonTSPseudoClass::ServoNonZeroBorder => {
+                self.data.downcast_element().is_some_and(|elem| {
+                    elem.name.local == local_name!("table")
+                        && elem
+                            .attr(local_name!("border"))
+                            .is_some_and(|value| table_border_width(value) != 0)
+                })
+            }
             NonTSPseudoClass::Target => false,
             NonTSPseudoClass::Visited => false,
             NonTSPseudoClass::Autofill => false,
@@ -1190,6 +1200,19 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
+            // A table's `border` attribute maps to its four border widths as a
+            // pixel length, 1px when the value does not parse. The border
+            // styles come from default.css, through `:-servo-nonzero-border`.
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+            if *name == local_name!("border") && *tag == local_name!("table") {
+                use style::values::specified::BorderSideWidth;
+                let width = BorderSideWidth::from_px(table_border_width(value) as f32);
+                push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
+                push_style(PropertyDeclaration::BorderLeftWidth(width));
+            }
+
             // `body` carries four legacy margin attributes, as pixel lengths:
             // marginwidth and marginheight set both sides of an axis, and
             // leftmargin and topmargin set one side each.
@@ -1619,4 +1642,12 @@ fn parse_inline() {
     // );
 
     // let val = CSSInlineStyleDeclaration();
+}
+
+/// The border width in pixels that a table's `border` attribute asks for: the
+/// value parsed with the HTML rules for parsing non-negative integers, or 1 when
+/// that fails. Zero means the attribute is "equivalent to zero".
+/// https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+fn table_border_width(value: &str) -> u32 {
+    style::servo::attr::parse_unsigned_integer(value.chars()).unwrap_or(1)
 }

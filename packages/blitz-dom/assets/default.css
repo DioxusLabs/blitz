@@ -402,10 +402,11 @@ table[rules] {
       A border with a given value should, of course, pass that value
       as the border-width in pixels -> attr mapping */
 
-/* :-moz-table-border-nonzero is like [border]:not([border="0"]) except it
+/* :-servo-nonzero-border is like [border]:not([border="0"]) except it
      also checks for other zero-like values according to HTML attribute
-     parsing rules */
-table:-moz-table-border-nonzero {
+     parsing rules (matched in stylo.rs). The width itself comes from the
+     attribute as a presentational hint. */
+table:-servo-nonzero-border {
     border-width: thin;
     border-style: outset;
 }
@@ -414,7 +415,7 @@ table[frame] {
     border: thin hidden;
 }
 
-/* specificity must beat table:-moz-table-border-nonzero rule above */
+/* specificity must beat table:-servo-nonzero-border rule above */
 table[frame="void"] {
     border-style: hidden;
 }
@@ -453,12 +454,12 @@ table[frame="border"] {
 
 /* 'border' cell borders first */
 
-table:-moz-table-border-nonzero>*>tr>td,
-table:-moz-table-border-nonzero>*>tr>th,
-table:-moz-table-border-nonzero>*>td,
-table:-moz-table-border-nonzero>*>th,
-table:-moz-table-border-nonzero>td,
-table:-moz-table-border-nonzero>th {
+table:-servo-nonzero-border>*>tr>td,
+table:-servo-nonzero-border>*>tr>th,
+table:-servo-nonzero-border>*>td,
+table:-servo-nonzero-border>*>th,
+table:-servo-nonzero-border>td,
+table:-servo-nonzero-border>th {
     border-width: thin;
     border-style: inset;
 }
