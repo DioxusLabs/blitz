@@ -94,7 +94,13 @@ fn main() {
             Box::new(initial_url_ctx.clone()) as Box<dyn std::any::Any>
         })];
 
-    dioxus_native::launch_cfg(app, contexts, vec![Box::new(window_attributes)])
+    // The toolbar handles the devtools shortcuts itself, to inspect the active
+    // tab rather than the browser UI
+    let config = dioxus_native::Config::new()
+        .with_window_attributes(window_attributes)
+        .with_devtools_shortcuts([]);
+
+    dioxus_native::launch_cfg(app, contexts, vec![Box::new(config)])
 }
 
 fn app() -> Element {

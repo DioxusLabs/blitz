@@ -25,8 +25,9 @@ data-uri = ["dep:data-url"]
 # or on demand by `ShellProvider::open_devtools`)
 devtools = ["dep:blitz-vibey-cdp-server", "dep:webbrowser"]
 # Embeds a DevTools frontend (about 2 MB) in the CDP server, which `open_devtools`
-# opens in the browser. Without it, `open_devtools` prints a `devtools://` URL to
-# paste into Chrome.
+# opens in the browser. Without it, `open_devtools` opens Chrome's own frontend
+# where Chrome can be launched directly (e.g. macOS), and otherwise prints a
+# `devtools://` URL to paste into Chrome.
 embedded-devtools-frontend = ["devtools", "blitz-vibey-cdp-server/embedded-frontend"]
 custom-widget = ["blitz-dom/custom-widget"]
 
