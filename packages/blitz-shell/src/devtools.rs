@@ -92,7 +92,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     /// the CDP server doesn't embed a frontend, open Chrome's bundled frontend
     /// instead, which only Chrome can open (and only where it can be launched
     /// directly, e.g. not on Linux), printing its URL if it can't be.
-    pub fn open_devtools(&mut self, doc_id: usize) {
+    pub fn open_devtools(&mut self, doc_id: DocumentId) {
         if self.devtools.cdp.is_none() {
             self.start_cdp_server(0);
         }

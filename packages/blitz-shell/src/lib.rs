@@ -163,7 +163,7 @@ impl ShellProvider for BlitzShellProvider {
     }
 
     #[cfg(feature = "devtools")]
-    fn open_devtools(&self, doc_id: usize) {
+    fn open_devtools(&self, doc_id: DocumentId) {
         self.proxy
             .send_event(BlitzShellEvent::OpenDevtools { doc_id });
     }

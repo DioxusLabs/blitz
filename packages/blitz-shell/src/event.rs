@@ -52,7 +52,7 @@ pub enum BlitzShellEvent {
     /// Open devtools inspecting the document with the given id
     #[cfg(feature = "devtools")]
     OpenDevtools {
-        doc_id: usize,
+        doc_id: DocumentId,
     },
 
     /// An arbitary event from the Blitz embedder
