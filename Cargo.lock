@@ -898,7 +898,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "blitz-devtools-frontend"
+name = "blitz-chrome-devtools-frontend"
 version = "0.1.0"
 dependencies = [
  "brotli-decompressor",
@@ -1122,7 +1122,7 @@ dependencies = [
 name = "blitz-vibey-cdp-server"
 version = "0.3.0-beta.4"
 dependencies = [
- "blitz-devtools-frontend",
+ "blitz-chrome-devtools-frontend",
  "blitz-dom",
  "blitz-html",
  "blitz-traits",

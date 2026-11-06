@@ -1,12 +1,12 @@
 //! Serving a DevTools frontend: the copy embedded by the `embedded-frontend`
-//! feature (see [`blitz_devtools_frontend`]), or a local build of it.
+//! feature (see [`blitz_chrome_devtools_frontend`]), or a local build of it.
 
 use std::borrow::Cow;
 use std::path::Path;
 
 /// Environment variable naming a directory to serve the frontend from
 /// instead of the embedded copy (e.g. the `dist/` of a local
-/// blitz-devtools-frontend build)
+/// blitz-chrome-devtools-frontend build)
 const FRONTEND_DIR_VAR: &str = "BLITZ_DEVTOOLS_FRONTEND_DIR";
 
 /// The path of the frontend's page
@@ -56,7 +56,7 @@ fn embedded_file(path: &str) -> Option<&'static [u8]> {
     // Unpacked on first use (about 11 MB) and kept for the process lifetime
     static FILES: OnceLock<HashMap<String, Vec<u8>>> = OnceLock::new();
     let files = FILES.get_or_init(|| {
-        blitz_devtools_frontend::files().unwrap_or_else(|err| {
+        blitz_chrome_devtools_frontend::files().unwrap_or_else(|err| {
             tracing::warn!("CDP: failed to unpack the DevTools frontend: {err}");
             HashMap::new()
         })

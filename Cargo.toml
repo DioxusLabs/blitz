@@ -161,7 +161,7 @@ png = "0.18"
 serde = "1"
 serde_json = "1"
 tungstenite = "0.30"
-blitz-devtools-frontend = "0.1"
+blitz-chrome-devtools-frontend = "0.1"
 
 # Dioxus Native
 webbrowser = "1.0"
@@ -308,8 +308,8 @@ glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4
 vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
 vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
 vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
-# TEMPORARY: until blitz-devtools-frontend is published to crates.io
-blitz-devtools-frontend = { path = "../blitz-devtools-frontend" }
+# TEMPORARY: until blitz-chrome-devtools-frontend is published to crates.io
+blitz-chrome-devtools-frontend = { path = "../blitz-chrome-devtools-frontend" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
