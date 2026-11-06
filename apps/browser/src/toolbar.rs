@@ -265,14 +265,6 @@ pub fn Toolbar(
         }
     });
 
-    let devtools_action = use_callback(move |_| {
-        menu_open.set(false);
-        let tab = active_tab(tabs, active_tab_id());
-        with_sub_doc(tab, |sub_doc| {
-            sub_doc.devtools_mut().toggle_highlight_hover()
-        });
-    });
-
     #[cfg(feature = "devtools")]
     let open_devtools_action = {
         let shell_provider = use_context::<Arc<dyn ShellProvider>>();
@@ -492,7 +484,6 @@ pub fn Toolbar(
                         {screenshot_item}
                         {capture_item}
                         {open_devtools_item}
-                        div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
                         div { class: "menu-item", onclick: move |_| incremental_action(()),
                             if incremental_layout() { "Disable Incremental Layout" } else { "Enable Incremental Layout" }
                         }
