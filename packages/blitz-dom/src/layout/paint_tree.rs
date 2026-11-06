@@ -338,7 +338,7 @@ impl BaseDocument {
                     // Only stacking contexts with a non-zero z-index are lifted
                     // out of tree order into the enclosing stacking context's
                     // z-sorted list (CSS 2.1 Appendix E).
-                    let z_index = self.nodes[child_id].z_index();
+                    let z_index = self.nodes[child_id].effective_z_index(is_flex_or_grid);
                     if is_sc_root && z_index != 0 {
                         entries.push(HoistedPaintChild::new(child_id, z_index))
                     } else {
@@ -408,7 +408,7 @@ impl BaseDocument {
             },
         );
 
-        let z_index = self.nodes[child_id].z_index();
+        let z_index = self.nodes[child_id].effective_z_index(false);
         if z_index != 0 {
             entries.push(HoistedPaintChild::new(child_id, z_index));
         } else {
@@ -436,27 +436,368 @@ fn float_to_order(pos: Float) -> i32 {
 }
 
 /// Paint sort key: (paint level, order-modified position). Positioned
-/// (z-index: auto) descendants paint above in-flow content (CSS 2.1
-/// Appendix E step 8); within a level the stable sort preserves
-/// (order-modified) document order.
+/// (z-index: auto) and stacking context roots (e.g. transforms, opacity)
+/// paint above in-flow content at paint level 2 (CSS 2.1 Appendix E step 8 & CSS Transforms);
+/// within a level the stable sort preserves (order-modified) document order.
 #[inline(always)]
 fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
     let Some(style) = node.primary_styles() else {
         return (0, 0);
     };
     let position = style.clone_position();
+    let is_sc_root = node.is_stacking_context_root(is_flex_or_grid);
+    let is_stacked = position != Position::Static || is_sc_root;
+
     if is_flex_or_grid {
         match position {
-            Position::Static => (0, style.clone_order()),
-            Position::Relative | Position::Sticky => (2, style.clone_order()),
-            // Out-of-flow children are not flex/grid items: `order` does
-            // not apply; tree order does.
             Position::Absolute | Position::Fixed => (2, 0),
+            _ if is_stacked => (2, style.clone_order()),
+            Position::Static => (0, style.clone_order()),
+            _ => (2, style.clone_order()),
         }
+    } else if is_stacked {
+        (2, 0)
     } else {
         (
             position_to_order(position) + float_to_order(style.clone_float()),
             0,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    fn make_test_doc() -> (BaseDocument, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![Attribute {
+                name: qual_name!("style"),
+                value: "margin: 0; width: 800px; height: 600px;".to_string(),
+            }],
+        );
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        (doc, body)
+    }
+
+    fn create_styled_div(doc: &mut BaseDocument, style: &str) -> NodeId {
+        let full_style = if style.contains("display:") {
+            style.to_string()
+        } else {
+            format!("display: block; {style}")
+        };
+        let mut mutator = doc.mutate();
+        mutator.create_element(
+            qual_name!("div"),
+            vec![Attribute {
+                name: qual_name!("style"),
+                value: full_style,
+            }],
+        )
+    }
+
+    #[test]
+    fn static_transformed_after_absolute_auto_z_paints_above() {
+        // a. Static transformed element declared AFTER an absolute auto-z element paints above it (DOM order tie-break at level 2).
+        let (mut doc, body) = make_test_doc();
+        let container =
+            create_styled_div(&mut doc, "position: relative; width: 400px; height: 400px;");
+        let abs_child =
+            create_styled_div(&mut doc, "position: absolute; width: 100px; height: 100px;");
+        let transformed_child = create_styled_div(
+            &mut doc,
+            "position: static; transform: translate(10px, 10px); width: 100px; height: 100px;",
+        );
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(container, &[abs_child, transformed_child]);
+            mutator.append_children(body, &[container]);
+        }
+
+        doc.resolve(0.0);
+
+        let paint_children = doc.nodes[container].paint_children.borrow();
+        let list = paint_children
+            .as_deref()
+            .expect("paint_children must be present");
+        assert_eq!(&list[..], &[abs_child, transformed_child]);
+    }
+
+    #[test]
+    fn static_transformed_before_absolute_auto_z_paints_below() {
+        // b. Static transformed element declared BEFORE an absolute auto-z element paints below it (DOM order tie-break at level 2).
+        let (mut doc, body) = make_test_doc();
+        let container =
+            create_styled_div(&mut doc, "position: relative; width: 400px; height: 400px;");
+        let transformed_child = create_styled_div(
+            &mut doc,
+            "position: static; transform: translate(10px, 10px); width: 100px; height: 100px;",
+        );
+        let abs_child =
+            create_styled_div(&mut doc, "position: absolute; width: 100px; height: 100px;");
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(container, &[transformed_child, abs_child]);
+            mutator.append_children(body, &[container]);
+        }
+
+        doc.resolve(0.0);
+
+        let paint_children = doc.nodes[container].paint_children.borrow();
+        let list = paint_children
+            .as_deref()
+            .expect("paint_children must be present");
+        assert_eq!(&list[..], &[transformed_child, abs_child]);
+    }
+
+    #[test]
+    fn ordinary_static_remains_below_positioned_auto() {
+        // c. Ordinary static non-transformed element remains below positioned auto descendants (level 0 vs level 2).
+        let (mut doc, body) = make_test_doc();
+        let container =
+            create_styled_div(&mut doc, "position: relative; width: 400px; height: 400px;");
+        let abs_child =
+            create_styled_div(&mut doc, "position: absolute; width: 100px; height: 100px;");
+        let static_child =
+            create_styled_div(&mut doc, "position: static; width: 100px; height: 100px;");
+
+        {
+            let mut mutator = doc.mutate();
+            // Declared in DOM order: abs_child first, static_child second
+            mutator.append_children(container, &[abs_child, static_child]);
+            mutator.append_children(body, &[container]);
+        }
+
+        doc.resolve(0.0);
+
+        let paint_children = doc.nodes[container].paint_children.borrow();
+        let list = paint_children
+            .as_deref()
+            .expect("paint_children must be present");
+        // Static child (paint level 0) must sort before absolute child (paint level 2)
+        assert_eq!(&list[..], &[static_child, abs_child]);
+    }
+
+    #[test]
+    fn atomic_effects_and_transforms_receive_paint_level_2() {
+        // d. `opacity < 1.0`, `scale`, `rotate`, `translate` all receive paint level 2.
+        let (mut doc, body) = make_test_doc();
+        let container =
+            create_styled_div(&mut doc, "position: relative; width: 400px; height: 400px;");
+        let static_normal =
+            create_styled_div(&mut doc, "position: static; width: 50px; height: 50px;");
+        let opacity_child =
+            create_styled_div(&mut doc, "opacity: 0.5; width: 50px; height: 50px;");
+        let scale_child =
+            create_styled_div(&mut doc, "scale: 2; width: 50px; height: 50px;");
+        let rotate_child =
+            create_styled_div(&mut doc, "rotate: 45deg; width: 50px; height: 50px;");
+        let translate_child =
+            create_styled_div(&mut doc, "translate: 10px 20px; width: 50px; height: 50px;");
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(
+                container,
+                &[
+                    opacity_child,
+                    scale_child,
+                    rotate_child,
+                    translate_child,
+                    static_normal,
+                ],
+            );
+            mutator.append_children(body, &[container]);
+        }
+
+        doc.resolve(0.0);
+
+        // Verify individual paint orders
+        assert_eq!(
+            node_to_paint_order(&doc.nodes[opacity_child], false),
+            (2, 0)
+        );
+        assert_eq!(
+            node_to_paint_order(&doc.nodes[scale_child], false),
+            (2, 0)
+        );
+        assert_eq!(
+            node_to_paint_order(&doc.nodes[rotate_child], false),
+            (2, 0)
+        );
+        assert_eq!(
+            node_to_paint_order(&doc.nodes[translate_child], false),
+            (2, 0)
+        );
+        assert_eq!(
+            node_to_paint_order(&doc.nodes[static_normal], false),
+            (0, 0)
+        );
+
+        let paint_children = doc.nodes[container].paint_children.borrow();
+        let list = paint_children
+            .as_deref()
+            .expect("paint_children must be present");
+        // static_normal at level 0 paints first, followed by the level 2 items in their DOM order
+        assert_eq!(
+            &list[..],
+            &[
+                static_normal,
+                opacity_child,
+                scale_child,
+                rotate_child,
+                translate_child,
+            ]
+        );
+    }
+
+    #[test]
+    fn flex_items_with_order_sort_correctly_in_stacked_bucket() {
+        // e. Flex items with `order` sort correctly within the stacked bucket.
+        let (mut doc, body) = make_test_doc();
+        let flex_container =
+            create_styled_div(&mut doc, "display: flex; width: 400px; height: 400px;");
+        let item_order_3 = create_styled_div(
+            &mut doc,
+            "position: relative; order: 3; width: 50px; height: 50px;",
+        );
+        let item_order_1 = create_styled_div(
+            &mut doc,
+            "position: relative; order: 1; width: 50px; height: 50px;",
+        );
+        let item_static_order_5 = create_styled_div(
+            &mut doc,
+            "position: static; order: 5; width: 50px; height: 50px;",
+        );
+        let item_order_2 = create_styled_div(
+            &mut doc,
+            "position: relative; order: 2; width: 50px; height: 50px;",
+        );
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(
+                flex_container,
+                &[item_order_3, item_order_1, item_static_order_5, item_order_2],
+            );
+            mutator.append_children(body, &[flex_container]);
+        }
+
+        doc.resolve(0.0);
+
+        assert_eq!(node_to_paint_order(&doc.nodes[item_order_1], true), (2, 1));
+        assert_eq!(node_to_paint_order(&doc.nodes[item_order_2], true), (2, 2));
+        assert_eq!(node_to_paint_order(&doc.nodes[item_order_3], true), (2, 3));
+        assert_eq!(
+            node_to_paint_order(&doc.nodes[item_static_order_5], true),
+            (0, 5)
+        );
+
+        let paint_children = doc.nodes[flex_container].paint_children.borrow();
+        let list = paint_children
+            .as_deref()
+            .expect("paint_children must be present");
+        // Level 0 (static, order 5) paints first, then Level 2 sorted by order (1, 2, 3)
+        assert_eq!(
+            &list[..],
+            &[item_static_order_5, item_order_1, item_order_2, item_order_3]
+        );
+    }
+
+    #[test]
+    fn static_element_raw_z_index_does_not_hoist() {
+        // f. Static element with specified raw z-index (e.g. `z-index: 10`) does NOT hoist and remains effective z-index 0.
+        let (mut doc, body) = make_test_doc();
+        let container =
+            create_styled_div(&mut doc, "position: relative; z-index: 0; width: 400px; height: 400px;");
+        let static_z10 = create_styled_div(
+            &mut doc,
+            "position: static; z-index: 10; width: 50px; height: 50px;",
+        );
+        let relative_z5 = create_styled_div(
+            &mut doc,
+            "position: relative; z-index: 5; width: 50px; height: 50px;",
+        );
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(container, &[static_z10, relative_z5]);
+            mutator.append_children(body, &[container]);
+        }
+
+        doc.resolve(0.0);
+
+        // Verify z-index semantics
+        assert_eq!(doc.nodes[static_z10].z_index(), 10);
+        assert_eq!(doc.nodes[static_z10].effective_z_index(false), 0);
+        assert!(!doc.nodes[static_z10].is_stacking_context_root(false));
+
+        assert_eq!(doc.nodes[relative_z5].z_index(), 5);
+        assert_eq!(doc.nodes[relative_z5].effective_z_index(false), 5);
+        assert!(doc.nodes[relative_z5].is_stacking_context_root(false));
+
+        // For flex items, static z-index does apply
+        assert_eq!(doc.nodes[static_z10].effective_z_index(true), 10);
+        assert!(doc.nodes[static_z10].is_stacking_context_root(true));
+
+        // static_z10 must NOT be hoisted, while relative_z5 MUST be hoisted to container's stacking context
+        let paint_children = doc.nodes[container].paint_children.borrow();
+        let list = paint_children
+            .as_deref()
+            .expect("paint_children must be present");
+        assert!(list.contains(&static_z10));
+        assert!(!list.contains(&relative_z5));
+
+        let sc = doc.nodes[container]
+            .stacking_context
+            .as_ref()
+            .expect("container has stacking context");
+        assert!(!sc.children.iter().any(|c| c.node_id == static_z10));
+        assert!(sc.children.iter().any(|c| c.node_id == relative_z5));
+    }
+
+    #[test]
+    fn positioned_element_with_valid_z_index_hoists() {
+        // g. Positioned element with valid non-zero z-index hoists to enclosing stacking context.
+        let (mut doc, body) = make_test_doc();
+        let container =
+            create_styled_div(&mut doc, "position: relative; z-index: 0; width: 400px; height: 400px;");
+        let non_sc_wrapper =
+            create_styled_div(&mut doc, "position: static; width: 200px; height: 200px;");
+        let hoisted_child =
+            create_styled_div(&mut doc, "position: relative; z-index: 8; width: 50px; height: 50px;");
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(non_sc_wrapper, &[hoisted_child]);
+            mutator.append_children(container, &[non_sc_wrapper]);
+            mutator.append_children(body, &[container]);
+        }
+
+        doc.resolve(0.0);
+
+        assert_eq!(doc.nodes[hoisted_child].effective_z_index(false), 8);
+        assert!(doc.nodes[hoisted_child].is_stacking_context_root(false));
+
+        // hoisted_child is hoisted to container's stacking context
+        let sc = doc.nodes[container]
+            .stacking_context
+            .as_ref()
+            .expect("container has stacking context");
+        assert!(sc.children.iter().any(|c| c.node_id == hoisted_child && c.z_index == 8));
     }
 }
