@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
-        app: [dioxus-native, iced, egui, slint, gpui]
+        app: [dioxus-native, iced, egui, slint, gpui, freya]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

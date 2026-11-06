@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const APPS: &[&str] = &["dioxus-native", "iced", "egui", "slint", "gpui"];
+const APPS: &[&str] = &["dioxus-native", "iced", "egui", "slint", "gpui", "freya"];
 const WORKLOADS: &[&str] = &["table", "scroll"];
 const PHASES: &[&str] = &[
     "update_us",

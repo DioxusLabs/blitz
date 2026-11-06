@@ -1,7 +1,7 @@
 # gui-bench
 
 Compares Rust GUI toolkits on identical workloads, timing each phase of a frame
-separately. Toolkits: **Dioxus native** (Blitz), **Iced**, **egui**, **Slint** and **GPUI**.
+separately. Toolkits: **Dioxus native** (Blitz), **Iced**, **egui**, **Slint**, **GPUI** and **Freya**.
 
 ## Workloads
 
@@ -42,6 +42,7 @@ How each toolkit maps onto these (details in the doc comment at the top of each
 | egui | model change | the UI closure (immediate mode: widgets, layout and shapes are one pass) + tessellation | egui-wgpu uploads, encode, submit | yes | yes |
 | Slint | `VecModel` change notifications | redraw request until `BeforeRendering` | `BeforeRendering` to `AfterRendering` | no (rendering notifier has no command buffers) | present = swap, after `AfterRendering` |
 | GPUI | model change + `notify` | `render` + layout + prepaint + paint | scene to Metal/Blade **including present** | no | in raster_cpu |
+| Freya | op sent to the app, `State` write, component re-run + diff + tree mutations | Torin layout + render pipeline issuing Skia draw calls | Skia flush, submit **and present** (plugin `BeforePresenting`..`AfterPresenting`) | no (Skia owns its command buffers) | in raster_cpu |
 
 The models differ, so compare `total` across toolkits and use the phases to see where a
 toolkit spends its time, not as like-for-like columns. In particular egui and GPUI rebuild
