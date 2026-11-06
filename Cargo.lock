@@ -295,7 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "kurbo",
  "peniko",
@@ -307,7 +307,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "anyrender",
  "image",
@@ -325,7 +325,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "anyrender",
  "ash",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "anyrender",
  "image",
@@ -368,7 +368,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -386,7 +386,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -404,7 +404,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3691,7 +3691,7 @@ dependencies = [
 [[package]]
 name = "glifo"
 version = "0.4.0"
-source = "git+https://github.com/DioxusLabs/vello?branch=devin%2Fglifo-0.4.0-embolden-2049#be500db2b3a9cb3613de0e2c43f9358635c1f309"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1793984569-gpu-bitmap-glyph-atlas#3e67a0f7cedac124383eea71a7a4cdff3bf710ff"
 dependencies = [
  "bytemuck",
  "foldhash 0.2.0",
@@ -6357,7 +6357,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -7846,7 +7846,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -9119,7 +9119,7 @@ dependencies = [
 [[package]]
 name = "vello_common"
 version = "0.3.0"
-source = "git+https://github.com/DioxusLabs/vello?branch=devin%2Fglifo-0.4.0-embolden-2049#be500db2b3a9cb3613de0e2c43f9358635c1f309"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1793984569-gpu-bitmap-glyph-atlas#3e67a0f7cedac124383eea71a7a4cdff3bf710ff"
 dependencies = [
  "bytemuck",
  "fearless_simd 0.7.0",
@@ -9134,7 +9134,7 @@ dependencies = [
 [[package]]
 name = "vello_cpu"
 version = "0.3.0"
-source = "git+https://github.com/DioxusLabs/vello?branch=devin%2Fglifo-0.4.0-embolden-2049#be500db2b3a9cb3613de0e2c43f9358635c1f309"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1793984569-gpu-bitmap-glyph-atlas#3e67a0f7cedac124383eea71a7a4cdff3bf710ff"
 dependencies = [
  "bytemuck",
  "crossbeam-channel",
@@ -9163,7 +9163,7 @@ dependencies = [
 [[package]]
 name = "vello_gpu"
 version = "0.3.0"
-source = "git+https://github.com/DioxusLabs/vello?branch=devin%2Fglifo-0.4.0-embolden-2049#be500db2b3a9cb3613de0e2c43f9358635c1f309"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1793984569-gpu-bitmap-glyph-atlas#3e67a0f7cedac124383eea71a7a4cdff3bf710ff"
 dependencies = [
  "bytemuck",
  "glifo",
@@ -9180,7 +9180,7 @@ dependencies = [
 [[package]]
 name = "vello_gpu_shaders"
 version = "0.3.0"
-source = "git+https://github.com/DioxusLabs/vello?branch=devin%2Fglifo-0.4.0-embolden-2049#be500db2b3a9cb3613de0e2c43f9358635c1f309"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1793984569-gpu-bitmap-glyph-atlas#3e67a0f7cedac124383eea71a7a4cdff3bf710ff"
 dependencies = [
  "naga 30.0.1",
  "wesl",
@@ -9943,7 +9943,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#812644a68722626e6755ca8319ffebf53c9cdc4e"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1793985184-glifo-png#3781f3e304d7069c751e045ca5ad9a8a8f1dbd82"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
