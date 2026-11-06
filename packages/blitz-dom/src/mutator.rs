@@ -553,9 +553,7 @@ impl DocumentMutator<'_> {
             element.set_checkbox_input_checked(false);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.recompute_is_animating = true;
-        } else if (tag, attr) == tag_and_attr!("link", "href")
-            && matches!(element.special_data, SpecialElementData::Stylesheet(_))
-        {
+        } else if (tag, attr) == tag_and_attr!("link", "href") {
             self.unload_stylesheet(node_id);
         } else if (tag, attr) == tag_and_attr!("iframe", "srcdoc") && node_is_in_document {
             // Fall back to loading from the `src` attribute (if any)
@@ -1401,8 +1399,14 @@ impl<'doc> DocumentMutator<'doc> {
         let Some(element) = node.element_data_mut() else {
             unreachable!();
         };
-        let SpecialElementData::Stylesheet(stylesheet) = element.special_data.take() else {
-            unreachable!();
+        // An icon link never holds a stylesheet, and a stylesheet link holds none
+        // until its fetch has completed.
+        let stylesheet = match element.special_data.take() {
+            SpecialElementData::Stylesheet(stylesheet) => stylesheet,
+            other => {
+                element.special_data = other;
+                return;
+            }
         };
 
         let guard = self.doc.guard.read();
