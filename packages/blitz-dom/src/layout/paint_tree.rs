@@ -42,7 +42,7 @@ pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: Nod
     // A fixed box contained by a transformed ancestor scrolls with it.
     if child.taffy_position() == taffy::Position::Fixed
         && let Some(cb) = current.and_then(|id| tree.get(id))
-        && cb.containing_block().is_none()
+        && cb.is_root_element()
     {
         let scroll_offset = *cb.scroll_offset();
         let viewport_scroll = tree.viewport_scroll();
