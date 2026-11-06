@@ -2798,7 +2798,12 @@ impl BaseDocument {
             if !result.is_empty() {
                 result.push(' ');
             }
-            result.push_str(&inline_layout.text[*start..*end]);
+            let text = &inline_layout.text[*start..*end];
+            result.extend(
+                text.char_indices()
+                    .filter(|&(i, _)| !inline_layout.is_inline_box_char(start + i))
+                    .map(|(_, c)| c),
+            );
         }
 
         if result.is_empty() {
