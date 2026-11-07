@@ -643,7 +643,7 @@ pub(crate) fn handle_click(
             }
 
             match el.name.local {
-                local_name!("input") if el.attr(local_name!("type")) == Some("checkbox") => {
+                local_name!("input") if el.input_type() == Some("checkbox") => {
                     let mut is_checked = false;
                     doc.snapshot_node_and(node_id, ElementState::CHECKED, |node| {
                         if let Some(el) = node.element_data_mut() {
@@ -665,7 +665,7 @@ pub(crate) fn handle_click(
                     );
                     break 'matched true;
                 }
-                local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
+                local_name!("input") if el.input_type() == Some("radio") => {
                     if let Some(radio_set) = el.attr(local_name!("name")).map(str::to_string) {
                         BaseDocument::toggle_radio(doc, radio_set, node_id);
                     } else if el.checkbox_input_checked().is_some() {
@@ -760,14 +760,14 @@ pub(crate) fn handle_click(
                     }
                 }
                 local_name!("input") | local_name!("button")
-                    if el.is_submit_button() || el.attr(local_name!("type")) == Some("submit") =>
+                    if el.is_submit_button() || el.input_type() == Some("submit") =>
                 {
                     if let Some(form_owner) = doc.controls_to_form.get(&node_id) {
                         doc.submit_form(*form_owner, node_id);
                     }
                 }
                 #[cfg(feature = "file-input")]
-                local_name!("input") if el.attr(local_name!("type")) == Some("file") => {
+                local_name!("input") if el.input_type() == Some("file") => {
                     use crate::qual_name;
                     //TODO: Handle accept attribute https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/accept by passing an appropriate filter
                     let multiple = el.attr(local_name!("multiple")).is_some();
