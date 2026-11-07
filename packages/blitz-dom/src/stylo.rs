@@ -1066,6 +1066,50 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
+            // `valign` on HTML table row groups, rows and cells maps to
+            // `vertical-align`, matched ASCII case-insensitively. `vertical-align`
+            // is a shorthand in Stylo, so push the three longhands each keyword
+            // expands to (as `shorthands::vertical_align::parse_value` does).
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+            if *name == local_name!("valign")
+                && elem.name.ns == ns!(html)
+                && matches!(
+                    *tag,
+                    local_name!("thead")
+                        | local_name!("tbody")
+                        | local_name!("tfoot")
+                        | local_name!("tr")
+                        | local_name!("td")
+                        | local_name!("th")
+                )
+            {
+                use style::values::generics::box_::BaselineShiftKeyword;
+                use style::values::specified::{AlignmentBaseline, BaselineShift, BaselineSource};
+                let longhands = if value.eq_ignore_ascii_case("top") {
+                    Some((
+                        AlignmentBaseline::Baseline,
+                        BaselineShift::Keyword(BaselineShiftKeyword::Top),
+                    ))
+                } else if value.eq_ignore_ascii_case("middle") {
+                    Some((AlignmentBaseline::Middle, BaselineShift::zero()))
+                } else if value.eq_ignore_ascii_case("bottom") {
+                    Some((
+                        AlignmentBaseline::Baseline,
+                        BaselineShift::Keyword(BaselineShiftKeyword::Bottom),
+                    ))
+                } else if value.eq_ignore_ascii_case("baseline") {
+                    Some((AlignmentBaseline::Baseline, BaselineShift::zero()))
+                } else {
+                    None
+                };
+
+                if let Some((alignment_baseline, baseline_shift)) = longhands {
+                    push_style(PropertyDeclaration::BaselineSource(BaselineSource::Auto));
+                    push_style(PropertyDeclaration::AlignmentBaseline(alignment_baseline));
+                    push_style(PropertyDeclaration::BaselineShift(baseline_shift));
+                }
+            }
+
             // The width/height attributes on these elements map to the
             // corresponding dimension properties (percentages allowed):
             // https://html.spec.whatwg.org/multipage/rendering.html#dimRendering
