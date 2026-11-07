@@ -15,7 +15,7 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let type_attr = self.node.attr(local_name!("type"));
+        let type_attr = self.element.input_type();
         let disabled = self.node.attr(local_name!("disabled")).is_some();
 
         // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it

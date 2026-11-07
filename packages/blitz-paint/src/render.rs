@@ -425,9 +425,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
-        if node.data.is_element_with_tag_name(&local_name!("input"))
-            && node.attr(local_name!("type")) == Some("hidden")
-        {
+        if node.element_data().and_then(|el| el.input_type()) == Some("hidden") {
             return;
         }
 

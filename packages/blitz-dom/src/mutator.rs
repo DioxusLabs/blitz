@@ -1531,7 +1531,7 @@ impl<'doc> DocumentMutator<'doc> {
         };
 
         let tagname = data.name.local.as_ref();
-        let type_attr = data.attr(local_name!("type"));
+        let type_attr = data.input_type();
         let value = data.attr(local_name!("value"));
 
         // Checkbox state must exist even if the input never gets a box (e.g. `display: none`

@@ -327,13 +327,13 @@ impl LayoutPassState<'_> {
                     return output;
                 }
 
-                if *element_data.name.local == *"input" {
-                    match element_data.attr(local_name!("type")) {
+                if let Some(input_type) = element_data.input_type() {
+                    match input_type {
                         // if the input type is hidden, hide it
-                        Some("hidden") => {
+                        "hidden" => {
                             return taffy::LayoutOutput::HIDDEN;
                         }
-                        Some("checkbox") => {
+                        "checkbox" => {
                             return compute_leaf_layout(
                                 inputs,
                                 &node.layout_style(),
@@ -356,7 +356,7 @@ impl LayoutPassState<'_> {
                                 },
                             );
                         }
-                        None | Some("text" | "password" | "email" | "tel" | "url" | "search") => {
+                        "text" | "password" | "email" | "tel" | "url" | "search" => {
                             return compute_leaf_layout(
                                 inputs,
                                 &node.layout_style(),

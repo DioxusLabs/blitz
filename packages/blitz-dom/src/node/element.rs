@@ -469,11 +469,7 @@ impl ElementData {
 
         // Mirror the `checked` attribute into the element state so that `:checked`
         // selectors can be matched (and invalidated) from `ElementState`.
-        if data.name.local == local_name!("input")
-            && matches!(
-                data.attr(local_name!("type")),
-                Some("checkbox") | Some("radio")
-            )
+        if matches!(data.input_type(), Some("checkbox" | "radio"))
             && data.has_attr(local_name!("checked"))
         {
             data.element_state.insert(ElementState::CHECKED);
@@ -854,12 +850,48 @@ impl ElementData {
         std::mem::take(&mut self.inline_layout_data)
     }
 
+    /// The state of an `<input>`'s `type` attribute as its lowercase keyword, or `None`
+    /// for other elements. The attribute is matched ASCII case-insensitively, and a missing or
+    /// invalid value is the Text state.
+    pub fn input_type(&self) -> Option<&'static str> {
+        const INPUT_TYPES: [&str; 22] = [
+            "hidden",
+            "text",
+            "search",
+            "tel",
+            "url",
+            "email",
+            "password",
+            "date",
+            "month",
+            "week",
+            "time",
+            "datetime-local",
+            "number",
+            "range",
+            "color",
+            "checkbox",
+            "radio",
+            "file",
+            "submit",
+            "image",
+            "reset",
+            "button",
+        ];
+        if self.name.local != local_name!("input") {
+            return None;
+        }
+        let value = self.attr(local_name!("type")).unwrap_or("text");
+        Some(
+            INPUT_TYPES
+                .into_iter()
+                .find(|keyword| keyword.eq_ignore_ascii_case(value))
+                .unwrap_or("text"),
+        )
+    }
+
     pub(crate) fn is_button_input(&self) -> bool {
-        self.name.local == local_name!("input")
-            && matches!(
-                self.attr(local_name!("type")),
-                Some("button" | "submit" | "reset")
-            )
+        matches!(self.input_type(), Some("button" | "submit" | "reset"))
     }
 
     pub fn is_submit_button(&self) -> bool {
