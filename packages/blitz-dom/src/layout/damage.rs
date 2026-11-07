@@ -76,6 +76,12 @@ impl BaseDocument {
             }
         }
 
+        // Damage marks the elements whose style may have changed whether they are hidden
+        #[cfg(feature = "accessibility")]
+        if !own_damage.is_empty() && self.accessibility.tracking {
+            self.note_accessibility_style_change(node_id);
+        }
+
         let mut damage_from_children = RestyleDamage::empty();
         let children = std::mem::take(&mut self.nodes[node_id].children);
         for child in children.iter() {

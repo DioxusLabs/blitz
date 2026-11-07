@@ -247,6 +247,7 @@ impl DocumentMutator<'_> {
         let changed = text.content != value;
         if changed {
             self.mutations_occurred |= node_is_in_document;
+            self.doc.accessibility.mark_node(node_id);
             text.content.clear();
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
@@ -286,6 +287,7 @@ impl DocumentMutator<'_> {
             Some(data) => {
                 data.content += text;
                 self.mutations_occurred |= node_is_in_document;
+                self.doc.accessibility.mark_node(node_id);
                 if node_is_in_document {
                     devtools!(
                         self,
@@ -347,6 +349,7 @@ impl DocumentMutator<'_> {
         };
 
         self.mutations_occurred |= node_is_in_document;
+        self.doc.accessibility.mark_node(node_id);
         // If element is a CustomWidget, then Ccall attribute_changed on it
         #[cfg(feature = "custom-widget")]
         if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
@@ -484,6 +487,7 @@ impl DocumentMutator<'_> {
             return;
         }
         self.mutations_occurred |= node_is_in_document;
+        self.doc.accessibility.mark_node(node_id);
         if node_is_in_document {
             devtools!(
                 self,
@@ -613,6 +617,7 @@ impl DocumentMutator<'_> {
         // Update child_idx values
         if let Some(parent_id) = node.parent.take() {
             self.mutations_occurred |= node_is_in_document;
+            self.doc.accessibility.mark_node(parent_id);
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
             let index = parent.index_of_child(node_id).unwrap_or(0);
@@ -647,6 +652,7 @@ impl DocumentMutator<'_> {
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
+            self.doc.accessibility.mark_node(parent_id);
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
             let parent_is_in_doc = parent.flags.is_in_document();
@@ -675,6 +681,7 @@ impl DocumentMutator<'_> {
 
         if parent_is_in_doc {
             self.restyle_for_child_list_change(node_id, 0..0);
+            self.doc.accessibility.mark_node(node_id);
         }
 
         for child_id in children {
@@ -891,6 +898,7 @@ impl DocumentMutator<'_> {
                 continue;
             };
 
+            self.doc.accessibility.mark_node(old_parent_id);
             let old_parent = &mut self.doc.nodes[old_parent_id];
             old_parent.insert_damage(ALL_DAMAGE);
             let index = old_parent.index_of_child(child_id).unwrap_or(0);
@@ -910,6 +918,12 @@ impl DocumentMutator<'_> {
             self.maybe_record_node(old_parent_id);
         }
 
+        if new_parent_is_in_document {
+            self.doc.accessibility.mark_node(parent_id);
+            for &child_id in child_ids {
+                self.doc.accessibility.mark_subtree(child_id);
+            }
+        }
         let new_parent = &mut self.doc.nodes[parent_id];
         new_parent.insert_damage(ALL_DAMAGE);
         let index = insert_children_fn(new_parent, child_ids);

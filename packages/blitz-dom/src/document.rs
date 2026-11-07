@@ -276,6 +276,61 @@ pub enum DocumentEvent {
     },
 }
 
+/// The nodes whose accessibility nodes changed since the accessibility tree was last pushed
+#[derive(Default)]
+pub(crate) struct AccessibilityChanges {
+    /// Whether changes are being recorded. Off until a full tree is built.
+    pub(crate) tracking: bool,
+    /// Nodes to resend
+    pub(crate) nodes: HashSet<NodeId>,
+    /// Nodes to resend along with all of their descendants
+    pub(crate) subtrees: HashSet<NodeId>,
+    /// Elements that were hidden by their own style when last seen
+    pub(crate) hidden: HashSet<NodeId>,
+    /// Nodes with `aria-labelledby` or `aria-describedby`, whose labels depend on other nodes
+    pub(crate) relations: HashSet<NodeId>,
+    /// Nodes (including anonymous boxes) whose layout changed
+    pub(crate) layout: HashSet<NodeId>,
+    /// Nodes whose scroll offset changed
+    pub(crate) scrolled: HashSet<NodeId>,
+    /// The viewport scale and scroll offset when last sent
+    pub(crate) viewport: Option<(f64, f64, f64)>,
+}
+
+impl AccessibilityChanges {
+    /// Resend the node in the next update
+    pub(crate) fn mark_node(&mut self, node_id: NodeId) {
+        if self.tracking {
+            self.nodes.insert(node_id);
+        }
+    }
+
+    /// Resend the node and all of its descendants in the next update
+    pub(crate) fn mark_subtree(&mut self, node_id: NodeId) {
+        if self.tracking {
+            self.subtrees.insert(node_id);
+        }
+    }
+
+    /// Resend the node's bounds, and those of the nodes positioned against it, in the next update
+    pub(crate) fn mark_layout(&mut self, node_id: NodeId) {
+        if self.tracking {
+            self.layout.insert(node_id);
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.tracking = false;
+        self.nodes.clear();
+        self.subtrees.clear();
+        self.hidden.clear();
+        self.relations.clear();
+        self.layout.clear();
+        self.scrolled.clear();
+        self.viewport = None;
+    }
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -399,6 +454,8 @@ pub struct BaseDocument {
     pub(crate) iframe_loads: HashMap<NodeId, crate::iframe::IframeLoad>,
     /// Whether the DOM or focus changed since the accessibility tree was last pushed
     pub(crate) has_changes: bool,
+    /// Which nodes changed since the accessibility tree was last pushed
+    pub(crate) accessibility: AccessibilityChanges,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
@@ -573,6 +630,7 @@ impl BaseDocument {
             pending_resource_deallocations: Vec::new(),
 
             has_changes: false,
+            accessibility: AccessibilityChanges::default(),
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
@@ -1136,6 +1194,23 @@ impl BaseDocument {
     /// Mark the accessibility tree as up to date
     pub fn clear_changes(&mut self) {
         self.has_changes = false;
+        self.accessibility.nodes.clear();
+        self.accessibility.subtrees.clear();
+        self.accessibility.layout.clear();
+        self.accessibility.scrolled.clear();
+    }
+
+    /// Whether the nodes that change are being recorded for incremental accessibility
+    /// tree updates. This starts when the full tree is built, and while it is off the
+    /// next tree sent must be a full one.
+    pub fn is_tracking_accessibility_changes(&self) -> bool {
+        self.accessibility.tracking
+    }
+
+    /// Stop recording which nodes change (e.g. because no assistive technology is
+    /// connected), so that changes cost nothing until the full tree is built again.
+    pub fn stop_accessibility_tracking(&mut self) {
+        self.accessibility.clear();
     }
 
     pub fn create_text_node(&mut self, text: &str) -> NodeId {
@@ -2135,6 +2210,7 @@ impl BaseDocument {
     pub fn set_viewport(&mut self, viewport: Viewport) {
         let changes = DeviceChanges::from_viewports(&self.viewport, &viewport);
         self.viewport = viewport;
+        self.has_changes |= self.accessibility.tracking;
         self.queue_device_changes(changes);
     }
 
@@ -2410,6 +2486,7 @@ impl BaseDocument {
 
     pub fn set_viewport_scroll(&mut self, scroll: crate::Point<f64>) {
         self.nodes.set_viewport_scroll(scroll);
+        self.has_changes |= self.accessibility.tracking;
     }
 
     /// Find the node targeted by a URL fragment (the `#...` part of a URL).

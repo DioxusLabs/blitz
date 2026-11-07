@@ -130,7 +130,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                             window.build_accessibility_tree();
                         }
                         accesskit_xplat::WindowEvent::AccessibilityDeactivated => {
-                            // TODO
+                            window.deactivate_accessibility();
                         }
                         accesskit_xplat::WindowEvent::ActionRequested(_req) => {
                             // TODO

@@ -667,7 +667,18 @@ impl LayoutPartialTree for LayoutPassState<'_> {
     }
 
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {
-        *self.node_from_id_mut(node_id).unrounded_layout_mut() = *layout;
+        let unrounded_layout = self.node_from_id_mut(node_id).unrounded_layout_mut();
+        let moved = unrounded_layout.location != layout.location
+            || unrounded_layout.size != layout.size
+            || unrounded_layout.border != layout.border
+            || unrounded_layout.padding != layout.padding;
+        *unrounded_layout = *layout;
+        if moved {
+            if self.accessibility.tracking {
+                self.accessibility.mark_layout(dom_node_id(node_id));
+                self.has_changes = true;
+            }
+        }
     }
 
     fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {

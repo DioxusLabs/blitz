@@ -415,7 +415,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         // DOM, styles, layout and focus.
         if !is_blocked && inner.has_changes() {
             #[cfg(feature = "accessibility")]
-            self.accessibility.update_tree(&inner);
+            self.accessibility.update_tree(&mut inner);
             inner.clear_changes();
         }
 
@@ -521,8 +521,15 @@ impl<Rend: WindowRenderer> View<Rend> {
 
     #[cfg(feature = "accessibility")]
     pub fn build_accessibility_tree(&mut self) {
-        let inner = self.doc.inner();
-        self.accessibility.update_tree(&inner);
+        let mut inner = self.doc.inner_mut();
+        self.accessibility.invalidate_tree();
+        self.accessibility.update_tree(&mut inner);
+    }
+
+    #[cfg(feature = "accessibility")]
+    pub fn deactivate_accessibility(&mut self) {
+        self.accessibility.invalidate_tree();
+        self.doc.inner_mut().stop_accessibility_tracking();
     }
 
     #[cfg(target_arch = "wasm32")]
