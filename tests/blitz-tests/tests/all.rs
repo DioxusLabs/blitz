@@ -48,6 +48,7 @@ mod line_break;
 mod link_cursor;
 mod link_rel_attribute;
 mod oof_dynamic_cb;
+mod outline_offset;
 mod outset_box_shadow_shape;
 mod paint_order;
 mod paint_tree_bench;
