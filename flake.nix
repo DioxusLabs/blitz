@@ -53,18 +53,13 @@
           ];
 
           # Dependencies needed to build Blitz:
-          #   * openssl     -> openssl-sys, via reqwest in blitz-net
           #   * fontconfig  -> yeslogic-fontconfig-sys, via parley/fontique
-          rustBuildInputs = [
-            pkgs.openssl
-          ]
-          ++ lib.optionals pkgs.stdenv.isLinux (
-            [ pkgs.fontconfig ] ++ runtimeLibs
-          )
-          ++ lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.apple-sdk
-            pkgs.libiconv
-          ];
+          rustBuildInputs =
+            lib.optionals pkgs.stdenv.isLinux ([ pkgs.fontconfig ] ++ runtimeLibs)
+            ++ lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.apple-sdk
+              pkgs.libiconv
+            ];
 
           # `python3` is required at build time to generate code for `stylo`.
           rustNativeBuildInputs = [
