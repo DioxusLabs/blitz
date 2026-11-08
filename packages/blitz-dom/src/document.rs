@@ -412,6 +412,8 @@ pub struct BaseDocument {
     /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
     /// elements without re-fetching from the network.
     pub(crate) image_cache: HashMap<String, ImageData>,
+    /// The scale at which nodes' overflow and transforms were last resolved.
+    pub(crate) transforms_scale: f64,
 
     /// Tracks in-flight image requests. When an image is being fetched, additional
     /// requests for the same URL are queued here instead of starting new fetches.
@@ -575,6 +577,7 @@ impl BaseDocument {
             has_changes: false,
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
+            transforms_scale: 0.0,
             pending_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
