@@ -69,7 +69,7 @@ async fn main() {
 
     // Fetch HTML
     let html = match url.scheme() {
-        "file" => String::from_utf8(std::fs::read(url.path()).unwrap()).unwrap(),
+        "file" => String::from_utf8_lossy(&std::fs::read(url.path()).unwrap()).into_owned(),
         _ => {
             let client = reqwest::Client::new();
             client
