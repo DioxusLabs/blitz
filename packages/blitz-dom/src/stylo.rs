@@ -1027,6 +1027,62 @@ impl<'a> TElement for BlitzNode<'a> {
             Some(LengthPercentage::Length(length))
         }
 
+        /// The rules for parsing a legacy font size: an integer from 1 to 7, either
+        /// absolute or relative (`+n`, `-n`) to the default size 3.
+        ///
+        /// https://html.spec.whatwg.org/multipage/rendering.html#rules-for-parsing-a-legacy-font-size
+        fn parse_legacy_font_size(value: &str) -> Option<u8> {
+            let value = value.trim_start_matches(|c: char| c.is_ascii_whitespace());
+            let (sign, digits) = match value.as_bytes().first()? {
+                b'+' => (1, &value[1..]),
+                b'-' => (-1, &value[1..]),
+                _ => (0, value),
+            };
+            let len = digits.len()
+                - digits
+                    .trim_start_matches(|c: char| c.is_ascii_digit())
+                    .len();
+            if len == 0 {
+                return None;
+            }
+            let number: i64 = digits[..len].parse().unwrap_or(i64::MAX).min(7);
+            let size = match sign {
+                1 => 3 + number,
+                -1 => 3 - number,
+                _ => number,
+            };
+            Some(size.clamp(1, 7) as u8)
+        }
+
+        /// The `face` attribute's value parsed as a `font-family` list.
+        fn parse_font_face_attr(value: &str) -> Vec<PropertyDeclaration> {
+            use style::properties::{
+                PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
+            };
+            use style::stylesheets::{CssRuleType, Origin};
+            use style_traits::ParsingMode;
+
+            let Ok(property) = PropertyId::parse_enabled_for_all_content("font-family") else {
+                return Vec::new();
+            };
+            let mut declarations = SourcePropertyDeclaration::default();
+            let parsed = parse_one_declaration_into(
+                &mut declarations,
+                property,
+                value,
+                Origin::Author,
+                &crate::url::DocumentUrl::default().url_extra_data(),
+                None,
+                ParsingMode::DEFAULT,
+                style::context::QuirksMode::NoQuirks,
+                CssRuleType::Style,
+            );
+            if parsed.is_err() {
+                return Vec::new();
+            }
+            declarations.drain().declarations.collect()
+        }
+
         // `<input type=image>` is the only input type that is replaced
         // content, and it is the only one that takes the embedded-content
         // presentational attributes. The type attribute is matched ASCII
@@ -1049,6 +1105,23 @@ impl<'a> TElement for BlitzNode<'a> {
                     lang = Some(value);
                 } else if attr.name.ns == ns!() && accepts_lang {
                     lang = lang.or(Some(value));
+                }
+            }
+
+            // A `font` element's `face` sets `font-family` to the attribute's value, and
+            // its `size` maps to a font size keyword.
+            // https://html.spec.whatwg.org/multipage/rendering.html#phrasing-content-3
+            if *tag == local_name!("font") && elem.name.ns == ns!(html) {
+                if *name == local_name!("face") {
+                    for declaration in parse_font_face_attr(value) {
+                        push_style(declaration);
+                    }
+                } else if *name == local_name!("size")
+                    && let Some(size) = parse_legacy_font_size(value)
+                {
+                    push_style(PropertyDeclaration::FontSize(
+                        style::values::specified::FontSize::from_html_size(size),
+                    ));
                 }
             }
 
