@@ -13,7 +13,7 @@ rust-version.workspace = true
 [features]
 default = ["svg"]
 tracing = ["dep:tracing"]
-svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
+svg = ["dep:anyrender_svg", "blitz-dom/svg"]
 custom-widget = ["blitz-dom/custom-widget"]
 font-embolden = []
 apple-font-embolden = []
@@ -31,7 +31,6 @@ blitz-dom = { workspace = true }
 
 # Servo dependencies
 style = { workspace = true }
-euclid = { workspace = true }
 
 # DioxusLabs dependencies
 taffy = { workspace = true }
@@ -42,7 +41,6 @@ skrifa = { workspace = true }
 color = { workspace = true }
 peniko = { workspace = true }
 kurbo = { workspace = true }
-usvg = { workspace = true, optional = true }
 
 # Other dependencies
 bytemuck = { workspace = true }
