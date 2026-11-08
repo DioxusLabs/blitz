@@ -710,11 +710,19 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
                             if url.fragment().is_some() && doc.url.is_same_document(&url) {
                                 doc.scroll_to_fragment(url.fragment().unwrap_or_default());
                             } else {
-                                doc.navigation_provider.navigate_to(NavigationOptions::new(
-                                    url,
-                                    None,
-                                    doc.id(),
-                                ));
+                                // `_blank` and `_top` leave an iframe: the top-level
+                                // document navigates (or opens the URL elsewhere).
+                                let leaves_frame =
+                                    el.attr(local_name!("target")).is_some_and(|target| {
+                                        let target = target.trim();
+                                        target.eq_ignore_ascii_case("_blank")
+                                            || target.eq_ignore_ascii_case("_top")
+                                    });
+                                let provider = match &doc.top_navigation_provider {
+                                    Some(top) if leaves_frame => top,
+                                    _ => &doc.navigation_provider,
+                                };
+                                provider.navigate_to(NavigationOptions::new(url, None, doc.id()));
                             }
                         } else {
                             #[cfg(feature = "tracing")]

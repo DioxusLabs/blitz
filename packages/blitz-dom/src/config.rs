@@ -43,6 +43,10 @@ pub struct DocumentConfig {
     pub net_provider: Option<Arc<dyn NetProvider>>,
     /// Navigation provider to handle link clicks and form submissions
     pub navigation_provider: Option<Arc<dyn NavigationProvider>>,
+    /// Navigation provider of the top-level document, for an `<iframe>`'s document.
+    /// Links with `target="_blank"` or `target="_top"` navigate through it, out of the
+    /// frame. `None` for a root document, whose links all use `navigation_provider`.
+    pub top_navigation_provider: Option<Arc<dyn NavigationProvider>>,
     /// Shell provider to redraw requests, clipboard, etc
     pub shell_provider: Option<Arc<dyn ShellProvider>>,
     /// HTML parser provider. Used to parse HTML for setInnerHTML
@@ -81,6 +85,7 @@ impl Default for DocumentConfig {
             ua_stylesheets: vec![UserAgentStylesheet::default_sheet()],
             net_provider: None,
             navigation_provider: None,
+            top_navigation_provider: None,
             shell_provider: None,
             html_parser_provider: None,
             font_ctx: None,
