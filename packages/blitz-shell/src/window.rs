@@ -374,14 +374,6 @@ impl<Rend: WindowRenderer> View<Rend> {
         if let Some(waker) = &self.waker {
             let cx = std::task::Context::from_waker(waker);
             if self.doc.poll(Some(cx)) {
-                #[cfg(feature = "accessibility")]
-                {
-                    let inner = self.doc.inner();
-                    if inner.has_changes() {
-                        self.accessibility.update_tree(&inner);
-                    }
-                }
-
                 self.request_redraw();
                 return true;
             }
@@ -418,6 +410,14 @@ impl<Rend: WindowRenderer> View<Rend> {
         let is_animating = inner.is_animating();
         let is_blocked = inner.has_pending_critical_resources();
         let insets = self.safe_area_insets;
+
+        // Push the accessibility tree after resolve so that it reflects the current
+        // DOM, styles, layout and focus.
+        if !is_blocked && inner.has_changes() {
+            #[cfg(feature = "accessibility")]
+            self.accessibility.update_tree(&inner);
+            inner.clear_changes();
+        }
 
         if !is_blocked && is_visible {
             self.renderer.render(|scene| {
