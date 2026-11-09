@@ -1,11 +1,12 @@
-# Builds the wasm examples (WebGL vello_hybrid renderer) and uploads them as
-# the `blitz-wasm-demo` artifact. The latest successful run of this workflow
-# on a push to main is the published build: blitz-website fetches its artifact
-# through the GitHub API, as it does for the Publish Browser downloads.
+# Builds the web viewer (apps/web-viewer: renders one web page with the WebGL
+# vello_hybrid renderer) and uploads it as the `blitz-wasm-demo` artifact. The
+# latest successful run of this workflow on a push to main is the published
+# build: blitz-website fetches its artifact through the GitHub API, as it does
+# for the Publish Browser downloads.
 #
-# Artifact layout (each directory is a static site with relative URLs):
-#   todomvc/index.html, todomvc/todomvc-<hash>.js, todomvc/todomvc-<hash>_bg.wasm
-#   seven_guis/index.html, ...
+# The artifact is a static site with relative URLs (index.html, the wasm and its
+# JS glue). See apps/web-viewer/src/lib.rs for its query parameters (?url=,
+# ?proxy=) and the postMessage interface for the embedding page.
 name: Publish Wasm Demo
 on:
   push:
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/publish-wasm.yml
+      - apps/web-viewer/**
   workflow_dispatch:
 
 jobs:
@@ -40,12 +42,11 @@ jobs:
         with:
           tool: trunk@0.22.1
 
-      - name: Build examples
+      - name: Build web viewer
+        working-directory: apps/web-viewer
         run: |
-          for app in todomvc seven_guis; do
-            (cd "examples/$app" && trunk build --release --locked --public-url ./ --dist "$GITHUB_WORKSPACE/wasm-demo/$app")
-          done
-          ls -lR wasm-demo
+          trunk build --release --locked --public-url ./ --dist "$GITHUB_WORKSPACE/wasm-demo"
+          ls -l "$GITHUB_WORKSPACE/wasm-demo"
 
       - name: Upload wasm demo
         uses: actions/upload-artifact@v7
