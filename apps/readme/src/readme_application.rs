@@ -40,8 +40,12 @@ impl ReadmeApplication {
         navigation_provider: Arc<dyn NavigationProvider>,
     ) -> Self {
         let handle = Handle::current();
+        #[allow(unused_mut)]
+        let mut inner = BlitzApplication::new(proxy, event_queue);
+        #[cfg(feature = "devtools")]
+        net_provider.set_observer(inner.net_observer());
         Self {
-            inner: BlitzApplication::new(proxy, event_queue),
+            inner,
             handle,
             raw_url,
             net_provider,
@@ -79,6 +83,7 @@ impl ReadmeApplication {
     fn navigate(&mut self, options: NavigationOptions) {
         let proxy = self.inner.proxy.clone();
         self.net_provider.fetch_with_callback(
+            None,
             options.into_request(),
             Box::new(move |result| {
                 let (url, bytes) = result.unwrap();

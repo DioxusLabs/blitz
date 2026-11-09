@@ -8,13 +8,14 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use blitz_traits::DocumentId;
 use blitz_traits::devtools::{DevtoolsProvider, MutationRecord};
 
 use crate::DevtoolsWaker;
 
 /// Mutation records buffered for all inspected documents (keyed by document id)
 pub(crate) struct MutationLog {
-    records: Mutex<Vec<(usize, MutationRecord)>>,
+    records: Mutex<Vec<(DocumentId, MutationRecord)>>,
     /// Whether an inspected document was dropped since the last check
     documents_dropped: AtomicBool,
     waker: Arc<dyn DevtoolsWaker>,
@@ -30,7 +31,7 @@ impl MutationLog {
     }
 
     /// A provider recording the mutations of the document with the given id
-    pub(crate) fn recorder(self: &Arc<Self>, doc_id: usize) -> Arc<dyn DevtoolsProvider> {
+    pub(crate) fn recorder(self: &Arc<Self>, doc_id: DocumentId) -> Arc<dyn DevtoolsProvider> {
         Arc::new(DocumentRecorder {
             doc_id,
             log: Arc::clone(self),
@@ -38,7 +39,7 @@ impl MutationLog {
     }
 
     /// Take all buffered records
-    pub(crate) fn take(&self) -> Vec<(usize, MutationRecord)> {
+    pub(crate) fn take(&self) -> Vec<(DocumentId, MutationRecord)> {
         std::mem::take(&mut *self.records.lock().unwrap())
     }
 
@@ -49,7 +50,7 @@ impl MutationLog {
 }
 
 struct DocumentRecorder {
-    doc_id: usize,
+    doc_id: DocumentId,
     log: Arc<MutationLog>,
 }
 

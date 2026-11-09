@@ -1,6 +1,7 @@
 //! Integration test: connect to the CDP server over HTTP/WebSocket and
 //! exercise the Elements-panel message sequence against a real document.
 
+use blitz_traits::DocumentId;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::mpsc::{Sender, channel};
@@ -23,10 +24,10 @@ impl DevtoolsWaker for TestWaker {
 
 struct SingleDocProvider(BaseDocument);
 impl DocumentProvider for SingleDocProvider {
-    fn document_ids(&self) -> Vec<usize> {
+    fn document_ids(&self) -> Vec<DocumentId> {
         vec![self.0.id()]
     }
-    fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut BaseDocument)) {
+    fn with_document(&mut self, id: DocumentId, cb: &mut dyn FnMut(&mut BaseDocument)) {
         if id == self.0.id() {
             // Re-resolve styles/layout before each access, as the shell's
             // event loop does between commands (after a mutation's redraw)
@@ -213,7 +214,7 @@ fn subtree_depth() {
     });
 }
 
-fn depth_client_session(addr: std::net::SocketAddr, doc_id: usize) {
+fn depth_client_session(addr: std::net::SocketAddr, doc_id: DocumentId) {
     /// Find a node with the given "id" attribute anywhere in a `children`
     /// subtree
     fn find_by_id<'a>(node: &'a serde_json::Value, id: &str) -> Option<&'a serde_json::Value> {
@@ -323,7 +324,7 @@ fn unknown_target_id_errors() {
 
             // A session bound to a nonexistent document id errors
             let (mut ws, _response) =
-                tungstenite::connect(format!("ws://{addr}/devtools/page/{}", doc_id + 1))
+                tungstenite::connect(format!("ws://{addr}/devtools/page/{}", doc_id.get() + 1))
                     .expect("ws connect");
             send_command(&mut ws, 1, "DOM.getDocument", json!({ "depth": 1 }));
             loop {
@@ -462,7 +463,11 @@ enum PickerKind {
     Picked(f32, f32),
 }
 
-fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Sender<PickerKind>) {
+fn client_session(
+    addr: std::net::SocketAddr,
+    doc_id: DocumentId,
+    picker_sender: Sender<PickerKind>,
+) {
     // HTTP discovery: /json/list should advertise our document
     let mut http = TcpStream::connect(addr).expect("connect for /json/list");
     http.write_all(format!("GET /json/list HTTP/1.1\r\nHost: {addr}\r\n\r\n").as_bytes())
@@ -1297,7 +1302,10 @@ fn client_session(addr: std::net::SocketAddr, doc_id: usize, picker_sender: Send
 }
 
 /// Serve a document parsed from `html` and run `client` against it
-fn run_structural_session(html: &str, client: impl FnOnce(std::net::SocketAddr, usize) + Send) {
+fn run_structural_session(
+    html: &str,
+    client: impl FnOnce(std::net::SocketAddr, DocumentId) + Send,
+) {
     let mut doc: BaseDocument = HtmlDocument::from_html(
         html,
         DocumentConfig {
@@ -1630,7 +1638,7 @@ fn mutate(mutations: &Sender<Mutation>, f: impl FnOnce(&mut BaseDocument) + Send
 /// document directly
 fn run_mutation_session(
     html: &str,
-    client: impl FnOnce(std::net::SocketAddr, usize, Sender<Mutation>) + Send,
+    client: impl FnOnce(std::net::SocketAddr, DocumentId, Sender<Mutation>) + Send,
 ) {
     let mut doc: BaseDocument = HtmlDocument::from_html(
         html,

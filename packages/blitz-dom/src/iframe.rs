@@ -55,6 +55,7 @@ impl BaseDocument {
         abort_signal: AbortSignal,
     ) -> DocumentConfig {
         DocumentConfig {
+            id: None,
             viewport: None,
             base_url,
             ua_stylesheets: vec![UserAgentStylesheet::default_sheet()],

@@ -2,6 +2,7 @@ use crate::{HtmlParserProvider, UserAgentStylesheet};
 #[cfg(feature = "devtools")]
 use blitz_traits::devtools::DevtoolsProvider;
 use blitz_traits::{
+    DocumentId,
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
     shell::{ShellProvider, Viewport},
@@ -39,6 +40,11 @@ pub struct DocumentConfig {
     /// The list is used as given, so replacing it removes the default sheet unless it is
     /// included, e.g. `vec![UserAgentStylesheet::default_sheet(), custom]`.
     pub ua_stylesheets: Vec<UserAgentStylesheet>,
+    /// The document's id. Defaults to a new id. Set it to an id reserved
+    /// with [`DocumentId::new`] to attribute requests made before the
+    /// document is created (e.g. for its HTML) to it; each id must only be
+    /// used for one document.
+    pub id: Option<DocumentId>,
     /// Net provider to handle network requests for resources
     pub net_provider: Option<Arc<dyn NetProvider>>,
     /// Navigation provider to handle link clicks and form submissions
@@ -76,6 +82,7 @@ pub struct DocumentConfig {
 impl Default for DocumentConfig {
     fn default() -> Self {
         Self {
+            id: None,
             viewport: None,
             base_url: None,
             ua_stylesheets: vec![UserAgentStylesheet::default_sheet()],
