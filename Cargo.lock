@@ -1453,6 +1453,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
  "usvg",
  "web-sys",
  "web-time",

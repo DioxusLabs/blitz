@@ -52,7 +52,7 @@ pub fn make_doc_config(
     DocumentConfig {
         viewport: None,
         base_url,
-        net_provider: Some(net_provider as _),
+        net_provider: Some(crate::proxy::doc_net_provider(net_provider)),
         navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
         html_parser_provider: Some(Arc::new(HtmlProvider)),
@@ -129,7 +129,7 @@ impl DocumentLoader {
 
         let req = req.signal(signal.clone());
 
-        let response = net_provider.fetch_async(req).await;
+        let response = crate::proxy::fetch_async(&net_provider, req).await;
 
         match response {
             Ok((resolved_url, bytes)) => {
@@ -244,7 +244,7 @@ async fn build_page_document(
             continue;
         }
         let request = Request::get(url.clone()).signal(signal.clone());
-        match net_provider.fetch_async(request).await {
+        match crate::proxy::fetch_async(net_provider, request).await {
             Ok((_, bytes)) => {
                 scripts.insert(url, String::from_utf8_lossy(&bytes).into_owned());
             }
