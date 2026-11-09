@@ -1032,23 +1032,23 @@ impl<'a> TElement for BlitzNode<'a> {
         ///
         /// https://html.spec.whatwg.org/multipage/rendering.html#rules-for-parsing-a-legacy-font-size
         fn parse_legacy_font_size(value: &str) -> Option<u8> {
-            let value = value.trim_start_matches(|c: char| c.is_ascii_whitespace());
-            let (sign, digits) = match value.as_bytes().first()? {
-                b'+' => (1, &value[1..]),
-                b'-' => (-1, &value[1..]),
-                _ => (0, value),
+            use style::str::{HTML_SPACE_CHARACTERS, read_numbers};
+
+            let mut chars = value
+                .trim_start_matches(HTML_SPACE_CHARACTERS)
+                .chars()
+                .peekable();
+            let sign = chars.next_if(|&c| matches!(c, '+' | '-'));
+            let number = match read_numbers(chars) {
+                (Some(number), _) => number,
+                // No digits
+                (None, 0) => return None,
+                // Too many digits for an i64, but every number above 7 gives the same size
+                (None, _) => i64::MAX,
             };
-            let len = digits.len()
-                - digits
-                    .trim_start_matches(|c: char| c.is_ascii_digit())
-                    .len();
-            if len == 0 {
-                return None;
-            }
-            let number: i64 = digits[..len].parse().unwrap_or(i64::MAX).min(7);
             let size = match sign {
-                1 => 3 + number,
-                -1 => 3 - number,
+                Some('+') => number.saturating_add(3),
+                Some('-') => 3 - number,
                 _ => number,
             };
             Some(size.clamp(1, 7) as u8)
