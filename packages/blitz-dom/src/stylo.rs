@@ -1054,19 +1054,18 @@ impl<'a> TElement for BlitzNode<'a> {
             Some(size.clamp(1, 7) as u8)
         }
 
-        /// The `face` attribute's value parsed as a `font-family` list.
-        fn parse_font_face_attr(value: &str) -> Vec<PropertyDeclaration> {
+        /// The `face` attribute's value parsed as a `font-family` list, as Gecko and
+        /// Blink parse it: CSS-wide keywords and `var()` are not family lists.
+        fn parse_font_face_attr(value: &str) -> Option<PropertyDeclaration> {
             use style::properties::{
                 PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
             };
             use style::stylesheets::{CssRuleType, Origin};
             use style_traits::ParsingMode;
 
-            let Ok(property) = PropertyId::parse_enabled_for_all_content("font-family") else {
-                return Vec::new();
-            };
+            let property = PropertyId::parse_enabled_for_all_content("font-family").ok()?;
             let mut declarations = SourcePropertyDeclaration::default();
-            let parsed = parse_one_declaration_into(
+            parse_one_declaration_into(
                 &mut declarations,
                 property,
                 value,
@@ -1076,11 +1075,12 @@ impl<'a> TElement for BlitzNode<'a> {
                 ParsingMode::DEFAULT,
                 style::context::QuirksMode::NoQuirks,
                 CssRuleType::Style,
-            );
-            if parsed.is_err() {
-                return Vec::new();
-            }
-            declarations.drain().declarations.collect()
+            )
+            .ok()?;
+            declarations
+                .drain()
+                .declarations
+                .find(|declaration| matches!(declaration, PropertyDeclaration::FontFamily(_)))
         }
 
         // `<input type=image>` is the only input type that is replaced
@@ -1112,10 +1112,10 @@ impl<'a> TElement for BlitzNode<'a> {
             // its `size` maps to a font size keyword.
             // https://html.spec.whatwg.org/multipage/rendering.html#phrasing-content-3
             if *tag == local_name!("font") && elem.name.ns == ns!(html) {
-                if *name == local_name!("face") {
-                    for declaration in parse_font_face_attr(value) {
-                        push_style(declaration);
-                    }
+                if *name == local_name!("face")
+                    && let Some(family) = parse_font_face_attr(value)
+                {
+                    push_style(family);
                 } else if *name == local_name!("size")
                     && let Some(size) = parse_legacy_font_size(value)
                 {

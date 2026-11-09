@@ -6,10 +6,10 @@ use blitz_test_harness::Harness;
 use style::properties::style_structs::Font;
 
 /// The computed font of `<font {attrs}>` and of a span styled with `css`, both
-/// inside a body whose 30px font size differs from every keyword size.
+/// inside a body whose font differs from every keyword size and from `initial`.
 fn fonts(attrs: &str, css: &str) -> (Font, Font) {
     let harness = Harness::from_html(&format!(
-        "<html><body style='font-size: 30px'>\
+        "<html><body style='font-size: 30px; font-family: cursive; --family: monospace'>\
          <font id=font {attrs}>x</font>\
          <span id=reference style='{css}'>x</span>\
          </body></html>"
@@ -68,9 +68,11 @@ fn face_sets_the_font_family() {
     assert_eq!(font.font_family, reference.font_family);
 }
 
+/// Only a family list applies, as in Gecko and Blink: CSS-wide keywords and
+/// `var()` are not family names.
 #[test]
 fn face_that_is_not_a_family_list_is_ignored() {
-    for face in ["", "1px", "Georgia,"] {
+    for face in ["", "1px", "Georgia,", "initial", "var(--family)"] {
         let (font, reference) = fonts(&format!("face='{face}'"), "font-family: inherit");
         assert_eq!(font.font_family, reference.font_family, "face={face:?}");
     }
