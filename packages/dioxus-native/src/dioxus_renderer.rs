@@ -20,10 +20,9 @@ cfg_if::cfg_if! {
     } else if #[cfg(all(feature = "vello-hybrid", target_arch = "wasm32"))] {
         // WebGL2 rather than WebGPU, so wasm builds render in every browser.
         // `features`/`limits` are ignored by this renderer.
-        pub use anyrender_vello_hybrid::{
+        use anyrender_vello_hybrid::{
             VelloHybridRendererOptions as InnerRendererOptions,
             VelloHybridWebGlWindowRenderer as InnerRenderer,
-            wgpu::{Features, Limits},
         };
     } else if #[cfg(feature = "vello-hybrid")] {
         use anyrender_vello_hybrid::{
