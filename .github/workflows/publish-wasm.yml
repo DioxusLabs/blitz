@@ -1,0 +1,55 @@
+# Builds the wasm examples (WebGL vello_hybrid renderer) and uploads them as
+# the `blitz-wasm-demo` artifact. The latest successful run of this workflow
+# on a push to main is the published build: blitz-website fetches its artifact
+# through the GitHub API, as it does for the Publish Browser downloads.
+#
+# Artifact layout (each directory is a static site with relative URLs):
+#   todomvc/index.html, todomvc/todomvc-<hash>.js, todomvc/todomvc-<hash>_bg.wasm
+#   seven_guis/index.html, ...
+name: Publish Wasm Demo
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - .github/workflows/publish-wasm.yml
+  workflow_dispatch:
+
+jobs:
+  build-wasm-demo:
+    name: Build wasm demo
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.96.1"
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Trunk fetches the wasm-bindgen CLI matching Cargo.lock and wasm-opt
+      - name: Install Trunk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.22.1
+
+      - name: Build examples
+        run: |
+          for app in todomvc seven_guis; do
+            (cd "examples/$app" && trunk build --release --locked --public-url ./ --dist "$GITHUB_WORKSPACE/wasm-demo/$app")
+          done
+          ls -lR wasm-demo
+
+      - name: Upload wasm demo
+        uses: actions/upload-artifact@v7
+        with:
+          name: blitz-wasm-demo
+          path: wasm-demo
+          if-no-files-found: error
