@@ -203,6 +203,11 @@ impl RenderedElementBacking for NodeHandle {
     }
 
     fn get_scroll_offset(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsVector2D>>>> {
+        // An `<iframe>`'s scrolling is its document's viewport.
+        if let Some(sub_doc) = self.doc().subdoc(self.node_id) {
+            let offset = sub_doc.inner().viewport_scroll();
+            return Box::pin(async move { Ok(PixelsVector2D::new(offset.x, offset.y)) });
+        }
         let Some(scroll_offset) = self
             .doc()
             .get_node(self.node_id)
@@ -215,6 +220,12 @@ impl RenderedElementBacking for NodeHandle {
 
     fn get_scroll_size(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsSize>>>> {
         let doc = self.doc();
+        // The reachable scroll range, as for other elements below: for an `<iframe>`, its
+        // document's viewport's.
+        if let Some(sub_doc) = doc.subdoc(self.node_id) {
+            let max = sub_doc.inner().viewport_max_scroll();
+            return Box::pin(async move { Ok(PixelsSize::new(max.x, max.y)) });
+        }
         let Some(node) = doc.get_node(self.node_id) else {
             drop(doc);
             return self.node_not_exist_err();
@@ -282,16 +293,20 @@ impl RenderedElementBacking for NodeHandle {
             drop(doc);
             return self.node_not_exist_err();
         }
-
-        doc.scroll_to(
-            node_id,
-            coordinates.x,
-            coordinates.y,
-            match behavior {
-                ScrollBehavior::Smooth => BlitzScrollBehavior::Smooth,
-                ScrollBehavior::Instant => BlitzScrollBehavior::Instant,
-            },
-        );
+        let behavior = match behavior {
+            ScrollBehavior::Smooth => BlitzScrollBehavior::Smooth,
+            ScrollBehavior::Instant => BlitzScrollBehavior::Instant,
+        };
+        // An `<iframe>` scrolls its document's viewport, which its root element's
+        // scroll goes to.
+        if let Some(sub_doc) = doc.subdoc_mut(node_id) {
+            let mut sub_doc = sub_doc.inner_mut();
+            if let Some(root) = sub_doc.try_root_element().map(|root| root.id) {
+                sub_doc.scroll_to(root, coordinates.x, coordinates.y, behavior);
+            }
+        } else {
+            doc.scroll_to(node_id, coordinates.x, coordinates.y, behavior);
+        }
 
         Box::pin(async { Ok(()) })
     }
