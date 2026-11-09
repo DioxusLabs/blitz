@@ -78,6 +78,7 @@ tokio = { workspace = true, features = ["time", "rt", "sync", "macros"] }
 # Allocators
 mimalloc = { version = "0.1.48", optional = true }
 
+url = { workspace = true }
 web-time = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

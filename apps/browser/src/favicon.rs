@@ -46,8 +46,7 @@ async fn probe_favicon(url: &Url, net_provider: &Arc<StdNetProvider>) -> Option<
     // success by attempting to actually decode the response body. Without
     // this, sites missing /favicon.ico would render a broken <img> in the
     // tab strip.
-    let (_, bytes) = net_provider
-        .fetch_async(Request::get(url.clone()))
+    let (_, bytes) = crate::proxy::fetch_async(net_provider, Request::get(url.clone()))
         .await
         .ok()?;
     if bytes.is_empty() || !is_decodable_image(&bytes) {
