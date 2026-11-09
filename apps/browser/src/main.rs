@@ -31,6 +31,7 @@ mod nav;
 mod status_bar;
 mod tab;
 mod tab_strip;
+mod timer;
 mod toolbar;
 mod url_suggestions;
 
@@ -73,7 +74,21 @@ fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
 
+    #[cfg(target_arch = "wasm32")]
+    console_error_panic_hook::set_once();
+
+    #[cfg(not(target_arch = "wasm32"))]
     let cli_url = std::env::args().skip(1).find_map(|a| parse_cli_url(&a));
+    // On the web, the initial URL comes from the page's `?url=` query parameter
+    #[cfg(target_arch = "wasm32")]
+    let cli_url = web_sys::window()
+        .and_then(|w| w.location().href().ok())
+        .and_then(|href| Url::parse(&href).ok())
+        .and_then(|page| {
+            page.query_pairs()
+                .find(|(key, _)| key == "url")
+                .and_then(|(_, value)| parse_cli_url(&value))
+        });
 
     let window_attributes = WindowAttributes::default();
     #[cfg(target_os = "windows")]
@@ -87,6 +102,11 @@ fn main() {
             .with_title_hidden(true)
             .with_unified_titlebar(true),
     ));
+    // Replacing the default attributes drops dioxus-native's canvas append on the web
+    #[cfg(target_arch = "wasm32")]
+    let window_attributes = window_attributes.with_platform_attributes(Box::new(
+        winit::platform::web::WindowAttributesWeb::default().with_append(true),
+    ));
 
     let initial_url_ctx = CliInitialUrl(cli_url);
     let contexts: Vec<Box<dyn Fn() -> Box<dyn std::any::Any> + Send + Sync>> =
@@ -99,6 +119,8 @@ fn main() {
     let config = dioxus_native::Config::new()
         .with_window_attributes(window_attributes)
         .with_devtools_shortcuts([]);
+    #[cfg(target_arch = "wasm32")]
+    let config = config.with_font_ctx(document_loader::bundled_font_ctx());
 
     dioxus_native::launch_cfg(app, contexts, vec![Box::new(config)])
 }

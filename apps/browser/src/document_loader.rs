@@ -59,14 +59,29 @@ pub fn make_doc_config(
         font_ctx: Some(font_ctx),
         media_type: None,
         abort_signal,
-        style_threading: StyleThreading::Parallel,
+        // No threads on wasm32-unknown-unknown
+        style_threading: if cfg!(target_arch = "wasm32") {
+            StyleThreading::Sequential
+        } else {
+            StyleThreading::Parallel
+        },
         ..Default::default()
     }
 }
 
+/// Browsers don't expose system fonts to wasm, so pages and the browser UI
+/// render with a bundled font for every generic family.
+#[cfg(target_arch = "wasm32")]
+pub fn bundled_font_ctx() -> FontContext {
+    dioxus_native::build_single_font_ctx(include_bytes!("../assets/DejaVuSans.woff2"))
+}
+
 impl DocumentLoader {
     pub fn new(net_provider: Arc<StdNetProvider>, history: SyncStore<History>) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
         let mut font_ctx = FontContext::default();
+        #[cfg(target_arch = "wasm32")]
+        let mut font_ctx = bundled_font_ctx();
         font_ctx
             .collection
             .register_fonts(Blob::new(Arc::new(blitz_dom::BULLET_FONT) as _), None);

@@ -13,13 +13,15 @@ use winit::event::WindowEvent;
 #[cfg(feature = "devtools")]
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
+use crate::IS_MOBILE;
+#[cfg(feature = "cache")]
+use crate::StdNetProvider;
 use crate::about_pages::AboutPage;
 use crate::history::HistoryNav;
 use crate::icons::{self, IconButton};
 use crate::nav::{is_enter_key, open_in_external_browser, req_from_string};
 use crate::tab::{Tab, TabId, TabStoreExt, TabStoreImplExt, active_tab};
 use crate::url_suggestions::{Suggestion, SuggestionKind, UrlSuggester, UrlSuggestions};
-use crate::{IS_MOBILE, StdNetProvider};
 
 fn with_sub_doc(tab: Store<Tab>, mut cb: impl FnMut(&mut BaseDocument)) {
     let node_handle_lens = tab.node_handle();
