@@ -8,8 +8,9 @@ use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use std::sync::Arc;
 
-#[test]
-fn scale_change_rescales_overflow_of_text_free_boxes() {
+/// A zero-height box holding a 600px child, resolved at scale 1, then moved
+/// to scale 1.5.
+fn rescaled_doc() -> HtmlDocument {
     let mut doc = HtmlDocument::from_html(
         r#"<html><body style="margin:0">
         <div id="outer" style="height:0"><div style="height:600px"></div></div>
@@ -22,9 +23,27 @@ fn scale_change_rescales_overflow_of_text_free_boxes() {
     );
     doc.resolve(0.0);
     doc.set_viewport(Viewport::new(1200, 900, 1.5, ColorScheme::Light));
-    doc.resolve(0.0);
+    doc
+}
 
+fn outer_overflow_height(doc: &HtmlDocument) -> f64 {
     let id = doc.query_selector("#outer").unwrap().unwrap();
-    let overflow = *doc.get_node(id).unwrap().scrollable_overflow();
-    assert_eq!(overflow.height(), 900.0);
+    doc.get_node(id).unwrap().scrollable_overflow().height()
+}
+
+#[test]
+fn scale_change_rescales_overflow_of_text_free_boxes() {
+    let mut doc = rescaled_doc();
+    doc.resolve(0.0);
+    assert_eq!(outer_overflow_height(&doc), 900.0);
+}
+
+/// Reading the stylist device applies the pending scale change before the
+/// next resolve, which must still recompute the overflow.
+#[test]
+fn scale_change_applied_before_resolve_rescales_overflow() {
+    let mut doc = rescaled_doc();
+    doc.stylist_device();
+    doc.resolve(0.0);
+    assert_eq!(outer_overflow_height(&doc), 900.0);
 }

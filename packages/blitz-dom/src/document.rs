@@ -19,6 +19,7 @@ use crate::{
     EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading,
     TextNodeData,
 };
+use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -293,6 +294,8 @@ pub struct BaseDocument {
     /// last [`resolve`](Self::resolve), to be applied (coalesced into a single
     /// device rebuild) at the start of the next resolve.
     pub(crate) pending_device_changes: DeviceChanges,
+    /// Document-wide work for the next [`resolve`](Self::resolve).
+    pub(crate) flags: DocumentFlags,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document. When disabled,
@@ -412,8 +415,6 @@ pub struct BaseDocument {
     /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
     /// elements without re-fetching from the network.
     pub(crate) image_cache: HashMap<String, ImageData>,
-    /// The scale at which nodes' overflow and transforms were last resolved.
-    pub(crate) transforms_scale: f64,
 
     /// Tracks in-flight image requests. When an image is being fetched, additional
     /// requests for the same URL are queued here instead of starting new fetches.
@@ -463,6 +464,17 @@ pub(crate) struct DocumentScratch {
     /// `(paint order, node)` pairs of the paint lists under construction in
     /// `build_paint_tree_impl`.
     pub(crate) keyed_children: Vec<((i32, i32), NodeId)>,
+}
+
+bitflags! {
+    /// Document-wide work for the next [`resolve`](BaseDocument::resolve).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub(crate) struct DocumentFlags: u8 {
+        /// Recompute the transform and scrollable overflow of every node, not
+        /// only of the damaged ones. Both are kept in device pixels, so a scale
+        /// change makes them stale throughout the tree.
+        const RESOLVE_ALL_TRANSFORMS = 0b0000_0001;
+    }
 }
 
 impl BaseDocument {
@@ -544,6 +556,7 @@ impl BaseDocument {
             viewport,
             media_type,
             pending_device_changes: DeviceChanges::empty(),
+            flags: DocumentFlags::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
             subdocument_depth: config.subdocument_depth,
@@ -577,7 +590,6 @@ impl BaseDocument {
             has_changes: false,
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
-            transforms_scale: 0.0,
             pending_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
@@ -2260,9 +2272,11 @@ impl BaseDocument {
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
         // Text is shaped at a specific scale factor, so cached inline layouts
-        // must be invalidated when the scale changes.
+        // must be invalidated when the scale changes, as must every node's
+        // transform and scrollable overflow (kept in device pixels).
         if changes.contains(DeviceChanges::SCALE) {
             self.invalidate_inline_contexts();
+            self.flags.insert(DocumentFlags::RESOLVE_ALL_TRANSFORMS);
         }
 
         // Color-scheme changes affect values that are resolved at cascade time
