@@ -343,6 +343,28 @@ pub(crate) fn build_table_context(
                 *column = percent_track(percent, extra);
             }
         }
+
+        // A table wider than its columns shares the extra width out over them: the `auto`
+        // columns take it (their `1fr`) when there are any; otherwise the columns with a
+        // length width do, in proportion to it, as `minmax(<width>, <width>fr)`.
+        let is_flexible = |column: &TrackSizingFunction| {
+            column.max.into_raw().tag() == taffy::CompactLength::FR_TAG
+        };
+        let is_length = |column: &TrackSizingFunction| {
+            column.min.into_raw().tag() == taffy::CompactLength::LENGTH_TAG
+                && column.max.into_raw().tag() == taffy::CompactLength::LENGTH_TAG
+        };
+        if !column_sizes.iter().any(is_flexible) {
+            for column in column_sizes.iter_mut().filter(|c| is_length(c)) {
+                let width = column.max.into_raw().value();
+                if width > 0.0 {
+                    *column = style_helpers::minmax(
+                        style_helpers::length(width),
+                        style_helpers::fr(width),
+                    );
+                }
+            }
+        }
     }
 
     style.grid_template_columns = column_sizes.into_iter().map(|dim| dim.into()).collect();
