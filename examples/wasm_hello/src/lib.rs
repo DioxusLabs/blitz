@@ -35,8 +35,8 @@ const HTML: &str = r#"<!doctype html>
     </p>
     <ul>
       <li>winit creates the canvas and dispatches events</li>
-      <li><code>WindowRenderer::resume</code> starts WebGL2 shader compilation and polls it each animation frame</li>
-      <li>A <code>BlitzShellEvent::ResumeReady</code> finalizes the first frame</li>
+      <li><code>WindowRenderer::resume</code> starts WebGL2 shader compilation; blitz-shell polls <code>complete_resume</code> on each redraw until it finishes</li>
+      <li>The redraw that completes it paints the first frame</li>
     </ul>
   </main>
 </body>
