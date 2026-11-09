@@ -33,7 +33,8 @@ bitflags! {
         const VIEWPORT_SIZE = 0b0000_0001;
         /// The total scale factor (hidpi scale * zoom) changed. Requires
         /// invalidating cached inline layouts (text is shaped at a specific
-        /// scale) and a redraw.
+        /// scale), recomputing every node's transform and scrollable overflow
+        /// (kept in device pixels) and a redraw.
         const SCALE = 0b0000_0010;
         /// The preferred color scheme changed.
         const COLOR_SCHEME = 0b0000_0100;

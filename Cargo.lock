@@ -1031,7 +1031,6 @@ dependencies = [
  "blitz-traits",
  "bytemuck",
  "color",
- "euclid",
  "kurbo",
  "parley",
  "peniko",
@@ -1040,7 +1039,6 @@ dependencies = [
  "stylo",
  "taffy",
  "tracing",
- "usvg",
 ]
 
 [[package]]
