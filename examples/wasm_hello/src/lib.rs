@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use anyrender_vello_hybrid::VelloHybridWindowRenderer;
+use anyrender_vello_hybrid::VelloHybridWebGlWindowRenderer;
 use blitz_dom::{DocumentConfig, FontContext, decode_font_bytes};
 use blitz_html::HtmlDocument;
 use blitz_shell::{BlitzApplication, BlitzShellProxy, WindowConfig};
@@ -35,8 +35,8 @@ const HTML: &str = r#"<!doctype html>
     </p>
     <ul>
       <li>winit creates the canvas and dispatches events</li>
-      <li><code>WindowRenderer::resume</code> spawns wgpu init onto the JS microtask queue</li>
-      <li>A <code>BlitzShellEvent::ResumeReady</code> finalizes the first frame</li>
+      <li><code>WindowRenderer::resume</code> starts WebGL2 shader compilation; blitz-shell polls <code>complete_resume</code> on each redraw until it finishes</li>
+      <li>The redraw that completes it paints the first frame</li>
     </ul>
   </main>
 </body>
@@ -120,7 +120,7 @@ pub fn start() -> Result<(), JsValue> {
     let event_loop = EventLoop::new().map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let (proxy, rx) = BlitzShellProxy::new(event_loop.create_proxy());
 
-    let renderer = VelloHybridWindowRenderer::new();
+    let renderer = VelloHybridWebGlWindowRenderer::new();
     let doc = HtmlDocument::from_html(
         HTML,
         DocumentConfig {
@@ -137,7 +137,7 @@ pub fn start() -> Result<(), JsValue> {
     ));
     let window_config = WindowConfig::with_attributes(Box::new(doc), renderer, attrs);
 
-    let mut app = BlitzApplication::<VelloHybridWindowRenderer>::new(proxy, rx);
+    let mut app = BlitzApplication::<VelloHybridWebGlWindowRenderer>::new(proxy, rx);
     app.add_window(window_config);
 
     event_loop
