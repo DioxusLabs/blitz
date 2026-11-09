@@ -1,0 +1,30 @@
+[package]
+name = "web-viewer"
+version = "0.0.0"
+edition = "2024"
+description = "Renders a single web page into a canvas on the web, for embedding in a page that provides the UI"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+anyrender_vello_hybrid = { workspace = true, features = ["webgl"] }
+blitz-dom = { workspace = true, features = ["svg", "woff", "floats", "scrollbars"] }
+blitz-html = { workspace = true }
+blitz-net = { workspace = true }
+blitz-paint = { workspace = true, features = ["svg", "scrollbars"] }
+blitz-shell = { workspace = true }
+blitz-traits = { workspace = true }
+winit = { workspace = true }
+url = { workspace = true }
+
+# Browsers don't expose system fonts to wasm, so a bundled font is registered
+# directly with the parley FontContext.
+parley = { workspace = true, features = ["std"] }
+
+console_error_panic_hook = { workspace = true }
+js-sys = "0.3"
+wasm-bindgen = { workspace = true }
+web-sys = { workspace = true, features = ["Document", "HtmlCanvasElement", "Location", "MessageEvent", "Window"] }
