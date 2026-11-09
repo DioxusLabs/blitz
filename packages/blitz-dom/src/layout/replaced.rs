@@ -350,6 +350,33 @@ pub fn compute_replaced_layout(
         Violation::None
     };
 
+    // The table below (CSS 2.2 §10.4) is for a width and height both `auto`. With either set,
+    // that axis keeps its value within its own min and max, and only an `auto` one follows the
+    // aspect ratio, from the other axis as clamped: `min-width:600px; height:0` is 600×0.
+    if let Some(ratio) = aspect_ratio
+        && (style_size.width.is_some() || style_size.height.is_some())
+    {
+        let size = match (style_size.width.is_some(), style_size.height.is_some()) {
+            (true, false) => {
+                let width = size.width.maybe_clamp(min_size.width, max_size.width);
+                Size {
+                    width,
+                    height: (width / ratio).maybe_clamp(min_size.height, max_size.height),
+                }
+            }
+            (false, true) => {
+                let height = size.height.maybe_clamp(min_size.height, max_size.height);
+                Size {
+                    width: (height * ratio).maybe_clamp(min_size.width, max_size.width),
+                    height,
+                }
+            }
+            _ => size.maybe_clamp(min_size, max_size),
+        };
+        let size = size.map(|s| s.max(0.0));
+        return LayoutOutput::from_sizes(size + pb_sum, overflow_rect_for(size));
+    }
+
     // Without an intrinsic aspect ratio, each axis is clamped independently
     let Some(aspect_ratio) = aspect_ratio else {
         let size = size.maybe_clamp(min_size, max_size);
