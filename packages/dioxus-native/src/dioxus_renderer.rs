@@ -23,7 +23,6 @@ cfg_if::cfg_if! {
         pub use anyrender_vello_hybrid::{
             VelloHybridRendererOptions as InnerRendererOptions,
             VelloHybridWebGlWindowRenderer as InnerRenderer,
-            wgpu::{Features, Limits},
         };
     } else if #[cfg(feature = "vello-hybrid")] {
         use anyrender_vello_hybrid::{
