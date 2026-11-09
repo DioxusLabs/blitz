@@ -1840,6 +1840,29 @@ mod test {
         assert!(document.root_node().children.is_empty());
     }
 
+    /// A `<style>` already flushed is queued again when its text child is removed. If it is
+    /// then dropped in the same batch, the flush skips it rather than parsing a dropped node.
+    #[test]
+    fn flush_skips_a_style_queued_by_its_text_then_dropped() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+        let (style, text) = {
+            let mut mutator = document.mutate();
+            let style = mutator.create_element(qual_name!("style"), vec![]);
+            let text = mutator.create_text_node(".a { color: #fff; }");
+            mutator.append_children(style, &[text]);
+            mutator.append_children(root_id, &[style]);
+            (style, text)
+        };
+        {
+            let mut mutator = document.mutate();
+            // Removing the text queues its <style> to be parsed again at the flush.
+            mutator.remove_and_drop_node(text);
+            mutator.remove_and_drop_node(style);
+        }
+        assert!(document.get_node(style).is_none());
+    }
+
     #[test]
     fn style_property_mutation_copies_blocks_in_rule_tree() {
         let mut document = BaseDocument::new(DocumentConfig {
