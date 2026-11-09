@@ -662,9 +662,8 @@ pub(crate) fn stroke_text<'a>(
                 };
 
                 let normalized_coords: &[i16] = bytemuck::cast_slice(run.normalized_coords());
-                // Zero-size text is invisible, but hinting can give its glyphs ink. Fully
-                // transparent text is skipped too: backends draw color (emoji) glyphs opaque.
-                if font_size > 0.0 && fill_color.components[3] > 0.0 {
+                // Zero-size text is invisible, but hinting can give its glyphs ink.
+                if font_size > 0.0 {
                     scene.draw_glyphs(
                         font,
                         font_size,
