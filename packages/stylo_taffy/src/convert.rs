@@ -127,6 +127,33 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
 }
 
 #[inline]
+/// A table cell's `height` is the least it may be, as a row's is (CSS 2.2 §17.5.3): its content
+/// makes it taller. So a table cell's length `height` is laid out as its minimum (a larger
+/// length `min-height` kept) and its height as `auto`, the cell stretching to its row. Other
+/// boxes, and other heights, are returned as they are.
+pub fn table_cell_height(
+    display: stylo::Display,
+    height: taffy::Dimension,
+    min_height: taffy::LengthPercentageAuto,
+) -> (taffy::Dimension, taffy::LengthPercentageAuto) {
+    if display.inside() != stylo::DisplayInside::TableCell
+        || height.tag() != taffy::CompactLength::LENGTH_TAG
+    {
+        return (height, min_height);
+    }
+    let min = min_height.into_raw();
+    let least = match min.tag() {
+        taffy::CompactLength::LENGTH_TAG => min.value(),
+        taffy::CompactLength::AUTO_TAG => 0.0,
+        // A percentage or calc() minimum is kept as it is.
+        _ => return (taffy::Dimension::AUTO, min_height),
+    };
+    (
+        taffy::Dimension::AUTO,
+        taffy::LengthPercentageAuto::length(height.value().max(least)),
+    )
+}
+
 pub fn min_size(val: &stylo::Size) -> taffy::LengthPercentageAuto {
     match val {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
