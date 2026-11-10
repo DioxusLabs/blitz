@@ -434,3 +434,99 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         doc.handle_dom_event(event, |new_evt| self.queue.push_back(new_evt));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BaseDocument, DocumentConfig, qual_name};
+    use blitz_traits::events::{BlitzKeyEvent, KeyState};
+    use keyboard_types::{Code, Key, Location, Modifiers, NamedKey};
+    use std::{cell::Cell, rc::Rc};
+
+    struct RemoveDuringKeyDown {
+        remove: Option<NodeId>,
+        calls: Rc<Cell<usize>>,
+    }
+
+    impl EventHandler for RemoveDuringKeyDown {
+        fn handle_event(
+            &mut self,
+            _chain: &[NodeId],
+            event: &mut DomEvent,
+            doc: &mut dyn Document,
+            _event_state: &mut EventState,
+        ) {
+            if matches!(event.data, DomEventData::KeyDown(_)) {
+                self.calls.set(self.calls.get() + 1);
+                if let Some(remove) = self.remove.take() {
+                    doc.inner_mut().mutate().remove_and_drop_node(remove);
+                }
+            }
+        }
+    }
+
+    fn document() -> (BaseDocument, NodeId, NodeId, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let root = doc.root_node().id;
+        let (parent, first, second) = {
+            let mut m = doc.mutate();
+            let html = m.create_element(qual_name!("html"), vec![]);
+            let parent = m.create_element(qual_name!("div"), vec![]);
+            let first = m.create_element(qual_name!("button"), vec![]);
+            let second = m.create_element(qual_name!("button"), vec![]);
+            m.append_children(root, &[html]);
+            m.append_children(html, &[parent, second]);
+            m.append_children(parent, &[first]);
+            (parent, first, second)
+        };
+        doc.set_focus_to(first);
+        (doc, parent, first, second)
+    }
+
+    fn tab(doc: &mut BaseDocument, remove: Option<NodeId>) {
+        let calls = Rc::new(Cell::new(0));
+        let mut driver = EventDriver::new(
+            doc,
+            RemoveDuringKeyDown {
+                remove,
+                calls: calls.clone(),
+            },
+        );
+        driver.handle_ui_event(UiEvent::KeyDown(BlitzKeyEvent {
+            key: Key::Named(NamedKey::Tab),
+            code: Code::Tab,
+            modifiers: Modifiers::empty(),
+            location: Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: None,
+        }));
+        assert_eq!(calls.get(), 1, "the native callback must actually run");
+    }
+
+    #[test]
+    fn default_action_survives_handler_dropping_its_target() {
+        let (mut doc, _, first, second) = document();
+        tab(&mut doc, Some(first));
+        assert!(doc.get_node(first).is_none());
+        assert!(doc.get_node(second).is_some());
+    }
+
+    #[test]
+    fn default_action_survives_handler_dropping_targets_ancestor() {
+        let (mut doc, parent, first, second) = document();
+        tab(&mut doc, Some(parent));
+        assert!(doc.get_node(parent).is_none());
+        assert!(doc.get_node(first).is_none());
+        assert!(doc.get_node(second).is_some());
+    }
+
+    #[test]
+    fn surviving_target_still_runs_its_default_action() {
+        let (mut doc, _, first, second) = document();
+        tab(&mut doc, None);
+        assert!(doc.get_node(first).is_some());
+        assert_eq!(doc.get_focussed_node_id(), Some(second));
+    }
+}
