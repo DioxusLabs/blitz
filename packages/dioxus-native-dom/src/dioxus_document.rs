@@ -122,7 +122,9 @@ impl DioxusDocument {
             name: qual_name("id", None),
             value: "main".to_string(),
         };
-        let main_element_id = mutr.create_element(qual_name("main", None), vec![main_attr]);
+        // A `<div>`, not a `<main>`: the app's own landmarks are its own, and
+        // a screen reader would announce a second main region around them.
+        let main_element_id = mutr.create_element(qual_name("div", None), vec![main_attr]);
         mutr.append_children(body_element_id, &[main_element_id]);
 
         drop(mutr);
@@ -405,7 +407,7 @@ mod tests {
             doc.poll(None);
         }
 
-        // The `<main>` element should end up with exactly one keyed `div` per
+        // The `<div id="main">` element should end up with exactly one keyed `div` per
         // inserted item, and applying the mutations must not have panicked.
         let inner = doc.inner.borrow();
         let main = inner.get_node(doc.main_element_id).unwrap();
