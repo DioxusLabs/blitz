@@ -655,19 +655,16 @@ pub(crate) fn stroke_text<'a>(
                 let fill_color = brush_override
                     .unwrap_or_else(|| stack.last().map(|e| e.fill_color).unwrap_or(Color::BLACK));
 
-                // Approximates macOS font smoothing (stem dilation). The amounts are in device
-                // pixels per side, fitted to Safari's ink at 9-72px and 1x-3x scale. Safari keeps
-                // dilating at large sizes, so there is no ppem cutoff.
                 let embolden = if FONT_EMBOLDEN_ENABLED {
-                    let fs = font_size as f64 * embolden_scale(fill_color);
-                    kurbo::Vec2::new((0.0121 * fs).min(0.35), (0.015125 * fs).min(0.35))
+                    font_embolden(font_size as f64, fill_color, transform)
                 } else {
                     kurbo::Vec2::default()
                 };
 
                 let normalized_coords: &[i16] = bytemuck::cast_slice(run.normalized_coords());
-                // Zero-size text is invisible, but hinting can give its glyphs ink.
-                if font_size > 0.0 {
+                // Zero-size text is invisible, but hinting can give its glyphs ink. Fully
+                // transparent text is skipped too: backends draw color (emoji) glyphs opaque.
+                if font_size > 0.0 && fill_color.components[3] > 0.0 {
                     scene.draw_glyphs(
                         font,
                         font_size,
@@ -768,6 +765,25 @@ pub(crate) fn draw_text_selection(
         let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
         scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
     });
+}
+
+/// Approximates macOS font smoothing (stem dilation). CoreGraphics dilates each side by an amount
+/// in device pixels that grows with the device ppem up to 0.3px (fitted to Safari's ink at 9-72px
+/// and 1x-3x scale), and keeps dilating at large sizes, so there is no ppem cutoff. glifo applies
+/// the embolden in user units, so the device amounts are divided by the transform's scale.
+fn font_embolden(font_size: f64, color: Color, transform: Affine) -> kurbo::Vec2 {
+    const MAX_DEVICE_EMBOLDEN: f64 = 0.3;
+    let [a, b, c, d, _, _] = transform.as_coeffs();
+    let (scale_x, scale_y) = (a.hypot(b), c.hypot(d));
+    let device_ppem = font_size * (a * d - b * c).abs().sqrt();
+    if scale_x == 0.0 || scale_y == 0.0 || !device_ppem.is_finite() {
+        return kurbo::Vec2::default();
+    }
+    let fs = device_ppem * embolden_scale(color);
+    kurbo::Vec2::new(
+        (0.0121 * fs).min(MAX_DEVICE_EMBOLDEN) / scale_x,
+        (0.015125 * fs).min(MAX_DEVICE_EMBOLDEN) / scale_y,
+    )
 }
 
 /// Scales Pathfinder's stem-darkening factors by the text's relative luminance. CoreText

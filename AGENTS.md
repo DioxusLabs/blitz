@@ -15,6 +15,8 @@ Before pushing, run what CI runs:
 
 Don't use `--all-features` for clippy/test: `rdme/avif` needs system dav1d >= 1.3 and `accesskit_xplat/tokio` conflicts with accesskit_unix. Pass an explicit feature list instead.
 
+Run `apps/browser` with `cargo run -p browser` (not the built binary directly), or its `asset!` stylesheet doesn't load.
+
 Headless machines: the default GPU renderer has no adapter. Prefer rendering to an image (`cargo run --release --example screenshot <file-or-url>`); for a window use the CPU renderer (`--no-default-features --features cpu-softbuffer` or the `cpu` just recipes).
 
 ## Web Platform Tests

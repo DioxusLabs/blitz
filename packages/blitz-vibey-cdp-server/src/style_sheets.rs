@@ -60,6 +60,13 @@ pub(crate) struct RuleRanges {
     pub(crate) style: TextRange,
 }
 
+impl RuleRanges {
+    /// The whole selector list of the prelude
+    pub(crate) fn selector_list(&self) -> Option<TextRange> {
+        Some((self.selectors.first()?.0, self.selectors.last()?.1))
+    }
+}
+
 /// A style rule located in a reported sheet
 pub(crate) struct RuleSource<'a> {
     pub(crate) sheet_id: &'a str,
@@ -233,6 +240,145 @@ impl StyleSheets {
         entry.text = new_text;
         entry.rules = Some(new_rules);
         Ok(result)
+    }
+    /// Apply a `CSS.setRuleSelector` edit: replace the selector list
+    /// spanning `range` of a rule of the sheet `sheet_id` with `selector`.
+    /// Returns the edited rule's new source.
+    pub(crate) fn set_rule_selector(
+        &mut self,
+        doc: &mut BaseDocument,
+        sheet_id: &str,
+        range: TextRange,
+        selector: &str,
+    ) -> Result<RuleSource<'_>, &'static str> {
+        let entry = self
+            .entry_mut(sheet_id)
+            .ok_or("No style sheet with given id found")?;
+        let owner = entry.owner;
+        if entry.rules.is_none() {
+            entry.rules = Some(index_rules(doc, &entry.text));
+        }
+        let old_rules = entry.rules.as_ref().unwrap();
+        let index = old_rules
+            .iter()
+            .position(|rule| rule.selector_list() == Some(range))
+            .ok_or("Range is not a rule's selector list")?;
+        let old_rule = &old_rules[index];
+        if live_selector_text(doc, owner, &old_rule.path).as_deref()
+            != Some(old_rule.selector_text.as_str())
+        {
+            return Err("The style sheet was modified");
+        }
+
+        let mut new_text = entry.text.clone();
+        new_text.replace_range(range.0..range.1, selector);
+        // The edit may only change this rule's selectors: an invalid
+        // selector list drops the rule, and anything else changes the rules
+        let new_rules = index_rules(doc, &new_text);
+        let same_rules = new_rules.len() == old_rules.len()
+            && new_rules
+                .iter()
+                .zip(old_rules)
+                .enumerate()
+                .all(|(i, (new, old))| {
+                    new.path == old.path && (i == index || new.selector_text == old.selector_text)
+                });
+        if !same_rules {
+            return Err("Invalid selector");
+        }
+
+        let new_rule = &new_rules[index];
+        let (start, end) = new_rule.selector_list().ok_or("Invalid selector")?;
+        doc.stylesheet_rule_set_selector_text(owner, &new_rule.path, &new_text[start..end])
+            .map_err(|_| "Could not set selector")?;
+        if live_selector_text(doc, owner, &new_rule.path).as_deref()
+            != Some(new_rule.selector_text.as_str())
+        {
+            return Err("Invalid selector");
+        }
+
+        entry.text = new_text;
+        let ranges = &entry.rules.insert(new_rules)[index];
+        Ok(RuleSource {
+            sheet_id: &entry.id,
+            text: &entry.text,
+            ranges,
+        })
+    }
+    /// Apply a `CSS.addRule` edit: insert `rule_text`, which must hold a
+    /// single style rule, at byte `location` of the sheet `sheet_id`.
+    /// Returns the inserted rule's source.
+    pub(crate) fn add_rule(
+        &mut self,
+        doc: &mut BaseDocument,
+        sheet_id: &str,
+        location: usize,
+        rule_text: &str,
+    ) -> Result<RuleSource<'_>, &'static str> {
+        let entry = self
+            .entry_mut(sheet_id)
+            .ok_or("No style sheet with given id found")?;
+        let owner = entry.owner;
+        if entry.rules.is_none() {
+            entry.rules = Some(index_rules(doc, &entry.text));
+        }
+        let old_rules = entry.rules.as_ref().unwrap();
+
+        let mut new_text = entry.text.clone();
+        new_text.insert_str(location, rule_text);
+        let inserted = location..location + rule_text.len();
+        let new_rules = index_rules(doc, &new_text);
+        let index = new_rules
+            .iter()
+            .position(|rule| {
+                rule.selector_list()
+                    .is_some_and(|(start, _)| inserted.contains(&start))
+            })
+            .ok_or("Invalid rule")?;
+        let new_path = &new_rules[index].path;
+        let (&new_index, parent) = new_path.split_last().unwrap();
+
+        // The text must add just this rule, leaving the others as they were
+        // (with the paths of its later siblings and their children shifted)
+        let shifted = |path: &[usize]| {
+            let mut path = path.to_vec();
+            if path.len() > parent.len()
+                && path.starts_with(parent)
+                && path[parent.len()] >= new_index
+            {
+                path[parent.len()] += 1;
+            }
+            path
+        };
+        let others = new_rules
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != index)
+            .map(|(_, rule)| rule);
+        let same_rules = new_rules.len() == old_rules.len() + 1
+            && new_rules[index].style.1 <= inserted.end
+            && others.zip(old_rules).all(|(new, old)| {
+                new.path == shifted(&old.path) && new.selector_text == old.selector_text
+            });
+        if !same_rules {
+            return Err("Invalid rule");
+        }
+
+        doc.stylesheet_insert_rule(owner, parent, rule_text, new_index)
+            .map_err(|_| "Could not add rule")?;
+        if live_selector_text(doc, owner, new_path).as_deref()
+            != Some(new_rules[index].selector_text.as_str())
+        {
+            return Err("Could not add rule");
+        }
+
+        entry.text = new_text;
+        let ranges = &entry.rules.insert(new_rules)[index];
+        Ok(RuleSource {
+            sheet_id: &entry.id,
+            text: &entry.text,
+            ranges,
+        })
     }
 }
 

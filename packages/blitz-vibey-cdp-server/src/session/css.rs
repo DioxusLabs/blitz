@@ -1,5 +1,5 @@
 //! Handlers for the `CSS` domain: matched/computed/inline styles and
-//! inline-style-sheet editing
+//! style sheet editing
 
 use blitz_traits::node_id::NodeId;
 use serde_json::json;
@@ -242,6 +242,50 @@ pub(super) fn dispatch(
                 );
             }
             Ok(json!({ "styles": styles }))
+        }
+
+        // Sent by the Styles pane when a rule's selector is edited
+        "CSS.setRuleSelector" => {
+            let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
+            let sheet_id = str_param(params, "styleSheetId")?;
+            let selector = str_param(params, "selector")?;
+            let range = params
+                .get("range")
+                .ok_or_else(|| CdpError::invalid_params("Missing range"))?;
+            let style_sheets = session.style_sheets.as_mut().ok_or_else(no_style_sheet)?;
+            let text = style_sheets.text(&sheet_id).ok_or_else(no_style_sheet)?;
+            let range = range_offsets(text, range)
+                .ok_or_else(|| CdpError::invalid_params("Invalid range"))?;
+            with_doc(docs, doc_id, |doc| {
+                let source = style_sheets.set_rule_selector(doc, &sheet_id, range, &selector)?;
+                let selector_list = crate::css::selector_list_json(&source);
+                doc.shell_provider.request_redraw();
+                Ok(json!({ "selectorList": selector_list }))
+            })
+            .ok_or_else(no_document)?
+            .map_err(CdpError::server_error)
+        }
+
+        // Sent by the Styles pane's "Insert style rule below" button
+        "CSS.addRule" => {
+            let doc_id = session.doc_id(docs).ok_or_else(no_document)?;
+            let sheet_id = str_param(params, "styleSheetId")?;
+            let rule_text = str_param(params, "ruleText")?;
+            let location = params
+                .get("location")
+                .ok_or_else(|| CdpError::invalid_params("Missing location"))?;
+            let style_sheets = session.style_sheets.as_mut().ok_or_else(no_style_sheet)?;
+            let text = style_sheets.text(&sheet_id).ok_or_else(no_style_sheet)?;
+            let (location, _) = range_offsets(text, location)
+                .ok_or_else(|| CdpError::invalid_params("Invalid location"))?;
+            with_doc(docs, doc_id, |doc| {
+                let source = style_sheets.add_rule(doc, &sheet_id, location, &rule_text)?;
+                let rule = crate::css::sheet_rule_json(&source);
+                doc.shell_provider.request_redraw();
+                Ok(json!({ "rule": rule }))
+            })
+            .ok_or_else(no_document)?
+            .map_err(CdpError::server_error)
         }
 
         _ => Err(CdpError::method_not_found(method)),

@@ -10,7 +10,8 @@
 //! document's target id is its document id. A sub-document's target id is
 //! that of the element hosting it (`{host_doc_id}.{host_node_id}`), so the
 //! target follows the host as it navigates to new documents (e.g. a browser
-//! tab or an iframe).
+//! tab or an iframe). With the `embedded-frontend` feature, the server also
+//! serves a DevTools frontend (see [`frontend_url`]).
 //!
 //! [Chrome DevTools Protocol]: https://chromedevtools.github.io/devtools-protocol/
 
@@ -27,11 +28,13 @@ mod css;
 mod devtools_provider;
 pub mod documents;
 mod dom;
+mod frontend;
 mod session;
 mod style_sheets;
 mod transport;
 
 use devtools_provider::MutationLog;
+pub use frontend::frontend_url;
 use session::Session;
 
 pub(crate) type JsonValue = serde_json::Value;
@@ -352,6 +355,17 @@ impl std::fmt::Display for TargetId {
             }
         }
     }
+}
+
+/// The id of the target showing the document `doc_id` (for use in a
+/// `/devtools/page/{target_id}` WebSocket address, e.g. with [`frontend_url`]).
+/// A sub-document's target is its host element, so a session attached to it
+/// follows the host as it navigates to new documents.
+pub fn target_id(docs: &mut dyn DocumentProvider, doc_id: usize) -> Option<String> {
+    list_targets(docs)
+        .into_iter()
+        .find(|&(_, id)| id == doc_id)
+        .map(|(target_id, _)| target_id.to_string())
 }
 
 /// The current targets (in document order), each with the id of the

@@ -19,6 +19,7 @@ use crate::{
     EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading,
     TextNodeData,
 };
+use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -293,6 +294,8 @@ pub struct BaseDocument {
     /// last [`resolve`](Self::resolve), to be applied (coalesced into a single
     /// device rebuild) at the start of the next resolve.
     pub(crate) pending_device_changes: DeviceChanges,
+    /// Document-wide work for the next [`resolve`](Self::resolve).
+    pub(crate) flags: DocumentFlags,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document. When disabled,
@@ -397,8 +400,8 @@ pub struct BaseDocument {
     /// Load state (abort controller and in-flight request id) for each
     /// `<iframe>` element whose sub-document is loaded automatically
     pub(crate) iframe_loads: HashMap<NodeId, crate::iframe::IframeLoad>,
-    /// Set of changed nodes for updating the accessibility tree
-    pub(crate) changed_nodes: HashSet<NodeId>,
+    /// Whether the DOM or focus changed since the accessibility tree was last pushed
+    pub(crate) has_changes: bool,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
@@ -449,6 +452,29 @@ pub struct BaseDocument {
     /// Set via [`Self::set_devtools_title`].
     #[cfg(feature = "devtools")]
     pub(crate) devtools_title: Option<String>,
+    /// Reusable buffers for document-wide passes.
+    pub(crate) scratch: DocumentScratch,
+}
+
+/// Buffers reused across runs of document-wide passes to avoid reallocating
+/// them. Recursive passes use them as stacks: each level pushes above the
+/// length it found and truncates back to it before returning.
+#[derive(Default)]
+pub(crate) struct DocumentScratch {
+    /// `(paint order, node)` pairs of the paint lists under construction in
+    /// `build_paint_tree_impl`.
+    pub(crate) keyed_children: Vec<((i32, i32), NodeId)>,
+}
+
+bitflags! {
+    /// Document-wide work for the next [`resolve`](BaseDocument::resolve).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub(crate) struct DocumentFlags: u8 {
+        /// Recompute the transform and scrollable overflow of every node, not
+        /// only of the damaged ones. Both are kept in device pixels, so a scale
+        /// change makes them stale throughout the tree.
+        const RESOLVE_ALL_TRANSFORMS = 0b0000_0001;
+    }
 }
 
 impl BaseDocument {
@@ -530,6 +556,7 @@ impl BaseDocument {
             viewport,
             media_type,
             pending_device_changes: DeviceChanges::empty(),
+            flags: DocumentFlags::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
             subdocument_depth: config.subdocument_depth,
@@ -560,7 +587,7 @@ impl BaseDocument {
             #[cfg(feature = "custom-widget")]
             pending_resource_deallocations: Vec::new(),
 
-            changed_nodes: HashSet::new(),
+            has_changes: false,
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
@@ -584,6 +611,7 @@ impl BaseDocument {
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
+            scratch: DocumentScratch::default(),
         };
 
         // Initialise document with root Document node
@@ -954,8 +982,7 @@ impl BaseDocument {
             .nodes
             .insert_with_key(|id| Node::new(tree_ptr, id, guard, node_data));
 
-        // Mark the new node as changed.
-        self.changed_nodes.insert(id);
+        self.has_changes = true;
         id
     }
 
@@ -1115,9 +1142,15 @@ impl BaseDocument {
         self.remove_node_from_tree(anon_id);
     }
 
-    /// Whether the document has been mutated
+    /// Whether the DOM or focus changed since the last [`Self::clear_changes`]
+    /// (i.e. whether the accessibility tree is out of date)
     pub fn has_changes(&self) -> bool {
-        self.changed_nodes.is_empty()
+        self.has_changes
+    }
+
+    /// Mark the accessibility tree as up to date
+    pub fn clear_changes(&mut self) {
+        self.has_changes = false;
     }
 
     pub fn create_text_node(&mut self, text: &str) -> NodeId {
@@ -1793,6 +1826,7 @@ impl BaseDocument {
                 });
             }
             self.focus_node_id = None;
+            self.has_changes = true;
             self.shell_provider.request_redraw();
         }
     }
@@ -1851,6 +1885,7 @@ impl BaseDocument {
         }
 
         self.focus_node_id = Some(focus_node_id);
+        self.has_changes = true;
 
         // The focus is styled (:focus, :focus-visible, :focus-within), so
         // moving it changes what is on screen. Nothing else asks for the
@@ -2237,9 +2272,11 @@ impl BaseDocument {
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
         // Text is shaped at a specific scale factor, so cached inline layouts
-        // must be invalidated when the scale changes.
+        // must be invalidated when the scale changes, as must every node's
+        // transform and scrollable overflow (kept in device pixels).
         if changes.contains(DeviceChanges::SCALE) {
             self.invalidate_inline_contexts();
+            self.flags.insert(DocumentFlags::RESOLVE_ALL_TRANSFORMS);
         }
 
         // Color-scheme changes affect values that are resolved at cascade time
@@ -3766,5 +3803,46 @@ mod font_face_override_tests {
             "registered family should report the CSS-declared name, \
              not the font file's internal `name` table entry",
         );
+    }
+}
+
+#[cfg(test)]
+mod change_tracking_tests {
+    use super::*;
+    use crate::qual_name;
+    use blitz_traits::shell::ColorScheme;
+
+    #[test]
+    fn mutations_and_focus_changes_are_tracked() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let button = mutator.create_element(qual_name!("button"), vec![]);
+        mutator.append_children(body, &[button]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+        assert!(doc.has_changes());
+
+        doc.clear_changes();
+        assert!(!doc.has_changes());
+
+        doc.mutate()
+            .set_attribute(button, qual_name!("aria-label"), "Submit");
+        assert!(doc.has_changes());
+
+        doc.clear_changes();
+        assert!(doc.set_focus_to(button));
+        assert!(doc.has_changes());
+
+        doc.clear_changes();
+        doc.clear_focus();
+        assert!(doc.has_changes());
     }
 }

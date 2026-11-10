@@ -92,6 +92,7 @@ impl Drop for DocumentMutator<'_> {
     fn drop(&mut self) {
         self.flush(); // Defined at bottom of file
         if self.mutations_occurred {
+            self.doc.has_changes = true;
             self.doc.shell_provider.request_redraw();
         }
     }
@@ -1361,7 +1362,10 @@ impl<'doc> DocumentMutator<'doc> {
         let (Some(rels), Some(href)) = (rel_attr, href_attr) else {
             return;
         };
-        if !rels.split_ascii_whitespace().any(|rel| rel == "stylesheet") {
+        if !rels
+            .split_ascii_whitespace()
+            .any(|rel| rel.eq_ignore_ascii_case("stylesheet"))
+        {
             return;
         }
 
@@ -1399,8 +1403,14 @@ impl<'doc> DocumentMutator<'doc> {
         let Some(element) = node.element_data_mut() else {
             unreachable!();
         };
-        let SpecialElementData::Stylesheet(stylesheet) = element.special_data.take() else {
-            unreachable!();
+        // An icon link never holds a stylesheet, and a stylesheet link holds none
+        // until its fetch has completed.
+        let stylesheet = match element.special_data.take() {
+            SpecialElementData::Stylesheet(stylesheet) => stylesheet,
+            other => {
+                element.special_data = other;
+                return;
+            }
         };
 
         let guard = self.doc.guard.read();
@@ -1669,6 +1679,42 @@ mod test {
         mutator.append_children(html, &[img, link]);
         mutator.append_children(root_id, &[html]);
         mutator.set_attribute(img, qual_name!("src"), "other.png");
+        drop(mutator);
+
+        document.resolve(0.0);
+    }
+
+    #[test]
+    fn removing_href_from_a_link_without_a_loaded_stylesheet() {
+        // An icon link never holds a stylesheet, and a stylesheet link holds none
+        // until its fetch completes (here it never starts, as the url is unresolvable).
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+        let attr = |name, value: &str| Attribute {
+            name,
+            value: value.to_string(),
+        };
+
+        let mut mutator = document.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let icon = mutator.create_element(
+            qual_name!("link"),
+            vec![
+                attr(qual_name!("rel"), "icon"),
+                attr(qual_name!("href"), "favicon.png"),
+            ],
+        );
+        let stylesheet = mutator.create_element(
+            qual_name!("link"),
+            vec![
+                attr(qual_name!("rel"), "stylesheet"),
+                attr(qual_name!("href"), "style.css"),
+            ],
+        );
+        mutator.append_children(html, &[icon, stylesheet]);
+        mutator.append_children(root_id, &[html]);
+        mutator.clear_attribute(icon, qual_name!("href"));
+        mutator.clear_attribute(stylesheet, qual_name!("href"));
         drop(mutator);
 
         document.resolve(0.0);

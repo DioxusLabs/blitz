@@ -100,8 +100,10 @@ const FIT_TOLERANCE: f32 = 0.001;
 
 /// Lay out the next line into `slot` (content-box relative, in CSS px)
 #[cfg(feature = "floats")]
-fn set_line_slot(state: &mut BreakerState, slot: &ContentSlot, scale: f32) {
-    state.set_line_max_advance(slot.width * scale);
+fn set_line_slot(state: &mut BreakerState, slot: &ContentSlot, scale: f32, slack: f32) {
+    // With huge insets, f32 rounding can make the slot slightly wider than the layout
+    let max_advance = (slot.width * scale + slack).min(state.layout_max_advance());
+    state.set_line_max_advance(max_advance);
     state.set_line_x(slot.x * scale);
     state.set_line_y((slot.y * scale) as f64);
 }
@@ -773,9 +775,26 @@ impl LayoutPassState<'_> {
             .layout
             .set_text_indent(resolved_text_indent * scale, indent_options);
 
+        // Content sized to fit exactly (e.g. shrink-to-fit) can end up a few ulps wider than
+        // `width`: the width goes through round trips in CSS px, and the line breaker sums
+        // advances in a different order to `calculate_content_widths`. Give the line breaker a
+        // few ulps of slack in that case so that the content doesn't wrap.
+        let max_advance = {
+            let max_content_width = inline_layout.layout.calculate_content_widths().max;
+            let fit_width = width.max(max_content_width);
+            let rounding_error = (fit_width + pbw).abs() * 8.0 * f32::EPSILON;
+            if (max_content_width - width).abs() <= rounding_error {
+                fit_width + rounding_error
+            } else {
+                width
+            }
+        };
+        #[cfg(feature = "floats")]
+        let slack = max_advance - width;
+
         #[cfg(not(feature = "floats"))]
         {
-            inline_layout.layout.break_all_lines(Some(width));
+            inline_layout.layout.break_all_lines(Some(max_advance));
         }
 
         // Out-of-flow candidates bubbled up from this container and its in-flow subtree.
@@ -801,8 +820,8 @@ impl LayoutPassState<'_> {
             let mut has_active_floats = line_slot.segment_id.is_some();
             let mut pending_floats: Vec<PendingFloat> = Vec::new();
             let state = breaker.state_mut();
-            state.set_layout_max_advance(width);
-            set_line_slot(state, &line_slot, scale);
+            state.set_layout_max_advance(max_advance);
+            set_line_slot(state, &line_slot, scale, slack);
 
             // The state at the start of the current line, which is reverted to when the line
             // needs to be retried lower down (or narrower) to avoid floats.
@@ -827,7 +846,7 @@ impl LayoutPassState<'_> {
                             line_slot = retry_slot;
                             has_active_floats = line_slot.segment_id.is_some();
                             breaker.revert_to(saved_state);
-                            set_line_slot(breaker.state_mut(), &line_slot, scale);
+                            set_line_slot(breaker.state_mut(), &line_slot, scale, slack);
                             line_start_state = has_active_floats.then(|| breaker.state().clone());
                             continue;
                         }
@@ -855,10 +874,10 @@ impl LayoutPassState<'_> {
                             line_slot =
                                 block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
                             has_active_floats = line_slot.segment_id.is_some();
-                            set_line_slot(state, &line_slot, scale);
+                            set_line_slot(state, &line_slot, scale, slack);
                         } else {
                             state.set_line_x(0.0);
-                            state.set_line_max_advance(width);
+                            state.set_line_max_advance(max_advance);
                         }
 
                         line_start_state = has_active_floats.then(|| breaker.state().clone());
@@ -925,7 +944,7 @@ impl LayoutPassState<'_> {
                             line_slot =
                                 block_ctx.find_content_slot(min_y as f32, 0.0, Clear::None, None);
                             has_active_floats = line_slot.segment_id.is_some();
-                            set_line_slot(state, &line_slot, scale);
+                            set_line_slot(state, &line_slot, scale, slack);
 
                             // The float can't be unplaced, so the line can no longer be retried
                             line_start_state = None;
@@ -1088,7 +1107,11 @@ impl LayoutPassState<'_> {
         let has_inline_boxes = inline_layout.layout.inline_boxes().len() > 0;
         let lines = has_inline_boxes.then(|| inline_layout.layout.lines());
         for line in lines.into_iter().flatten() {
+            let mut line_has_in_flow_content = false;
             for item in line.items() {
+                if let parley::layout::PositionedLayoutItem::GlyphRun(run) = &item {
+                    line_has_in_flow_content |= run.advance() > 0.0;
+                }
                 if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
                     let order = ibox_order;
                     ibox_order += 1;
@@ -1159,7 +1182,9 @@ impl LayoutPassState<'_> {
                         //   within the line (`ibox.y` is the baseline as out-of-flow boxes are
                         //   zero-sized) and spans the line box in the block axis.
                         // - A block-level box's rectangle spans the containing block's content
-                        //   box in the inline axis and is zero-height below the line box.
+                        //   box in the inline axis and is zero-height at the top of the line
+                        //   box, or below it if in-flow content precedes it on the line (its
+                        //   hypothetical box would start a new line after that content).
                         let line_metrics = line.metrics();
                         let line_top = (line_metrics.block_min_coord / scale) + line_box_top;
                         let line_bottom = (line_metrics.block_max_coord / scale) + line_box_top;
@@ -1173,15 +1198,17 @@ impl LayoutPassState<'_> {
                                 },
                             )
                         } else {
+                            let y = if line_has_in_flow_content {
+                                line_bottom
+                            } else {
+                                line_top
+                            };
                             (
                                 taffy::Line {
                                     start: container_pb.left,
                                     end: final_size.width - container_pb.right,
                                 },
-                                taffy::Line {
-                                    start: line_bottom,
-                                    end: line_bottom,
-                                },
+                                taffy::Line { start: y, end: y },
                             )
                         };
 
@@ -1216,6 +1243,7 @@ impl LayoutPassState<'_> {
                         layout.border = border; //.map(|p| p / scale);
                         layout.margin = margin;
                     } else {
+                        line_has_in_flow_content = true;
                         // Re-measure the box to get its border-box size (this hits the layout
                         // cache). The size cannot be recovered from `ibox` dimensions as the
                         // space reserved in the line is clamped to be non-negative.
