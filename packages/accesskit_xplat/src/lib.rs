@@ -91,8 +91,9 @@
 //!
 //! While this crate's API is purely blocking, it internally spawns asynchronous tasks on an executor.
 //!
-//! - If you use tokio, make sure to enable the `tokio` feature of this crate.
-//! - If you use another async runtime or if you don't use one at all, the default feature will suit your needs.
+//! - The default `tokio` feature runs the adapter on its own single-threaded tokio runtime, so it
+//!   works whether or not the app uses tokio.
+//! - With default features off, enable `tokio` or `async-io` (not both).
 
 #[cfg(all(
     feature = "accesskit_unix",
@@ -106,7 +107,7 @@
     not(feature = "async-io"),
     not(feature = "tokio")
 ))]
-compile_error!("Either \"async-io\" (default) or \"tokio\" feature must be enabled.");
+compile_error!("Either \"tokio\" (default) or \"async-io\" feature must be enabled.");
 
 #[cfg(all(
     feature = "accesskit_unix",
@@ -121,7 +122,7 @@ compile_error!("Either \"async-io\" (default) or \"tokio\" feature must be enabl
     feature = "tokio"
 ))]
 compile_error!(
-    "Both \"async-io\" (default) and \"tokio\" features cannot be enabled at the same time."
+    "Both \"tokio\" (default) and \"async-io\" features cannot be enabled at the same time."
 );
 
 use std::sync::Arc;
