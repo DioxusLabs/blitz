@@ -797,6 +797,7 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
         unsafe { self.stylo_element_data().unsafe_stylo_only_mut() }
+            .filter(|data| data.styles.primary.is_some())
     }
 
     fn skip_item_display_fixup(&self) -> bool {
@@ -1737,3 +1738,47 @@ fn parse_inline() {
 
     // let val = CSSInlineStyleDeclaration();
 }
+
+#[test]
+fn viewport_resize_with_unstyled_display_none_element() {
+    use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    let mut doc = BaseDocument::new(DocumentConfig {
+        viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+        ..Default::default()
+    });
+    let root_id = doc.root_node().id;
+
+    let style = |value: &str| Attribute {
+        name: qual_name!("style"),
+        value: value.to_string(),
+    };
+
+    let mut mutator = doc.mutate();
+    let html = mutator.create_element(qual_name!("html"), vec![]);
+    let body = mutator.create_element(qual_name!("body"), vec![]);
+    let vp_elem = mutator.create_element(qual_name!("div"), vec![style("width: 50vw")]);
+    let hidden_parent = mutator.create_element(qual_name!("div"), vec![style("display: none")]);
+
+    mutator.append_children(body, &[vp_elem, hidden_parent]);
+    mutator.append_children(html, &[body]);
+    mutator.append_children(root_id, &[html]);
+    drop(mutator);
+
+    doc.resolve(0.0);
+
+    // Insert an unstyled child into the display: none subtree after initial resolve.
+    // The node has element data allocated, but primary style is not yet computed.
+    let mut mutator = doc.mutate();
+    let unstyled_child = mutator.create_element(qual_name!("div"), vec![]);
+    mutator.append_children(hidden_parent, &[unstyled_child]);
+    drop(mutator);
+
+    // Live viewport resize triggers set_stylist_device and viewport unit invalidation.
+    // Without the primary style guard in mutate_data, this panics in Stylo style/data.rs:185
+    // when unwrapping data.styles.primary on the unstyled element.
+    doc.set_viewport(Viewport::new(800, 600, 1.0, ColorScheme::Light));
+    doc.stylist_device();
+}
+
