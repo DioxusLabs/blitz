@@ -1,4 +1,4 @@
-//! Test discovery from the WPT manifest, generated in memory by the `wptmanifest` crate
+//! Test discovery from the WPT manifest, generated in memory by the `wpt_manifest` crate
 //! (a port of `./wpt manifest`), so that the runner selects the same tests, variants and
 //! references as upstream WPT tooling.
 
@@ -7,7 +7,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use wptmanifest::{ItemType, Manifest};
+use wpt_manifest::{ItemType, Manifest};
 
 use crate::test_runners::fuzzy::{FuzzyRange, FuzzySpec, FuzzyTolerance};
 
@@ -89,10 +89,8 @@ pub fn artifact_name(url: &str) -> String {
 /// Worker, module and jsshell variants of `.js` tests are excluded: the runner only runs
 /// classic scripts in a window global.
 pub fn load_tests(wpt_dir: &Path) -> Vec<Test> {
-    let mut manifest = Manifest::new("/");
-    if let Err(err) = manifest.update(wpt_dir) {
-        panic!("Failed to generate the WPT manifest: {err}");
-    }
+    let manifest = Manifest::build(wpt_dir, "/")
+        .unwrap_or_else(|err| panic!("Failed to generate the WPT manifest: {err}"));
     let json = manifest.to_json();
 
     let mut tests = Vec::new();

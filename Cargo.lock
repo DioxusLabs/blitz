@@ -10725,14 +10725,14 @@ dependencies = [
  "terminal-link",
  "thread_local",
  "url",
- "wptmanifest",
+ "wpt_manifest",
  "wptreport",
 ]
 
 [[package]]
-name = "wptmanifest"
+name = "wpt_manifest"
 version = "0.1.1"
-source = "git+https://github.com/nicoburns/wpt-rs?rev=4649993ded970b5d822ac7c1c710830fe7a43de1#4649993ded970b5d822ac7c1c710830fe7a43de1"
+source = "git+https://github.com/nicoburns/wpt-rs?rev=16337f7cd1f91b6683b7a35402415511f8a0f8b8#16337f7cd1f91b6683b7a35402415511f8a0f8b8"
 dependencies = [
  "encoding_rs",
  "html5ever",
