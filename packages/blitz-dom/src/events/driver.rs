@@ -166,6 +166,16 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     }
 
     pub fn handle_ui_event(&mut self, event: UiEvent) {
+        let mut events = Vec::new();
+        let consumed = self
+            .doc
+            .inner_mut()
+            .handle_select_ui_event(&event, &mut events);
+        self.queue.extend(events);
+        if consumed {
+            self.process_queue();
+            return;
+        }
         let doc = self.doc.inner();
 
         // A non-hovering pointer (finger) ends hover once it is lifted or cancelled
