@@ -1,5 +1,5 @@
 use crate::{BlitzShellEvent, event::BlitzShellProxy};
-use accesskit::Rect;
+use accesskit::{NodeId, Rect};
 use accesskit_xplat::{Adapter, EventHandler, WindowEvent as AccessKitEvent};
 use blitz_dom::BaseDocument;
 use std::sync::Arc;
@@ -13,6 +13,9 @@ use winit::{
 pub struct AccessibilityState {
     // /// Adapter to connect to the [`EventLoop`](`winit::event_loop::EventLoop`).
     adapter: Adapter,
+    /// The title the window was created with: winit can't read a window's
+    /// title back on X11 or Wayland.
+    pub(crate) window_title: String,
 }
 
 struct Handler {
@@ -39,12 +42,31 @@ impl AccessibilityState {
                 window.window_handle().unwrap().as_raw(),
                 Arc::new(Handler { window_id, proxy }),
             ),
+            window_title: String::new(),
         }
     }
-    pub fn update_tree(&mut self, doc: &BaseDocument) {
-        let _ = doc;
-        self.adapter
-            .update_if_active(|| doc.build_accessibility_tree());
+    /// Sends the document's tree, its window node named after the window:
+    /// the document's `<title>`, or the title the window was created with.
+    pub fn update_tree(&mut self, doc: &BaseDocument, window: &dyn Window) {
+        let window_title = &self.window_title;
+        self.adapter.update_if_active(|| {
+            let mut update = doc.build_accessibility_tree();
+            let title = doc
+                .find_title_node()
+                .map(|node| node.text_content())
+                .filter(|title| !title.is_empty())
+                .or_else(|| (!window_title.is_empty()).then(|| window_title.clone()))
+                .unwrap_or_else(|| window.title());
+            if !title.is_empty()
+                && let Some((_, root)) = update
+                    .nodes
+                    .iter_mut()
+                    .find(|(id, _)| *id == NodeId(u64::MAX))
+            {
+                root.set_label(title);
+            }
+            update
+        });
     }
 
     /// Allows reacting to window events.

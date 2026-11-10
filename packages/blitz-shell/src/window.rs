@@ -144,11 +144,17 @@ impl<Rend: WindowRenderer> View<Rend> {
         // seed the viewport on platforms (winit-web) that report `surface_size() == 0×0`
         // until a layout pass fires.
         let requested_surface_size = config.attributes.surface_size;
+        #[cfg(feature = "accessibility")]
+        let window_title = config.attributes.title.clone();
         let attrs = config.attributes.with_visible(false);
 
         let winit_window: Arc<dyn Window> = Arc::from(event_loop.create_window(attrs).unwrap());
         #[cfg(feature = "accessibility")]
-        let accessibility = AccessibilityState::new(&*winit_window, proxy.clone());
+        let mut accessibility = AccessibilityState::new(&*winit_window, proxy.clone());
+        #[cfg(feature = "accessibility")]
+        {
+            accessibility.window_title = window_title;
+        }
 
         if is_visible {
             winit_window.set_visible(true);
@@ -429,7 +435,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         // DOM, styles, layout and focus.
         if !is_blocked && inner.has_changes() {
             #[cfg(feature = "accessibility")]
-            self.accessibility.update_tree(&inner);
+            self.accessibility.update_tree(&inner, &*self.window);
             inner.clear_changes();
         }
 
@@ -536,7 +542,7 @@ impl<Rend: WindowRenderer> View<Rend> {
     #[cfg(feature = "accessibility")]
     pub fn build_accessibility_tree(&mut self) {
         let inner = self.doc.inner();
-        self.accessibility.update_tree(&inner);
+        self.accessibility.update_tree(&inner, &*self.window);
     }
 
     #[cfg(target_arch = "wasm32")]
