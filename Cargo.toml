@@ -131,8 +131,8 @@ linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13.1"
 wgpu = "30"
-usvg = "0.48.1"
-svgtypes = "0.16.1" # Should match usvg's version
+usvg = "0.50.0"
+svgtypes = "0.16.2" # Should match usvg's version
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
