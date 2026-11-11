@@ -228,7 +228,9 @@ impl TextInputData {
         let editor = &mut self.editor;
         let mut driver = editor.driver(font_ctx, layout_ctx);
         match event.key {
-            Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
+            Key::Character(c)
+                if action_mod && matches!(c.to_lowercase().as_str(), "c" | "x" | "v") =>
+            {
                 match c.to_lowercase().as_str() {
                     "c" => {
                         if let Some(text) = driver.editor.selected_text() {
@@ -816,6 +818,8 @@ impl TextInputData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blitz_traits::{events::KeyState, shell::ClipboardError};
+    use keyboard_types::{Code, Location};
 
     #[test]
     fn ime_commit_replaces_preedit() {
@@ -838,6 +842,66 @@ mod tests {
                 input.apply_ime_event(&mut font_ctx, &mut layout_ctx, BlitzImeEvent::Disabled);
                 assert_eq!(input.editor.text(), committed);
             }
+        }
+    }
+
+    #[derive(Default)]
+    struct ClipboardShell(std::sync::Mutex<Option<String>>);
+    impl ShellProvider for ClipboardShell {
+        fn set_clipboard_text(&self, text: String) -> Result<(), ClipboardError> {
+            *self.0.lock().unwrap() = Some(text);
+            Ok(())
+        }
+    }
+
+    fn key_press(c: &str, modifiers: Modifiers) -> BlitzKeyEvent {
+        BlitzKeyEvent {
+            key: Key::Character(c.into()),
+            code: Code::Unidentified,
+            modifiers,
+            location: Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: Some(c.into()),
+        }
+    }
+
+    #[test]
+    fn clipboard_shortcuts_ignore_letter_case() {
+        // Shift or Caps Lock turn the shortcut's character into an uppercase letter.
+        for (key, mods) in [
+            ("x", ACTION_MOD),
+            ("X", ACTION_MOD),
+            ("X", ACTION_MOD | Modifiers::SHIFT),
+        ] {
+            let mut input = TextInputData::new(false);
+            let mut font_ctx = FontContext::new();
+            let mut layout_ctx = LayoutContext::new();
+            let shell = ClipboardShell::default();
+            input.apply_ime_event(
+                &mut font_ctx,
+                &mut layout_ctx,
+                BlitzImeEvent::Commit("text".into()),
+            );
+            input.apply_keypress_event(
+                &mut font_ctx,
+                &mut layout_ctx,
+                &shell,
+                key_press("a", ACTION_MOD),
+            );
+            input.apply_keypress_event(
+                &mut font_ctx,
+                &mut layout_ctx,
+                &shell,
+                key_press(key, mods),
+            );
+            assert_eq!(input.editor.text(), "", "{key} {mods:?}");
+            assert_eq!(
+                shell.0.lock().unwrap().as_deref(),
+                Some("text"),
+                "{key} {mods:?}"
+            );
         }
     }
 
