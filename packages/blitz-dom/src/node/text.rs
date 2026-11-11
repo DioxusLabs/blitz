@@ -80,6 +80,9 @@ pub struct TextInputData {
     /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
     /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
     pub content_box_subpixel_offset: taffy::Point<f32>,
+    /// Set when an Apple standard keybinding was applied. On macOS, winit also forwards the key
+    /// press that produced the keybinding, which must then be ignored.
+    key_press_handled_by_keybinding: bool,
 }
 
 // FIXME: Implement Clone for PlainEditor
@@ -97,6 +100,7 @@ impl TextInputData {
             is_multiline,
             scroll_offset: 0.0,
             content_box_subpixel_offset: taffy::Point::ZERO,
+            key_press_handled_by_keybinding: false,
         }
     }
 
@@ -217,6 +221,10 @@ impl TextInputData {
     ) -> Option<GeneratedTextInputEvent> {
         // Do nothing if it is a keyup event
         if !event.state.is_pressed() {
+            return None;
+        }
+
+        if std::mem::take(&mut self.key_press_handled_by_keybinding) {
             return None;
         }
 
@@ -379,6 +387,23 @@ impl TextInputData {
     }
 
     pub(crate) fn apply_apple_standard_keybinding(
+        &mut self,
+        font_ctx: &mut FontContext,
+        layout_ctx: &mut LayoutContext<TextBrush>,
+        shell_provider: &dyn ShellProvider,
+        command: &str,
+    ) -> Option<GeneratedTextInputEvent> {
+        let event = self.apply_apple_standard_keybinding_inner(
+            font_ctx,
+            layout_ctx,
+            shell_provider,
+            command,
+        );
+        self.key_press_handled_by_keybinding = event.is_some();
+        event
+    }
+
+    fn apply_apple_standard_keybinding_inner(
         &mut self,
         font_ctx: &mut FontContext,
         layout_ctx: &mut LayoutContext<TextBrush>,
@@ -600,7 +625,7 @@ impl TextInputData {
                 return Some(GeneratedTextInputEvent::Select);
             }
             "moveToEndOfDocumentAndModifySelection:" => {
-                driver.move_to_text_end();
+                driver.select_to_text_end();
                 return Some(GeneratedTextInputEvent::Select);
             }
 
@@ -850,5 +875,150 @@ mod tests {
             BlitzImeEvent::Commit("text".into()),
         );
         assert_eq!(input.editor.text(), "text");
+    }
+
+    mod keybindings {
+        use super::super::*;
+        use blitz_traits::events::KeyState;
+        use blitz_traits::shell::DummyShellProvider;
+        use keyboard_types::{Code, Location};
+
+        struct Input {
+            data: TextInputData,
+            font_ctx: FontContext,
+            layout_ctx: LayoutContext<TextBrush>,
+        }
+
+        impl Input {
+            fn new(text: &str, is_multiline: bool) -> Self {
+                let mut input = Input {
+                    data: TextInputData::new(is_multiline),
+                    font_ctx: FontContext::new(),
+                    layout_ctx: LayoutContext::new(),
+                };
+                input.data.apply_ime_event(
+                    &mut input.font_ctx,
+                    &mut input.layout_ctx,
+                    BlitzImeEvent::Commit(text.into()),
+                );
+                input
+            }
+
+            fn key(
+                &mut self,
+                key: NamedKey,
+                code: Code,
+                modifiers: Modifiers,
+            ) -> Option<GeneratedTextInputEvent> {
+                let event = BlitzKeyEvent {
+                    key: Key::Named(key),
+                    code,
+                    modifiers,
+                    location: Location::Standard,
+                    is_auto_repeating: false,
+                    is_composing: false,
+                    state: KeyState::Pressed,
+                    text: None,
+                };
+                self.data.apply_keypress_event(
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    &DummyShellProvider,
+                    event,
+                )
+            }
+
+            fn keybinding(&mut self, command: &str) -> Option<GeneratedTextInputEvent> {
+                self.data.apply_apple_standard_keybinding(
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    &DummyShellProvider,
+                    command,
+                )
+            }
+
+            /// The text with a `|` inserted at the caret.
+            fn text_with_caret(&mut self) -> String {
+                self.data.apply_ime_event(
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    BlitzImeEvent::Commit("|".into()),
+                );
+                self.data.editor.text().to_string()
+            }
+        }
+
+        // On macOS, winit reports a key press that AppKit maps to a standard keybinding
+        // as the keybinding selector followed by the key event itself.
+
+        #[test]
+        fn arrow_with_keybinding_moves_once() {
+            let mut input = Input::new("hello", false);
+            input.keybinding("moveLeft:");
+            input.key(NamedKey::ArrowLeft, Code::ArrowLeft, Modifiers::empty());
+            assert_eq!(input.text_with_caret(), "hell|o");
+        }
+
+        #[test]
+        fn option_arrow_with_keybinding_moves_one_word() {
+            let mut input = Input::new("foo bar", false);
+            input.keybinding("moveWordLeft:");
+            input.key(NamedKey::ArrowLeft, Code::ArrowLeft, Modifiers::ALT);
+            assert_eq!(input.text_with_caret(), "foo |bar");
+        }
+
+        #[test]
+        fn forward_delete_with_keybinding_deletes_once() {
+            let mut input = Input::new("hello", false);
+            input.keybinding("moveToBeginningOfDocument:");
+            input.keybinding("deleteForward:");
+            input.key(NamedKey::Delete, Code::Delete, Modifiers::empty());
+            assert_eq!(input.data.editor.text(), "ello");
+        }
+
+        #[test]
+        fn return_with_keybinding_inserts_one_newline() {
+            let mut input = Input::new("a", true);
+            input.keybinding("insertNewline:");
+            input.key(NamedKey::Enter, Code::Enter, Modifiers::empty());
+            assert_eq!(input.data.editor.text(), "a\n");
+        }
+
+        #[test]
+        fn return_with_keybinding_submits_once() {
+            let mut input = Input::new("a", false);
+            let from_keybinding = input.keybinding("insertNewline:");
+            assert!(matches!(
+                from_keybinding,
+                Some(GeneratedTextInputEvent::Submit)
+            ));
+            let from_key = input.key(NamedKey::Enter, Code::Enter, Modifiers::empty());
+            assert!(from_key.is_none());
+        }
+
+        // Keybindings only arrive while IME is enabled, and Cmd+arrows produce none.
+        #[test]
+        fn key_without_keybinding_still_applies() {
+            let mut input = Input::new("hello", false);
+            input.key(NamedKey::ArrowLeft, Code::ArrowLeft, Modifiers::empty());
+            input.key(NamedKey::ArrowLeft, Code::ArrowLeft, Modifiers::empty());
+            assert_eq!(input.text_with_caret(), "hel|lo");
+        }
+
+        #[test]
+        fn unhandled_keybinding_does_not_swallow_key() {
+            let mut input = Input::new("hello", false);
+            input.keybinding("scrollToBeginningOfDocument:");
+            input.key(NamedKey::Home, Code::Home, Modifiers::empty());
+            assert_eq!(input.text_with_caret(), "|hello");
+        }
+
+        #[test]
+        fn move_to_end_of_document_and_modify_selection_selects() {
+            let mut input = Input::new("hello", false);
+            input.keybinding("moveToBeginningOfDocument:");
+            input.keybinding("moveToEndOfDocumentAndModifySelection:");
+            assert_eq!(input.data.editor.selected_text(), Some("hello"));
+        }
     }
 }
