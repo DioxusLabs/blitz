@@ -272,7 +272,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -283,7 +283,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -295,7 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "kurbo",
  "peniko",
@@ -307,12 +307,12 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "anyrender",
  "image",
  "peniko",
- "read-fonts 0.41.0",
+ "read-fonts",
  "serde",
  "serde_json",
  "sha2",
@@ -325,7 +325,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "anyrender",
  "ash",
@@ -347,7 +347,7 @@ dependencies = [
  "pixels_window_renderer",
  "raw-window-handle",
  "skia-safe",
- "skrifa 0.44.0",
+ "skrifa",
  "softbuffer_window_renderer",
  "tracing",
  "windows",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "anyrender",
  "image",
@@ -368,7 +368,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -386,7 +386,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -404,7 +404,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -945,7 +945,7 @@ dependencies = [
  "percent-encoding",
  "rayon",
  "selectors",
- "skrifa 0.49.0",
+ "skrifa",
  "slotmap",
  "smallvec",
  "stylo",
@@ -1041,7 +1041,7 @@ dependencies = [
  "kurbo",
  "parley",
  "peniko",
- "skrifa 0.49.0",
+ "skrifa",
  "smallvec",
  "stylo",
  "taffy",
@@ -1803,7 +1803,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -2856,7 +2856,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3379,7 +3379,7 @@ dependencies = [
  "objc2-core-text",
  "objc2-foundation 0.3.2",
  "parlance",
- "read-fonts 0.46.0",
+ "read-fonts",
  "roxmltree 0.21.1",
  "smallvec",
  "windows",
@@ -3707,7 +3707,7 @@ dependencies = [
  "log",
  "peniko",
  "png 0.18.1",
- "skrifa 0.49.0",
+ "skrifa",
  "smallvec",
  "vello_common",
 ]
@@ -3886,25 +3886,13 @@ dependencies = [
 
 [[package]]
 name = "harfrust"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
-dependencies = [
- "bitflags 2.13.2",
- "bytemuck",
- "read-fonts 0.41.0",
- "smallvec",
-]
-
-[[package]]
-name = "harfrust"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "865dcc4105d51c323d8fedbb2d75b5e9c8ecddf5613f74c82f851d0afbc97114"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
- "read-fonts 0.46.0",
+ "read-fonts",
  "smallvec",
  "yoke",
 ]
@@ -5542,7 +5530,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6228,7 +6216,7 @@ version = "0.12.0"
 source = "git+https://github.com/linebender/parley?rev=1b67b7539616e5c7dc92d8fc79a1f7678525993c#1b67b7539616e5c7dc92d8fc79a1f7678525993c"
 dependencies = [
  "fontique",
- "harfrust 0.15.0",
+ "harfrust",
  "hashbrown 0.17.1",
  "icu_locale_core",
  "icu_normalizer",
@@ -6239,7 +6227,7 @@ dependencies = [
  "parlance",
  "parley_data",
  "parley_emoji",
- "skrifa 0.49.0",
+ "skrifa",
 ]
 
 [[package]]
@@ -6412,7 +6400,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6947,17 +6935,6 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "winit",
-]
-
-[[package]]
-name = "read-fonts"
-version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "046a7d674daf459825b32f5062056d6882db0d2f5a479fbd76ccfc870ac18709"
-dependencies = [
- "bytemuck",
- "font-types 0.12.7",
- "once_cell",
 ]
 
 [[package]]
@@ -7741,12 +7718,14 @@ checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "skera"
-version = "0.4.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ef75eddaf703e5a3e9eb837b9a7426ff995042a9a410f85981446cffed1e21e"
+checksum = "1304685b8b275337200c0c138d8ca1b0b19be6185e4eb4013aebc9a1c270d761"
 dependencies = [
+ "foldhash 0.2.0",
  "hashbrown 0.17.1",
- "skrifa 0.44.0",
+ "read-fonts",
+ "skrifa",
  "thiserror 2.0.21",
  "write-fonts",
 ]
@@ -7781,23 +7760,13 @@ dependencies = [
 
 [[package]]
 name = "skrifa"
-version = "0.44.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "819ab7d62b1d3e72d9d9dea5650bac30424f9111364bb94928dbf5ecad1baa68"
-dependencies = [
- "bytemuck",
- "read-fonts 0.41.0",
-]
-
-[[package]]
-name = "skrifa"
 version = "0.49.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7459fb60888ad9a5f367dd293fa2fb9df142cb451aa6bfd6cd66a7d6a9b739d"
 dependencies = [
  "bytemuck",
  "once_cell",
- "read-fonts 0.46.0",
+ "read-fonts",
  "smallvec",
  "yoke",
 ]
@@ -7913,7 +7882,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7951,7 +7920,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8265,9 +8234,9 @@ checksum = "0193cc4331cfd2f3d2011ef287590868599a2f33c3e69bc22c1a3d3acf9e02fb"
 
 [[package]]
 name = "svgtypes"
-version = "0.16.1"
+version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "695b5790b3131dafa99b3bbfd25a216edb3d216dad9ca208d4657bfb8f2abc3d"
+checksum = "9f12b12995e3638c70618c1facb1ce65302f6a6f706b675f07c58a5d7391120e"
 dependencies = [
  "kurbo",
  "siphasher",
@@ -8439,7 +8408,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9002,7 +8971,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9124,15 +9093,15 @@ dependencies = [
 
 [[package]]
 name = "usvg"
-version = "0.48.1"
+version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "977d0a4abdef933f424a99fe09f95576e089b90aebc6f016a3bc813762493e91"
+checksum = "bdb896f04730b97805bbc3191fc57e4bf03face0f14577dd42e783c4d8c98802"
 dependencies = [
  "base64 0.23.1",
  "data-url",
  "flate2",
  "fontdb",
- "harfrust 0.12.0",
+ "harfrust",
  "imagesize",
  "kurbo",
  "log",
@@ -9140,7 +9109,7 @@ dependencies = [
  "roxmltree 0.21.1",
  "simplecss",
  "siphasher",
- "skrifa 0.44.0",
+ "skrifa",
  "strict-num",
  "svgtypes",
  "tiny-skia-path",
@@ -9213,7 +9182,7 @@ dependencies = [
  "log",
  "peniko",
  "png 0.18.1",
- "skrifa 0.49.0",
+ "skrifa",
  "static_assertions",
  "thiserror 2.0.21",
  "vello_encoding",
@@ -9264,7 +9233,7 @@ dependencies = [
  "bytemuck",
  "guillotiere",
  "peniko",
- "skrifa 0.49.0",
+ "skrifa",
  "smallvec",
 ]
 
@@ -10052,7 +10021,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=main#471285a02fad043adb3a68c9d55cbd3eccffc91c"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
@@ -10792,13 +10761,13 @@ dependencies = [
 
 [[package]]
 name = "write-fonts"
-version = "0.50.0"
+version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cae90d1d9f6d1d36ef116b0b1e651a6d7c12ba925439d4d06ff9adc94662a3d8"
+checksum = "3e91ad74b39f48f456560ed1ccc75959efa19bf6f0817d1560751bb49db84f6c"
 dependencies = [
  "font-types 0.12.7",
  "log",
- "read-fonts 0.41.0",
+ "read-fonts",
 ]
 
 [[package]]
