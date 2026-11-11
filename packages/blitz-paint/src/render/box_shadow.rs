@@ -31,7 +31,11 @@ impl ElementCx<'_, '_> {
                 scene,
                 shadow,
                 &border_box,
-                BoxShadowKind::Outset { clip_to_box },
+                if clip_to_box {
+                    BoxShadowKind::Outset
+                } else {
+                    BoxShadowKind::OutsetUnclipped
+                },
             );
         }
     }

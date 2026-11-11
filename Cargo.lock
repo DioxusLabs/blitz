@@ -295,7 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "kurbo",
  "peniko",
@@ -307,7 +307,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "anyrender",
  "image",
@@ -325,7 +325,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "anyrender",
  "ash",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "anyrender",
  "image",
@@ -368,7 +368,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -386,7 +386,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -404,7 +404,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3701,8 +3701,9 @@ dependencies = [
 
 [[package]]
 name = "glifo"
-version = "0.4.0"
-source = "git+https://github.com/linebender/vello?branch=main#a76009ef19bc04fa2d9827293e98a49d06121f68"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ae2e3b09ea1cc45c994a405e4d4154901d4caa867d3e1be3a02be641f62fefa"
 dependencies = [
  "bytemuck",
  "foldhash 0.2.0",
@@ -6406,7 +6407,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -7945,7 +7946,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -9198,8 +9199,9 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vello"
-version = "0.11.0"
-source = "git+https://github.com/linebender/vello?branch=main#a76009ef19bc04fa2d9827293e98a49d06121f68"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "156df70b9435784d93a32b29a0c0a825c28a8b1de69e73f868e0414981974b6d"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
@@ -9216,8 +9218,9 @@ dependencies = [
 
 [[package]]
 name = "vello_common"
-version = "0.3.0"
-source = "git+https://github.com/linebender/vello?branch=main#a76009ef19bc04fa2d9827293e98a49d06121f68"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d9447018538224861c1bd825471dcc67ffa973c97de666bf6296b72dbb2f166"
 dependencies = [
  "bytemuck",
  "fearless_simd",
@@ -9232,8 +9235,9 @@ dependencies = [
 
 [[package]]
 name = "vello_cpu"
-version = "0.3.0"
-source = "git+https://github.com/linebender/vello?branch=main#a76009ef19bc04fa2d9827293e98a49d06121f68"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d6b3db720c5d3aa8783cb1c042d8a77142df70bd0f742dc9005f6d6efe33ebf"
 dependencies = [
  "bytemuck",
  "crossbeam-channel",
@@ -9250,8 +9254,9 @@ dependencies = [
 
 [[package]]
 name = "vello_encoding"
-version = "0.11.0"
-source = "git+https://github.com/linebender/vello?branch=main#a76009ef19bc04fa2d9827293e98a49d06121f68"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eca1013292b6e92b218ccf93b90b940dda36c87d1aba6b8f6e7d5f7839c45268"
 dependencies = [
  "bytemuck",
  "guillotiere",
@@ -9262,8 +9267,9 @@ dependencies = [
 
 [[package]]
 name = "vello_gpu"
-version = "0.3.0"
-source = "git+https://github.com/linebender/vello?branch=main#a76009ef19bc04fa2d9827293e98a49d06121f68"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a1f838f79b2ef62a4acc61057eca19ffadf496c36317093e2d6961836d6c92f"
 dependencies = [
  "bytemuck",
  "glifo",
@@ -9280,8 +9286,9 @@ dependencies = [
 
 [[package]]
 name = "vello_gpu_shaders"
-version = "0.3.0"
-source = "git+https://github.com/linebender/vello?branch=main#a76009ef19bc04fa2d9827293e98a49d06121f68"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22815682cf60d24cf8781bd445f309622930e8b8885459b21109b4f6b205b76"
 dependencies = [
  "naga 30.0.1",
  "wesl",
@@ -9292,8 +9299,9 @@ dependencies = [
 
 [[package]]
 name = "vello_shaders"
-version = "0.11.0"
-source = "git+https://github.com/linebender/vello?branch=main#a76009ef19bc04fa2d9827293e98a49d06121f68"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8af58dc04b4e7b87a9688fa12443a49d5916814fe78fa64d93f5b2d3f3e5bcac"
 dependencies = [
  "bytemuck",
  "log",
@@ -10043,7 +10051,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#debbf749797fec30a1257d47d26321b8f0cc3b76"
+source = "git+https://github.com/DioxusLabs/anyrender?branch=devin%2F1791068178-box-shadow-api#35ca38404856c078cfd9061b9a68defc13f1332e"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
