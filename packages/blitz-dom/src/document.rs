@@ -1347,6 +1347,7 @@ impl BaseDocument {
             self.id,
             Some(node_id),
             &stylesheet.0,
+            &self.stylist,
             &self.net_provider,
             &self.shell_provider,
             &self.guard.read(),
@@ -1434,6 +1435,18 @@ impl BaseDocument {
                 self.add_stylesheet_for_node(css, node_id);
             }
             Resource::ImportedCss(import_rule, sheet) => {
+                crate::net::fetch_font_face(
+                    self.tx.clone(),
+                    self.id,
+                    res.node_id,
+                    &sheet,
+                    &self.stylist,
+                    &self.net_provider,
+                    &self.shell_provider,
+                    &self.guard.read(),
+                    self.abort_signal.as_ref(),
+                );
+
                 let mut guard = self.guard.write();
                 import_rule.write_with(&mut guard).stylesheet =
                     style::stylesheets::import_rule::ImportSheet::Sheet(sheet);

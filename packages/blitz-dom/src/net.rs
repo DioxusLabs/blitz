@@ -14,10 +14,11 @@ use style::{
     shared_lock::SharedRwLock,
     shared_lock::{Locked, SharedRwLockReadGuard},
     stylesheets::{
-        CssRule, DocumentStyleSheet, ImportRule, Origin, Stylesheet, StylesheetInDocument,
-        StylesheetLoader as ServoStylesheetLoader, UrlExtraData,
+        CssRule, CustomMediaEvaluator, DocumentStyleSheet, FontFaceRule, ImportRule, Origin,
+        Stylesheet, StylesheetInDocument, StylesheetLoader as ServoStylesheetLoader, UrlExtraData,
         import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition},
     },
+    stylist::Stylist,
     values::{CssUrl, SourceLocation},
 };
 
@@ -242,7 +243,6 @@ impl ServoStylesheetLoader for StylesheetLoader {
                     lock: lock.clone(),
                     media,
                     import_rule: import.clone(),
-                    net_provider: self.net_provider.clone(),
                 },
             ),
         );
@@ -257,7 +257,6 @@ struct NestedStylesheetHandler {
     url: ServoArc<Url>,
     media: ServoArc<Locked<MediaList>>,
     import_rule: ServoArc<Locked<ImportRule>>,
-    net_provider: Arc<dyn NetProvider>,
 }
 
 impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
@@ -277,18 +276,6 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
             None, // error_reporter
             QuirksMode::NoQuirks,
         ));
-
-        // Fetch @font-face fonts
-        fetch_font_face(
-            self.tx.clone(),
-            self.doc_id,
-            self.node_id,
-            &sheet,
-            &self.data.net_provider,
-            &self.shell_provider,
-            &self.data.lock.read(),
-            self.data.loader.abort_signal.as_ref(),
-        );
 
         let import_rule = self.data.import_rule.clone();
         self.respond(resolved_url, Ok(Resource::ImportedCss(import_rule, sheet)))
@@ -383,16 +370,18 @@ pub(crate) fn fetch_font_face(
     doc_id: usize,
     node_id: Option<NodeId>,
     sheet: &Stylesheet,
+    stylist: &Stylist,
     network_provider: &Arc<dyn NetProvider>,
     shell_provider: &Arc<dyn ShellProvider>,
     read_guard: &SharedRwLockReadGuard,
     abort_signal: Option<&AbortSignal>,
 ) {
     fetch_font_face_rules(
-        sheet.contents(read_guard).rules(read_guard).iter(),
+        sheet.contents(read_guard).rules(read_guard),
         tx,
         doc_id,
         node_id,
+        stylist,
         network_provider,
         shell_provider,
         read_guard,
@@ -400,54 +389,84 @@ pub(crate) fn fetch_font_face(
     )
 }
 
-/// Fetch the fonts of the `@font-face` rules among `rules`
+/// Fetch the fonts of the `@font-face` rules among `rules`, including those nested in
+/// `@layer`, `@container` and matching `@media` and `@supports` rules
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn fetch_font_face_rules<'a>(
-    rules: impl Iterator<Item = &'a CssRule>,
+pub(crate) fn fetch_font_face_rules(
+    rules: &[CssRule],
     tx: Sender<DocumentEvent>,
     doc_id: usize,
     node_id: Option<NodeId>,
+    stylist: &Stylist,
     network_provider: &Arc<dyn NetProvider>,
     shell_provider: &Arc<dyn ShellProvider>,
     read_guard: &SharedRwLockReadGuard,
     abort_signal: Option<&AbortSignal>,
 ) {
-    rules
-        .filter_map(|rule| match rule {
-            CssRule::FontFace(font_face) => {
-                let descriptor = &font_face.read_with(read_guard).descriptors;
-                let family = descriptor.font_family.as_ref()?;
-                let src = descriptor.src.as_ref()?;
-                // Capture the @font-face descriptors so parley can register
-                // the font under the CSS-declared family name (and weight /
-                // style) rather than whatever metadata the TTF reports.
-                let overrides = FontFaceOverrides {
-                    family_name: Some(family.name.to_string()),
-                    weight: descriptor
-                        .font_weight
-                        .as_ref()
-                        .and_then(|range| range.0.compute().map(|w| w.value())),
-                    style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
-                };
-                Some((src, overrides))
-            }
-            _ => None,
-        })
-        .for_each(|(source_list, overrides)| {
-            if let Some((url, format)) = preferred_font_source(source_list) {
-                network_provider.fetch(
+    for_each_font_face_rule(rules, stylist, read_guard, &mut |font_face| {
+        let descriptor = &font_face.descriptors;
+        let (Some(family), Some(source_list)) = (&descriptor.font_family, &descriptor.src) else {
+            return;
+        };
+        // Capture the @font-face descriptors so parley can register
+        // the font under the CSS-declared family name (and weight /
+        // style) rather than whatever metadata the TTF reports.
+        let overrides = FontFaceOverrides {
+            family_name: Some(family.name.to_string()),
+            weight: descriptor
+                .font_weight
+                .as_ref()
+                .and_then(|range| range.0.compute().map(|w| w.value())),
+            style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
+        };
+        if let Some((url, format)) = preferred_font_source(source_list) {
+            network_provider.fetch(
+                doc_id,
+                stamped_request(url, abort_signal),
+                ResourceHandler::boxed(
+                    tx.clone(),
                     doc_id,
-                    stamped_request(url, abort_signal),
-                    ResourceHandler::boxed(
-                        tx.clone(),
-                        doc_id,
-                        node_id,
-                        shell_provider.clone(),
-                        FontFaceHandler { format, overrides },
-                    ),
-                );
+                    node_id,
+                    shell_provider.clone(),
+                    FontFaceHandler { format, overrides },
+                ),
+            );
+        }
+    })
+}
+
+/// Call `f` with each `@font-face` rule which applies to the document among `rules`
+///
+/// `@media` conditions are evaluated against the stylist's current device.
+fn for_each_font_face_rule(
+    rules: &[CssRule],
+    stylist: &Stylist,
+    guard: &SharedRwLockReadGuard,
+    f: &mut impl FnMut(&FontFaceRule),
+) {
+    for rule in rules {
+        let nested_rules = match rule {
+            CssRule::FontFace(font_face) => {
+                f(font_face.read_with(guard));
+                continue;
             }
-        })
+            CssRule::LayerBlock(layer) => &layer.rules,
+            // `@font-face` rules in `@container` apply regardless of the container query
+            CssRule::Container(container) => &container.rules,
+            CssRule::Supports(supports) if supports.enabled => &supports.rules,
+            CssRule::Media(media)
+                if media.media_queries.read_with(guard).evaluate(
+                    stylist.device(),
+                    stylist.quirks_mode(),
+                    &mut CustomMediaEvaluator::none(),
+                ) =>
+            {
+                &media.rules
+            }
+            _ => continue,
+        };
+        for_each_font_face_rule(&nested_rules.read_with(guard).0, stylist, guard, f);
+    }
 }
 
 /// The first source in an `@font-face` `src` list that is in a format we
