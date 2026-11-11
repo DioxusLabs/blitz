@@ -7,12 +7,27 @@
 //!  - `accessibility`: Enables [`accesskit`] accessibility support.
 //!  - `hot-reload`: Enables hot-reloading of Dioxus RSX.
 //!  - `tracing`: Enables tracing support.
+//!
+//! ## iOS scene configuration
+//!
+//! Apps using the default event loop can use the single-scene
+//! `BlitzSceneDelegate`. Select it in the bundle's `UIApplicationSceneManifest`,
+//! set `UIApplicationSupportsMultipleScenes` to false, and include a
+//! `UIWindowSceneSessionRoleApplication` configuration with
+//! `UISceneClassName = UIWindowScene` and
+//! `UISceneDelegateClassName = BlitzSceneDelegate`.
+//! The default event loop registers the delegate before UIKit launches and
+//! attaches Blitz windows when the scene connects. Apps with custom scene or
+//! multi-scene hosting must provide their own integration.
 
 mod application;
 mod convert_events;
 mod event;
 mod net;
 mod window;
+
+#[cfg(target_os = "ios")]
+mod ios_scene;
 
 #[cfg(feature = "accessibility")]
 mod accessibility;
@@ -55,6 +70,8 @@ pub struct Config {
 
 /// Build an event loop for the application
 pub fn create_default_event_loop() -> EventLoop {
+    #[cfg(target_os = "ios")]
+    ios_scene::register();
     let mut ev_builder = EventLoop::builder();
     #[cfg(target_os = "android")]
     {

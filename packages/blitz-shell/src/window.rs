@@ -147,6 +147,8 @@ impl<Rend: WindowRenderer> View<Rend> {
         let attrs = config.attributes.with_visible(false);
 
         let winit_window: Arc<dyn Window> = Arc::from(event_loop.create_window(attrs).unwrap());
+        #[cfg(target_os = "ios")]
+        crate::ios_scene::prepare_window(&winit_window);
         #[cfg(feature = "accessibility")]
         let accessibility = AccessibilityState::new(&*winit_window, proxy.clone());
 
