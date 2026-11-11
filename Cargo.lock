@@ -10732,7 +10732,7 @@ dependencies = [
 [[package]]
 name = "wpt_manifest"
 version = "0.1.1"
-source = "git+https://github.com/nicoburns/wpt-rs?rev=16337f7cd1f91b6683b7a35402415511f8a0f8b8#16337f7cd1f91b6683b7a35402415511f8a0f8b8"
+source = "git+https://github.com/nicoburns/wpt-rs?rev=11b17398ef4ac00f3c6ff151e18a3b04c278ed3b#11b17398ef4ac00f3c6ff151e18a3b04c278ed3b"
 dependencies = [
  "encoding_rs",
  "html5ever",
