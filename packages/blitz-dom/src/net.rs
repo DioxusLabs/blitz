@@ -14,8 +14,9 @@ use style::{
     shared_lock::SharedRwLock,
     shared_lock::{Locked, SharedRwLockReadGuard},
     stylesheets::{
-        CssRule, CustomMediaEvaluator, DocumentStyleSheet, FontFaceRule, ImportRule, Origin,
-        Stylesheet, StylesheetInDocument, StylesheetLoader as ServoStylesheetLoader, UrlExtraData,
+        CssRule, CssRules, CustomMediaEvaluator, DocumentStyleSheet, FontFaceRule, ImportRule,
+        Origin, Stylesheet, StylesheetInDocument, StylesheetLoader as ServoStylesheetLoader,
+        UrlExtraData,
         import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition},
     },
     stylist::Stylist,
@@ -445,28 +446,49 @@ fn for_each_font_face_rule(
     f: &mut impl FnMut(&FontFaceRule),
 ) {
     for rule in rules {
-        let nested_rules = match rule {
-            CssRule::FontFace(font_face) => {
-                f(font_face.read_with(guard));
-                continue;
-            }
-            CssRule::LayerBlock(layer) => &layer.rules,
-            // `@font-face` rules in `@container` apply regardless of the container query
-            CssRule::Container(container) => &container.rules,
-            CssRule::Supports(supports) if supports.enabled => &supports.rules,
-            CssRule::Media(media)
-                if media.media_queries.read_with(guard).evaluate(
+        if let CssRule::FontFace(font_face) = rule {
+            f(font_face.read_with(guard));
+            continue;
+        }
+        let Some(nested_rules) = nested_font_face_rules(rule) else {
+            continue;
+        };
+        let nested_rules = &nested_rules.read_with(guard).0;
+        // Evaluating a media query records the device's viewport units as used, so only
+        // evaluate those of `@media` rules which contain `@font-face` rules
+        if let CssRule::Media(media) = rule {
+            let applies = contains_font_face(nested_rules, guard)
+                && media.media_queries.read_with(guard).evaluate(
                     stylist.device(),
                     stylist.quirks_mode(),
                     &mut CustomMediaEvaluator::none(),
-                ) =>
-            {
-                &media.rules
+                );
+            if !applies {
+                continue;
             }
-            _ => continue,
-        };
-        for_each_font_face_rule(&nested_rules.read_with(guard).0, stylist, guard, f);
+        }
+        for_each_font_face_rule(nested_rules, stylist, guard, f);
     }
+}
+
+/// The rules nested in `rule` whose `@font-face` rules apply when `rule`'s condition holds
+fn nested_font_face_rules(rule: &CssRule) -> Option<&ServoArc<Locked<CssRules>>> {
+    match rule {
+        CssRule::LayerBlock(layer) => Some(&layer.rules),
+        // `@font-face` rules in `@container` apply regardless of the container query
+        CssRule::Container(container) => Some(&container.rules),
+        CssRule::Supports(supports) if supports.enabled => Some(&supports.rules),
+        CssRule::Media(media) => Some(&media.rules),
+        _ => None,
+    }
+}
+
+fn contains_font_face(rules: &[CssRule], guard: &SharedRwLockReadGuard) -> bool {
+    rules.iter().any(|rule| match rule {
+        CssRule::FontFace(_) => true,
+        rule => nested_font_face_rules(rule)
+            .is_some_and(|nested| contains_font_face(&nested.read_with(guard).0, guard)),
+    })
 }
 
 /// The first source in an `@font-face` `src` list that is in a format we
