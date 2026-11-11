@@ -297,10 +297,8 @@ tracing-subscriber = "0.3"
 vello = "0.12"
 vello_cpu = "0.4"
 vello_gpu = "0.4"
-vello_common = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
-rustc-hash = { workspace = true }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
