@@ -58,8 +58,11 @@ jobs:
           mkdir -p ./sites/gh-pages
           cp ./wpt/output/wptreport.json ./sites/gh-pages/wptreport.json
           cp ./wpt/output/wptreport.json.zst ./sites/gh-pages/wptreport.json.zst
+      - uses: cargo-bins/cargo-binstall@v1.27.0
       - name: Install wpt cli
-        run: cargo install wpt@0.0.14
+        run: cargo binstall --no-confirm --disable-strategies compile wpt@0.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Generate scores.json
         run: |
           wpt calc-scores --in ./sites/gh-pages/wptreport.json --out ./sites/gh-pages/wptscores.json

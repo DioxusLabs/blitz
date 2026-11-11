@@ -257,16 +257,18 @@ impl TextInputData {
                     return None;
                 }
                 match lower.as_str() {
+                    // Copying leaves the value as it was: no `input` event.
                     "c" => {
                         if let Some(text) = driver.editor.selected_text() {
                             let _ = shell_provider.set_clipboard_text(text.to_owned());
                         }
+                        return None;
                     }
+                    // A cut is an edit only when it removed something.
                     "x" => {
-                        if let Some(text) = driver.editor.selected_text() {
-                            let _ = shell_provider.set_clipboard_text(text.to_owned());
-                            driver.delete_selection()
-                        }
+                        let text = driver.editor.selected_text()?;
+                        let _ = shell_provider.set_clipboard_text(text.to_owned());
+                        driver.delete_selection()
                     }
                     "v" => {
                         let _ = shell_provider.request_clipboard_text();
