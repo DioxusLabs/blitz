@@ -10731,9 +10731,9 @@ dependencies = [
 
 [[package]]
 name = "wpt_manifest"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a0d80769dd27c25000dee017904765f8727b2aada8d50f821107a5b4044e579"
+checksum = "dddd9a40439fb543fb8835120c969069af00c8c23b01170ec38d560b077167e8"
 dependencies = [
  "encoding_rs",
  "html5ever",

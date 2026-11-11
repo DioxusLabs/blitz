@@ -1,38 +1,6 @@
-//! Fuzzy reftest matching: tolerances from `<meta name=fuzzy>` (as parsed by the WPT
-//! manifest) for reftest image comparison. See
+//! Fuzzy reftest matching: compares renderings against the `<meta name=fuzzy>` tolerances
+//! parsed by `wpt_manifest`. See
 //! <https://web-platform-tests.org/writing-tests/reftests.html#fuzzy-matching>
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct FuzzyRange {
-    pub min: u64,
-    pub max: u64,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct FuzzyTolerance {
-    pub max_difference: FuzzyRange,
-    pub total_pixels: FuzzyRange,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FuzzySpec {
-    /// Reference file this tolerance applies to (`None` = all references)
-    pub reference: Option<String>,
-    pub tolerance: FuzzyTolerance,
-}
-
-/// Finds the tolerance applicable to `ref_file`: a spec naming that reference takes
-/// precedence over an unnamed one.
-pub fn tolerance_for_reference<'a>(
-    specs: &'a [FuzzySpec],
-    ref_file: &str,
-) -> Option<&'a FuzzyTolerance> {
-    specs
-        .iter()
-        .find(|spec| spec.reference.as_deref() == Some(ref_file))
-        .or_else(|| specs.iter().find(|spec| spec.reference.is_none()))
-        .map(|spec| &spec.tolerance)
-}
 
 /// Compares two RGBA buffers, returning the maximum per-channel difference and the
 /// number of pixels which differ in any channel.
@@ -63,43 +31,6 @@ pub fn fuzzy_buffer_diff(test_buffer: &[u8], ref_buffer: &[u8]) -> (u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn range(min: u64, max: u64) -> FuzzyRange {
-        FuzzyRange { min, max }
-    }
-
-    #[test]
-    fn tolerance_selection() {
-        let specs = vec![
-            FuzzySpec {
-                reference: None,
-                tolerance: FuzzyTolerance {
-                    max_difference: range(0, 1),
-                    total_pixels: range(0, 1),
-                },
-            },
-            FuzzySpec {
-                reference: Some("ref.html".to_string()),
-                tolerance: FuzzyTolerance {
-                    max_difference: range(0, 2),
-                    total_pixels: range(0, 2),
-                },
-            },
-        ];
-        assert_eq!(
-            tolerance_for_reference(&specs, "ref.html")
-                .unwrap()
-                .max_difference,
-            range(0, 2)
-        );
-        assert_eq!(
-            tolerance_for_reference(&specs, "other.html")
-                .unwrap()
-                .max_difference,
-            range(0, 1)
-        );
-        assert_eq!(tolerance_for_reference(&[], "ref.html"), None);
-    }
 
     #[test]
     fn buffer_diff() {
