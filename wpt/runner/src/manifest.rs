@@ -7,9 +7,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use wpt_manifest::{ItemType, Manifest};
-
-use crate::test_runners::fuzzy::{FuzzyRange, FuzzySpec, FuzzyTolerance};
+use wpt_manifest::{FuzzySpec, ItemType, Manifest};
 
 #[derive(Clone)]
 pub enum TestType {
@@ -159,13 +157,7 @@ fn manifest_test(wpt_dir: &Path, item_type: ItemType, path: &str, item: &Value) 
                     _ => mismatch_references.push(href),
                 }
             }
-            let fuzzy = extras
-                .get("fuzzy")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(fuzzy_spec)
-                .collect();
+            let fuzzy = FuzzySpec::from_extras(extras);
             TestType::Ref {
                 match_references,
                 mismatch_references,
@@ -179,29 +171,6 @@ fn manifest_test(wpt_dir: &Path, item_type: ItemType, path: &str, item: &Value) 
         path: wpt_dir.join(path),
         url: url.to_string(),
         test_type,
-    })
-}
-
-/// Converts a manifest fuzzy entry, `[null | [test, reference, relation], [[min, max], [min, max]]]`.
-fn fuzzy_spec(entry: &Value) -> Option<FuzzySpec> {
-    let reference = entry
-        .get(0)?
-        .get(1)
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let range = |value: &Value| {
-        Some(FuzzyRange {
-            min: value.get(0)?.as_u64()?,
-            max: value.get(1)?.as_u64()?,
-        })
-    };
-    let ranges = entry.get(1)?;
-    Some(FuzzySpec {
-        reference,
-        tolerance: FuzzyTolerance {
-            max_difference: range(ranges.get(0)?)?,
-            total_pixels: range(ranges.get(1)?)?,
-        },
     })
 }
 
