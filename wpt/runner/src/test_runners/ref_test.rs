@@ -13,8 +13,9 @@ use std::path::Path;
 use std::time::Duration;
 use url::Url;
 
-use super::fuzzy::{FuzzySpec, fuzzy_buffer_diff, tolerance_for_reference};
+use super::fuzzy::fuzzy_buffer_diff;
 use blitz_vibey_script::ScriptDocument;
+use wpt_manifest::{FuzzySpec, tolerance_for_reference};
 
 use super::{
     document_has_scripts, parse_and_resolve_document, pump_net_provider, pump_timers,
