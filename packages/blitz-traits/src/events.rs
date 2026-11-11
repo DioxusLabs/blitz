@@ -156,6 +156,16 @@ pub enum DomEventKind {
     FocusOut,
 
     AppleStandardKeybinding,
+
+    AnimationStart,
+    AnimationEnd,
+    AnimationIteration,
+    AnimationCancel,
+
+    TransitionRun,
+    TransitionStart,
+    TransitionEnd,
+    TransitionCancel,
 }
 impl DomEventKind {
     pub fn discriminant(self) -> u8 {
@@ -205,6 +215,16 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+
+            "animationstart" => Ok(Self::AnimationStart),
+            "animationend" => Ok(Self::AnimationEnd),
+            "animationiteration" => Ok(Self::AnimationIteration),
+            "animationcancel" => Ok(Self::AnimationCancel),
+
+            "transitionrun" => Ok(Self::TransitionRun),
+            "transitionstart" => Ok(Self::TransitionStart),
+            "transitionend" => Ok(Self::TransitionEnd),
+            "transitioncancel" => Ok(Self::TransitionCancel),
             _ => Err(()),
         }
     }
@@ -254,6 +274,16 @@ pub enum DomEventData {
     FocusOut(BlitzFocusEvent),
 
     AppleStandardKeybinding(SmolStr),
+
+    AnimationStart(BlitzAnimationEvent),
+    AnimationEnd(BlitzAnimationEvent),
+    AnimationIteration(BlitzAnimationEvent),
+    AnimationCancel(BlitzAnimationEvent),
+
+    TransitionRun(BlitzTransitionEvent),
+    TransitionStart(BlitzTransitionEvent),
+    TransitionEnd(BlitzTransitionEvent),
+    TransitionCancel(BlitzTransitionEvent),
 }
 impl DomEventData {
     pub fn discriminant(&self) -> u8 {
@@ -309,6 +339,16 @@ impl DomEventData {
             Self::FocusOut { .. } => "focusout",
 
             Self::AppleStandardKeybinding { .. } => "applekeybinding",
+
+            Self::AnimationStart { .. } => "animationstart",
+            Self::AnimationEnd { .. } => "animationend",
+            Self::AnimationIteration { .. } => "animationiteration",
+            Self::AnimationCancel { .. } => "animationcancel",
+
+            Self::TransitionRun { .. } => "transitionrun",
+            Self::TransitionStart { .. } => "transitionstart",
+            Self::TransitionEnd { .. } => "transitionend",
+            Self::TransitionCancel { .. } => "transitioncancel",
         }
     }
 
@@ -355,6 +395,16 @@ impl DomEventData {
             Self::FocusOut { .. } => DomEventKind::FocusOut,
 
             Self::AppleStandardKeybinding { .. } => DomEventKind::AppleStandardKeybinding,
+
+            Self::AnimationStart { .. } => DomEventKind::AnimationStart,
+            Self::AnimationEnd { .. } => DomEventKind::AnimationEnd,
+            Self::AnimationIteration { .. } => DomEventKind::AnimationIteration,
+            Self::AnimationCancel { .. } => DomEventKind::AnimationCancel,
+
+            Self::TransitionRun { .. } => DomEventKind::TransitionRun,
+            Self::TransitionStart { .. } => DomEventKind::TransitionStart,
+            Self::TransitionEnd { .. } => DomEventKind::TransitionEnd,
+            Self::TransitionCancel { .. } => DomEventKind::TransitionCancel,
         }
     }
 
@@ -401,6 +451,15 @@ impl DomEventData {
             Self::FocusOut { .. } => false,
 
             Self::AppleStandardKeybinding { .. } => true,
+
+            Self::AnimationStart { .. }
+            | Self::AnimationEnd { .. }
+            | Self::AnimationIteration { .. }
+            | Self::AnimationCancel { .. }
+            | Self::TransitionRun { .. }
+            | Self::TransitionStart { .. }
+            | Self::TransitionEnd { .. }
+            | Self::TransitionCancel { .. } => false,
         }
     }
 
@@ -447,6 +506,15 @@ impl DomEventData {
             Self::FocusOut { .. } => true,
 
             Self::AppleStandardKeybinding { .. } => false,
+
+            Self::AnimationStart { .. }
+            | Self::AnimationEnd { .. }
+            | Self::AnimationIteration { .. }
+            | Self::AnimationCancel { .. }
+            | Self::TransitionRun { .. }
+            | Self::TransitionStart { .. }
+            | Self::TransitionEnd { .. }
+            | Self::TransitionCancel { .. } => true,
         }
     }
 }
@@ -734,6 +802,20 @@ pub struct BlitzInputEvent {
 #[derive(Clone, Debug)]
 pub struct BlitzFocusEvent;
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlitzAnimationEvent {
+    pub animation_name: String,
+    pub elapsed_time: f32,
+    pub pseudo_element: SmolStr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlitzTransitionEvent {
+    pub property_name: String,
+    pub elapsed_time: f32,
+    pub pseudo_element: SmolStr,
+}
+
 /// Copy of Winit IME event to avoid lower-level Blitz crates depending on winit
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BlitzImeEvent {
@@ -779,4 +861,133 @@ pub enum BlitzImeEvent {
     /// also stop issuing IME related requests like `Window::set_ime_cursor_area` and clear
     /// pending preedit text.
     Disabled,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_animation_transition_event_parsing() {
+        let cases = [
+            (
+                "animationstart",
+                "onanimationstart",
+                DomEventKind::AnimationStart,
+            ),
+            ("animationend", "onanimationend", DomEventKind::AnimationEnd),
+            (
+                "animationiteration",
+                "onanimationiteration",
+                DomEventKind::AnimationIteration,
+            ),
+            (
+                "animationcancel",
+                "onanimationcancel",
+                DomEventKind::AnimationCancel,
+            ),
+            (
+                "transitionrun",
+                "ontransitionrun",
+                DomEventKind::TransitionRun,
+            ),
+            (
+                "transitionstart",
+                "ontransitionstart",
+                DomEventKind::TransitionStart,
+            ),
+            (
+                "transitionend",
+                "ontransitionend",
+                DomEventKind::TransitionEnd,
+            ),
+            (
+                "transitioncancel",
+                "ontransitioncancel",
+                DomEventKind::TransitionCancel,
+            ),
+        ];
+
+        for (raw_name, on_name, expected_kind) in cases {
+            assert_eq!(
+                DomEventKind::from_str(raw_name),
+                Ok(expected_kind),
+                "Failed to parse raw event name: {raw_name}"
+            );
+            assert_eq!(
+                DomEventKind::from_str(on_name),
+                Ok(expected_kind),
+                "Failed to parse 'on' prefixed event name: {on_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_animation_transition_event_discriminants_and_properties() {
+        let anim_payload = BlitzAnimationEvent {
+            animation_name: "test-animation".to_string(),
+            elapsed_time: 1.25,
+            pseudo_element: SmolStr::new("::before"),
+        };
+        let trans_payload = BlitzTransitionEvent {
+            property_name: "opacity".to_string(),
+            elapsed_time: 0.5,
+            pseudo_element: SmolStr::default(),
+        };
+
+        let cases = [
+            (
+                DomEventKind::AnimationStart,
+                DomEventData::AnimationStart(anim_payload.clone()),
+                "animationstart",
+            ),
+            (
+                DomEventKind::AnimationEnd,
+                DomEventData::AnimationEnd(anim_payload.clone()),
+                "animationend",
+            ),
+            (
+                DomEventKind::AnimationIteration,
+                DomEventData::AnimationIteration(anim_payload.clone()),
+                "animationiteration",
+            ),
+            (
+                DomEventKind::AnimationCancel,
+                DomEventData::AnimationCancel(anim_payload),
+                "animationcancel",
+            ),
+            (
+                DomEventKind::TransitionRun,
+                DomEventData::TransitionRun(trans_payload.clone()),
+                "transitionrun",
+            ),
+            (
+                DomEventKind::TransitionStart,
+                DomEventData::TransitionStart(trans_payload.clone()),
+                "transitionstart",
+            ),
+            (
+                DomEventKind::TransitionEnd,
+                DomEventData::TransitionEnd(trans_payload.clone()),
+                "transitionend",
+            ),
+            (
+                DomEventKind::TransitionCancel,
+                DomEventData::TransitionCancel(trans_payload),
+                "transitioncancel",
+            ),
+        ];
+
+        for (expected_kind, data, expected_name) in cases {
+            assert_eq!(
+                expected_kind.discriminant(),
+                data.discriminant(),
+                "Discriminant mismatch for event: {expected_name}"
+            );
+            assert_eq!(data.name(), expected_name);
+            assert_eq!(data.kind(), expected_kind);
+            assert!(!data.cancelable());
+            assert!(data.bubbles());
+        }
+    }
 }
