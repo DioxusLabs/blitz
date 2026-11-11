@@ -136,6 +136,19 @@ impl BaseDocument {
             damage_for_parent |= anonymous_damage;
         }
 
+        // Taffy's cache key does not include `parent_size`, so a change to this node's own
+        // layout style (e.g. its height) leaves its children's cached sizes stale where
+        // they resolve percentages against it.
+        if own_damage.intersects(ONLY_RELAYOUT) {
+            let layout_children = self.nodes[node_id].layout_children.borrow().clone();
+            // Skip children removed from the document since `layout_children` was collected.
+            for child_id in layout_children.iter().flatten() {
+                if let Some(child) = self.nodes.get_mut(*child_id) {
+                    child.clear_layout_cache();
+                }
+            }
+        }
+
         let node = &mut self.nodes[node_id];
 
         // If the node or any of it's children have been mutated or their layout styles
