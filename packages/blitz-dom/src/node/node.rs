@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use style::computed_values::flex_direction::T as FlexDirection;
 use style::computed_values::isolation::T as Isolation;
+use style::computed_values::overflow_x::T as Overflow;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
@@ -1612,6 +1613,16 @@ impl Node {
             }
         }
 
+        // Line boxes are clipped to the padding box on axes where overflow is not visible.
+        let clips_point = self.primary_styles().is_some_and(|style| {
+            let x = x - self.scroll_offset().x as f32;
+            let y = y - self.scroll_offset().y as f32;
+            (style.clone_overflow_x() != Overflow::Visible
+                && (x < layout.border.left || x > size.width - layout.border.right))
+                || (style.clone_overflow_y() != Overflow::Visible
+                    && (y < layout.border.top || y > size.height - layout.border.bottom))
+        });
+
         // Inline children
         if self.flags.is_inline_root() {
             let x = x - content_box_offset.x;
@@ -1622,8 +1633,9 @@ impl Node {
                 let scale = layout.scale();
                 let y = y - ild.block_offset;
 
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
+                if !clips_point
+                    && let Some((cluster, _side)) =
+                        Cluster::from_point_exact(layout, x * scale, y * scale)
                 {
                     let node_id = cluster.style().brush.id;
                     if let Some(text_node) = self.tree().get(node_id)

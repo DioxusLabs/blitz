@@ -110,8 +110,8 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4aca4f4933aa9cb7a3
     "calc",
     "detailed_layout_info",
 ] }
-parley = { version = "0.12", default-features = false, features = ["std"] }
-skrifa = { version = "0.44", default-features = false, features = [
+parley = { git = "https://github.com/linebender/parley", rev = "1b67b7539616e5c7dc92d8fc79a1f7678525993c", default-features = false, features = ["std"] }
+skrifa = { version = "0.49", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
 
@@ -294,21 +294,19 @@ peniko = { workspace = true }
 color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
-vello = "0.11"
-vello_cpu = "0.3"
-vello_gpu = "0.3"
-vello_common = "0.3"
+vello = "0.12"
+vello_cpu = "0.4"
+vello_gpu = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
-rustc-hash = { workspace = true }
 
-# glifo 0.4.0 with the unhinted embolden fix (linebender/vello#2049) and bitmap glyphs drawn through
-# the atlas on Vello GPU when glyph caching is off (fixes emoji). Drop once both ship.
+# Bitmap glyphs drawn through the atlas on Vello GPU when glyph caching is off (fixes emoji).
+# Drop once it ships.
 [patch.crates-io]
-glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1793984569-gpu-bitmap-glyph-atlas" }
-vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1793984569-gpu-bitmap-glyph-atlas" }
-vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1793984569-gpu-bitmap-glyph-atlas" }
-vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1793984569-gpu-bitmap-glyph-atlas" }
+glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1794431434-gpu-bitmap-glyph-atlas" }
+vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1794431434-gpu-bitmap-glyph-atlas" }
+vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1794431434-gpu-bitmap-glyph-atlas" }
+vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1794431434-gpu-bitmap-glyph-atlas" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
