@@ -1,5 +1,9 @@
 use crate::events::focus::generate_focus_events;
-use crate::{BaseDocument, node::GeneratedTextInputEvent, util::ACTION_MOD};
+use crate::{
+    BaseDocument,
+    node::{GeneratedTextInputEvent, TextInputMode},
+    util::ACTION_MOD,
+};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::{
     SmolStr,
@@ -71,6 +75,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
             return;
         };
 
+        let mode = TextInputMode::of(element_data);
         if let Some(input_data) = element_data.text_input_data_mut() {
             let generated_event = match event {
                 KeyboardOrTextInputEvent::KeyPress(blitz_key_event) => input_data
@@ -79,6 +84,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
                         &mut doc.layout_ctx,
                         &*doc.shell_provider,
                         blitz_key_event,
+                        mode,
                     ),
                 KeyboardOrTextInputEvent::AppleStandardKeyBinding(command) => input_data
                     .apply_apple_standard_keybinding(
@@ -86,6 +92,7 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
                         &mut doc.layout_ctx,
                         &*doc.shell_provider,
                         &command,
+                        mode,
                     ),
             };
 
