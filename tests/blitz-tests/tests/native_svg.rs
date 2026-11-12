@@ -1649,3 +1649,146 @@ fn circular_mask_references_are_ignored_everywhere() {
     assert_near(pixel(&buf, 25, 50), [128, 0, 128]);
     assert_near(pixel(&buf, 75, 50), [128, 0, 128]);
 }
+
+/// The commands painting `doc` records, for effects that `vello_cpu` drops
+/// with the `multithreading` feature the workspace enables.
+fn record(doc: &mut HtmlDocument) -> Vec<anyrender::recording::RenderCommand> {
+    let mut scene = anyrender::Scene::new();
+    paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+    scene.commands
+}
+
+/// The filter layers in `commands`, as their clip bounds and filter graphs.
+fn filter_layers(
+    commands: &[anyrender::recording::RenderCommand],
+) -> Vec<(kurbo::Rect, Arc<anyrender::Filter>)> {
+    use kurbo::Shape as _;
+    commands
+        .iter()
+        .filter_map(|cmd| match cmd {
+            anyrender::recording::RenderCommand::PushLayer(layer) => {
+                let filter = layer.filter.clone()?;
+                Some((
+                    layer
+                        .transform
+                        .transform_rect_bbox(layer.clip.bounding_box())
+                        .round(),
+                    filter,
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn filtered_rect(filter: &str) -> String {
+    format!(
+        r#"<svg width="100" height="100"><defs>{filter}</defs>
+        <rect x="20" y="20" width="40" height="40" fill="red" filter="url(#f)"/></svg>"#
+    )
+}
+
+#[test]
+fn filter_layer_is_bounded_by_the_filter_region() {
+    use anyrender::filters::FilterEffect;
+    // The default region is the bounding box grown by 10% on each side.
+    let mut doc = load(
+        &filtered_rect(r#"<filter id="f"><feGaussianBlur stdDeviation="2"/></filter>"#),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    let (bounds, filter) = &layers[0];
+    assert_eq!(*bounds, kurbo::Rect::new(16.0, 16.0, 64.0, 64.0));
+    assert_eq!(filter.nodes().len(), 1);
+    assert!(matches!(
+        &filter.nodes()[0].effect,
+        FilterEffect::GaussianBlur(blur) if blur.std_deviation == 2.0
+    ));
+
+    let mut doc = load(
+        &filtered_rect(
+            r#"<filter id="f" filterUnits="userSpaceOnUse" x="10" y="5" width="50" height="60">
+            <feOffset dx="3" dy="4"/></filter>"#,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers[0].0, kurbo::Rect::new(10.0, 5.0, 60.0, 65.0));
+}
+
+#[test]
+fn figma_layer_blur_folds_to_one_blur() {
+    use anyrender::filters::FilterEffect;
+    let mut doc = load(
+        &filtered_rect(
+            r#"<filter id="f" color-interpolation-filters="sRGB">
+            <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+            <feGaussianBlur stdDeviation="10.5" result="effect1_foregroundBlur"/></filter>"#,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    let nodes = layers[0].1.nodes();
+    assert_eq!(nodes.len(), 1);
+    assert!(matches!(&nodes[0].effect, FilterEffect::GaussianBlur(_)));
+}
+
+#[test]
+fn filter_href_inherits_primitives_and_attributes() {
+    let mut doc = load(
+        &filtered_rect(
+            r##"<filter id="base" filterUnits="userSpaceOnUse" x="0" y="0" width="80" height="80">
+            <feGaussianBlur stdDeviation="1"/></filter>
+            <filter id="f" href="#base"/>"##,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    assert_eq!(layers[0].0, kurbo::Rect::new(0.0, 0.0, 80.0, 80.0));
+}
+
+#[test]
+fn flood_color_comes_from_computed_style() {
+    use anyrender::filters::FilterEffect;
+    let mut doc = load(
+        &format!(
+            "<style>feFlood {{ flood-color: lime; flood-opacity: 0.5 }}</style>{}",
+            filtered_rect(r#"<filter id="f"><feFlood/></filter>"#)
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    let FilterEffect::Flood(color) = &layers[0].1.nodes()[0].effect else {
+        panic!("expected a flood");
+    };
+    assert_eq!(color.components, [0.0, 1.0, 0.0, 0.5]);
+}
+
+#[test]
+fn invalid_filter_reference_disables_rendering() {
+    // A filter that references a missing element or an empty region makes
+    // the element not render.
+    for svg in [
+        filtered_rect(""),
+        filtered_rect(r#"<filter id="f" width="0"><feGaussianBlur stdDeviation="1"/></filter>"#),
+        filtered_rect(r#"<filter id="f"/>"#),
+    ] {
+        let mut doc = load(&svg, true);
+        let buffer = render(&mut doc);
+        assert_eq!(pixel(&buffer, 40, 40), BLUE, "{svg}");
+    }
+}
+
+#[test]
+fn unsupported_filter_primitives_paint_unfiltered() {
+    let mut doc = load(
+        &filtered_rect(r#"<filter id="f"><feTurbulence baseFrequency="0.1"/></filter>"#),
+        true,
+    );
+    assert!(filter_layers(&record(&mut doc)).is_empty());
+    assert_eq!(pixel(&render(&mut doc), 40, 40), RED);
+}
