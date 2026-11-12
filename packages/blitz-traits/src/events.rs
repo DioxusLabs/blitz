@@ -72,6 +72,8 @@ pub enum UiEvent {
     Ime(BlitzImeEvent),
     AppleStandardKeybinding(SmolStr),
     Paste(String),
+    /// Activate a control directly without pointer hit testing.
+    Activate(NodeId),
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {

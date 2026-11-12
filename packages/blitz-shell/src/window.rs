@@ -539,6 +539,16 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.accessibility.update_tree(&inner);
     }
 
+    #[cfg(feature = "accessibility")]
+    pub fn handle_accessibility_action(&mut self, request: &accesskit::ActionRequest) {
+        let target = self.doc.inner().accessibility_click_target(request);
+        if let Some(target) = target {
+            self.doc.handle_ui_event(UiEvent::Activate(target));
+            self.poll();
+            self.request_redraw();
+        }
+    }
+
     #[cfg(target_arch = "wasm32")]
     const RESIZE_DEBOUNCE_MS: u32 = 100;
 
