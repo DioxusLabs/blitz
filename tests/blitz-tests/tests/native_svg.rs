@@ -1502,6 +1502,7 @@ fn clip_and_mask_bench() {
             let mut buf = Vec::new();
             let mut frame = |doc: &mut HtmlDocument| {
                 buf.clear();
+                renderer.reset();
                 renderer.render_to_vec(
                     |scene| paint_scene(scene, doc.as_mut(), 1.0, BENCH_W, BENCH_H, 0, 0),
                     &mut buf,
