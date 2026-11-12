@@ -723,8 +723,15 @@ pub(crate) fn handle_click(
                 }
                 // Clicking labels triggers click, and possibly input event, of associated input
                 local_name!("label") => {
-                    if let Some(target_node_id) =
-                        doc.label_bound_input_element(node_id).map(|n| n.id)
+                    // A click on the labeled control itself (including the synthetic click below)
+                    // must not activate the label again, or a control without activation behavior
+                    // (e.g. a range input) bubbles back here forever.
+                    if let Some(target_node_id) = doc
+                        .label_bound_input_element(node_id)
+                        .map(|n| n.id)
+                        .filter(|&input_id| {
+                            input_id != target && !doc.is_ancestor_of(input_id, target)
+                        })
                     {
                         // Apply default click event action for target node
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
