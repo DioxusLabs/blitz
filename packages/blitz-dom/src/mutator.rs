@@ -11,7 +11,7 @@ use std::ops::{Deref, DerefMut, Range};
 use crate::layout::damage::ALL_DAMAGE;
 use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
-use crate::stylo_device::DeviceChanges;
+use crate::stylo::DeviceChanges;
 use crate::util::ImageType;
 use crate::{
     Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
@@ -357,6 +357,7 @@ impl DocumentMutator<'_> {
         }
 
         element.attrs.set(name.clone(), value);
+        element.presentational_hints.take();
         if node_is_in_document {
             devtools!(
                 self,
@@ -490,6 +491,7 @@ impl DocumentMutator<'_> {
         if !had_attr {
             return;
         }
+        element.presentational_hints.take();
         self.mutations_occurred |= node_is_in_document;
         if node_is_in_document {
             devtools!(
