@@ -26,8 +26,8 @@ wpt-resvg *ARGS="resvg":
     git -C wpt/resvg/checkout fetch -q --depth 1 https://github.com/linebender/resvg "$(cat wpt/RESVG_COMMIT)" && \
     git -C wpt/resvg/checkout checkout -q FETCH_HEAD )
   cargo run --release --package wpt -- resvg-generate wpt/resvg/checkout wpt/resvg/out
-  WPT_DIR=wpt/resvg/out FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt {{ARGS}}
-  cargo run --release --package wpt -- resvg-summary
+  WPT_DIR=wpt/resvg/out WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt {{ARGS}}
+  WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" cargo run --release --package wpt -- resvg-summary
 
 browser *ARGS:
   cargo run --release --package browser --features log-frame-times,log-phase-times {{ARGS}}

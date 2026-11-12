@@ -8,21 +8,19 @@ use wptreport::{
 
 use crate::{TestKind, TestResult, TestStatus};
 
-/// The HEAD commit of the git checkout at `path`, or "unknown" if it is not one (e.g. a
-/// generated test directory such as the resvg tests)
 fn get_git_hash(path: &Path) -> String {
-    Command::new("git")
+    let output = Command::new("git")
         .current_dir(path)
         .args(["rev-parse", "HEAD"])
         .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|hash| hash.trim().to_string())
-        .unwrap_or_else(|| {
-            log::warn!("{} is not a git checkout", path.display());
-            String::from("unknown")
-        })
+        .expect("Failed to run git rev-parse HEAD");
+    if !output.status.success() {
+        panic!("Failed to run git rev-parse HEAD (command failed)")
+    }
+    let hash = String::from_utf8(output.stdout)
+        .expect("Failed to run git rev-parse HEAD (non-utf8 output)");
+    // Remove trailing newline
+    hash.trim().to_string()
 }
 
 pub fn generate_run_info(wpt_dir: &Path) -> WptRunInfo {
@@ -30,7 +28,10 @@ pub fn generate_run_info(wpt_dir: &Path) -> WptRunInfo {
 
     WptRunInfo {
         product: String::from("blitz"),
-        revision: get_git_hash(wpt_dir),
+        // Generated test directories (the resvg tests) record where they came from
+        revision: std::fs::read_to_string(wpt_dir.join(crate::resvg::REVISION_FILE))
+            .map(|revision| revision.trim().to_string())
+            .unwrap_or_else(|_| get_git_hash(wpt_dir)),
         browser_version: Some(get_git_hash(&std::env::current_dir().unwrap())),
         automation: true,
         debug: cfg!(debug_assertions),

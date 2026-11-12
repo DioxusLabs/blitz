@@ -349,6 +349,19 @@ impl TestResult {
     }
 }
 
+/// Where results go: `WPT_OUTPUT_DIR`, defaulting to `wpt/output`
+fn output_dir() -> PathBuf {
+    env::var_os("WPT_OUTPUT_DIR").map_or_else(
+        || {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("output")
+        },
+        PathBuf::from,
+    )
+}
+
 fn main() {
     env_logger::init();
     std::panic::set_hook(Box::new(panic_backtrace::stash_panic_handler));
@@ -359,11 +372,7 @@ fn main() {
             return resvg::generate(Path::new(&args[2]), Path::new(&args[3]));
         }
         Some("resvg-summary") => {
-            let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-            let default = cargo_dir
-                .parent()
-                .unwrap()
-                .join("output/wpt_expectations.txt");
+            let default = output_dir().join("wpt_expectations.txt");
             return resvg::summarize(args.get(2).map_or(&default, Path::new));
         }
         Some("resvg-generate") => {
@@ -397,12 +406,11 @@ fn main() {
         return;
     }
 
-    let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = cargo_dir.parent().unwrap().join("output");
+    let out_dir = output_dir();
     if fs::exists(&out_dir).unwrap() {
         fs::remove_dir_all(&out_dir).unwrap();
     }
-    fs::create_dir(&out_dir).unwrap();
+    fs::create_dir_all(&out_dir).unwrap();
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);

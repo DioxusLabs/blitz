@@ -13,7 +13,7 @@
 //!
 //! Run them with `WPT_DIR=<out dir>` and `FONTCONFIG_FILE=<out dir>/resvg/fonts.conf`,
 //! then `wpt resvg-summary` prints per-directory pass counts (`just wpt-resvg`
-//! does all of this).
+//! does all of this, with results in `wpt/resvg/output` rather than `wpt/output`).
 
 use html_escape::{encode_double_quoted_attribute, encode_text};
 use regex::Regex;
@@ -22,10 +22,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+/// File in the generated `WPT_DIR` holding the resvg commit the tests came from
+pub const REVISION_FILE: &str = "REVISION";
+
 /// See `ThresholdTolerance`. resvg's references come from tiny-skia, not
 /// vello_cpu, so anti-aliased edges and gradients differ slightly almost
-/// everywhere: allow 0.5% of a 300x300 render to differ by more than 64/255.
-const PNG_FUZZY: &str = "64;450";
+/// everywhere: allow 100 pixels (0.25% of a 200x200 render) to differ by more
+/// than 64/255. That is about one edge's worth, so small features such as
+/// `shape-rendering="crispEdges"` or a misplaced dash still fail.
+const PNG_FUZZY: &str = "64;100";
 /// Native vs usvg runs through the same rasterizer.
 const PARITY_FUZZY: &str = "16;90";
 
@@ -42,6 +47,10 @@ static PROLOG_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?s)^\s*(<\?xml[^>]*\?>\s*)?(<!--.*?-->\s*)*(<!DOCTYPE[^>\[]*(\[.*?\])?\s*>)?")
         .unwrap()
 });
+static ENTITY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<!ENTITY\s+([\w.-]+)\s+(?:"([^"]*)"|'([^']*)')\s*>"#).unwrap());
+static PREFIXED_ROOT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*<([\w.-]+):svg[\s>]").unwrap());
 static ENCODING_RE: LazyLock<regex::bytes::Regex> =
     LazyLock::new(|| regex::bytes::Regex::new(r#"^\s*<\?xml[^>]*encoding="([^"]+)""#).unwrap());
 
@@ -50,6 +59,19 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
     let dst = out_dir.join("resvg");
     if dst.exists() {
         fs::remove_dir_all(&dst).unwrap();
+    }
+    fs::create_dir_all(out_dir).unwrap();
+    // The run's report records this as the revision of the tests
+    let revision = std::process::Command::new("git")
+        .current_dir(resvg_dir)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| output.stdout);
+    match revision {
+        Some(revision) => fs::write(out_dir.join(REVISION_FILE), revision).unwrap(),
+        None => _ = fs::remove_file(out_dir.join(REVISION_FILE)),
     }
     for name in ["tests", "resources", "fonts"] {
         copy_dir(&src.join(name), &dst.join(name));
@@ -70,8 +92,7 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
         let rel = svg.strip_prefix(&tests_dir).unwrap().with_extension("");
         let rel = rel.to_str().unwrap();
         let (width, height) = image::image_dimensions(&png).unwrap();
-        let svg_source = decode_xml(&fs::read(&svg).unwrap());
-        let svg_source = PROLOG_RE.replace(&svg_source, "");
+        let svg_source = inlinable_svg(&decode_xml(&fs::read(&svg).unwrap()));
 
         // Pages sit at the same depth as the SVG, so relative hrefs inside an
         // inlined SVG (../../../resources/...) resolve the same way.
@@ -80,8 +101,13 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
         let img_png = format!(r#"<img src="{up}tests/{rel}.png">"#);
         let modes = [
             ("img", img_svg.as_str(), img_png.as_str(), PNG_FUZZY),
-            ("inline", &svg_source, &img_png, PNG_FUZZY),
-            ("parity", &svg_source, &img_svg, PARITY_FUZZY),
+            ("inline", svg_source.as_str(), img_png.as_str(), PNG_FUZZY),
+            (
+                "parity",
+                svg_source.as_str(),
+                img_svg.as_str(),
+                PARITY_FUZZY,
+            ),
         ];
         for (mode, test_body, ref_body, fuzzy) in modes {
             let test_path = dst.join(mode).join(format!("{rel}.html"));
@@ -106,8 +132,11 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
 /// `wpt_expectations.txt`. "parity where img passes" counts native/usvg parity
 /// only for tests whose usvg rendering matches resvg's PNG, so both backends
 /// failing alike is not a pass.
-pub fn summarize(expectations: &Path) {
-    let expectations = fs::read_to_string(expectations).unwrap();
+pub fn summarize(expectations_path: &Path) {
+    let expectations = fs::read_to_string(expectations_path).unwrap_or_else(|err| {
+        eprintln!("Can't read {}: {err}", expectations_path.display());
+        std::process::exit(1);
+    });
     let mut results = HashMap::new();
     for line in expectations.lines() {
         let mut fields = line.split_whitespace();
@@ -169,6 +198,29 @@ fn page(title: &str, head: &str, body: &str, width: u32, height: u32) -> String 
          <body>\n{body}\n",
         encode_text(title)
     )
+}
+
+/// Turns an SVG document into markup the HTML parser reads the same way: drops
+/// the XML prolog, expands the entities its DOCTYPE declares, and removes a
+/// namespace prefix on the elements (`<svg:svg xmlns:svg=...>`), which HTML
+/// doesn't support.
+fn inlinable_svg(source: &str) -> String {
+    let prolog = PROLOG_RE.find(source).unwrap();
+    let mut body = source[prolog.end()..].to_string();
+    for entity in ENTITY_RE.captures_iter(prolog.as_str()) {
+        let value = entity.get(2).or(entity.get(3)).unwrap().as_str();
+        body = body.replace(&format!("&{};", &entity[1]), value);
+    }
+    if let Some(prefix) = PREFIXED_ROOT_RE
+        .captures(&body)
+        .map(|caps| caps[1].to_string())
+    {
+        body = body
+            .replace(&format!("<{prefix}:"), "<")
+            .replace(&format!("</{prefix}:"), "</")
+            .replace(&format!("xmlns:{prefix}="), "xmlns=");
+    }
+    body
 }
 
 /// Decodes an SVG with the encoding its XML declaration names, as usvg does.
@@ -240,8 +292,20 @@ mod tests {
     }
 
     #[test]
-    fn strips_prolog() {
-        let svg = "<?xml version=\"1.0\"?>\n<!-- c -->\n<!DOCTYPE svg [<!ENTITY a \"b\">]>\n<svg/>";
-        assert_eq!(PROLOG_RE.replace(svg, ""), "\n<svg/>");
+    fn strips_prolog_and_expands_entities() {
+        let svg = "<?xml version=\"1.0\"?>\n<!-- c -->\n<!DOCTYPE svg [\n<!ENTITY a \"<g fill='green'/>\">\n<!ENTITY b 'red'>]>\n<svg>&a;<rect fill=\"&b;\"/></svg>";
+        assert_eq!(
+            inlinable_svg(svg),
+            "\n<svg><g fill='green'/><rect fill=\"red\"/></svg>"
+        );
+    }
+
+    #[test]
+    fn removes_namespace_prefix() {
+        let svg = "<svg:svg xmlns:svg=\"http://www.w3.org/2000/svg\"><svg:rect/></svg:svg>";
+        assert_eq!(
+            inlinable_svg(svg),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>"
+        );
     }
 }
