@@ -9,15 +9,15 @@ use crate::net::{
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
+use crate::stylo::{UserAgentStylesheet, init_stylo_prefs};
 use crate::stylo_device::{DeviceChanges, make_device, make_media_data};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
 use crate::util::ImageType;
 use crate::{
-    DEFAULT_CSS, DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData,
-    EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading,
-    TextNodeData,
+    DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData, EventDriver,
+    HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading, TextNodeData,
 };
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
@@ -40,9 +40,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{
-    Arc, LazyLock, Mutex, MutexGuard, Once, OnceLock, RwLockReadGuard, RwLockWriteGuard,
-};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
 use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -75,90 +73,6 @@ use web_time::Instant;
 
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
-
-/// A user-agent stylesheet, parsed with a read-only lock so that it can be shared between documents.
-///
-/// Documents with the same user-agent stylesheets (in the same order) also share Stylo's
-/// cached user-agent cascade data. `@import` rules are ignored.
-#[derive(Clone, Debug, PartialEq)]
-pub struct UserAgentStylesheet(DocumentStyleSheet);
-
-pub(crate) fn init_stylo_prefs() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        style_config::set_pref!("layout.css.flexbox-balance.enabled", true);
-        style_config::set_pref!("layout.css.background-clip.text.enabled", true);
-        style_config::set_pref!("layout.css.webkit-text-fill-color.enabled", true);
-        style_config::set_pref!("layout.css.columns.enabled", true);
-        style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
-        style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
-        style_config::set_pref!("layout.css.progress-function.enabled", true);
-        style_config::set_pref!("layout.css.font-variations.enabled", true);
-        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
-        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
-        #[cfg(feature = "writing-mode")]
-        {
-            style_config::set_pref!("layout.css.writing-mode.enabled", true);
-            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
-        }
-
-        // Properties that were previously enabled by the `layout.unimplemented` pref
-        style_config::set_pref!("layout.css.appearance.enabled", true);
-        style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
-        style_config::set_pref!("layout.css.contain.enabled", true);
-        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
-        style_config::set_pref!("layout.css.corner-shape.enabled", true);
-        style_config::set_pref!("layout.css.counters.enabled", true);
-        style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
-        style_config::set_pref!("layout.css.forced-color-adjust.enabled", true);
-        style_config::set_pref!("layout.css.masking.enabled", true);
-        style_config::set_pref!("layout.css.math-properties.enabled", true);
-        style_config::set_pref!("layout.css.motion-path.enabled", true);
-        style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
-        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
-        style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
-        style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
-        style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
-        style_config::set_pref!("layout.css.text-overflow.enabled", true);
-        style_config::set_pref!("layout.css.text-underline-position.enabled", true);
-        style_config::set_pref!("layout.css.view-transitions.enabled", true);
-        style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
-        style_config::set_pref!("layout.css.zoom.enabled", true);
-        style_config::set_pref!("layout.threads", -1);
-    });
-}
-
-impl UserAgentStylesheet {
-    pub fn parse(css: &str) -> Self {
-        // Pref-gated UA declarations must be enabled before parsing.
-        init_stylo_prefs();
-
-        let lock = SharedRwLock::read_only();
-        let data = Stylesheet::from_str(
-            css,
-            DocumentUrl::default().url_extra_data(),
-            Origin::UserAgent,
-            ServoArc::new(lock.wrap(MediaList::empty())),
-            lock,
-            None,
-            None,
-            QuirksMode::NoQuirks,
-            AllowImportRules::No,
-        );
-        Self(DocumentStyleSheet(ServoArc::new(data)))
-    }
-
-    /// The default user-agent stylesheet ([`DEFAULT_CSS`]), parsed once.
-    pub fn default_sheet() -> Self {
-        static SHEET: LazyLock<UserAgentStylesheet> =
-            LazyLock::new(|| UserAgentStylesheet::parse(DEFAULT_CSS));
-        SHEET.clone()
-    }
-
-    pub fn sheet(&self) -> &DocumentStyleSheet {
-        &self.0
-    }
-}
 
 pub enum DocGuard<'a> {
     Ref(&'a BaseDocument),
