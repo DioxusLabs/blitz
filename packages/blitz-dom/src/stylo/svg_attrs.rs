@@ -63,7 +63,7 @@ pub(crate) fn svg_presentation_hint(
         Origin::Author,
         url_extra_data,
         Some(CssRuleType::Style),
-        ParsingMode::ALLOW_UNITLESS_LENGTH | ParsingMode::ALLOW_ALL_NUMERIC_VALUES,
+        ParsingMode::ALLOW_UNITLESS_LENGTH,
         QuirksMode::NoQuirks,
         Default::default(),
         None,
@@ -192,6 +192,10 @@ mod tests {
         assert!(parse("points", "0,0 1,1").is_empty());
         assert!(parse("fill", "not-a-color(").is_empty());
         assert!(parse("transform", "bogus(1)").is_empty());
+        // A negative radius is an error, so the attribute is ignored (`auto`),
+        // not clamped: `ALLOW_ALL_NUMERIC_VALUES` is for SMIL, not for this.
+        assert!(parse("rx", "-30").is_empty());
+        assert!(parse("r", "-1").is_empty());
     }
 
     #[test]
