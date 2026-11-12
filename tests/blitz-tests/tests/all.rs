@@ -30,6 +30,7 @@ mod focusability_updates;
 mod font_element_attributes;
 mod font_family_fallback;
 mod fragment_navigation;
+mod gradient_color_stop_fixup;
 mod harness_smoke;
 mod hidden_checkbox_input;
 mod hit_inline_embedded_box;
