@@ -272,7 +272,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -283,7 +283,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -295,7 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "kurbo",
  "peniko",
@@ -307,7 +307,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "anyrender",
  "image",
@@ -325,7 +325,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "anyrender",
  "ash",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "anyrender",
  "image",
@@ -368,7 +368,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -386,7 +386,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -404,7 +404,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1803,7 +1803,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.2.2",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -2856,7 +2856,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3368,8 +3368,9 @@ dependencies = [
 
 [[package]]
 name = "fontique"
-version = "0.12.0"
-source = "git+https://github.com/linebender/parley?rev=1b67b7539616e5c7dc92d8fc79a1f7678525993c#1b67b7539616e5c7dc92d8fc79a1f7678525993c"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb17c03da08e75b2a84346a7548f34c038fa24d9d5cb12b1ed18c1ea8dbe86d8"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -5530,7 +5531,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6161,15 +6162,17 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.1"
-source = "git+https://github.com/linebender/parley?rev=1b67b7539616e5c7dc92d8fc79a1f7678525993c#1b67b7539616e5c7dc92d8fc79a1f7678525993c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73072a9470554c8e794778acece2312661218aaabb635600957d952cf01c716e"
 dependencies = [
  "bytemuck",
 ]
 
 [[package]]
 name = "parley"
-version = "0.12.0"
-source = "git+https://github.com/linebender/parley?rev=1b67b7539616e5c7dc92d8fc79a1f7678525993c#1b67b7539616e5c7dc92d8fc79a1f7678525993c"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f00d9e3b12cd601fbd38535b7a8dbc1f761bcc842c4be4803f7ac2d89bb78e01"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -6198,8 +6201,9 @@ dependencies = [
 
 [[package]]
 name = "parley_data"
-version = "0.12.0"
-source = "git+https://github.com/linebender/parley?rev=1b67b7539616e5c7dc92d8fc79a1f7678525993c#1b67b7539616e5c7dc92d8fc79a1f7678525993c"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcd6506d5b966f3324e191691325077cbac6e08ea1b828ba9cd86f660e10d9e5"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6207,13 +6211,15 @@ dependencies = [
 
 [[package]]
 name = "parley_emoji"
-version = "0.12.0"
-source = "git+https://github.com/linebender/parley?rev=1b67b7539616e5c7dc92d8fc79a1f7678525993c#1b67b7539616e5c7dc92d8fc79a1f7678525993c"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66dbd709d00551ad2305b8a9479ca04d722a3d21276eba3d74596359b8a64eaa"
 
 [[package]]
 name = "parley_engine"
-version = "0.12.0"
-source = "git+https://github.com/linebender/parley?rev=1b67b7539616e5c7dc92d8fc79a1f7678525993c#1b67b7539616e5c7dc92d8fc79a1f7678525993c"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd9c37658a7f75addef6fb3183cde6ed16fdf7757436dc64f073144f2b99879f"
 dependencies = [
  "fontique",
  "harfrust",
@@ -6400,7 +6406,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -7882,7 +7888,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7920,7 +7926,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8408,7 +8414,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8971,7 +8977,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -10021,7 +10027,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=21db1a3d0283faf9e7b281375e8bf5e42f86a764#21db1a3d0283faf9e7b281375e8bf5e42f86a764"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",

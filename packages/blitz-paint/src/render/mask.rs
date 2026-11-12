@@ -52,7 +52,7 @@ impl ElementCx<'_, '_> {
             Mix::Normal,
             ALMOST_OPAQUE,
             self.transform,
-            &self.frame.border_box_path(),
+            &self.frame.border_box_shape(),
             None,
             None,
         );
@@ -72,7 +72,7 @@ impl ElementCx<'_, '_> {
             BlendMode::new(Mix::Normal, Compose::DestIn),
             1.0,
             self.transform,
-            &self.frame.border_box_path(),
+            &self.frame.border_box_shape(),
             None,
             None,
         );
