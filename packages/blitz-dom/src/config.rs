@@ -74,6 +74,14 @@ pub struct DocumentConfig {
     /// Devtools provider notified of DOM mutations (e.g. by a remote inspector)
     #[cfg(feature = "devtools")]
     pub devtools_provider: Option<Arc<dyn DevtoolsProvider>>,
+    /// How long a password field shows the character typed last in the clear before masking it,
+    /// as iOS and Android do. `None`, the default, masks it at once, as desktop browsers do.
+    ///
+    /// Only one typed grapheme is shown; pasted text and text an input method commits in more than
+    /// one grapheme stay masked. Any other edit, a move of the caret, a change of the value from
+    /// script and a change of focus mask it before its time. A shell wakes for the deadline that
+    /// [`BaseDocument::text_input_deadline`](crate::BaseDocument::text_input_deadline) gives.
+    pub reveal_typed_password_character: Option<web_time::Duration>,
 }
 
 impl Default for DocumentConfig {
@@ -94,6 +102,7 @@ impl Default for DocumentConfig {
             subdocument_depth: 0,
             #[cfg(feature = "devtools")]
             devtools_provider: None,
+            reveal_typed_password_character: None,
         }
     }
 }

@@ -52,7 +52,7 @@ impl Node {
     /// The node's computed `scrollbar-width`.
     pub fn scrollbar_width(&self) -> ScrollbarWidth {
         self.primary_styles()
-            .map(|style| style.clone_scrollbar_width())
+            .map(|style| style.slow_clone_scrollbar_width())
             .unwrap_or(ScrollbarWidth::Auto)
     }
 

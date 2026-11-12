@@ -278,10 +278,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 EventDispatchSource::Input,
             )),
             UiEvent::Paste(text) => {
-                super::ime::handle_ime_event(
-                    &mut self.doc.inner_mut(),
-                    blitz_traits::events::BlitzImeEvent::Commit(text),
-                );
+                super::ime::handle_paste(&mut self.doc.inner_mut(), text);
                 self.flush_pending_events();
             }
             UiEvent::AppleStandardKeybinding(data) => {

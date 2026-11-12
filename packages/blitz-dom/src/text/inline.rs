@@ -6,6 +6,9 @@ use kurbo::Rect;
 use super::{TextContext, backend};
 use crate::node::{InlineContent, InlineTextHit, Node};
 
+/// The text backend's layout of an inline formatting context's lines.
+pub(crate) type BackendLayout = backend::TextLayout;
+
 /// An inline formatting context: the text backend's layout of its lines, and where Blitz put
 /// them in the inline root's content box.
 ///
@@ -14,7 +17,7 @@ use crate::node::{InlineContent, InlineTextHit, Node};
 #[derive(Clone, Debug, Default)]
 pub struct TextLayout {
     /// The lines, as the text backend lays them out.
-    pub backend: backend::TextLayout,
+    pub backend: BackendLayout,
     /// How far `align-content` moves the line boxes down the content box, in CSS pixels.
     pub(crate) block_offset: f32,
     /// The offset (in CSS px) between the content box's unrounded and rounded positions.
@@ -37,6 +40,7 @@ impl TextLayout {
     pub(crate) fn build_layouts(
         cx: &mut TextContext,
         nodes: &crate::NodeTree,
+        cascade: DocumentCascade<'_>,
         scale: f32,
         layouts: &mut [(NodeId, Box<Self>)],
     ) {
@@ -44,7 +48,7 @@ impl TextLayout {
             .iter_mut()
             .map(|(node_id, layout)| (*node_id, &mut layout.backend))
             .collect();
-        backend::TextLayout::build_layouts(cx, nodes, scale, &mut backends);
+        BackendLayout::build_layouts(cx, nodes, cascade, scale, &mut backends);
     }
 }
 
@@ -223,52 +227,208 @@ pub(crate) trait InlineBuilder {
     /// Pushes the line break opportunity of the `<wbr>` element `node`, which contributes
     /// nothing else: its pseudo-elements are not pushed.
     fn push_break_opportunity(&mut self, node: &Node);
+
+    /// Opens an anonymous ruby container or annotation, `kind`, which CSS Ruby's box fixup makes:
+    /// a box with no edges, set in the style of `container`, an `<rtc>`, or else of the span
+    /// opened last. Close it with [`pop_span`](Self::pop_span). Only a backend that sets ruby is
+    /// asked.
+    fn push_anonymous_span(&mut self, container: Option<&Node>, kind: SpanKind) {
+        let _ = (container, kind);
+    }
+
+    /// Starts the next column of the ruby container opened last, so that an annotation pushed
+    /// next, with no base content since the last annotation, goes over an empty base of its own.
+    /// Only a backend that sets ruby is asked.
+    fn start_ruby_column(&mut self) {}
+}
+
+/// What restyles an element for a block's first formatted line: the document's stylist and the
+/// guards its stylesheets are read under.
+#[derive(Copy, Clone)]
+#[cfg_attr(not(feature = "winkin"), allow(dead_code))]
+pub(crate) struct DocumentCascade<'a> {
+    pub(crate) stylist: &'a style::stylist::Stylist,
+    pub(crate) guards: &'a style::shared_lock::StylesheetGuards<'a>,
 }
 
 /// Building, measuring and placing an inline formatting context: the part of [`InlineText`]
 /// layout runs.
 pub(crate) trait InlineLayoutEngine: InlineText {
+    /// Whether the backend sets lines in vertical writing modes itself, so that an inline
+    /// formatting context runs in physical axes and meets Taffy's writing modes only at its edges.
+    #[cfg_attr(not(feature = "writing-mode"), allow(dead_code))]
+    const SETS_WRITING_MODES: bool;
+
     /// Builds the content of each inline formatting context in `layouts`, rooted at its node, from
     /// the DOM. This is the deferred, possibly parallel, part of box construction.
     fn build_layouts(
         cx: &mut TextContext,
         nodes: &crate::NodeTree,
+        cascade: DocumentCascade<'_>,
         scale: f32,
         layouts: &mut [(NodeId, &mut Self)],
     );
 
-    /// Whether the content holds no text and no inline boxes.
+    /// Whether an element's style changing from `old` to `new` changes what the backend built
+    /// from it, beyond what Blitz's own damage rebuilds for: then the inline formatting context
+    /// it is in is built again.
+    fn style_change_rebuilds(
+        _old: &::style::properties::ComputedValues,
+        _new: &::style::properties::ComputedValues,
+    ) -> bool {
+        false
+    }
+
+    /// Whether the backend's lines take room over the first line for ruby annotations and
+    /// emphasis marks, which the blocks before lend them: then [`LineArea::room_above`] is worked
+    /// out from those blocks, and [`room_below`](Self::room_below) read from them.
+    const READS_ROOM_ABOVE: bool;
+
+    /// Whether the content's first line may take room above it, where the backend reads room
+    /// above: it holds ruby annotations or emphasis marks. Without them the room is not worked out.
+    fn takes_room_above(&self) -> bool {
+        Self::READS_ROOM_ABOVE
+    }
+
+    /// Whether the content is known to hold no text and no inline boxes before it is laid out.
     fn is_empty(&self) -> bool;
 
-    /// Gives the inline boxes the sizes Taffy measured them at, in content order, and readies the
-    /// lines of `style`, the inline root's computed style, to be broken. `text-indent` percentages
-    /// count as zero until the lines are broken, and are then of the width they are broken in.
-    fn prepare(&mut self, sizes: &[BoxMeasure], style: Option<&style::properties::ComputedValues>);
+    /// Readies the content of the inline formatting context rooted at `root` to be broken into
+    /// lines, with its atomic inlines and floats as `lines` says Taffy measured them.
+    /// `text-indent` percentages count as zero until the lines are broken, and are then of the
+    /// width they are broken in.
+    fn prepare(&mut self, doc: &mut crate::BaseDocument, root: NodeId, lines: LinesInputs<'_>);
 
     /// Returns the content's min-content and max-content widths, in CSS pixels, with its
     /// floats: the widest of them is as wide as the content gets at min-content, and at
     /// max-content each paragraph is as wide as its text and the floats anchored in it.
     fn content_widths(&mut self) -> ContentWidths;
 
-    /// Breaks the content into lines `width` CSS pixels wide, or as narrow as `exclusions`
-    /// leaves them, placing each float into it as a line reaches it, and aligns them as `style`,
-    /// the inline root's computed style, says. `padding_border` is the CSS pixels of padding
-    /// and border beside the lines, which scales how far content sized to fit exactly may round
-    /// past `width` without wrapping.
+    /// Breaks the content into lines in `area`, or as narrow as `exclusions` leaves them, placing
+    /// each float into it as a line reaches it, and aligns them as `style`, the inline root's
+    /// computed style, says. `padding_border` is the CSS pixels of padding and border beside
+    /// the lines, which scales how far content sized to fit exactly may round past the area's
+    /// width without wrapping.
     fn break_lines(
         &mut self,
-        width: f32,
+        cx: &mut TextContext,
+        area: LineArea,
         padding_border: f32,
         style: Option<&style::properties::ComputedValues>,
         exclusions: &mut impl LineExclusions,
     );
 
     /// Returns how far the lines reach and where their baselines are, in CSS pixels from the
-    /// content box's top.
-    fn extent(&self) -> LinesExtent;
+    /// content box's top, where `end_padding` CSS pixels of padding after the last line let
+    /// what reaches past it in.
+    fn extent(&self, end_padding: f32) -> LinesExtent;
 
-    /// Returns where the lines put each inline box, in the order they are on the lines.
+    /// Sets the size of the content box the lines are placed in, in CSS pixels.
+    fn set_content_size(&mut self, content: taffy::Size<f32>);
+
+    /// Returns where the lines put each atomic inline and the static position of each absolutely
+    /// positioned box, in the order they are on the lines, on the page: lines that run down the
+    /// page are turned onto the content box [`set_content_size`](Self::set_content_size) gave.
     fn placements(&self) -> impl Iterator<Item = Placement>;
+
+    /// Returns which way the lines run, as the content was last built.
+    fn line_flow(&self) -> LineFlow;
+
+    #[cfg_attr(any(not(text_winkin), not(feature = "floats")), allow(dead_code))]
+    /// Returns where a box that reaches `along` the lines from `along[0]` to `along[1]` and across
+    /// them from `across[0]` to `across[1]` has its top left on the page, in CSS pixels.
+    fn place_on_page(&self, along: [f32; 2], across: [f32; 2]) -> (f32, f32);
+
+    /// Returns how far below the last line its ruby annotations and emphasis marks leave room for
+    /// the block after, in CSS pixels; negative where they reach past it.
+    fn room_below(&self) -> f32;
+
+    #[cfg_attr(not(feature = "floats"), allow(dead_code))]
+    /// Returns the node of the float the content holds by `key`, where it is a node's.
+    fn float_node(key: u64) -> Option<NodeId>;
+
+    /// Returns how far `position: relative` on the non-atomic inline boxes around the atomic
+    /// inline `node` moves it, in CSS pixels, where the backend paints them moved: `containing`
+    /// is the inline root's content box in CSS pixels, and `rtl` its direction.
+    fn inline_shift(
+        doc: &crate::BaseDocument,
+        node: NodeId,
+        containing: taffy::Size<f32>,
+        rtl: bool,
+    ) -> taffy::Point<f32>;
+}
+
+/// What a pass of layout needs of an inline formatting context's atomic inlines and floats,
+/// which says how far each is laid out to measure it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Measure {
+    /// How far each reaches along the line: an intrinsic inline-size pass.
+    InlineSizes,
+    /// Each one's size: a pass that sets the lines to size the block but places nothing.
+    Sizes,
+    /// Each one laid out, as the pass that places them lays them out.
+    Layout,
+}
+
+/// What the content of an inline formatting context is readied with.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LinesInputs<'a> {
+    /// The atomic inlines and floats as Taffy measured them, in content order.
+    pub(crate) sizes: &'a [BoxMeasure],
+    /// What the pass measured them for.
+    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    pub(crate) pass: Measure,
+    /// The containing block's inline size in CSS pixels, which percentages are of.
+    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    pub(crate) basis: f32,
+    /// Whether the lines run down the page, so that what Taffy measured across the page reaches
+    /// along them.
+    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    pub(crate) vertical: bool,
+}
+
+/// The room an inline formatting context's lines are broken in, in CSS pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct LineArea {
+    /// How long a line is where no float is in the way.
+    pub(crate) width: f32,
+    /// How much room over the first line its ruby annotations and emphasis marks may take before
+    /// the line moves down for them.
+    pub(crate) room_above: f32,
+    /// Where the content box ends, which `line-clamp: auto` keeps the lines within.
+    pub(crate) block_end: Option<f32>,
+    /// Whether the pass only sizes the block, so that its lines need no positions.
+    pub(crate) sizes_only: bool,
+    /// The layout pass, which a block placed in it is placed through to its end.
+    pub(crate) pass: u64,
+}
+
+/// Which way an inline formatting context's lines run, and the way they stack.
+#[cfg_attr(not(text_winkin), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LineFlow {
+    /// Across the page, stacking down it.
+    Horizontal,
+    /// Down the page, stacking from the right.
+    VerticalRl,
+    /// Down the page, stacking from the left.
+    VerticalLr,
+    /// Down the page with sideways glyphs, stacking from the right.
+    SidewaysRl,
+    /// Up the page, stacking from the left.
+    SidewaysLr,
+}
+
+impl LineFlow {
+    /// Whether the lines run down or up the page.
+    pub(crate) fn is_vertical(self) -> bool {
+        self != Self::Horizontal
+    }
+
+    /// Whether the lines stack from the right.
+    pub(crate) fn stacks_from_right(self) -> bool {
+        matches!(self, Self::VerticalRl | Self::SidewaysRl)
+    }
 }
 
 /// An atomic inline or a float as Taffy measured it, which the lines are broken with.
@@ -299,7 +459,7 @@ pub(crate) struct ContentWidths {
     pub(crate) float_min: f32,
 }
 
-/// How far an inline formatting context's lines reach, and where their baselines are, in device
+/// How far an inline formatting context's lines reach, and where their baselines are, in CSS
 /// pixels from the content box's top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct LinesExtent {
@@ -329,6 +489,10 @@ pub(crate) struct Placement {
     pub(crate) line_bottom: f32,
     /// Where a block-level absolutely positioned box would have started.
     pub(crate) block_start: f32,
+    /// Whether an absolutely positioned box's static position faces right to left across the
+    /// page, where the lines say: its inline start's way in a horizontal block, and its block
+    /// start's in a vertical one.
+    pub(crate) rtl: Option<bool>,
 }
 
 /// The side of the block a float goes to.
