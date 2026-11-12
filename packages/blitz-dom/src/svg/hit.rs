@@ -78,7 +78,7 @@ fn hit_node(node: &Node, parent_transform: Affine, point: Point) -> Option<NodeI
     let layout = node.element_data()?.svg_layout()?;
     let transform = parent_transform * layout.transform;
     match &layout.kind {
-        SvgLayoutKind::NotRendered => None,
+        SvgLayoutKind::NotRendered | SvgLayoutKind::Resource => None,
         SvgLayoutKind::Group => hit_children(node, transform, point),
         SvgLayoutKind::Switch { child } => {
             let child = node.tree().get((*child)?)?;

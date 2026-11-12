@@ -8,11 +8,13 @@
 //! its object bounding box. The painter reads these results instead of
 //! recomputing geometry every frame.
 
+mod clip_mask;
 mod geometry;
 mod hit;
 mod paint_server;
 mod text;
 
+pub use clip_mask::{SvgClip, SvgClipChild, SvgMask, SvgReference};
 pub use paint_server::{
     SvgGradient, SvgGradientShape, SvgGradientStop, SvgPaintServer, SvgSpreadMethod,
 };
@@ -100,6 +102,9 @@ pub enum SvgLayoutKind {
     /// Not rendered: `display: none`, failing conditional processing
     /// attributes, resource containers, empty shapes and unsupported elements.
     NotRendered,
+    /// `<defs>`, `<clipPath>` and `<mask>`: never rendered directly, but
+    /// their children are laid out so that references to them can use it.
+    Resource,
     /// `<g>` and `<a>`: render all children.
     Group,
     /// `<switch>`: render only the first child whose conditions pass.
@@ -148,6 +153,9 @@ impl SvgLayout {
 
     /// The bounding box in the parent's user space.
     fn bbox_in_parent(&self) -> Option<Rect> {
+        if matches!(self.kind, SvgLayoutKind::Resource) {
+            return None;
+        }
         if let SvgLayoutKind::Shape { path, .. } = &self.kind {
             if self.transform == Affine::IDENTITY {
                 return self.bbox;
@@ -404,6 +412,11 @@ impl BaseDocument {
                 (layout.bbox, children_blending) =
                     self.layout_svg_children(id, viewport, force_children);
             }
+            // Blending inside a resource is isolated by the clip or mask
+            // layer it is painted into.
+            SvgLayoutKind::Resource => {
+                (layout.bbox, _) = self.layout_svg_children(id, viewport, force_children);
+            }
             SvgLayoutKind::Viewport { viewport, .. } => {
                 let viewport = *viewport;
                 (layout.bbox, children_blending) =
@@ -428,11 +441,13 @@ impl BaseDocument {
                 layout.bbox = bbox;
             }
         }
-        layout.has_blending = !matches!(layout.kind, SvgLayoutKind::NotRendered)
-            && (children_blending
-                || self.nodes[id].primary_styles().is_some_and(|style| {
-                    style.get_effects().mix_blend_mode != MixBlendMode::Normal
-                }));
+        layout.has_blending = !matches!(
+            layout.kind,
+            SvgLayoutKind::NotRendered | SvgLayoutKind::Resource
+        ) && (children_blending
+            || self.nodes[id]
+                .primary_styles()
+                .is_some_and(|style| style.get_effects().mix_blend_mode != MixBlendMode::Normal));
 
         let result = (layout.bbox_in_parent(), layout.has_blending);
         let element = self.nodes[id].element_data_mut().unwrap();
@@ -450,7 +465,13 @@ impl BaseDocument {
 fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewport) -> SvgLayout {
     let viewport = viewport.for_element(style);
     let tag = &element.name.local;
-    if style.clone_display().is_none() || is_resource_container(tag) || !conditions_pass(element) {
+    if style.clone_display().is_none() || !conditions_pass(element) {
+        return SvgLayout::not_rendered();
+    }
+    let laid_out_resource = *tag == local_name!("defs")
+        || *tag == local_name!("clipPath")
+        || *tag == local_name!("mask");
+    if is_resource_container(tag) && !laid_out_resource {
         return SvgLayout::not_rendered();
     }
     // SVG content transforms about the user-space origin (the UA stylesheet
@@ -458,7 +479,9 @@ fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewpo
     let transform =
         resolve_2d_transform(style.get_box(), euclid::default::Rect::zero()).unwrap_or_default();
 
-    let kind = if *tag == local_name!("g") || *tag == local_name!("a") {
+    let kind = if laid_out_resource {
+        SvgLayoutKind::Resource
+    } else if *tag == local_name!("g") || *tag == local_name!("a") {
         SvgLayoutKind::Group
     } else if *tag == local_name!("switch") {
         SvgLayoutKind::Switch { child: None }

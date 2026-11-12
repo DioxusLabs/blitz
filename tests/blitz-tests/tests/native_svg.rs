@@ -1250,3 +1250,131 @@ fn hit_testing_finds_content_overflowing_a_visible_svg() {
     assert_hits(&svg("visible"), &[(70.0, 70.0, "outside")]);
     assert_hits(&svg("hidden"), &[(70.0, 70.0, "div")]);
 }
+
+#[test]
+fn clip_path_clips_to_the_union_of_its_children() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="c"><rect width="30" height="30"/><rect x="70" y="70" width="30" height="30"/></clipPath>
+        <rect width="100" height="100" fill="red" clip-path="url(#c)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 10, 10), RED);
+    assert_eq!(pixel(&buf, 90, 90), RED);
+    assert_eq!(pixel(&buf, 50, 50), BLUE);
+    assert_eq!(pixel(&buf, 90, 10), BLUE);
+}
+
+#[test]
+fn clip_path_object_bounding_box_units_and_clip_rule() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="c" clipPathUnits="objectBoundingBox">
+          <path clip-rule="evenodd" d="M0 0H1V1H0Z M0.25 0.25H0.75V0.75H0.25Z"/>
+        </clipPath>
+        <rect x="20" y="20" width="80" height="80" fill="red" clip-path="url(#c)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED);
+    assert_eq!(pixel(&buf, 60, 60), BLUE, "the evenodd hole");
+    assert_eq!(pixel(&buf, 10, 10), BLUE, "outside the bounding box");
+}
+
+#[test]
+fn clip_path_on_a_clip_path_intersects() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="a"><rect width="50" height="100"/></clipPath>
+        <clipPath id="b" clip-path="url(#a)"><rect width="100" height="50"/></clipPath>
+        <rect width="100" height="100" fill="red" clip-path="url(#b)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED);
+    assert_eq!(pixel(&buf, 75, 25), BLUE);
+    assert_eq!(pixel(&buf, 25, 75), BLUE);
+}
+
+#[test]
+fn recursive_clip_paths_ignore_the_cycle() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="c" clip-path="url(#c)"><rect width="50" height="50" clip-path="url(#c)"/></clipPath>
+        <rect width="100" height="100" fill="red" clip-path="url(#c)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED);
+    assert_eq!(pixel(&buf, 75, 75), BLUE);
+}
+
+#[test]
+fn clip_path_to_a_missing_element_is_ignored_and_to_another_element_hides() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <rect id="g" width="0" height="0"/>
+        <rect width="50" height="100" fill="red" clip-path="url(#missing)"/>
+        <rect x="50" width="50" height="100" fill="red" clip-path="url(#g)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 50), RED);
+    assert_eq!(pixel(&buf, 75, 50), BLUE);
+}
+
+#[test]
+fn luminance_and_alpha_masks() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <mask id="lum" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+          <rect width="50" height="50" fill="white"/>
+        </mask>
+        <mask id="alpha" style="mask-type: alpha">
+          <rect y="50" width="50" height="50" fill="black"/>
+        </mask>
+        <rect width="100" height="50" fill="red" mask="url(#lum)"/>
+        <rect y="50" width="100" height="50" fill="red" mask="url(#alpha)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED, "white mask content");
+    assert_eq!(pixel(&buf, 75, 25), BLUE, "no mask content");
+    assert_eq!(pixel(&buf, 25, 75), RED, "opaque black alpha");
+    assert_eq!(pixel(&buf, 75, 75), BLUE, "transparent alpha");
+}
+
+#[test]
+fn mask_content_units_and_masks_on_masks() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <mask id="inner" maskContentUnits="objectBoundingBox">
+          <rect width="1" height="0.5" fill="white"/>
+        </mask>
+        <mask id="outer" maskContentUnits="objectBoundingBox" mask="url(#inner)">
+          <rect width="0.5" height="1" fill="white"/>
+        </mask>
+        <rect width="100" height="100" fill="red" mask="url(#outer)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED);
+    assert_eq!(pixel(&buf, 75, 25), BLUE);
+    assert_eq!(pixel(&buf, 25, 75), BLUE);
+}
+
+#[test]
+fn recursive_masks_ignore_the_cycle() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <mask id="m" mask="url(#m)" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+          <rect width="50" height="100" fill="white" mask="url(#m)"/>
+        </mask>
+        <rect width="100" height="100" fill="red" mask="url(#m)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 50), RED);
+    assert_eq!(pixel(&buf, 75, 50), BLUE);
+}

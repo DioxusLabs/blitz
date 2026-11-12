@@ -116,7 +116,7 @@ fn specifies_transform(style: &ComputedValues) -> bool {
 impl BaseDocument {
     /// The id a reference to an element of this document points at, or
     /// `None` for a reference to another document.
-    fn same_document_id(&self, url: &Url) -> Option<String> {
+    pub(super) fn same_document_id(&self, url: &Url) -> Option<String> {
         if !self.url.is_same_document(url) {
             return None;
         }
