@@ -3,6 +3,7 @@
 
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
+use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::values::computed::Overflow;
 use stylo_taffy::CopyStyleGetters;
 use web_time::{SystemTime, UNIX_EPOCH};
@@ -615,7 +616,7 @@ impl BaseDocument {
         }
     }
 
-    /// Scroll the viewport so that the given element has the requested alignment in each axis.
+    /// Scroll the viewport or ancestor scroll container so that the given element has the requested alignment in each axis.
     pub fn scroll_into_view(
         &mut self,
         node_id: NodeId,
@@ -626,30 +627,155 @@ impl BaseDocument {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
-        let target =
-            node.absolute_position(node.scroll_offset().x as f32, node.scroll_offset().y as f32);
-        let target_size = node.final_layout().size;
+
+        // If target itself is fixed, halt viewport scrolling per W3C CSSOM View §6.1
+        let is_target_fixed = node
+            .primary_styles()
+            .is_some_and(|styles| matches!(styles.clone_position(), Position::Fixed));
+        if is_target_fixed {
+            return;
+        }
+
         let Some(root_id) = self.try_root_element().map(|root| root.id) else {
             return;
         };
-        let scale = self.viewport.scale() as f64;
-        let viewport_width = self.viewport.window_size.0 as f64 / scale;
-        let viewport_height = self.viewport.window_size.1 as f64 / scale;
-        let x = Self::aligned_scroll_offset(
-            self.viewport_scroll().x,
+
+        // Ancestor Resolution:
+        // Traverse upwards via node.parent to find the innermost scroll container.
+        let mut target_container = None;
+        let mut current_id = node.parent;
+
+        while let Some(ancestor_id) = current_id {
+            if ancestor_id == root_id {
+                break;
+            }
+            let Some(ancestor) = self.nodes.get(ancestor_id) else {
+                break;
+            };
+
+            let is_fixed = ancestor
+                .primary_styles()
+                .is_some_and(|styles| matches!(styles.clone_position(), Position::Fixed));
+
+            let (_current, _min, max) = self.scroll_state(ScrollTarget::Node(ancestor_id), false);
+            let (can_scroll_x, can_scroll_y) = ancestor
+                .primary_styles()
+                .map(|styles| {
+                    (
+                        matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto)
+                            && max.x > 0.5,
+                        matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
+                            && max.y > 0.5,
+                    )
+                })
+                .unwrap_or((false, false));
+
+            if can_scroll_x || can_scroll_y {
+                target_container = Some(ancestor_id);
+                break;
+            }
+
+            if is_fixed {
+                // Halt viewport scrolling and do not scroll root (per W3C CSSOM View §6.1)
+                return;
+            }
+
+            current_id = ancestor.parent;
+        }
+
+        let target_container = target_container.unwrap_or(root_id);
+
+        let node_abs =
+            node.absolute_position(node.scroll_offset().x as f32, node.scroll_offset().y as f32);
+        let target_size = node.final_layout().size;
+
+        let (
             viewport_width,
-            target.x as f64,
+            viewport_height,
+            target_start_x,
+            target_start_y,
+            current,
+            max,
+            can_scroll_x,
+            can_scroll_y,
+        ) = if target_container == root_id {
+            let scale = self.viewport.scale() as f64;
+            let viewport_width = self.viewport.window_size.0 as f64 / scale;
+            let viewport_height = self.viewport.window_size.1 as f64 / scale;
+            let (current, _min, max) = self.scroll_state(ScrollTarget::Viewport, false);
+            let can_scroll_x = max.x > 0.5;
+            let can_scroll_y = max.y > 0.5;
+            (
+                viewport_width,
+                viewport_height,
+                node_abs.x as f64,
+                node_abs.y as f64,
+                current,
+                max,
+                can_scroll_x,
+                can_scroll_y,
+            )
+        } else {
+            let Some(container) = self.nodes.get(target_container) else {
+                return;
+            };
+            let container_abs = container.absolute_position(0.0, 0.0);
+            let container_border = container.final_layout().border;
+            let target_start_x = (node_abs.x - container_abs.x - container_border.left) as f64;
+            let target_start_y = (node_abs.y - container_abs.y - container_border.top) as f64;
+            let viewport_width = container.client_width() as f64;
+            let viewport_height = container.client_height() as f64;
+            let (current, _min, max) = self.scroll_state(ScrollTarget::Node(target_container), false);
+            let (can_scroll_x, can_scroll_y) = container
+                .primary_styles()
+                .map(|styles| {
+                    (
+                        matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto)
+                            && max.x > 0.5,
+                        matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
+                            && max.y > 0.5,
+                    )
+                })
+                .unwrap_or((false, false));
+            (
+                viewport_width,
+                viewport_height,
+                target_start_x,
+                target_start_y,
+                current,
+                max,
+                can_scroll_x,
+                can_scroll_y,
+            )
+        };
+
+        let aligned_x = Self::aligned_scroll_offset(
+            current.x,
+            viewport_width,
+            target_start_x,
             target_size.width as f64,
             horizontal,
         );
-        let y = Self::aligned_scroll_offset(
-            self.viewport_scroll().y,
+        let aligned_y = Self::aligned_scroll_offset(
+            current.y,
             viewport_height,
-            target.y as f64,
+            target_start_y,
             target_size.height as f64,
             vertical,
         );
-        self.scroll_to(root_id, x, y, behavior);
+
+        let target_x = if can_scroll_x {
+            aligned_x.clamp(0.0, max.x.max(0.0))
+        } else {
+            current.x
+        };
+        let target_y = if can_scroll_y {
+            aligned_y.clamp(0.0, max.y.max(0.0))
+        } else {
+            current.y
+        };
+
+        self.scroll_to(target_container, target_x, target_y, behavior);
     }
 
     /// Resolve a URL fragment (the `#...` part of a URL) to a scroll target.
@@ -775,5 +901,226 @@ impl BaseDocument {
                 // Do nothing
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    fn make_test_doc() -> (BaseDocument, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![Attribute {
+                name: qual_name!("style"),
+                value: "margin: 0; width: 800px; height: 600px;".to_string(),
+            }],
+        );
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        (doc, body)
+    }
+
+    fn create_styled_div(doc: &mut BaseDocument, style: &str) -> NodeId {
+        let full_style = if style.contains("display:") {
+            style.to_string()
+        } else {
+            format!("display: block; {style}")
+        };
+        let mut mutator = doc.mutate();
+        mutator.create_element(
+            qual_name!("div"),
+            vec![Attribute {
+                name: qual_name!("style"),
+                value: full_style,
+            }],
+        )
+    }
+
+    #[test]
+    fn scroll_into_view_overflow_auto_container_scrolls_container_not_viewport() {
+        let (mut doc, body) = make_test_doc();
+        let container = create_styled_div(
+            &mut doc,
+            "width: 300px; height: 200px; overflow-y: auto; overflow-x: hidden;",
+        );
+        let spacer = create_styled_div(&mut doc, "width: 100px; height: 500px;");
+        let child = create_styled_div(&mut doc, "width: 100px; height: 50px;");
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(container, &[spacer, child]);
+            mutator.append_children(body, &[container]);
+        }
+
+        doc.resolve(0.0);
+
+        doc.scroll_into_view(
+            child,
+            ScrollBehavior::Instant,
+            ScrollLogicalPosition::Start,
+            ScrollLogicalPosition::Start,
+        );
+
+        let container_scroll = *doc.nodes[container].scroll_offset();
+        let viewport_scroll = doc.viewport_scroll();
+
+        assert!(
+            container_scroll.y > 0.0,
+            "expected container to scroll, got {container_scroll:?}"
+        );
+        assert_eq!(
+            viewport_scroll,
+            Point { x: 0.0, y: 0.0 },
+            "expected viewport to remain at (0, 0), got {viewport_scroll:?}"
+        );
+    }
+
+    #[test]
+    fn scroll_into_view_inside_position_fixed_does_not_scroll_viewport() {
+        let (mut doc, body) = make_test_doc();
+        let body_spacer = create_styled_div(&mut doc, "width: 100px; height: 2000px;");
+        let fixed_container = create_styled_div(
+            &mut doc,
+            "position: fixed; top: 100px; left: 100px; width: 200px; height: 200px;",
+        );
+        let child = create_styled_div(&mut doc, "width: 50px; height: 50px;");
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(fixed_container, &[child]);
+            mutator.append_children(body, &[body_spacer, fixed_container]);
+        }
+
+        doc.resolve(0.0);
+
+        doc.scroll_into_view(
+            child,
+            ScrollBehavior::Instant,
+            ScrollLogicalPosition::Start,
+            ScrollLogicalPosition::Start,
+        );
+
+        let viewport_scroll = doc.viewport_scroll();
+        assert_eq!(
+            viewport_scroll,
+            Point { x: 0.0, y: 0.0 },
+            "expected fixed container child scroll_into_view to not scroll viewport, got {viewport_scroll:?}"
+        );
+    }
+
+    #[test]
+    fn scroll_into_view_target_itself_fixed_does_not_scroll_viewport() {
+        let (mut doc, body) = make_test_doc();
+        let body_spacer = create_styled_div(&mut doc, "width: 100px; height: 2000px;");
+        let fixed_child = create_styled_div(
+            &mut doc,
+            "position: fixed; top: 500px; left: 0px; width: 100px; height: 50px;",
+        );
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(body, &[body_spacer, fixed_child]);
+        }
+
+        doc.resolve(0.0);
+
+        doc.scroll_into_view(
+            fixed_child,
+            ScrollBehavior::Instant,
+            ScrollLogicalPosition::Start,
+            ScrollLogicalPosition::Start,
+        );
+
+        let viewport_scroll = doc.viewport_scroll();
+        assert_eq!(
+            viewport_scroll,
+            Point { x: 0.0, y: 0.0 },
+            "expected fixed target to not scroll viewport, got {viewport_scroll:?}"
+        );
+    }
+
+    #[test]
+    fn scroll_into_view_offsets_clamped_non_negative() {
+        let (mut doc, body) = make_test_doc();
+        let container = create_styled_div(
+            &mut doc,
+            "width: 300px; height: 300px; overflow-y: auto; overflow-x: auto;",
+        );
+        let child = create_styled_div(&mut doc, "width: 50px; height: 50px;");
+        let spacer = create_styled_div(&mut doc, "width: 600px; height: 600px;");
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(container, &[child, spacer]);
+            mutator.append_children(body, &[container]);
+        }
+
+        doc.resolve(0.0);
+
+        doc.scroll_into_view(
+            child,
+            ScrollBehavior::Instant,
+            ScrollLogicalPosition::Center,
+            ScrollLogicalPosition::Center,
+        );
+
+        let container_scroll = *doc.nodes[container].scroll_offset();
+        assert!(
+            container_scroll.x >= 0.0,
+            "expected x >= 0.0, got {}",
+            container_scroll.x
+        );
+        assert!(
+            container_scroll.y >= 0.0,
+            "expected y >= 0.0, got {}",
+            container_scroll.y
+        );
+        assert_eq!(
+            container_scroll,
+            Point { x: 0.0, y: 0.0 },
+            "expected clamped to (0, 0), got {container_scroll:?}"
+        );
+    }
+
+    #[test]
+    fn scroll_into_view_fallback_to_viewport_when_no_scroll_container() {
+        let (mut doc, body) = make_test_doc();
+        let spacer = create_styled_div(&mut doc, "width: 100px; height: 1000px;");
+        let child = create_styled_div(&mut doc, "width: 100px; height: 50px;");
+
+        {
+            let mut mutator = doc.mutate();
+            mutator.append_children(body, &[spacer, child]);
+        }
+
+        doc.resolve(0.0);
+
+        doc.scroll_into_view(
+            child,
+            ScrollBehavior::Instant,
+            ScrollLogicalPosition::Start,
+            ScrollLogicalPosition::Start,
+        );
+
+        let viewport_scroll = doc.viewport_scroll();
+        assert!(
+            viewport_scroll.y > 0.0,
+            "expected viewport to scroll for root child, got {viewport_scroll:?}"
+        );
+        assert!(
+            viewport_scroll.x >= 0.0 && viewport_scroll.y >= 0.0,
+            "expected non-negative scroll offsets"
+        );
     }
 }
