@@ -956,3 +956,43 @@ fn references_resolve_against_the_document_url() {
     let buffer = render(&mut doc);
     assert_eq!(pixel(&buffer, 50, 50), LIME);
 }
+
+fn count(buffer: &[u8], color: [u8; 3], xs: std::ops::Range<usize>) -> usize {
+    (0..H as usize)
+        .flat_map(|y| xs.clone().map(move |x| (x, y)))
+        .filter(|&(x, y)| pixel(buffer, x, y) == color)
+        .count()
+}
+
+const TEXT: &str = r#"<svg width="100" height="100"><text id="t" x="5" y="80" font-size="70" fill="red">H<tspan fill="lime">H</tspan></text></svg>"#;
+
+#[test]
+fn native_svg_paints_text_and_tspan_fills() {
+    let mut doc = load(TEXT, true);
+    let buffer = render(&mut doc);
+    assert!(
+        count(&buffer, RED, 0..50) > 100,
+        "the text's glyph is filled"
+    );
+    assert!(
+        count(&buffer, LIME, 40..100) > 100,
+        "the tspan's glyph follows it"
+    );
+    assert_eq!(count(&buffer, LIME, 0..30), 0);
+}
+
+#[test]
+fn native_svg_text_position_attributes_relayout() {
+    let mut doc = load(TEXT, true);
+    let text = doc.query_selector("#t").unwrap().unwrap();
+    doc.mutate().set_attribute(text, attr("x"), "200");
+    doc.resolve(0.0);
+    let buffer = render(&mut doc);
+    assert_eq!(count(&buffer, RED, 0..100), 0);
+
+    doc.mutate().set_attribute(text, attr("x"), "100");
+    doc.mutate().set_attribute(text, attr("text-anchor"), "end");
+    doc.resolve(0.0);
+    let buffer = render(&mut doc);
+    assert!(count(&buffer, RED, 0..60) > 100, "anchored at its end");
+}
