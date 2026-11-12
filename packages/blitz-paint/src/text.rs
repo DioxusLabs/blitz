@@ -179,6 +179,7 @@ fn resolve_decoration_entry(
     doc: &BaseDocument,
     node_id: NodeId,
     parent: Option<&DecorationStackEntry>,
+    scale: f64,
 ) -> DecorationStackEntry {
     let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
         return DecorationStackEntry {
@@ -199,7 +200,6 @@ fn resolve_decoration_entry(
 
     // `text-shadow` inherits, so the run's innermost node carries the effective list.
     // Lengths are in CSS pixels; glyph runs are laid out in device pixels, so scale here.
-    let scale = doc.viewport().scale_f64();
     let text_shadows = (!itext.text_shadow.0.is_empty()).then(|| {
         itext
             .text_shadow
@@ -302,8 +302,6 @@ struct LineDecoration {
     /// Geometry from the first run the box covers (fallback when it has no own text on
     /// this line, e.g. it only wraps differently-sized descendants).
     first: Option<DecorationRunGeometry>,
-    /// The decorating box's own `text-shadow`, which also applies to its decorations.
-    shadows: Option<Arc<[ResolvedTextShadow]>>,
 }
 
 /// Per glyph run values recorded while walking a line, so the line can be painted in
@@ -471,8 +469,9 @@ pub(crate) struct TextPaintOptions {
 
 /// Paint the decorations accumulated for one line, one line per decorating box.
 ///
-/// When `shadow` is set, the decorations are drawn as that text shadow: offset and in the
-/// shadow colour, and only for boxes whose `text-shadow` list is `shadow_list`.
+/// When `shadow` is set, the decorations are drawn as that text shadow: offset, in the
+/// shadow colour and clipped to the given rect (the extent of the shadowed runs), since a
+/// decoration takes the `text-shadow` of the text it is drawn under, as in Blink and Gecko.
 #[allow(clippy::too_many_arguments)]
 fn flush_line_decorations(
     scene: &mut impl PaintScene,
@@ -482,7 +481,7 @@ fn flush_line_decorations(
     win_ascent_ratios: &mut WinAscentCache,
     inline_root_id: NodeId,
     line_baseline: f32,
-    shadow: Option<(&ResolvedTextShadow, &Arc<[ResolvedTextShadow]>)>,
+    shadow: Option<(&ResolvedTextShadow, Rect)>,
 ) {
     let TextPaintOptions {
         scale,
@@ -498,14 +497,11 @@ fn flush_line_decorations(
     // Draw innermost boxes first so ancestors' decorations paint on top, matching the
     // per-run drawing order this replaced (`stack.iter().rev()`).
     for acc in deco_boxes.iter().rev() {
-        if let Some((_, shadow_list)) = shadow {
-            let same_list = acc
-                .shadows
-                .as_ref()
-                .is_some_and(|list| Arc::ptr_eq(list, shadow_list));
-            if !same_list {
-                continue;
-            }
+        let shadow_clip = shadow.map(|(_, clip)| clip);
+        if let Some(clip) = shadow_clip
+            && (acc.max_x <= clip.x0 || acc.min_x >= clip.x1)
+        {
+            continue;
         }
 
         let deco = &acc.deco;
@@ -528,6 +524,10 @@ fn flush_line_decorations(
         let width = acc.max_x - acc.min_x;
         if width <= 0.0 {
             continue;
+        }
+        let clip = shadow_clip.filter(|clip| acc.min_x < clip.x0 || acc.max_x > clip.x1);
+        if let Some(clip) = &clip {
+            scene.push_clip_layer(Fill::NonZero, transform, clip);
         }
         let brush = anyrender::Paint::from(brush_override.unwrap_or(deco.color));
 
@@ -664,6 +664,9 @@ fn flush_line_decorations(
                 inset_end,
             );
         }
+        if clip.is_some() {
+            scene.pop_layer();
+        }
     }
 }
 
@@ -744,7 +747,7 @@ pub(crate) fn stroke_text<'a>(
                 .count();
             stack.truncate(shared);
             for &node_id in &path_scratch[shared..] {
-                let entry = resolve_decoration_entry(doc, node_id, stack.last());
+                let entry = resolve_decoration_entry(doc, node_id, stack.last(), scale);
                 stack.push(entry);
             }
 
@@ -790,11 +793,6 @@ pub(crate) fn stroke_text<'a>(
                 let idx = match deco_boxes.iter().position(|d| d.node_id == entry.node_id) {
                     Some(idx) => idx,
                     None => {
-                        let shadows = entry
-                            .text_shadows
-                            .clone()
-                            .filter(|_| brush_override.is_none());
-                        line_has_shadows |= shadows.is_some();
                         deco_boxes.push(LineDecoration {
                             node_id: entry.node_id,
                             deco: entry.decoration.clone().unwrap(),
@@ -802,7 +800,6 @@ pub(crate) fn stroke_text<'a>(
                             max_x: f64::NEG_INFINITY,
                             own: None,
                             first: None,
-                            shadows,
                         });
                         deco_boxes.len() - 1
                     }
@@ -885,48 +882,47 @@ fn draw_line_text_shadows(
 ) {
     let line_metrics = line.metrics();
     let line_baseline = line_metrics.baseline;
+    let line_height = (line_metrics.block_max_coord - line_metrics.block_min_coord) as f64;
 
-    let mut runs = glyph_runs(line).zip(run_records.iter()).peekable();
-    while let Some((first_run, first_record)) = runs.next() {
-        let Some(shadow_list) = &first_record.shadows else {
+    let mut start = 0;
+    while start < run_records.len() {
+        let Some(shadow_list) = &run_records[start].shadows else {
+            start += 1;
             continue;
         };
 
-        // Gather the batch: this run plus following runs with the same shadow list.
-        let mut batch = vec![first_run];
-        while let Some((run, _)) = runs.next_if(|(_, record)| {
-            record
-                .shadows
-                .as_ref()
-                .is_some_and(|list| Arc::ptr_eq(list, shadow_list))
-        }) {
-            batch.push(run);
-        }
+        // The batch: this run plus following runs with the same shadow list.
+        let end = start
+            + run_records[start..]
+                .iter()
+                .take_while(|record| {
+                    record
+                        .shadows
+                        .as_ref()
+                        .is_some_and(|list| Arc::ptr_eq(list, shadow_list))
+                })
+                .count();
+        let batch = || glyph_runs(line).skip(start).take(end - start);
 
-        // Decorations of boxes with this same shadow list are shadowed along with the
-        // glyphs. Their extent bounds the blur layer's clip together with the runs.
-        let batch_bounds = {
-            let mut bounds: Option<Rect> = None;
-            for run in &batch {
-                let rect = glyph_run_rect(run);
-                bounds = Some(bounds.map_or(rect, |b| b.union(rect)));
-            }
-            for acc in deco_boxes {
-                let same = acc
-                    .shadows
-                    .as_ref()
-                    .is_some_and(|list| Arc::ptr_eq(list, shadow_list));
-                if same && acc.max_x > acc.min_x {
-                    let rect = Rect::new(
-                        acc.min_x,
-                        line_metrics.block_min_coord as f64,
-                        acc.max_x,
-                        line_metrics.block_max_coord as f64,
-                    );
-                    bounds = Some(bounds.map_or(rect, |b| b.union(rect)));
-                }
-            }
-            bounds.unwrap_or(Rect::ZERO)
+        let glyph_bounds = batch()
+            .map(|run| glyph_run_rect(&run))
+            .reduce(|a, b| a.union(b))
+            .unwrap_or(Rect::ZERO);
+        // Decorations drawn under these runs are shadowed with them, clipped to the runs'
+        // horizontal extent. The vertical extent is generous to cover any decoration style.
+        let has_decorations = deco_boxes
+            .iter()
+            .any(|acc| acc.max_x > glyph_bounds.x0 && acc.min_x < glyph_bounds.x1);
+        let deco_clip = Rect::new(
+            glyph_bounds.x0,
+            line_metrics.block_min_coord as f64 - line_height,
+            glyph_bounds.x1,
+            line_metrics.block_max_coord as f64 + line_height,
+        );
+        let batch_bounds = if has_decorations {
+            glyph_bounds.union(deco_clip)
+        } else {
+            glyph_bounds
         };
 
         for shadow in shadow_list.iter().rev() {
@@ -950,24 +946,28 @@ fn draw_line_text_shadows(
             }
 
             let shadow_transform = transform * Affine::translate(shadow.offset);
-            for run in &batch {
-                draw_glyph_run(scene, run, shadow.color, shadow_transform);
+            for run in batch() {
+                draw_glyph_run(scene, &run, shadow.color, shadow_transform);
             }
-            flush_line_decorations(
-                scene,
-                transform,
-                options,
-                deco_boxes,
-                win_ascent_ratios,
-                inline_root_id,
-                line_baseline,
-                Some((shadow, shadow_list)),
-            );
+            if has_decorations {
+                flush_line_decorations(
+                    scene,
+                    transform,
+                    options,
+                    deco_boxes,
+                    win_ascent_ratios,
+                    inline_root_id,
+                    line_baseline,
+                    Some((shadow, deco_clip)),
+                );
+            }
 
             if shadow.is_blurred() {
                 scene.pop_layer();
             }
         }
+
+        start = end;
     }
 }
 
