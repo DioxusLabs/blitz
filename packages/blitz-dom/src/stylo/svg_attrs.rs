@@ -45,9 +45,20 @@ pub(crate) fn svg_presentation_hint(
     if !is_presentation_attribute(tag, name) {
         return;
     }
+    // `gradientTransform` is the presentation attribute for `transform` on
+    // gradients. <https://svgwg.org/svg2-draft/pservers.html#LinearGradientElementGradientTransformAttribute>
+    let name = match name {
+        "gradientTransform" if matches!(tag, "linearGradient" | "radialGradient") => "transform",
+        _ => name,
+    };
     let translated;
     let value = match name {
         "transform" => {
+            // An empty list is an invalid value, not `none`, so it does not
+            // count as specified (a gradient then inherits its template's).
+            if value.trim().is_empty() {
+                return;
+            }
             let Some(css) = svg_transform_to_css(value) else {
                 return;
             };

@@ -268,16 +268,45 @@ impl ElementCx<'_, '_> {
 }
 
 fn gradient_paint(gradient: &SvgGradient, alpha: f32) -> ShapePaint {
+    // A padded concentric gradient with a focal radius is a plain radial
+    // gradient whose stops start at `fr / r`.
+    let (shape, start_offset) = match gradient.shape {
+        SvgGradientShape::Radial {
+            focal,
+            focal_radius,
+            center,
+            radius,
+        } if focal == center
+            && focal_radius > 0.0
+            && focal_radius < radius
+            && gradient.spread == SvgSpreadMethod::Pad =>
+        {
+            let shape = SvgGradientShape::Radial {
+                focal,
+                focal_radius: 0.0,
+                center,
+                radius,
+            };
+            (shape, (focal_radius / radius) as f32)
+        }
+        shape => (shape, 0.0),
+    };
     let stops: Vec<ColorStop> = gradient
         .stops
         .iter()
         .map(|stop| ColorStop {
-            offset: stop.offset,
+            offset: start_offset + stop.offset * (1.0 - start_offset),
             color: DynamicColor::from_alpha_color(stop.color.as_srgb_color().multiply_alpha(alpha)),
         })
         .collect();
-    let mut brush = match gradient.shape {
+    let mut brush = match shape {
         SvgGradientShape::Linear { start, end } => Gradient::new_linear(start, end),
+        SvgGradientShape::Radial {
+            focal,
+            focal_radius,
+            center,
+            radius,
+        } if focal == center && focal_radius == 0.0 => Gradient::new_radial(center, radius as f32),
         SvgGradientShape::Radial {
             focal,
             focal_radius,

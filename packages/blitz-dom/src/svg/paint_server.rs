@@ -14,8 +14,8 @@ use style::values::computed::url::ComputedUrl;
 
 use super::geometry::{font_size, resolve_svg_length};
 use super::{SvgViewport, attr};
-use crate::BaseDocument;
 use crate::node::{ElementData, Node};
+use crate::{BaseDocument, resolve_2d_transform};
 
 /// The longest `href` chain followed between gradients.
 const MAX_HREF_DEPTH: usize = 32;
@@ -193,9 +193,13 @@ impl BaseDocument {
         } else {
             Affine::IDENTITY
         };
-        let gradient_transform = any_attr("gradientTransform")
-            .and_then(|v| v.parse::<svgtypes::Transform>().ok())
-            .map(|t| Affine::new([t.a, t.b, t.c, t.d, t.e, t.f]))
+        // `gradientTransform` maps to the `transform` property, so a gradient
+        // specifies one when its computed transform is not `none`.
+        let gradient_transform = chain
+            .iter()
+            .filter_map(|n| n.primary_styles())
+            .find(|style| !style.get_box().transform.0.is_empty())
+            .and_then(|style| resolve_2d_transform(style.get_box(), euclid::default::Rect::zero()))
             .unwrap_or_default();
         // A non-invertible transform makes the reference invalid.
         if gradient_transform.determinant().abs() < f64::EPSILON {
@@ -286,8 +290,10 @@ impl BaseDocument {
             let offset = attr(element, "offset")
                 .and_then(|v| v.trim().parse::<svgtypes::Length>().ok())
                 .map_or(0.0, |len| match len.unit {
+                    svgtypes::LengthUnit::None => len.number,
                     svgtypes::LengthUnit::Percent => len.number / 100.0,
-                    _ => len.number,
+                    // Only numbers and percentages are valid.
+                    _ => 0.0,
                 }) as f32;
             let offset = offset.clamp(0.0, 1.0).max(last_offset);
             last_offset = offset;
