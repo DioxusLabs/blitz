@@ -51,8 +51,8 @@ use taffy::Layout;
 /// An opacity just below 1.0, used to force the renderer to allocate an isolated
 /// buffer for mask and text-clip isolation layers. Renderers (e.g. vello_cpu) may optimize
 /// layers with `Mix::Normal`/`Compose::SrcOver` and an opacity of exactly 1.0 into
-/// plain non-isolated clip layers, in which case the `Compose::DestIn` mask
-/// compositing would erase the backdrop behind the element rather than just the
+/// plain non-isolated clip layers, in which case the mask layer (or `Compose::DestIn`
+/// text-clip layer) would erase the backdrop behind the element rather than just the
 /// element's own content.
 pub(super) const ALMOST_OPAQUE: f32 = 1.0 - f32::EPSILON;
 
