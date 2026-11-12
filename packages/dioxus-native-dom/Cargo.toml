@@ -10,7 +10,9 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "svg", "system-fonts", "text-transform-icu"]
+default = ["accessibility", "svg", "system-fonts", "text-transform-icu", "parley"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["blitz-dom/parley"]
 
 # DOM features
 svg = ["blitz-dom/svg"]

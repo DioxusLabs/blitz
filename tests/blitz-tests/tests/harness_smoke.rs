@@ -2,6 +2,7 @@
 //! document construction, inspection, and input synthesis for both
 //! `HtmlDocument` and `DioxusDocument` backed harnesses.
 
+use blitz_dom::text::EditableText as _;
 use blitz_test_harness::Harness;
 use dioxus::prelude::*;
 
