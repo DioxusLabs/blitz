@@ -24,37 +24,40 @@
 use cssparser::Parser;
 use selectors::matching::QuirksMode;
 use style::parser::ParserContext;
-use style::properties::{
-    Importance, PropertyDeclaration, PropertyDeclarationBlock, PropertyId,
-    SourcePropertyDeclaration,
-};
+use style::properties::{PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
 use style::stylesheets::{CssRuleType, Origin, UrlExtraData};
 use style::values::specified::svg::DProperty;
 use style::values::specified::svg_path::SVGPathData;
 use style_traits::ParsingMode;
 
 /// Parse one SVG presentation attribute on element `tag` into CSS
-/// declarations (a shorthand such as `font` expands into several). `None`
-/// when `name` is not a presentation attribute for this element or `value`
-/// does not parse as that property's value.
+/// declarations (a shorthand such as `font` expands into several), pushed
+/// onto `out`, a stack-allocated buffer the caller reuses across attributes.
+/// Nothing is pushed when `name` is not a presentation attribute for this
+/// element or `value` does not parse as that property's value.
 pub(crate) fn svg_presentation_hint(
     tag: &str,
     name: &str,
     value: &str,
     url_extra_data: &UrlExtraData,
-) -> Option<Vec<PropertyDeclaration>> {
+    out: &mut SourcePropertyDeclaration,
+) {
     if !is_presentation_attribute(tag, name) {
-        return None;
+        return;
     }
     let translated;
     let value = match name {
         "transform" => {
-            translated = svg_transform_to_css(value)?;
+            let Some(css) = svg_transform_to_css(value) else {
+                return;
+            };
+            translated = css;
             translated.as_str()
         }
         "d" => {
             let (path, _ok) = SVGPathData::parse_bytes(value.as_bytes());
-            return Some(vec![PropertyDeclaration::D(DProperty::Path(path))]);
+            out.push(PropertyDeclaration::D(DProperty::Path(path)));
+            return;
         }
         _ => value,
     };
@@ -71,14 +74,13 @@ pub(crate) fn svg_presentation_hint(
         Default::default(),
     );
 
-    let property_id = PropertyId::parse(name, &context).ok()?;
-    let mut declaration = SourcePropertyDeclaration::default();
+    let Ok(property_id) = PropertyId::parse(name, &context) else {
+        return;
+    };
     let mut parser = Parser::new(value);
-    PropertyDeclaration::parse_into(&mut declaration, property_id, &mut context, &mut parser)
-        .ok()?;
-    let mut block = PropertyDeclarationBlock::new();
-    block.extend(declaration.drain(), Importance::Normal);
-    Some(block.declarations().to_vec())
+    if PropertyDeclaration::parse_into(out, property_id, &mut context, &mut parser).is_err() {
+        out.declarations.clear();
+    }
 }
 
 /// <https://svgwg.org/svg2-draft/styling.html#PresentationAttributes>: the
@@ -86,6 +88,8 @@ pub(crate) fn svg_presentation_hint(
 /// of; every other CSS property is a presentation attribute on all elements.
 fn is_presentation_attribute(tag: &str, name: &str) -> bool {
     match name {
+        // `all` is a CSS shorthand but not an SVG presentation attribute.
+        "all" => false,
         "cx" | "cy" => matches!(tag, "circle" | "ellipse"),
         "r" => tag == "circle",
         "rx" | "ry" => matches!(tag, "ellipse" | "rect"),
@@ -131,7 +135,14 @@ mod tests {
     }
 
     fn parse_on(tag: &str, name: &str, value: &str) -> Vec<PropertyDeclaration> {
-        svg_presentation_hint(tag, name, value, &url_data()).unwrap_or_default()
+        let mut out = SourcePropertyDeclaration::default();
+        svg_presentation_hint(tag, name, value, &url_data(), &mut out);
+        out.drain().declarations.collect()
+    }
+
+    #[test]
+    fn all_shorthand_is_not_a_presentation_attribute() {
+        assert!(parse_on("rect", "all", "unset").is_empty());
     }
 
     #[test]
@@ -158,8 +169,6 @@ mod tests {
             panic!("{decls:?}");
         };
         assert_eq!(path.commands().len(), 2);
-        // `path("...")` as a CSS value would have rejected the whole thing.
-        assert!(parse_on("path", "d", "").is_empty() || true);
     }
 
     #[test]

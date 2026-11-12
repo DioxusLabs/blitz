@@ -244,6 +244,10 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     #[cfg(feature = "svg")]
     let svg_url_data =
         (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
+    // Stack buffer large enough for one declaration (or one expanded
+    // shorthand), reused for every presentation attribute on the element.
+    #[cfg(feature = "svg")]
+    let mut svg_hint = style::properties::SourcePropertyDeclaration::default();
 
     for attr in elem.attrs() {
         let name = &attr.name.local;
@@ -440,9 +444,9 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         if let Some(url_data) = &svg_url_data
             && attr.name.ns == ns!()
             && !is_svg_root_size
-            && let Some(decls) = super::svg_attrs::svg_presentation_hint(tag, name, value, url_data)
         {
-            for decl in decls {
+            super::svg_attrs::svg_presentation_hint(tag, name, value, url_data, &mut svg_hint);
+            for decl in svg_hint.drain().declarations {
                 push_style(decl);
             }
         }
