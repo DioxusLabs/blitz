@@ -74,6 +74,7 @@ pub(crate) fn make_device(
     Device::new(
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
         Box::new(BlitzFontMetricsProvider { font_ctx }),
+        "Submit Query".into(),
         MediaData {
             media_type,
             viewport_size,

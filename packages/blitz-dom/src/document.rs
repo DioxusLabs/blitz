@@ -120,7 +120,7 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
         style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
         style_config::set_pref!("layout.css.text-overflow.enabled", true);
-        style_config::set_pref!("layout.css.text-underline.enabled", true);
+        style_config::set_pref!("layout.css.text-underline-position.enabled", true);
         style_config::set_pref!("layout.css.view-transitions.enabled", true);
         style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
         style_config::set_pref!("layout.css.zoom.enabled", true);
