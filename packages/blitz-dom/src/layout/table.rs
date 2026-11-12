@@ -725,6 +725,12 @@ fn collect_table_cells(
                     row.is_constrained = true;
                 }
             }
+            // The cell's height is its least, as when it lays out its own content.
+            (style.size.height, style.min_size.height) = stylo_taffy::convert::table_cell_height(
+                stylo_style.clone_display(),
+                style.size.height,
+                style.min_size.height,
+            );
 
             style.size.width = style_helpers::auto();
             cells.push(TableCell {

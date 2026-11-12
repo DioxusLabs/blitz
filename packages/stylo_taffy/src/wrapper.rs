@@ -63,6 +63,17 @@ pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>> {
 impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
     /// The display used for contents layout, including button-input fixups.
     #[inline]
+    /// The physical height and min-height as laid out: a table cell's height is its least
+    /// ([`convert::table_cell_height`]).
+    fn cell_height(&self) -> (taffy::Dimension, taffy::LengthPercentageAuto) {
+        let position_styles = self.style.get_position();
+        convert::table_cell_height(
+            self.style.clone_display(),
+            convert::dimension(&position_styles.height),
+            convert::min_size(&position_styles.min_height),
+        )
+    }
+
     pub fn effective_display(&self) -> stylo::Display {
         let display = self.style.clone_display();
         if self.flags.contains(StyleFlags::IS_BUTTON_INPUT) {
@@ -250,18 +261,20 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     #[inline]
     fn size(&self) -> taffy::Size<taffy::Dimension> {
         let position_styles = self.style.get_position();
+        let (height, _) = self.cell_height();
         self.size(taffy::Size {
             width: convert::dimension(&position_styles.width),
-            height: convert::dimension(&position_styles.height),
+            height,
         })
     }
 
     #[inline]
     fn min_size(&self) -> taffy::Size<taffy::LengthPercentageAuto> {
         let position_styles = self.style.get_position();
+        let (_, min_height) = self.cell_height();
         self.size(taffy::Size {
             width: convert::min_size(&position_styles.min_width),
-            height: convert::min_size(&position_styles.min_height),
+            height: min_height,
         })
     }
 
