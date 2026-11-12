@@ -89,19 +89,15 @@ fn units_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     attr(node.element_data()?, name).map(str::trim)
 }
 
-/// The `clip-rule` of a clip path child. It is read from presentation
-/// attributes, inherited up to the `<clipPath>`, because Stylo only supports
-/// the property for Gecko.
-fn clip_rule_evenodd(node: &Node, clip_path: NodeId) -> bool {
+/// The `clip-rule` of a clip path child. It is read from inherited
+/// presentation attributes because Stylo only supports the property for Gecko.
+fn clip_rule_evenodd(node: &Node) -> bool {
     let mut current = Some(node);
     while let Some(n) = current {
         match units_attr(n, "clip-rule") {
             Some("evenodd") => return true,
             Some("nonzero") => return false,
             _ => {}
-        }
-        if n.id == clip_path {
-            break;
         }
         current = n.parent.map(|p| n.with(p));
     }
@@ -202,7 +198,7 @@ impl BaseDocument {
                 };
                 children.push(SvgClipChild {
                     node: child,
-                    evenodd: clip_rule_evenodd(child_node, node.id),
+                    evenodd: clip_rule_evenodd(child_node),
                     clip,
                 });
             }
