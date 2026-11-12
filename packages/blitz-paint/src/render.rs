@@ -911,7 +911,7 @@ impl ElementCx<'_, '_> {
 
             // Track (only when the author specified a track color)
             if let Some(track_color) = custom_track {
-                let padding_box = self.frame.padding_box;
+                let padding_box = self.frame.padding_box();
                 let track_rect = match axis {
                     AbsoluteAxis::Horizontal => {
                         Rect::new(padding_box.x0, rect.y0, padding_box.x1, rect.y1)
@@ -1230,12 +1230,13 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let width = self.frame.content_box.width() as f32;
-        let height = self.frame.content_box.height() as f32;
+        let content_box = self.frame.content_box();
+        let width = content_box.width() as f32;
+        let height = content_box.height() as f32;
         let svg_size = svg.tree.size();
 
-        let x = self.frame.content_box.origin().x;
-        let y = self.frame.content_box.origin().y;
+        let x = content_box.origin().x;
+        let y = content_box.origin().y;
 
         // An SVG with an aspect ratio but no natural size is sized by the default sizing
         // algorithm, which for `none` and `scale-down` contains it within the content box.
@@ -1314,10 +1315,11 @@ impl ElementCx<'_, '_> {
 
     fn draw_image(&self, scene: &mut impl PaintScene) {
         if let Some(image) = self.element.raster_image_data() {
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
-            let x = self.frame.content_box.origin().x;
-            let y = self.frame.content_box.origin().y;
+            let content_box = self.frame.content_box();
+            let width = content_box.width() as u32;
+            let height = content_box.height() as u32;
+            let x = content_box.origin().x;
+            let y = content_box.origin().y;
 
             let object_fit = self.style.clone_object_fit();
             let object_position = self.style.get_object_position();
@@ -1368,8 +1370,7 @@ impl ElementCx<'_, '_> {
     #[cfg(feature = "custom-widget")]
     fn draw_custom_widget(&self, scene: &mut impl PaintScene) {
         if let Some(widget_scene) = self.custom_widget_scene {
-            let x = self.frame.content_box.origin().x;
-            let y = self.frame.content_box.origin().y;
+            let Point { x, y } = self.frame.content_box().origin();
             let transform = self.transform.then_translate(Vec2 { x, y });
 
             // TODO: eliminate clone
@@ -1380,13 +1381,14 @@ impl ElementCx<'_, '_> {
     fn draw_sub_document(&self, scene: &mut impl PaintScene) {
         if let Some(sub_doc) = self.element.sub_doc_data().map(|doc| doc.inner()) {
             let scale = self.scale;
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
+            let content_box = self.frame.content_box();
+            let width = content_box.width() as u32;
+            let height = content_box.height() as u32;
 
             // TODO: Support arbitrary transforms of subdocuments
             let translation = self.transform.translation();
-            let initial_x = translation.x + self.frame.content_box.origin().x;
-            let initial_y = translation.y + self.frame.content_box.origin().y;
+            let initial_x = translation.x + content_box.origin().x;
+            let initial_y = translation.y + content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
             let painter = BlitzDomPainter::new(

@@ -224,8 +224,8 @@ impl ElementCx<'_, '_> {
     fn box_rect(&self, css_box: BoxModelBox) -> Rect {
         match css_box {
             BoxModelBox::BorderBox => self.frame.border_box,
-            BoxModelBox::PaddingBox => self.frame.padding_box,
-            BoxModelBox::ContentBox => self.frame.content_box,
+            BoxModelBox::PaddingBox => self.frame.padding_box(),
+            BoxModelBox::ContentBox => self.frame.content_box(),
         }
     }
 
