@@ -21,6 +21,9 @@ wpt *ARGS:
 browser *ARGS:
   cargo run --release --package browser --features log-frame-times,log-phase-times {{ARGS}}
 
+browink *ARGS:
+  cargo run --release --package browser --no-default-features --features winkin,hybrid,cookies,cache,screenshot,apple-font-embolden,scrollbars,log-frame-times,log-phase-times {{ARGS}}
+
 browser-with-perf:
   cargo run --release --package browser --features log-frame-times,log-phase-times
 

@@ -218,7 +218,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     })
                     .and_then(|body| body.primary_styles())
                     .map(|style| {
-                        let current_color = style.clone_color();
+                        let current_color = style.slow_clone_color();
                         style
                             .get_background_color()
                             .resolve_to_absolute(&current_color)
@@ -477,7 +477,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             x: -self.initial_x,
             y: -self.initial_y,
         }) * transform;
-        let screen_bbox = screen_transform.transform_rect_bbox(overflow.union(border_box));
+        // A thick or offset decoration's ink reaches past the overflow.
+        let reach = crate::text_decorations::decoration_reach(&styles) * self.scale;
+        let screen_bbox = screen_transform
+            .transform_rect_bbox(overflow.union(border_box))
+            .inflate(reach, reach);
 
         // Cull elements that fall entirely outside the current clip rectangle. In addition to
         // the viewport, `clip_rect` is narrowed by any ancestor scrollport (see below), so this
@@ -686,9 +690,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_sub_document(scene);
                                 cx.draw_input(scene);
                                 cx.draw_text_input_text(scene, content_position);
-                                cx.draw_inline_layout(scene, content_position);
+                                let painted =
+                                    cx.draw_inline_layout(scene, content_position, child_clip_rect);
                                 cx.draw_marker(scene, content_position);
-                                cx.draw_children(scene, cx.transform, child_clip_rect);
+                                cx.draw_children(scene, cx.transform, child_clip_rect, &painted);
                             },
                         );
 
@@ -962,7 +967,17 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point) {
+    /// Paints the element's inline formatting context, and the atomic inlines among its
+    /// in-flow children in their places in it, as CSS 2's Appendix E paints them: an
+    /// atomic inline covers what comes before it on its line and lies under what comes
+    /// after. Returns the children painted, which `draw_children` then skips.
+    fn draw_inline_layout<S: PaintScene>(
+        &self,
+        scene: &mut S,
+        pos: Point,
+        clip_rect: Rect,
+    ) -> Vec<NodeId> {
+        let mut painted = Vec::new();
         if self.node.flags.is_inline_root() {
             let text_layout = self.element
                 .inline_layout_data
@@ -980,7 +995,25 @@ impl ElementCx<'_, '_> {
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-            let mut draw_text_context = self.context.draw_text_context.borrow_mut();
+            let paint_children = self.node.paint_children.borrow();
+            let tree = self.context.dom.as_ref().tree();
+            let mut paint_atomic = |scene: &mut S, child_id: NodeId| {
+                // Positioned children paint later, above in-flow content; children
+                // listed elsewhere are another box's to paint.
+                let in_flow = tree.get(child_id).is_some_and(|child| {
+                    child.primary_styles().is_some_and(|style| {
+                        style.slow_clone_position() == style::computed_values::position::T::Static
+                    })
+                });
+                let listed = paint_children
+                    .as_ref()
+                    .is_some_and(|children| children.contains(&child_id));
+                if in_flow && listed && !painted.contains(&child_id) {
+                    self.context
+                        .render_node(scene, child_id, self.transform, clip_rect);
+                    painted.push(child_id);
+                }
+            };
             crate::text::paint_inline_layout(
                 scene,
                 text_layout,
@@ -992,9 +1025,11 @@ impl ElementCx<'_, '_> {
                 },
                 self.node.id,
                 self.context.selection_ranges.get(&self.node.id).copied(),
-                &mut draw_text_context,
+                &self.context.draw_text_context,
+                &mut paint_atomic,
             );
         }
+        painted
     }
 
     fn draw_text_input_text(&self, scene: &mut impl PaintScene, pos: Point) {
@@ -1081,6 +1116,7 @@ impl ElementCx<'_, '_> {
         scene: &mut impl PaintScene,
         parent_style_transform: Affine,
         clip_rect: Rect,
+        painted: &[NodeId],
     ) {
         // Negative z_index hoisted nodes
 
@@ -1103,6 +1139,9 @@ impl ElementCx<'_, '_> {
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
+                if painted.contains(child_id) {
+                    continue;
+                }
                 // Fixed-position children of the root element are positioned against
                 // the viewport and do not scroll with it, so cancel out the viewport
                 // scroll (applied in `paint_scene`). A fixed box contained by a
@@ -1164,7 +1203,7 @@ impl ElementCx<'_, '_> {
 
         // An SVG with an aspect ratio but no natural size is sized by the default sizing
         // algorithm, which for `none` and `scale-down` contains it within the content box.
-        let object_fit = match self.style.clone_object_fit() {
+        let object_fit = match self.style.slow_clone_object_fit() {
             ObjectFit::None | ObjectFit::ScaleDown
                 if svg.intrinsic_width().is_none()
                     && svg.intrinsic_height().is_none()

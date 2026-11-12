@@ -20,8 +20,8 @@
 //! Painting is the renderer's part: blitz-paint paints each backend's types in a module of its own,
 //! which [`cfg_text_backend!`](crate::cfg_text_backend) selects.
 
-#[cfg(not(feature = "parley"))]
-compile_error!("Enable the `parley` feature: Blitz needs a text backend");
+#[cfg(not(any(feature = "parley", text_winkin)))]
+compile_error!("Enable one of the `parley` or `winkin` features");
 
 mod document;
 mod editing;
@@ -33,12 +33,14 @@ pub(crate) use document::{DocumentText, TextContext};
 pub use document::{FaceDescriptors, FontContext, TextFonts, build_single_font_ctx};
 pub(crate) use editing::EditEngine;
 pub use editing::{Edit, EditableText, EditorMetrics, Motion, TextEditor, TextInputDriver};
+pub(crate) use inline::BackendLayout;
 pub(crate) use inline::DeviceExclusions;
 #[cfg_attr(feature = "floats", allow(unused_imports))]
 pub(crate) use inline::NoLineExclusions;
 pub(crate) use inline::{
-    BoxMeasure, ContentWidths, FloatClear, FloatSide, InlineBoxKind, InlineBuilder,
-    InlineLayoutEngine, LineExclusions, LinesExtent, MarkerEngine, Placement, SpanKind,
+    BoxMeasure, ContentWidths, DocumentCascade, FloatClear, FloatSide, InlineBoxKind,
+    InlineBuilder, InlineLayoutEngine, LineArea, LineExclusions, LineFlow, LinesExtent,
+    LinesInputs, MarkerEngine, Measure, Placement, SpanKind,
 };
 #[cfg_attr(not(feature = "floats"), allow(unused_imports))]
 pub(crate) use inline::{FloatRequest, LineSlot, PlacedFloat, SlotSearch};
@@ -46,21 +48,29 @@ pub use inline::{InlineText, MarkerLayout, TextLayout};
 
 #[cfg(feature = "parley")]
 pub mod parley;
+#[cfg(text_winkin)]
+pub mod winkin;
 
 #[cfg(feature = "parley")]
 use self::parley as backend;
+#[cfg(text_winkin)]
+use self::winkin as backend;
 
 /// The text backends Blitz can be built with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum TextBackend {
     /// [Parley](https://github.com/linebender/parley), the `parley` feature.
     Parley,
+    /// [winkin](https://github.com/dfrg/winkin), the `winkin` feature.
+    Winkin,
 }
 
 /// The text backend this build of Blitz lays out text with.
 #[cfg(feature = "parley")]
 pub const BACKEND: TextBackend = TextBackend::Parley;
+/// The text backend this build of Blitz lays out text with.
+#[cfg(text_winkin)]
+pub const BACKEND: TextBackend = TextBackend::Winkin;
 
 /// Expands the arm for the text backend in use, and drops the others, so that a crate which
 /// holds code for each backend compiles the one blitz-dom was built with.
@@ -72,6 +82,7 @@ pub const BACKEND: TextBackend = TextBackend::Parley;
 /// ```ignore
 /// blitz_dom::cfg_text_backend! {
 ///     parley => { mod parley; use parley as backend; }
+///     winkin => { mod winkin; use winkin as backend; }
 /// }
 /// ```
 #[macro_export]
@@ -96,13 +107,37 @@ macro_rules! __text_backend_arms {
     };
 }
 
+/// Expands the arm of [`cfg_text_backend!`] named for the text backend in use.
+#[cfg(text_winkin)]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __text_backend_arms {
+    () => {};
+    (winkin => { $($tokens:tt)* } $($rest:tt)*) => {
+        $($tokens)*
+        $crate::__text_backend_arms! { $($rest)* }
+    };
+    ($other:ident => { $($tokens:tt)* } $($rest:tt)*) => {
+        $crate::__text_backend_arms! { $($rest)* }
+    };
+}
+
+#[doc(hidden)]
+pub static PERF_COUNTS: [core::sync::atomic::AtomicUsize; 2] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; 2];
+
 #[cfg(test)]
 mod tests {
     use super::{BACKEND, TextBackend};
 
-    /// The `parley` feature selects Parley.
+    /// Parley is the backend wherever its feature is on, winkin's or not.
     #[test]
-    fn parley_is_the_backend() {
-        assert_eq!(BACKEND, TextBackend::Parley);
+    fn parley_wins_when_both_backends_are_enabled() {
+        let expected = if cfg!(feature = "parley") {
+            TextBackend::Parley
+        } else {
+            TextBackend::Winkin
+        };
+        assert_eq!(BACKEND, expected);
     }
 }

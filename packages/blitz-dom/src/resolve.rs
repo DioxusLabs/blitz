@@ -45,6 +45,9 @@ impl BaseDocument {
 
         self.resolve_scroll_animation();
 
+        // Mask the character a password field shows in the clear, once its time is up.
+        self.expire_text_input_timers(web_time::Instant::now());
+
         // Drop scrollbar-activity entries whose fade-out has finished (also
         // sheds entries for removed nodes).
         {
@@ -122,6 +125,7 @@ impl BaseDocument {
         self.refresh_hover();
 
         let mut subdoc_is_animating = false;
+        let mut subdoc_deadline = None;
         for &node_id in &self.sub_document_nodes {
             let node = &mut self.nodes[node_id];
             let size = node.final_layout().size;
@@ -143,9 +147,11 @@ impl BaseDocument {
                 sub_doc.resolve(current_time_for_animations);
 
                 subdoc_is_animating |= sub_doc.is_animating();
+                subdoc_deadline = earliest(subdoc_deadline, sub_doc.text_input_deadline());
             }
         }
         self.subdoc_is_animating = subdoc_is_animating;
+        self.subdoc_text_input_deadline = subdoc_deadline;
         timer.record_time("subdocs");
 
         timer.print_times(&format!("Resolve({}): ", self.id()));
@@ -348,12 +354,19 @@ impl BaseDocument {
                 ConstructionTaskData::InlineLayout(layout) => (task.node_id, layout),
             })
             .collect();
+        let guard = self.guard.read();
+        let guards = style::shared_lock::StylesheetGuards::same(&guard);
         TextLayout::build_layouts(
             &mut self.text,
             &self.nodes,
+            crate::text::DocumentCascade {
+                stylist: &self.stylist,
+                guards: &guards,
+            },
             self.viewport.scale(),
             &mut layouts,
         );
+        drop(guard);
 
         for (node_id, layout) in layouts {
             self.nodes[node_id].clear_layout_cache();
@@ -400,5 +413,16 @@ impl BaseDocument {
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
+    }
+}
+
+/// Returns the earlier of two deadlines, where either is set.
+fn earliest(
+    a: Option<web_time::Instant>,
+    b: Option<web_time::Instant>,
+) -> Option<web_time::Instant> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
     }
 }

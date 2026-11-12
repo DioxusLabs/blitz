@@ -1,3 +1,6 @@
+// Some of what is shared here only the Parley painter uses.
+#![cfg_attr(not(feature = "parley"), allow(dead_code, unused_imports))]
+
 use anyrender::PaintScene;
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, NodeId, util::ToColorColor};
@@ -73,18 +76,18 @@ fn select_best_dash_gap(stroke_length: f64, dash_length: f64, gap_length: f64) -
 /// depend on the run's advance/font-size and are resolved lazily when drawing.
 #[derive(Clone)]
 pub(crate) struct ResolvedDecoration {
-    line: TextDecorationLine,
-    style: TextDecorationStyle,
-    color: Color,
-    thickness: TextDecorationLength,
+    pub(crate) line: TextDecorationLine,
+    pub(crate) style: TextDecorationStyle,
+    pub(crate) color: Color,
+    pub(crate) thickness: TextDecorationLength,
     /// `text-underline-offset`; `None` for `auto`. Resolved per run.
-    underline_offset: Option<LengthPercentage>,
+    pub(crate) underline_offset: Option<LengthPercentage>,
     /// Whether `text-underline-position: under` is in effect.
-    underline_under: bool,
+    pub(crate) underline_under: bool,
     /// Whether `text-underline-position: from-font` is in effect.
-    underline_from_font: bool,
+    pub(crate) underline_from_font: bool,
     /// `text-decoration-inset`. Resolved per run.
-    inset: GenericTextDecorationInset<LengthPercentage>,
+    pub(crate) inset: GenericTextDecorationInset<LengthPercentage>,
 }
 
 /// An element on the current ancestor path (inline root -> run node), caching the
@@ -135,8 +138,6 @@ pub(crate) fn resolve_decoration_entry(
     };
 
     let itext = styles.get_inherited_text();
-    let text = styles.get_text();
-    let text_color = itext.color.as_color_color();
     let fill_color = itext
         ._webkit_text_fill_color
         .resolve_to_absolute(&itext.color)
@@ -172,6 +173,23 @@ pub(crate) fn resolve_decoration_entry(
         (own, _) => own,
     };
 
+    let decoration = resolve_decoration(&styles);
+
+    DecorationStackEntry {
+        node_id,
+        fill_color,
+        decoration,
+        text_shadows,
+    }
+}
+
+/// The decoration an element draws as a decorating box, if it is one.
+pub(crate) fn resolve_decoration(
+    styles: &style::properties::ComputedValues,
+) -> Option<ResolvedDecoration> {
+    let itext = styles.get_inherited_text();
+    let text = styles.get_text();
+    let text_color = itext.color.as_color_color();
     let drawn_lines = TextDecorationLine::UNDERLINE
         | TextDecorationLine::OVERLINE
         | TextDecorationLine::LINE_THROUGH;
@@ -179,7 +197,7 @@ pub(crate) fn resolve_decoration_entry(
     // Decorations propagate through the box tree, and a `display: contents` element
     // generates no box, so its decorations have no effect on descendants.
     let is_contents = styles.clone_display().is_contents();
-    let decoration = (!is_contents && line.intersects(drawn_lines)).then(|| {
+    (!is_contents && line.intersects(drawn_lines)).then(|| {
         // `text-decoration-color: currentColor` (the initial value) resolves against
         // the decorating box's own colour, not the descendant run's.
         let color = text
@@ -202,14 +220,7 @@ pub(crate) fn resolve_decoration_entry(
                 .contains(TextUnderlinePosition::FROM_FONT),
             inset: text.text_decoration_inset.clone(),
         }
-    });
-
-    DecorationStackEntry {
-        node_id,
-        fill_color,
-        decoration,
-        text_shadows,
-    }
+    })
 }
 
 /// The run-dependent geometry used to position and size a decoration, captured from a
@@ -226,9 +237,15 @@ pub(crate) struct DecorationRunGeometry {
     pub(crate) underline_offset: f32,
     pub(crate) underline_size: f32,
     pub(crate) strikethrough_size: f32,
-    pub(crate) font: FontData,
+    /// The font whose OS/2 ascent an overline and a line-through are placed
+    /// by, where `ascent` is not already the one to use.
+    pub(crate) font: Option<FontData>,
     pub(crate) font_size: f32,
     pub(crate) css_font_size: f64,
+    /// Whether `ascent` and `descent` are measured about a central baseline,
+    /// as a vertical line's are, so that the em box's edges are the overline's
+    /// place and its middle the line-through's.
+    pub(crate) centered: bool,
 }
 
 /// A decoration accumulated across the runs of a single line for one decorating box.
@@ -240,6 +257,10 @@ pub(crate) struct LineDecoration {
     pub(crate) node_id: NodeId,
     pub(crate) deco: ResolvedDecoration,
     pub(crate) min_x: f64,
+    /// The part of `min_x..max_x` drawn, where only a part is: the line is
+    /// inset and patterned as the whole is, and drawn over that part and past
+    /// an end it holds.
+    pub(crate) piece: Option<(f64, f64)>,
     pub(crate) max_x: f64,
     /// Geometry from a run whose innermost node is the decorating box itself.
     pub(crate) own: Option<DecorationRunGeometry>,
@@ -256,7 +277,28 @@ pub(crate) struct LineDecoration {
 ///
 /// The result is floored to a whole number of device pixels (minimum 1), matching
 /// browsers, which snap decoration thickness to whole pixels.
-fn decoration_size(
+/// How far, in CSS pixels, the decorations an element draws may reach past its box: its font
+/// size, as far as a decoration sits from the text, plus its thickness and underline offset. The
+/// overflow the culling reads leaves this ink out.
+pub(crate) fn decoration_reach(styles: &style::properties::ComputedValues) -> f64 {
+    let text = styles.get_text();
+    if text.text_decoration_line.is_empty() {
+        return 0.0;
+    }
+    let font_size = Length::new(styles.get_font().font_size.computed_size().px());
+    let thickness = match &text.text_decoration_thickness {
+        GenericTextDecorationLength::LengthPercentage(lp) => lp.resolve(font_size).px().abs(),
+        GenericTextDecorationLength::FromFont | GenericTextDecorationLength::Auto => 0.0,
+    };
+    let offset = styles
+        .get_inherited_text()
+        .text_underline_offset
+        .non_auto()
+        .map_or(0.0, |lp| lp.resolve(font_size).px().abs());
+    f64::from(font_size.px() + thickness + offset)
+}
+
+pub(crate) fn decoration_size(
     thickness: &TextDecorationLength,
     metric_size: f32,
     css_font_size: f64,
@@ -281,6 +323,9 @@ fn decoration_size(
 ///
 /// `double_dir` points away from the text (`+1` = down, `-1` = up) and is used to place the
 /// second line of a `double` decoration.
+///
+/// Only what lies between the ends of `clip` is drawn: of a solid or double line, that part;
+/// of a pattern, the dots centred and the dashes and waves starting there.
 #[allow(clippy::too_many_arguments)]
 fn draw_decoration_line(
     scene: &mut impl PaintScene,
@@ -296,7 +341,9 @@ fn draw_decoration_line(
     deco_style: TextDecorationStyle,
     inset_start: f64,
     inset_end: f64,
+    clip: (f64, f64),
 ) {
+    let within = |at: f64| clip.0 <= at && at < clip.1;
     // Inset the line from the box's start/end edges (assumes LTR: start is the left edge).
     // Negative insets extend the line past the text.
     let x = x0 + inset_start;
@@ -314,8 +361,11 @@ fn draw_decoration_line(
         }
         // `solid`
         TextDecorationStyle::Solid => {
-            let line = kurbo::Line::new((x, y), (x + w, y));
-            scene.stroke(&butt_stroke, transform, brush, None, &line);
+            let (from, to) = (x.max(clip.0), (x + w).min(clip.1));
+            if from < to {
+                let line = kurbo::Line::new((from, y), (to, y));
+                scene.stroke(&butt_stroke, transform, brush, None, &line);
+            }
         }
         // Two lines, each `size` thick, separated by a 1px (CSS) gap. This
         // matches Chrome, where the second line is offset by `thickness + 1px`
@@ -323,9 +373,12 @@ fn draw_decoration_line(
         // overline).
         TextDecorationStyle::Double => {
             let one_css_px = scale;
-            for cy in [y, y + double_dir * (size + one_css_px)] {
-                let line = kurbo::Line::new((x, cy), (x + w, cy));
-                scene.stroke(&butt_stroke, transform, brush, None, &line);
+            let (from, to) = (x.max(clip.0), (x + w).min(clip.1));
+            if from < to {
+                for cy in [y, y + double_dir * (size + one_css_px)] {
+                    let line = kurbo::Line::new((from, cy), (to, cy));
+                    scene.stroke(&butt_stroke, transform, brush, None, &line);
+                }
             }
         }
         // Round dots (diameter = line thickness) spaced one dot apart.
@@ -334,8 +387,10 @@ fn draw_decoration_line(
             let step = 2.0 * size;
             let mut cx = x + radius;
             while cx <= x + w - radius {
-                let dot = Circle::new((cx, y), radius);
-                scene.fill(Fill::NonZero, transform, brush, None, &dot);
+                if within(cx) {
+                    let dot = Circle::new((cx, y), radius);
+                    scene.fill(Fill::NonZero, transform, brush, None, &dot);
+                }
                 cx += step;
             }
         }
@@ -354,9 +409,11 @@ fn draw_decoration_line(
             };
             let mut dx = x;
             while dx < x + w {
-                let end = (dx + dash).min(x + w);
-                let rect = Rect::new(dx, y - size / 2.0, end, y + size / 2.0);
-                scene.fill(Fill::NonZero, transform, brush, None, &rect);
+                if within(dx) {
+                    let end = (dx + dash).min(x + w);
+                    let rect = Rect::new(dx, y - size / 2.0, end, y + size / 2.0);
+                    scene.fill(Fill::NonZero, transform, brush, None, &rect);
+                }
                 dx += dash + gap;
             }
         }
@@ -365,29 +422,42 @@ fn draw_decoration_line(
             let amplitude = size;
             let half_wave = (2.0 * size).max(1.0);
             let mut path = BezPath::new();
-            path.move_to((x, y));
             let mut px = x;
             let mut up = true;
+            let mut open = false;
             while px < x + w {
                 let nx = (px + half_wave).min(x + w);
-                // A quad Bézier reaches half the control-point offset at its
-                // midpoint, so use `2 * amplitude` to hit the target peak.
-                let ctrl_y = if up {
-                    y - 2.0 * amplitude
-                } else {
-                    y + 2.0 * amplitude
-                };
-                path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
+                if within(px) {
+                    if !open {
+                        path.move_to((px, y));
+                        open = true;
+                    }
+                    // A quad Bézier reaches half the control-point offset at its
+                    // midpoint, so use `2 * amplitude` to hit the target peak.
+                    let ctrl_y = if up {
+                        y - 2.0 * amplitude
+                    } else {
+                        y + 2.0 * amplitude
+                    };
+                    path.quad_to(((px + nx) / 2.0, ctrl_y), (nx, y));
+                }
                 px = nx;
                 up = !up;
             }
-            let stroke = Stroke::new(size).with_caps(Cap::Round);
-            scene.stroke(&stroke, transform, brush, None, &path);
+            if open {
+                let stroke = Stroke::new(size).with_caps(Cap::Round);
+                scene.stroke(&stroke, transform, brush, None, &path);
+            }
         }
     }
 }
 
 /// Paint the decorations accumulated for one line, one line per decorating box.
+///
+/// `root_baseline` is the inline root and the line's baseline, where the root's decoration
+/// is positioned from it rather than from the first run it covers. Only the kinds of line
+/// in `drawn` are painted: a caller painting the lines under the text apart from the one
+/// through it asks for each in turn.
 ///
 /// When `shadow` is set, the decorations are drawn as that text shadow: offset, in the
 /// shadow colour and clipped to the given rect (the extent of the shadowed runs), since a
@@ -399,8 +469,8 @@ pub(crate) fn flush_line_decorations(
     options: TextPaintOptions,
     deco_boxes: &[LineDecoration],
     win_ascent_ratios: &mut WinAscentCache,
-    inline_root_id: NodeId,
-    line_baseline: f32,
+    root_baseline: Option<(NodeId, f32)>,
+    drawn: TextDecorationLine,
     shadow: Option<(&ResolvedTextShadow, Rect)>,
 ) {
     let TextPaintOptions {
@@ -433,7 +503,9 @@ pub(crate) fn flush_line_decorations(
                 // A descendant run's baseline may be shifted by `vertical-align`, but the
                 // decoration is positioned from the decorating box's own baseline. For the
                 // inline root that is the line's baseline.
-                if acc.node_id == inline_root_id {
+                if let Some((inline_root_id, line_baseline)) = root_baseline
+                    && acc.node_id == inline_root_id
+                {
                     geom.baseline = line_baseline;
                 }
                 geom
@@ -466,8 +538,27 @@ pub(crate) fn flush_line_decorations(
             }
             GenericTextDecorationInset::Auto => (0.0, 0.0),
         };
+        // A piece draws what of the whole line lies over it, and past an end
+        // of the span it holds. Its ends inside the span are on whole pixels,
+        // where the piece beside it starts or ends too.
+        let extent = match acc.piece {
+            Some((left, right)) => (
+                if left > acc.min_x {
+                    left.round()
+                } else {
+                    f64::NEG_INFINITY
+                },
+                if right < acc.max_x {
+                    right.round()
+                } else {
+                    f64::INFINITY
+                },
+            ),
+            None => (f64::NEG_INFINITY, f64::INFINITY),
+        };
 
-        if deco.line.contains(TextDecorationLine::UNDERLINE) {
+        let lines = deco.line & drawn;
+        if lines.contains(TextDecorationLine::UNDERLINE) {
             let size = decoration_size(
                 &deco.thickness,
                 geom.underline_size,
@@ -497,7 +588,9 @@ pub(crate) fn flush_line_decorations(
             } else {
                 geom.underline_offset
             };
-            let offset = base_offset - extra_underline_offset as f32;
+            // The underline sits on a whole device pixel from the baseline, as
+            // Chrome's `TextDecorationOffset` rounds its offset.
+            let offset = (base_offset - extra_underline_offset as f32).round();
 
             // A `double` underline extends downward, away from the text.
             draw_decoration_line(
@@ -514,9 +607,10 @@ pub(crate) fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                extent,
             );
         }
-        if deco.line.contains(TextDecorationLine::OVERLINE) {
+        if lines.contains(TextDecorationLine::OVERLINE) {
             // Fonts don't provide a dedicated overline metric, so reuse the underline
             // thickness. The line sits at the top of the "em box": its lower edge rests on
             // the ascent so it clears the glyphs, and it extends upward from there.
@@ -531,8 +625,12 @@ pub(crate) fn flush_line_decorations(
                 geom.css_font_size,
                 scale,
             );
-            let ascent =
-                win_ascent(win_ascent_ratios, &geom.font, geom.font_size).unwrap_or(geom.ascent);
+            let ascent = match &geom.font {
+                Some(font) if !geom.centered => {
+                    win_ascent(win_ascent_ratios, font, geom.font_size).unwrap_or(geom.ascent)
+                }
+                _ => geom.ascent,
+            };
             let offset = ascent + size;
 
             // A `double` overline extends upward, away from the text.
@@ -550,9 +648,10 @@ pub(crate) fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                extent,
             );
         }
-        if deco.line.contains(TextDecorationLine::LINE_THROUGH) {
+        if lines.contains(TextDecorationLine::LINE_THROUGH) {
             let size = decoration_size(
                 &deco.thickness,
                 geom.strikethrough_size,
@@ -564,9 +663,18 @@ pub(crate) fn flush_line_decorations(
             // Chrome (which places it `2/3 * ascent` below the text-top). Parley's
             // `strikethrough_offset` (the font's `yStrikeoutPosition`) sits lower and would
             // draw the line too close to the baseline.
-            let ascent =
-                win_ascent(win_ascent_ratios, &geom.font, geom.font_size).unwrap_or(geom.ascent);
-            let offset = ascent / 3.0 + size / 2.0;
+            // A vertical line's is through the middle of the em box, which is
+            // its baseline.
+            let offset = if geom.centered {
+                size / 2.0
+            } else {
+                let ascent = geom
+                    .font
+                    .as_ref()
+                    .and_then(|font| win_ascent(win_ascent_ratios, font, geom.font_size))
+                    .unwrap_or(geom.ascent);
+                ascent / 3.0 + size / 2.0
+            };
 
             draw_decoration_line(
                 scene,
@@ -582,6 +690,7 @@ pub(crate) fn flush_line_decorations(
                 deco.style,
                 inset_start,
                 inset_end,
+                extent,
             );
         }
         if clip.is_some() {

@@ -21,6 +21,7 @@ use anyrender::{PaintScene, Scene};
 use blitz_dom::{BaseDocument, NodeId, util::Color};
 use render::BlitzDomPainter;
 
+#[cfg_attr(not(feature = "parley"), allow(dead_code))]
 const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
     feature = "font-embolden",
     all(feature = "apple-font-embolden", target_os = "macos"),

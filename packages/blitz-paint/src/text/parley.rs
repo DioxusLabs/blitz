@@ -15,9 +15,12 @@ use std::sync::Arc;
 use super::{DrawTextContext, RunRecord, TextPaintOptions, font_embolden, paint_selection};
 use crate::color::{Color, ToColorColor as _};
 use crate::text_decorations::{
-    DecorationRunGeometry, LineDecoration, WinAscentCache, flush_line_decorations,
-    resolve_decoration_entry,
+    DecorationRunGeometry, LineDecoration, ResolvedDecoration, WinAscentCache,
+    flush_line_decorations, resolve_decoration_entry,
 };
+use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
+use style::values::computed::TextDecorationLine;
+use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
 
 
@@ -25,18 +28,24 @@ use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
 /// highlight, and its text and decorations.
 ///
 /// `transform` takes the content box's device pixels, moved down by the layout's block offset,
-/// onto the scene.
+/// onto the scene. `content_size` is the content box's size in device pixels, which every text
+/// backend's painter is handed and Parley's does not need.
+///
+/// Parley's painter leaves atomic inlines to be painted after the text, so `_paint_atomic` is
+/// never called.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn paint_inline_layout(
-    scene: &mut impl PaintScene,
+pub(crate) fn paint_inline_layout<S: PaintScene>(
+    scene: &mut S,
     text_layout: &TextLayout,
     doc: &BaseDocument,
     transform: Affine,
     options: TextPaintOptions,
     root: NodeId,
     selection: Option<(usize, usize)>,
-    context: &mut DrawTextContext,
+    context: &std::cell::RefCell<DrawTextContext>,
+    _paint_atomic: &mut impl FnMut(&mut S, NodeId),
 ) {
+    let context = &mut *context.borrow_mut();
     // Render inline element backgrounds (e.g. `<span style="background: ...">`)
     // behind the text and selection highlight.
     draw_inline_backgrounds(scene, text_layout.backend.layout.lines(), doc, transform, root);
@@ -293,6 +302,8 @@ fn stroke_text<'a>(
         deco_boxes.clear();
         run_records.clear();
         let mut line_has_shadows = false;
+        // The composing text's underline on this line, spanning its runs.
+        let mut composing: Option<LineDecoration> = None;
 
         // Pass 1: resolve styles for every glyph run on the line (recording the values
         // needed to paint it) and accumulate decorations. Painting is deferred so text
@@ -361,9 +372,10 @@ fn stroke_text<'a>(
                 underline_offset: metrics.underline_offset,
                 underline_size: metrics.underline_size,
                 strikethrough_size: metrics.strikethrough_size,
-                font: font.clone(),
+                font: Some(font.clone()),
                 font_size,
                 css_font_size,
+                centered: false,
             };
             let run_node_id = style.brush.id;
             let run_x0 = glyph_run.offset() as f64;
@@ -381,6 +393,7 @@ fn stroke_text<'a>(
                             deco: entry.decoration.clone().unwrap(),
                             min_x: f64::INFINITY,
                             max_x: f64::NEG_INFINITY,
+                            piece: None,
                             own: None,
                             first: None,
                         });
@@ -399,6 +412,22 @@ fn stroke_text<'a>(
                     acc.own = Some(geometry.clone());
                 }
             }
+
+                // A text input's editor underlines the text an input method is composing.
+                if style.underline.is_some() {
+                    let acc = composing.get_or_insert_with(|| LineDecoration {
+                        node_id: run_node_id,
+                        deco: composition_underline(fill_color),
+                        min_x: f64::INFINITY,
+                        max_x: f64::NEG_INFINITY,
+                        piece: None,
+                        own: None,
+                        first: None,
+                    });
+                    acc.min_x = acc.min_x.min(run_x0);
+                    acc.max_x = acc.max_x.max(run_x1);
+                    acc.first.get_or_insert(geometry);
+                }
         }
 
         // Pass 2: text shadows, beneath all of the line's text and decorations.
@@ -427,10 +456,37 @@ fn stroke_text<'a>(
             options,
             deco_boxes,
             win_ascent_ratios,
-            inline_root_id,
-            line.metrics().baseline,
+            Some((inline_root_id, line.metrics().baseline)),
+            TextDecorationLine::all(),
             None,
         );
+        if let Some(composing) = composing.take() {
+            flush_line_decorations(
+                scene,
+                transform,
+                options,
+                std::slice::from_ref(&composing),
+                win_ascent_ratios,
+                Some((inline_root_id, line.metrics().baseline)),
+                TextDecorationLine::all(),
+                None,
+            );
+        }
+    }
+}
+
+/// The underline under the text an input method is composing: solid, `auto` thick, and in
+/// the text's colour.
+fn composition_underline(color: Color) -> ResolvedDecoration {
+    ResolvedDecoration {
+        line: TextDecorationLine::UNDERLINE,
+        style: TextDecorationStyle::Solid,
+        color,
+        thickness: GenericTextDecorationLength::Auto,
+        underline_offset: None,
+        underline_under: false,
+        underline_from_font: false,
+        inset: GenericTextDecorationInset::Auto,
     }
 }
 
@@ -596,8 +652,8 @@ fn draw_line_text_shadows(
                     options,
                     deco_boxes,
                     win_ascent_ratios,
-                    inline_root_id,
-                    line_baseline,
+                    Some((inline_root_id, line_baseline)),
+                    TextDecorationLine::all(),
                     Some((shadow, deco_clip)),
                 );
             }

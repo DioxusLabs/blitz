@@ -241,6 +241,54 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
 
+    // `dir=auto`, and a `bdi` with no valid `dir`, take their direction
+    // from the first strong character of their text, as HTML's bidi
+    // rendering maps them; with none, the inherited direction stands.
+    let dir = elem
+        .attrs()
+        .iter()
+        .find(|attr| attr.name.local == local_name!("dir"))
+        .map(|attr| attr.value.as_str());
+    let dir_is = |keyword: &str| dir.is_some_and(|dir| dir.eq_ignore_ascii_case(keyword));
+    let dir_auto = dir_is("auto")
+        || (*tag == local_name!("bdi")
+            && elem.name.ns == ns!(html)
+            && !dir_is("ltr")
+            && !dir_is("rtl"));
+    if dir_auto {
+        if let Some(rtl) = node.auto_direction_is_rtl() {
+            use style::properties::longhands::direction::SpecifiedValue as Direction;
+            push_style(PropertyDeclaration::Direction(if rtl {
+                Direction::Rtl
+            } else {
+                Direction::Ltr
+            }));
+        }
+    }
+
+    // A list box shows as many rows as its display size: the `size` attribute, or 4 for a
+    // `multiple` select without one (https://html.spec.whatwg.org/#concept-select-size).
+    // The user-agent sheet sets each option 1.2em tall.
+    if *tag == local_name!("select") {
+        let size = elem
+            .attr(local_name!("size"))
+            .and_then(|size| size.trim().parse::<u32>().ok())
+            .filter(|size| *size > 0);
+        let rows = if elem.has_attr(local_name!("multiple")) {
+            Some(size.unwrap_or(4))
+        } else {
+            size.filter(|size| *size > 1)
+        };
+        if let Some(rows) = rows {
+            use style::values::generics::{NonNegative, length::Size};
+            use style::values::specified::{LengthPercentage, NoCalcLength};
+            let rows = rows.min(10_000) as f32;
+            let length = NoCalcLength::from_em(rows * 1.2);
+            let size = Size::LengthPercentage(NonNegative(LengthPercentage::Length(length)));
+            push_style(PropertyDeclaration::BlockSize(size));
+        }
+    }
+
     for attr in elem.attrs() {
         let name = &attr.name.local;
         let value = attr.value.as_str();

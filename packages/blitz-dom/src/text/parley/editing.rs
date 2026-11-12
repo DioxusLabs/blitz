@@ -57,6 +57,11 @@ impl EditableText for TextEditor {
         self.editor.raw_selection().is_collapsed()
     }
 
+    fn revealed_range(&self) -> Option<Range<usize>> {
+        // Parley draws a password field's text as it is.
+        None
+    }
+
     fn metrics(&self) -> Option<EditorMetrics> {
         let layout = self.editor.try_layout()?;
         // The white space a wrapped line ends in hangs past the width, and takes no room.
@@ -160,7 +165,11 @@ impl EditEngine for TextEditor {
         let mut driver = self.editor.driver(&mut font_ctx, &mut cx.layout_ctx);
         driver.refresh_layout();
         match edit {
-            Edit::Insert(text) => driver.insert_or_replace_selection(text),
+            // Parley masks nothing, so there is nothing to show in the clear.
+            Edit::Insert(text) | Edit::InsertRevealed(text) => {
+                driver.insert_or_replace_selection(text)
+            }
+            Edit::Conceal => {}
             Edit::Delete => driver.delete(),
             Edit::Backdelete => driver.backdelete(),
             Edit::DeleteWord => driver.delete_word(),
@@ -177,6 +186,8 @@ impl EditEngine for TextEditor {
             }
             Edit::SetCompose(text, cursor) => driver.set_compose(text, cursor),
             Edit::ClearCompose => driver.clear_compose(),
+            // PlainEditor keeps no history.
+            Edit::Undo | Edit::Redo => {}
             Edit::MoveToPoint(x, y) => driver.move_to_point(x, y),
             Edit::ExtendSelectionToPoint(x, y) => driver.extend_selection_to_point(x, y),
             Edit::ShiftClickExtension(x, y) => driver.shift_click_extension(x, y),

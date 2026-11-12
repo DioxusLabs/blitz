@@ -1,7 +1,9 @@
 //! Document-wide text contexts and fonts.
 
 use blitz_traits::net::Bytes;
-use parlance::{FontStyle, FontWeight};
+use std::ops::RangeInclusive;
+
+use parlance::{FontFeature, FontStyle, FontVariation, FontWeight, FontWidth, Tag};
 
 use super::backend;
 
@@ -44,19 +46,44 @@ pub(crate) trait DocumentText: Sized {
 
 /// The descriptors of an `@font-face` rule that a text backend registers a face by, beyond its
 /// family name, in the font value types the backends share.
+///
+/// A descriptor left out, or one whose `calc()` cannot be resolved without an element, is `None`
+/// or empty: the font's own value.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FaceDescriptors {
     /// The `font-weight` descriptor, as its lowest and highest weight; a single weight is both.
     pub weight: Option<(FontWeight, FontWeight)>,
+    /// The `font-width` (`font-stretch`) descriptor, as its narrowest and widest width; a single
+    /// width is both.
+    pub width: Option<(FontWidth, FontWidth)>,
     /// The `font-style` descriptor, as its lowest and highest style; only an oblique's angle can
     /// differ between them.
     pub style: Option<(FontStyle, FontStyle)>,
+    /// The code point ranges of the `unicode-range` descriptor; empty where it allows every one.
+    pub unicode_range: Vec<RangeInclusive<u32>>,
+    /// The `font-feature-settings` descriptor.
+    pub feature_settings: Vec<FontFeature>,
+    /// The `font-variation-settings` descriptor.
+    pub variation_settings: Vec<FontVariation>,
+    /// The `size-adjust` descriptor, as a ratio: `1.0` is `100%`.
+    pub size_adjust: Option<f32>,
+    /// The `ascent-override` descriptor, as a fraction of the em.
+    pub ascent_override: Option<f32>,
+    /// The `descent-override` descriptor, as a fraction of the em.
+    pub descent_override: Option<f32>,
+    /// The `line-gap-override` descriptor, as a fraction of the em.
+    pub line_gap_override: Option<f32>,
 }
 
 impl FaceDescriptors {
     /// Reads the descriptors of an `@font-face` rule.
     pub(crate) fn from_rule(descriptors: &style::font_face::Descriptors) -> Self {
         use style::font_face::FontStyleRange;
+        use style::values::specified::font::MetricsOverride;
+        let metric = |value: &Option<MetricsOverride>| match value {
+            Some(MetricsOverride::Override(percentage)) => percentage.0.get(),
+            _ => None,
+        };
         Self {
             weight: descriptors
                 .font_weight
@@ -81,6 +108,62 @@ impl FaceDescriptors {
                     }
                 }
             }),
+            width: descriptors
+                .font_width
+                .as_ref()
+                .and_then(|range| range.compute())
+                .map(|range| {
+                    (
+                        FontWidth::from_percentage(range.0.to_percentage().0 * 100.0),
+                        FontWidth::from_percentage(range.1.to_percentage().0 * 100.0),
+                    )
+                }),
+            unicode_range: descriptors
+                .unicode_range
+                .as_ref()
+                .map(|ranges| ranges.iter().map(|range| range.start..=range.end).collect())
+                .unwrap_or_default(),
+            // The rule's settings are specified values, whose numbers are known once parsed.
+            feature_settings: descriptors
+                .font_feature_settings
+                .as_ref()
+                .map(|settings| {
+                    settings
+                        .0
+                        .iter()
+                        .filter_map(|setting| {
+                            let value = setting.value.resolve()?;
+                            Some(FontFeature::new(
+                                Tag::from_bytes(setting.tag.0.to_be_bytes()),
+                                value.clamp(0, i32::from(u16::MAX)) as u16,
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            variation_settings: descriptors
+                .font_variation_settings
+                .as_ref()
+                .map(|settings| {
+                    settings
+                        .0
+                        .iter()
+                        .filter_map(|setting| {
+                            Some(FontVariation::new(
+                                Tag::from_bytes(setting.tag.0.to_be_bytes()),
+                                setting.value.get()?,
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            size_adjust: descriptors
+                .size_adjust
+                .as_ref()
+                .and_then(|percentage| percentage.0.get()),
+            ascent_override: metric(&descriptors.ascent_override),
+            descent_override: metric(&descriptors.descent_override),
+            line_gap_override: metric(&descriptors.line_gap_override),
         }
     }
 }

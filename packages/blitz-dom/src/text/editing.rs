@@ -38,6 +38,10 @@ pub trait EditableText: Clone {
     /// Whether the selection is a caret.
     fn is_selection_collapsed(&self) -> bool;
 
+    /// The text a password field shows in the clear, in bytes of
+    /// [`raw_text`](Self::raw_text), where it shows any.
+    fn revealed_range(&self) -> Option<Range<usize>>;
+
     /// The size and scale of the laid-out text, or `None` where it is not laid out.
     fn metrics(&self) -> Option<EditorMetrics>;
 
@@ -69,6 +73,17 @@ pub(crate) trait EditEngine: EditableText + Sized {
         scale: f32,
     );
 
+    /// Takes `style`, `node`'s computed style after a restyle that kept the control's box, where
+    /// the text is set in properties such a restyle changes. Returns whether the text is to be laid
+    /// out again.
+    fn restyle(
+        &mut self,
+        _node: NodeId,
+        _style: &style::servo_arc::Arc<style::properties::ComputedValues>,
+    ) -> bool {
+        false
+    }
+
     /// Sets the scale.
     fn set_scale(&mut self, scale: f32);
 
@@ -89,6 +104,11 @@ pub(crate) trait EditEngine: EditableText + Sized {
 pub enum Edit<'a> {
     /// Replaces the selection with the text.
     Insert(&'a str),
+    /// Replaces the selection with the text, which a password field shows in the clear until the
+    /// next edit, where the backend masks password fields.
+    InsertRevealed(&'a str),
+    /// Masks the text a password field shows in the clear.
+    Conceal,
     /// Deletes the selection, or the character after the caret.
     Delete,
     /// Deletes the selection, or the character before the caret.
@@ -116,6 +136,10 @@ pub enum Edit<'a> {
     SetCompose(&'a str, Option<(usize, usize)>),
     /// Clears the text an input method is composing.
     ClearCompose,
+    /// Undoes the last change to the text, where the backend keeps a history.
+    Undo,
+    /// Redoes the last change undone, where the backend keeps a history.
+    Redo,
     /// Moves the caret to the point.
     MoveToPoint(f32, f32),
     /// Extends the selection to the point, as a drag does.

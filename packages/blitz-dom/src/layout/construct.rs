@@ -427,7 +427,20 @@ fn collect_layout_children_with_wrap(
                 return;
             } else if matches!(
                 type_attr,
-                None | Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
+                None | Some(
+                    "text"
+                        | "password"
+                        | "email"
+                        | "number"
+                        | "search"
+                        | "tel"
+                        | "url"
+                        | "date"
+                        | "month"
+                        | "week"
+                        | "time"
+                        | "datetime-local"
+                )
             ) {
                 create_text_editor(doc, container_node_id, false);
                 return;
@@ -790,6 +803,45 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
     }
 }
 
+/// Whether the `display: contents` node `node_id` holds in-flow inline content and nothing
+/// block-level, looking through nested `display: contents` children and pseudo-elements.
+fn contents_holds_only_inlines(doc: &BaseDocument, node_id: NodeId) -> bool {
+    fn walk(doc: &BaseDocument, node_id: NodeId, found: &mut bool) -> bool {
+        let node = &doc.nodes[node_id];
+        let children = node
+            .before()
+            .into_iter()
+            .chain(node.children.iter().copied())
+            .chain(node.after());
+        for child_id in children {
+            let child = &doc.nodes[child_id];
+            match child.data.kind() {
+                NodeKind::Comment => continue,
+                NodeKind::Text => {
+                    *found |= !child.is_whitespace_node();
+                    continue;
+                }
+                _ => {}
+            }
+            let display = child.display_style().unwrap_or(Display::inline());
+            if display.inside() == DisplayInside::Contents {
+                if !walk(doc, child_id, found) {
+                    return false;
+                }
+            } else if display.outside() != DisplayOutside::None {
+                // A table part is not inline content: the container wraps it in a table.
+                if child.is_or_contains_block() || display.outside() != DisplayOutside::Inline {
+                    return false;
+                }
+                *found = true;
+            }
+        }
+        true
+    }
+    let mut found = false;
+    walk(doc, node_id, &mut found) && found
+}
+
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
 fn collect_complex_layout_children(
     doc: &mut BaseDocument,
@@ -823,6 +875,15 @@ fn collect_complex_layout_children(
         if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
             // return;
         }
+        // A `display: contents` node in block flow that holds only inline
+        // content goes into the anonymous block whole, so that its text
+        // keeps the style it inherits from the node.
+        else if display_inside == DisplayInside::Contents
+            && !hide_whitespace
+            && contents_holds_only_inlines(doc, child_id)
+        {
+            out.push_wrapped(container_node_id, child_id, doc);
+        }
         // Recurse into `Display::Contents` nodes, wrapping hoisted text and
         // inline children as if they were direct children of this container
         else if display_inside == DisplayInside::Contents {
@@ -850,6 +911,10 @@ fn collect_complex_layout_children(
 fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multiline: bool) {
     let node = &mut doc.nodes[input_element_id];
     let style = node.primary_styles().map(|s| (*s).clone());
+    let is_password = !is_multiline
+        && node
+            .attr(local_name!("type"))
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("password"));
 
     let initial_text = if is_multiline {
         node.text_content()
@@ -873,6 +938,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     let SpecialElementData::TextInput(text_input_data) = &mut element.special_data else {
         unreachable!();
     };
+    text_input_data.is_password = is_password;
 
     text_input_data.editor.set_style(
         input_element_id,

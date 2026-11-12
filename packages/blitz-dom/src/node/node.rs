@@ -484,7 +484,7 @@ impl Node {
     }
 
     pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
-        let display = self.primary_styles().as_ref()?.clone_display();
+        let display = self.primary_styles().as_ref()?.slow_clone_display();
         Some(
             if self.element_data().is_some_and(|el| el.is_button_input()) {
                 stylo_taffy::convert::button_input_display(display)
@@ -500,7 +500,7 @@ impl Node {
 
         // Ignore out-of-flow items
         let position = style
-            .map(|s| s.clone_position())
+            .map(|s| s.slow_clone_position())
             .unwrap_or(Position::Relative);
         let is_in_flow = matches!(
             position,
@@ -512,7 +512,7 @@ impl Node {
         // Floated boxes do not break up the inline flow: they participate in the
         // inline formatting context as out-of-flow inline boxes
         let is_floating = style
-            .map(|s| s.clone_float().is_floating())
+            .map(|s| s.slow_clone_float().is_floating())
             .unwrap_or(false);
         if is_floating {
             return false;
@@ -564,7 +564,7 @@ impl Node {
         let white_space_collapse = self
             .parent
             .and_then(|parent_id| self.with(parent_id).primary_styles())
-            .map(|style| style.clone_white_space_collapse());
+            .map(|style| style.slow_clone_white_space_collapse());
         match white_space_collapse {
             Some(
                 WhiteSpaceCollapse::Preserve
@@ -1219,7 +1219,7 @@ impl Node {
         #[cfg(feature = "writing-mode")]
         {
             // Own-layout_wm by default: the node's own algorithm reads its style in its own axes
-            let layout_wm = styles.writing_mode;
+            let layout_wm = self.layout_frame_wm();
             stylo_taffy::TaffyStyloStyle::new_in(styles, flags, layout_wm)
         }
         #[cfg(not(feature = "writing-mode"))]
@@ -1245,7 +1245,7 @@ impl Node {
     #[cfg(feature = "writing-mode")]
     pub(crate) fn has_containment(&self) -> bool {
         self.primary_styles()
-            .is_some_and(|style| !style.clone_contain().is_empty())
+            .is_some_and(|style| !style.slow_clone_contain().is_empty())
     }
 
     /// Whether the node is a flex container with a column `flex-direction`, i.e. aligns its
@@ -1253,7 +1253,7 @@ impl Node {
     #[cfg(feature = "writing-mode")]
     pub(crate) fn is_column_flex_container(&self) -> bool {
         self.primary_styles().is_some_and(|s| {
-            s.clone_display().inside() == DisplayInside::Flex
+            s.slow_clone_display().inside() == DisplayInside::Flex
                 && !self.element_data().is_some_and(|el| el.is_button_input())
                 && matches!(
                     s.get_position().flex_direction,
@@ -1270,12 +1270,25 @@ impl Node {
             .unwrap_or(stylo_taffy::WritingMode::empty())
     }
 
+    /// The writing mode in whose axes the node's own layout algorithm runs. winkin turns an
+    /// inline formatting context's lines onto the page itself, so such a box runs in physical
+    /// axes, and its writing mode only meets Taffy's at its edges.
+    #[cfg(feature = "writing-mode")]
+    pub(crate) fn layout_frame_wm(&self) -> stylo_taffy::WritingMode {
+        if <crate::text::BackendLayout as crate::text::InlineLayoutEngine>::SETS_WRITING_MODES
+            && self.flags.is_inline_root()
+        {
+            return stylo_taffy::WritingMode::empty();
+        }
+        self.writing_mode()
+    }
+
     /// The node's `display` as a [`taffy::Display`]. Returns [`taffy::Display::Block`]
     /// for nodes without computed styles (e.g. text nodes).
     pub fn taffy_display(&self) -> taffy::Display {
         self.primary_styles()
             .map(|style| {
-                let display = style.clone_display();
+                let display = style.slow_clone_display();
                 if self.element_data().is_some_and(|el| el.is_button_input())
                     && !matches!(
                         display.inside(),
@@ -1311,6 +1324,49 @@ impl Node {
     pub(crate) fn record_out_of_flow(&self, style: &ComputedValues) {
         self.out_of_flow
             .store(style_is_out_of_flow(style), Ordering::Relaxed);
+    }
+
+    /// The direction `dir=auto` gives the element from its text: `Some(true)`
+    /// where the first strong character is right-to-left, `Some(false)` where
+    /// it is left-to-right, and `None` where it has none, as HTML's "auto
+    /// directionality" finds it. Text inside `bdi`, `script`, `style` and
+    /// `textarea`, and inside an element with a valid `dir` of its own, is
+    /// skipped.
+    pub fn auto_direction_is_rtl(&self) -> Option<bool> {
+        use icu_properties::{CodePointMapData, props::BidiClass};
+        let classes = CodePointMapData::<BidiClass>::new();
+        let mut stack: Vec<NodeId> = self.children.iter().rev().copied().collect();
+        while let Some(id) = stack.pop() {
+            let node = self.with(id);
+            match &node.data {
+                NodeData::Text(data) => {
+                    for c in data.content.chars() {
+                        match classes.get(c) {
+                            BidiClass::LeftToRight => return Some(false),
+                            BidiClass::RightToLeft | BidiClass::ArabicLetter => return Some(true),
+                            _ => {}
+                        }
+                    }
+                }
+                NodeData::Element(element) => {
+                    let name = &element.name.local;
+                    let skipped = *name == local_name!("bdi")
+                        || *name == local_name!("script")
+                        || *name == local_name!("style")
+                        || *name == local_name!("textarea")
+                        || element.attr(local_name!("dir")).is_some_and(|dir| {
+                            ["ltr", "rtl", "auto"]
+                                .iter()
+                                .any(|valid| dir.eq_ignore_ascii_case(valid))
+                        });
+                    if !skipped {
+                        stack.extend(node.children.iter().rev().copied());
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     pub fn text_content(&self) -> String {
@@ -1353,13 +1409,13 @@ impl Node {
     pub fn order(&self) -> i32 {
         self.primary_styles()
             .filter(|s| !matches!(s.get_box().position, Position::Absolute | Position::Fixed))
-            .map(|s| s.clone_order())
+            .map(|s| s.slow_clone_order())
             .unwrap_or(0)
     }
 
     pub fn z_index(&self) -> i32 {
         self.primary_styles()
-            .map(|s| s.clone_z_index().integer_or(0))
+            .map(|s| s.slow_clone_z_index().integer_or(0))
             .unwrap_or(0)
     }
 
@@ -1369,10 +1425,10 @@ impl Node {
             return false;
         };
 
-        let position = style.clone_position();
-        let has_z_index = !style.clone_z_index().is_auto();
+        let position = style.slow_clone_position();
+        let has_z_index = !style.slow_clone_z_index().is_auto();
 
-        if style.clone_opacity() != 1.0 {
+        if style.slow_clone_opacity() != 1.0 {
             return true;
         }
 
@@ -1420,7 +1476,7 @@ impl Node {
             return false;
         };
 
-        if style.clone_opacity() != 1.0 {
+        if style.slow_clone_opacity() != 1.0 {
             return true;
         }
 
@@ -1474,7 +1530,7 @@ impl Node {
         // Don't hit on visbility:hidden elements
         if let Some(style) = self.primary_styles() {
             if matches!(
-                style.clone_visibility(),
+                style.slow_clone_visibility(),
                 Visibility::Hidden | Visibility::Collapse
             ) {
                 return None;
@@ -1485,7 +1541,7 @@ impl Node {
         // descendants are still tested (one may restore pointer-events:auto).
         let pointer_events_none = self
             .primary_styles()
-            .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
+            .is_some_and(|style| style.slow_clone_pointer_events() == PointerEvents::None);
 
         let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
         let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
@@ -1667,15 +1723,26 @@ impl Node {
                 let hit = ild.hit_test(x, y, true);
                 let y = y - ild.block_offset();
 
-                if !clips_point && let Some(hit) = hit {
-                    let node_id = hit.node_id;
-                    if let Some(text_node) = self.tree().get(node_id)
-                        && !text_node.primary_styles().is_some_and(|style| {
-                            style.clone_pointer_events() == PointerEvents::None
-                        })
+                if !clips_point
+                    && let Some(hit) = hit
+                    && let Some(text_node) = self.tree().get(hit.node_id)
+                {
+                    // A text node takes `pointer-events` from the box it is laid out in.
+                    let hit_node = if matches!(text_node.data, NodeData::Text(_)) {
+                        text_node
+                            .layout_parent
+                            .get()
+                            .and_then(|parent| self.tree().get(parent))
+                            .unwrap_or(self)
+                    } else {
+                        text_node
+                    };
+                    if !hit_node
+                        .primary_styles()
+                        .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None)
                     {
                         return Some(HitResult {
-                            node_id,
+                            node_id: hit_node.id,
                             x,
                             y,
                             is_text: true,
@@ -1739,7 +1806,7 @@ impl Node {
             return false;
         }
         self.primary_styles().is_some_and(|styles| {
-            let display = styles.clone_display();
+            let display = styles.slow_clone_display();
             display.outside() == DisplayOutside::Inline && display.inside() == DisplayInside::Flow
         })
     }

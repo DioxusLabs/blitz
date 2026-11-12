@@ -2,6 +2,9 @@
 //! backend that paints its own layouts. The decorations and shadows they share are in
 //! [`crate::text_decorations`].
 
+// Some of what is shared here only the Parley painter uses.
+#![cfg_attr(not(feature = "parley"), allow(dead_code, unused_imports))]
+
 use anyrender::PaintScene;
 use blitz_dom::NodeId;
 use blitz_dom::node::TextLayout;
@@ -20,6 +23,12 @@ blitz_dom::cfg_text_backend! {
     parley => {
         mod parley;
         pub(crate) use self::parley::{
+            paint_inline_layout, paint_inline_text, paint_marker, paint_text_input,
+        };
+    }
+    winkin => {
+        mod winkin;
+        pub(crate) use self::winkin::{
             paint_inline_layout, paint_inline_text, paint_marker, paint_text_input,
         };
     }
