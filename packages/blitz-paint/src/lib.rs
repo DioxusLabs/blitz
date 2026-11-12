@@ -26,6 +26,11 @@ const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
     all(feature = "apple-font-embolden", target_os = "ios"),
 ));
 
+const WINDOWS_FONT_EMBOLDEN_ENABLED: bool = cfg!(all(
+    feature = "windows-font-embolden",
+    target_os = "windows"
+));
+
 /// The default color for text selection highlights
 const SELECTION_COLOR: Color = Color::from_rgb8(180, 213, 255);
 
