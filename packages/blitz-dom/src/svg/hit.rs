@@ -62,11 +62,14 @@ impl Node {
     }
 }
 
+// Hit testing can run between a DOM mutation and the next layout, so ids
+// cached in the layout may name removed nodes: skip those.
 fn hit_children(node: &Node, transform: Affine, point: Point) -> Option<NodeId> {
     node.children
         .iter()
         .rev()
-        .find_map(|child| hit_node(node.with(*child), transform, point))
+        .filter_map(|child| node.tree().get(*child))
+        .find_map(|child| hit_node(child, transform, point))
 }
 
 /// `parent_transform` maps the parent's user space to CSS px of the root's
@@ -78,7 +81,8 @@ fn hit_node(node: &Node, parent_transform: Affine, point: Point) -> Option<NodeI
         SvgLayoutKind::NotRendered => None,
         SvgLayoutKind::Group => hit_children(node, transform, point),
         SvgLayoutKind::Switch { child } => {
-            child.and_then(|child| hit_node(node.with(child), transform, point))
+            let child = node.tree().get((*child)?)?;
+            hit_node(child, transform, point)
         }
         SvgLayoutKind::Viewport {
             content_transform,
@@ -98,20 +102,29 @@ fn hit_node(node: &Node, parent_transform: Affine, point: Point) -> Option<NodeI
             let local = invert(transform, point)?;
             // Tolerances are given in CSS px and applied in user space.
             let scale = transform.determinant().abs().sqrt();
-            let fill_hit = fill_area && {
-                let nonzero = style.get_inherited_svg().fill_rule == FillRule::Nonzero;
-                fill_contains(path, local, nonzero, EDGE_TOLERANCE / scale)
-            };
+            let tolerance = EDGE_TOLERANCE / scale;
+            let bbox = layout.bbox?;
+            let fill_hit =
+                fill_area && contains_inclusive(bbox.inflate(tolerance, tolerance), local) && {
+                    let nonzero = style.get_inherited_svg().fill_rule == FillRule::Nonzero;
+                    fill_contains(path, local, nonzero, tolerance)
+                };
             let stroke_hit = !fill_hit
                 && stroke_area
                 && stroke.as_ref().is_some_and(|stroke| {
+                    let reach = stroke_reach(stroke) + tolerance;
+                    if !contains_inclusive(bbox.inflate(reach, reach), local) {
+                        return false;
+                    }
                     let outline = kurbo::stroke(
                         path.iter(),
                         stroke,
                         &kurbo::StrokeOpts::default(),
                         STROKE_TOLERANCE / scale,
                     );
-                    fill_contains(&outline, local, true, EDGE_TOLERANCE / scale)
+                    let outline_bbox = outline.bounding_box().inflate(tolerance, tolerance);
+                    contains_inclusive(outline_bbox, local)
+                        && fill_contains(&outline, local, true, tolerance)
                 });
             (fill_hit || stroke_hit).then_some(node.id)
         }
@@ -122,8 +135,12 @@ fn hit_node(node: &Node, parent_transform: Affine, point: Point) -> Option<NodeI
 /// The `<text>` or `<tspan>` whose character cell contains the point. A
 /// cell is both the fill and the stroke area of its character.
 fn hit_text(node: &Node, text: &SvgText, transform: Affine, point: Point) -> Option<NodeId> {
+    let bbox = text.bbox?;
+    if !invert(transform, point).is_some_and(|p| contains_inclusive(bbox, p)) {
+        return None;
+    }
     text.cells.iter().rev().find_map(|cell| {
-        let style = node.with(cell.node).primary_styles()?;
+        let style = node.tree().get(cell.node)?.primary_styles()?;
         let (fill_area, stroke_area) = hit_areas(&style);
         if !fill_area && !stroke_area {
             return None;
@@ -156,6 +173,20 @@ fn hit_areas(style: &ComputedValues) -> (bool, bool) {
     }
 }
 
+/// How far from the path the stroke outline can reach: half the stroke
+/// width, scaled by the longest miter or square cap.
+fn stroke_reach(stroke: &kurbo::Stroke) -> f64 {
+    let join = match stroke.join {
+        kurbo::Join::Miter => stroke.miter_limit.max(1.0),
+        _ => 1.0,
+    };
+    let cap = match (stroke.start_cap, stroke.end_cap) {
+        (kurbo::Cap::Square, _) | (_, kurbo::Cap::Square) => std::f64::consts::SQRT_2,
+        _ => 1.0,
+    };
+    stroke.width / 2.0 * join.max(cap)
+}
+
 fn invert(transform: Affine, point: Point) -> Option<Point> {
     let det = transform.determinant();
     (det.is_finite() && det.abs() > 1e-12).then(|| transform.inverse() * point)
@@ -167,11 +198,8 @@ fn contains_inclusive(rect: Rect, point: Point) -> bool {
 
 /// Whether the fill of `path` contains `point`, with open subpaths closed
 /// as filling does and points within `tolerance` of an edge counted inside.
+/// Callers reject points outside the path's bounds first.
 fn fill_contains(path: &BezPath, point: Point, nonzero: bool, tolerance: f64) -> bool {
-    let bbox = path.bounding_box().inflate(tolerance, tolerance);
-    if !contains_inclusive(bbox, point) {
-        return false;
-    }
     let closed = close_subpaths(path);
     let winding = closed.winding(point);
     let inside = if nonzero {
