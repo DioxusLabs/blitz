@@ -5,6 +5,7 @@
 @namespace url(http://www.w3.org/1999/xhtml);
 /* set default namespace to HTML */
 @namespace xul url(http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul);
+@namespace svg url(http://www.w3.org/2000/svg);
 
 @font-face {
     font-family: -moz-bullet-font;
@@ -1163,9 +1164,8 @@ slot {
     }
 }
 
-/* SVG (https://svgwg.org/svg2-draft/styling.html#UAStyleSheet) */
-@namespace svg url(http://www.w3.org/2000/svg);
-
+/* SVG (https://svgwg.org/svg2-draft/styling.html#UAStyleSheet). The svg
+   namespace prefix is declared at the top of this file. */
 svg|svg:not(:root),
 svg|symbol,
 svg|image,

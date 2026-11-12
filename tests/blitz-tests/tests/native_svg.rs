@@ -367,3 +367,32 @@ fn path_data_is_kept_up_to_the_first_error() {
     assert_eq!(pixel(&buf, 25, 25), RED);
     assert_eq!(pixel(&buf, 75, 75), BLUE);
 }
+
+#[test]
+fn group_opacity_blends_with_the_page() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><g opacity="0.5" transform="translate(50 50)"><rect x="-25" y="-25" width="50" height="50" fill="red"/></g></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    let [r, g, b] = pixel(&buf, 50, 50);
+    assert!(
+        r > 100 && r < 160 && g == 0 && b > 100 && b < 160,
+        "got {:?}",
+        [r, g, b]
+    );
+    assert_eq!(pixel(&buf, 10, 10), BLUE);
+}
+
+#[test]
+fn nested_svg_clips_to_its_viewport() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><svg x="25" y="25" width="50" height="50"><circle cx="25" cy="25" r="60" fill="red"/></svg></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 50), RED);
+    assert_eq!(pixel(&buf, 30, 30), RED);
+    assert_eq!(pixel(&buf, 20, 50), BLUE, "outside the nested viewport");
+    assert_eq!(pixel(&buf, 50, 80), BLUE, "outside the nested viewport");
+}

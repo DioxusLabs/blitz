@@ -136,7 +136,7 @@ impl ElementCx<'_, '_> {
                 Fill::NonZero,
                 peniko::Mix::Normal,
                 opacity,
-                Affine::IDENTITY,
+                self.transform,
                 &self.frame.padding_box(),
                 None,
                 None,
@@ -204,20 +204,20 @@ impl ElementCx<'_, '_> {
             },
             None => Viewport { width, height },
         };
-        let transform = transform
-            * Affine::translate((x, y))
-            * to_affine(dims.viewport_transform(width as f32, height as f32));
-
+        // The viewport rect is clipped in the outer coordinate system.
         let clips = style.get_box().overflow_x != style::computed_values::overflow_x::T::Visible;
         if clips {
             scene.push_clip_layer(
                 Fill::NonZero,
-                transform.pre_translate((-x, -y).into()),
+                transform,
                 &Rect::new(x, y, x + width, y + height),
             );
         }
+        let inner_transform = transform
+            * Affine::translate((x, y))
+            * to_affine(dims.viewport_transform(width as f32, height as f32));
         for child in node.children.iter() {
-            self.paint_svg_node(scene, node.with(*child), transform, inner_viewport);
+            self.paint_svg_node(scene, node.with(*child), inner_transform, inner_viewport);
         }
         if clips {
             scene.pop_layer();
