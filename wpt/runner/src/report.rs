@@ -8,19 +8,21 @@ use wptreport::{
 
 use crate::{TestKind, TestResult, TestStatus};
 
+/// The HEAD commit of the git checkout at `path`, or "unknown" if it is not one (e.g. a
+/// generated test directory such as the resvg tests)
 fn get_git_hash(path: &Path) -> String {
-    let output = Command::new("git")
+    Command::new("git")
         .current_dir(path)
         .args(["rev-parse", "HEAD"])
         .output()
-        .expect("Failed to run git rev-parse HEAD");
-    if !output.status.success() {
-        panic!("Failed to run git rev-parse HEAD (command failed)")
-    }
-    let hash = String::from_utf8(output.stdout)
-        .expect("Failed to run git rev-parse HEAD (non-utf8 output)");
-    // Remove trailing newline
-    hash.trim().to_string()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|hash| hash.trim().to_string())
+        .unwrap_or_else(|| {
+            log::warn!("{} is not a git checkout", path.display());
+            String::from("unknown")
+        })
 }
 
 pub fn generate_run_info(wpt_dir: &Path) -> WptRunInfo {
