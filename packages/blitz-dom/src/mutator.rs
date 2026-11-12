@@ -1325,7 +1325,7 @@ impl<'doc> DocumentMutator<'doc> {
                     .eager_op_queue
                     .push(SpecialOp::UnloadStylesheet(node_id)),
                 SpecialElementData::Image(_) => {}
-                #[cfg(feature = "svg")]
+                #[cfg(feature = "svg-native")]
                 SpecialElementData::SvgRoot(_) => {}
                 SpecialElementData::Canvas(_) => {
                     self.recompute_is_animating = true;
@@ -1567,6 +1567,7 @@ impl<'doc> DocumentMutator<'doc> {
 
         // Add content of "value" attribute as a text node child if:
         //   - Tag name is
+        #[cfg_attr(not(feature = "file-input"), allow(clippy::needless_return))]
         if let ("input", Some("button" | "submit" | "reset"), Some(value)) =
             (tagname, type_attr, value)
         {

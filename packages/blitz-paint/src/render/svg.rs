@@ -1,6 +1,7 @@
 //! Native inline SVG painting.
 //!
-//! A natively rendered inline `<svg>` (see `DocumentConfig::native_svg`) keeps
+//! A natively rendered inline `<svg>` (`svg-native` feature, picked by
+//! `DocumentConfig::native_svg` when usvg is also compiled in) keeps
 //! its subtree as live DOM nodes styled by Stylo, so painting walks those
 //! nodes and reads everything (geometry, paint, transforms) from their
 //! computed styles. This is the foundation only: basic shapes with solid
@@ -57,8 +58,8 @@ fn resolve(lp: &LengthPercentage, basis: f64) -> f64 {
         .px() as f64
 }
 
-/// Convert a usvg transform into a kurbo one.
-fn to_affine(t: usvg::Transform) -> Affine {
+/// Convert an SVG transform into a kurbo one.
+fn to_affine(t: blitz_dom::node::SvgTransform) -> Affine {
     Affine::new([t.sx, t.ky, t.kx, t.sy, t.tx, t.ty].map(f64::from))
 }
 
@@ -82,8 +83,8 @@ impl ElementCx<'_, '_> {
         let (viewport, to_viewport) = match dims.view_box {
             Some(vb) => (
                 Viewport {
-                    width: vb.width() as f64,
-                    height: vb.height() as f64,
+                    width: vb.width as f64,
+                    height: vb.height as f64,
                 },
                 to_affine(dims.viewport_transform(width, height)),
             ),
@@ -199,8 +200,8 @@ impl ElementCx<'_, '_> {
         }
         let inner_viewport = match dims.view_box {
             Some(vb) => Viewport {
-                width: vb.width() as f64,
-                height: vb.height() as f64,
+                width: vb.width as f64,
+                height: vb.height as f64,
             },
             None => Viewport { width, height },
         };

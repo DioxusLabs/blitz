@@ -61,13 +61,13 @@ pub struct DocumentConfig {
     /// whole tree is reconstructed and laid out from scratch through the same
     /// damage-driven pipeline used by incremental mode.
     pub incremental: Option<bool>,
-    /// Whether inline `<svg>` elements are rendered natively. Defaults to `false`.
-    ///
-    /// When enabled, the elements of an inline SVG subtree stay live DOM nodes
-    /// styled by Stylo and are painted directly from the DOM. When disabled,
-    /// the subtree is serialized and re-parsed with usvg on every change (the
-    /// legacy path). External SVG resources (`<img src="x.svg">`, CSS
-    /// `background-image`) always go through usvg regardless of this setting.
+    /// Which compiled SVG backend renders inline `<svg>` elements when both
+    /// the `svg-native` and `svg-usvg` cargo features are enabled: `Some(true)`
+    /// keeps the subtree as live, stylo-styled DOM nodes painted from their
+    /// computed styles; `Some(false)` (the default) serializes it and
+    /// re-parses it with usvg on every change. Ignored when only one backend
+    /// is compiled. External SVG resources (`<img src="x.svg">`, CSS
+    /// `background-image`) always go through usvg.
     pub native_svg: Option<bool>,
     /// If set, every sub-resource `Request` blitz-dom creates for this
     /// document will carry this signal. Aborting it cancels every in-flight

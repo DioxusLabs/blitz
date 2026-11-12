@@ -5,7 +5,7 @@ mod device;
 mod dom;
 mod prefs;
 mod presentational_hints;
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-native")]
 mod svg_attrs;
 mod traversal;
 mod user_agent;

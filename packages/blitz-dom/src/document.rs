@@ -216,7 +216,8 @@ pub struct BaseDocument {
     /// pipeline reconstructs and relays out the whole tree.
     pub(crate) incremental_layout: bool,
     /// Whether inline `<svg>` subtrees are rendered natively from the live DOM
-    /// (`true`) or serialized and re-parsed with usvg (`false`).
+    /// (`true`, `svg-native` feature) or serialized and re-parsed with usvg
+    /// (`false`, `svg-usvg` feature).
     pub(crate) native_svg: bool,
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
@@ -475,7 +476,9 @@ impl BaseDocument {
             flags: DocumentFlags::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
-            native_svg: config.native_svg.unwrap_or(false),
+            // With one SVG backend compiled the flag is ignored.
+            native_svg: cfg!(feature = "svg-native")
+                && (!cfg!(feature = "svg-usvg") || config.native_svg.unwrap_or(false)),
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
@@ -1364,7 +1367,7 @@ impl BaseDocument {
 
                 self.apply_loaded_image(url, image);
             }
-            #[cfg(feature = "svg")]
+            #[cfg(feature = "svg-usvg")]
             Resource::Svg(_kind, svg) => {
                 // Create the ImageData and cache it
                 let image = ImageData::Svg(svg);
@@ -2590,11 +2593,7 @@ impl BaseDocument {
             let Some(element) = node.element_data() else {
                 return false;
             };
-            if element.name.local == local_name!("canvas") && element.has_attr(local_name!("src")) {
-                return true;
-            }
-
-            false
+            element.name.local == local_name!("canvas") && element.has_attr(local_name!("src"))
         })
     }
 

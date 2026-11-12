@@ -13,7 +13,10 @@ rust-version.workspace = true
 [features]
 default = ["svg"]
 tracing = ["dep:tracing"]
-svg = ["dep:anyrender_svg", "dep:usvg", "dep:svgtypes", "blitz-dom/svg"]
+# SVG backends, see blitz-dom. `svg` is an alias for `svg-usvg`.
+svg = ["svg-usvg"]
+svg-usvg = ["dep:anyrender_svg", "dep:usvg", "dep:svgtypes", "blitz-dom/svg-usvg"]
+svg-native = ["dep:svgtypes", "blitz-dom/svg-native"]
 custom-widget = ["blitz-dom/custom-widget"]
 font-embolden = []
 apple-font-embolden = []

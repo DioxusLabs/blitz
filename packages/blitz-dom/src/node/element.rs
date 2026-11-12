@@ -28,7 +28,7 @@ use thin_vec::ThinVec;
 use url::Url;
 
 use super::stylo_data::StyloData;
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 use super::svg::SvgImageData;
 use super::{Attribute, Attributes};
 use crate::Document;
@@ -382,7 +382,7 @@ pub enum SpecialElementData {
     /// The root of a natively rendered inline \<svg\> subtree: the dimensions
     /// declared on the element (`width`, `height`, `viewBox`,
     /// `preserveAspectRatio`). The subtree itself stays in the DOM.
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-native")]
     SvgRoot(crate::node::SvgIntrinsicDimensions),
     /// A \<canvas\> element's custom paint source
     Canvas(CanvasData),
@@ -408,7 +408,7 @@ impl Clone for SpecialElementData {
             Self::CustomWidget(_) => Self::None, // TODO
             Self::Stylesheet(data) => Self::Stylesheet(data.clone()),
             Self::Image(data) => Self::Image(data.clone()),
-            #[cfg(feature = "svg")]
+            #[cfg(feature = "svg-native")]
             Self::SvgRoot(data) => Self::SvgRoot(*data),
             Self::Canvas(data) => Self::Canvas(data.clone()),
             Self::TableRoot(data) => Self::TableRoot(data.clone()),
@@ -581,7 +581,7 @@ impl ElementData {
     }
 
     /// The declared dimensions of a natively rendered inline `<svg>` root.
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-native")]
     pub fn svg_root_data(&self) -> Option<&crate::node::SvgIntrinsicDimensions> {
         match &self.special_data {
             SpecialElementData::SvgRoot(data) => Some(data),
@@ -610,7 +610,7 @@ impl ElementData {
         }
     }
 
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-usvg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.image_data()? {
             ImageData::Svg(data) => Some(&data.tree),
@@ -913,7 +913,7 @@ impl RasterImageData {
 #[derive(Debug, Clone)]
 pub enum ImageData {
     Raster(RasterImageData),
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-usvg")]
     Svg(SvgImageData),
     None,
 }
@@ -959,11 +959,11 @@ impl std::fmt::Debug for SpecialElementData {
             SpecialElementData::Stylesheet(_) => f.write_str("NodeSpecificData::Stylesheet"),
             SpecialElementData::Image(data) => match **data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
-                #[cfg(feature = "svg")]
+                #[cfg(feature = "svg-usvg")]
                 ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
                 ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
             },
-            #[cfg(feature = "svg")]
+            #[cfg(feature = "svg-native")]
             SpecialElementData::SvgRoot(_) => f.write_str("NodeSpecificData::SvgRoot"),
             SpecialElementData::Canvas(_) => f.write_str("NodeSpecificData::Canvas"),
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),

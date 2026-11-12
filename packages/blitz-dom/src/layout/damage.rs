@@ -1,5 +1,5 @@
 use blitz_traits::node_id::NodeId;
-#[cfg(feature = "svg")]
+#[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
 use markup5ever::local_name;
 use stylo_taffy::CopyStyleGetters;
 
@@ -127,7 +127,7 @@ impl BaseDocument {
         // no boxes, so their damage (most SVG properties are `affects = "layout"`
         // in stylo) must not relayout the HTML ancestors. Only the root's own
         // damage and a repaint cross the `<svg>` boundary.
-        #[cfg(feature = "svg")]
+        #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
         if self.nodes[node_id]
             .data
             .is_element_with_tag_name(&local_name!("svg"))
@@ -425,11 +425,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
             }
         }
 
-        if new.is_pseudo_style() && old.get_counters().content != new.get_counters().content {
-            return true;
-        }
-
-        false
+        new.is_pseudo_style() && old.get_counters().content != new.get_counters().content
     };
 
     let text_shaping_needs_recollect = || {
@@ -441,7 +437,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
 
         let old_text = old.get_inherited_text();
         let new_text = new.get_inherited_text();
-        if !std::ptr::eq(old_text, new_text)
+        !std::ptr::eq(old_text, new_text)
             && (old_text.white_space_collapse != new_text.white_space_collapse
                 || old_text.text_transform != new_text.text_transform
                 || old_text.word_break != new_text.word_break
@@ -450,11 +446,6 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
                 || old_text.letter_spacing != new_text.letter_spacing
                 || old_text.word_spacing != new_text.word_spacing
                 || old_text.text_rendering != new_text.text_rendering)
-        {
-            return true;
-        }
-
-        false
     };
 
     // Table layout bakes the sizes of the table and its internal boxes into the table
@@ -665,7 +656,7 @@ impl BaseDocument {
     }
 }
 
-#[cfg(all(test, feature = "svg"))]
+#[cfg(all(test, feature = "svg-usvg"))]
 mod tests {
     use super::*;
     use crate::mutator::DocumentMutator;
@@ -681,6 +672,7 @@ mod tests {
 
     /// `<html><body><svg width=50 height=50><circle cx=10 r=5/></svg></body></html>`,
     /// resolved once. Returns the document and the ids of `body`, `svg` and `circle`.
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
     fn svg_document(native_svg: bool) -> (BaseDocument, NodeId, NodeId, NodeId) {
         let mut doc = BaseDocument::new(DocumentConfig {
             viewport: Some(Viewport::new(100, 100, 1.0, ColorScheme::Light)),
@@ -725,6 +717,7 @@ mod tests {
         doc.propagate_damage_flags(root);
     }
 
+    #[cfg(feature = "svg-native")]
     const LAYOUT: RestyleDamage = RestyleDamage::from_bits_retain(
         ONLY_RELAYOUT.bits()
             | CONSTRUCT_BOX.bits()
@@ -733,6 +726,7 @@ mod tests {
     );
 
     #[test]
+    #[cfg(feature = "svg-native")]
     fn native_svg_child_damage_stops_at_the_svg_root() {
         let (mut doc, body, svg, circle) = svg_document(true);
         propagate(&mut doc, |m| {
@@ -748,6 +742,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "svg-native")]
     fn native_svg_root_sizing_relayouts_the_page() {
         let (mut doc, body, svg, _) = svg_document(true);
         propagate(&mut doc, |m| {
@@ -758,6 +753,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "svg-usvg")]
     fn usvg_svg_child_damage_reconstructs_the_svg() {
         let (mut doc, _, svg, circle) = svg_document(false);
         propagate(&mut doc, |m| {

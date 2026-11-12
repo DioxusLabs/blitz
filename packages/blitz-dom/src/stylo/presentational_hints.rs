@@ -241,12 +241,12 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
 
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-native")]
     let svg_url_data =
         (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
     // Stack buffer large enough for one declaration (or one expanded
     // shorthand), reused for every presentation attribute on the element.
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-native")]
     let mut svg_hint = style::properties::SourcePropertyDeclaration::default();
 
     for attr in elem.attrs() {
@@ -440,7 +440,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // https://svgwg.org/svg2-draft/styling.html#PresentationAttributes
         // Every other attribute on an SVG element that names a CSS property is
         // a presentation attribute for that property.
-        #[cfg(feature = "svg")]
+        #[cfg(feature = "svg-native")]
         if let Some(url_data) = &svg_url_data
             && attr.name.ns == ns!()
             && !is_svg_root_size

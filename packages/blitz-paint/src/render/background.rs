@@ -238,7 +238,7 @@ impl ElementCx<'_, '_> {
             GenericImage::Gradient(gradient) => self.draw_gradient_layer(scene, gradient, layer),
             GenericImage::Url(_) => {
                 self.draw_raster_image_layer(scene, layer);
-                #[cfg(feature = "svg")]
+                #[cfg(feature = "svg-usvg")]
                 self.draw_svg_image_layer(scene, layer);
             }
             GenericImage::LightDark(_) => {
@@ -425,7 +425,7 @@ impl ElementCx<'_, '_> {
         false
     }
 
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-usvg")]
     fn draw_svg_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
         let Some(bg_image) = layer.image_data else {
             return;
@@ -829,6 +829,7 @@ enum BackgroundSizeComputeMode {
     /// Intrinsic dimensions of an image which may lack an intrinsic width,
     /// height, and/or aspect ratio (e.g. SVG), sized per the CSS default
     /// sizing algorithm (https://drafts.csswg.org/css-images/#default-sizing)
+    #[cfg_attr(not(feature = "svg-usvg"), allow(dead_code))]
     Intrinsic {
         width: Option<f32>,
         height: Option<f32>,
