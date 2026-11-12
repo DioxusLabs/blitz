@@ -36,6 +36,7 @@ Check out:
     - The Markdown viewer: `cargo run -rp rdme ./README.md`
     - TodoMVC app: `cargo run -rp todomvc`
     - WGPU texture integration example: `cargo run -rp wgpu_texture`
+    - [iOS UIKit scene example](./examples/ios_scene/README.md) (Apple silicon Mac and iOS Simulator)
 
 Other examples are available in the [examples/](./examples/) folder.
 

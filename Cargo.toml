@@ -27,6 +27,7 @@ members = [
     "examples/todomvc",
     "examples/wgpu_texture",
     "examples/wasm_hello",
+    "examples/ios_scene",
 ]
 exclude = ["sites"]
 resolver = "2"
