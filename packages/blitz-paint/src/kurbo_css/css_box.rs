@@ -32,14 +32,11 @@ use super::{Corner, CssBoxKind, Direction, Edge, add_insets, get_corner_insets};
 #[derive(Debug, Clone)]
 pub struct CssBox {
     pub border_box: Rect,
-    pub padding_box: Rect,
-    pub content_box: Rect,
-    pub outline_box: Rect,
-
-    pub padding_width: Insets,
     pub border_width: Insets,
+    pub padding_width: Insets,
     pub outline_width: f64,
 
+    /// Outer (border-box) radii, already scaled down so adjacent corners don't overlap.
     pub border_radii: NonUniformRoundedRectRadii,
 }
 
@@ -51,39 +48,55 @@ impl CssBox {
         outline_width: f64,
         mut border_radii: NonUniformRoundedRectRadii,
     ) -> Self {
-        let padding_box = border_box - border;
-        let content_box = padding_box - padding;
-        let outline_box = border_box.inset(outline_width);
-
         // Correct the border radii if they are too big if two border radii would intersect, then we need to shrink
         // ALL border radii by the same factor such that they do not
-        let top_overlap_factor =
-            border_box.width() / (border_radii.top_left.x + border_radii.top_right.x);
-        let bottom_overlap_factor =
-            border_box.width() / (border_radii.bottom_left.x + border_radii.bottom_right.x);
-        let left_overlap_factor =
-            border_box.height() / (border_radii.top_left.y + border_radii.bottom_left.y);
-        let right_overlap_factor =
-            border_box.height() / (border_radii.top_right.y + border_radii.bottom_right.y);
+        if border_radii != NonUniformRoundedRectRadii::default() {
+            let top_overlap_factor =
+                border_box.width() / (border_radii.top_left.x + border_radii.top_right.x);
+            let bottom_overlap_factor =
+                border_box.width() / (border_radii.bottom_left.x + border_radii.bottom_right.x);
+            let left_overlap_factor =
+                border_box.height() / (border_radii.top_left.y + border_radii.bottom_left.y);
+            let right_overlap_factor =
+                border_box.height() / (border_radii.top_right.y + border_radii.bottom_right.y);
 
-        let min_factor = top_overlap_factor
-            .min(bottom_overlap_factor)
-            .min(left_overlap_factor)
-            .min(right_overlap_factor)
-            .min(1.0);
-        if min_factor < 1.0 {
-            border_radii *= min_factor
+            let min_factor = top_overlap_factor
+                .min(bottom_overlap_factor)
+                .min(left_overlap_factor)
+                .min(right_overlap_factor)
+                .min(1.0);
+            if min_factor < 1.0 {
+                border_radii *= min_factor
+            }
         }
 
         Self {
-            padding_box,
             border_box,
-            content_box,
-            outline_box,
-            outline_width,
-            padding_width: padding,
             border_width: border,
+            padding_width: padding,
+            outline_width,
             border_radii,
+        }
+    }
+
+    pub fn padding_box(&self) -> Rect {
+        self.border_box - self.border_width
+    }
+
+    pub fn content_box(&self) -> Rect {
+        self.padding_box() - self.padding_width
+    }
+
+    pub fn outline_box(&self) -> Rect {
+        self.border_box.inset(self.outline_width)
+    }
+
+    fn rect(&self, kind: CssBoxKind) -> Rect {
+        match kind {
+            CssBoxKind::OutlineBox => self.outline_box(),
+            CssBoxKind::BorderBox => self.border_box,
+            CssBoxKind::PaddingBox => self.padding_box(),
+            CssBoxKind::ContentBox => self.content_box(),
         }
     }
 
@@ -227,12 +240,10 @@ impl CssBox {
 
     fn box_shape(&self, kind: CssBoxKind) -> NonUniformRoundedRect {
         use Corner::*;
-        let rect = match kind {
-            CssBoxKind::OutlineBox => self.outline_box,
-            CssBoxKind::BorderBox => self.border_box,
-            CssBoxKind::PaddingBox => self.padding_box,
-            CssBoxKind::ContentBox => self.content_box,
-        };
+        let rect = self.rect(kind);
+        if !self.has_border_radius() {
+            return rect.into();
+        }
         let radii = |corner| {
             if self.is_sharp(corner, kind) {
                 Vec2::ZERO
@@ -276,11 +287,13 @@ impl CssBox {
     /// horizontally (so scrolled text doesn't paint over the inline padding) and the
     /// padding box vertically (so glyphs overflowing a short line box aren't cut off).
     pub fn text_input_clip_shape(&self) -> NonUniformRoundedRect {
+        let content_box = self.content_box();
+        let padding_box = self.padding_box();
         Rect::new(
-            self.content_box.x0,
-            self.padding_box.y0,
-            self.content_box.x1,
-            self.padding_box.y1,
+            content_box.x0,
+            padding_box.y0,
+            content_box.x1,
+            padding_box.y1,
         )
         .into()
     }
@@ -342,12 +355,7 @@ impl CssBox {
     }
 
     fn corner(&self, corner: Corner, css_box: CssBoxKind) -> Point {
-        let Rect { x0, y0, x1, y1 } = match css_box {
-            CssBoxKind::OutlineBox => self.outline_box,
-            CssBoxKind::BorderBox => self.border_box,
-            CssBoxKind::PaddingBox => self.padding_box,
-            CssBoxKind::ContentBox => self.content_box,
-        };
+        let Rect { x0, y0, x1, y1 } = self.rect(css_box);
         match corner {
             Corner::TopLeft => Point { x: x0, y: y0 },
             Corner::TopRight => Point { x: x1, y: y0 },
@@ -852,4 +860,36 @@ fn detects_uniform_corner_border() {
         bottom_left: Vec2::new(2.0, 2.0),
     };
     assert!(css_box(44.0, 44.0, differing).is_uniform_corner_border());
+}
+
+#[test]
+fn derives_nested_boxes_and_clamps_radii() {
+    let b = CssBox::new(
+        Rect::new(0.0, 0.0, 100.0, 50.0),
+        Insets::new(1.0, 2.0, 3.0, 4.0),
+        Insets::uniform(5.0),
+        2.0,
+        NonUniformRoundedRectRadii {
+            top_left: Vec2::new(100.0, 10.0),
+            top_right: Vec2::new(100.0, 10.0),
+            bottom_right: Vec2::ZERO,
+            bottom_left: Vec2::ZERO,
+        },
+    );
+    assert_eq!(b.padding_box(), Rect::new(1.0, 2.0, 97.0, 46.0));
+    assert_eq!(b.content_box(), Rect::new(6.0, 7.0, 92.0, 41.0));
+    assert_eq!(b.outline_box(), Rect::new(-2.0, -2.0, 102.0, 52.0));
+    // The top radii sum to twice the width, so every radius is halved.
+    assert_eq!(b.border_radii.top_left, Vec2::new(50.0, 5.0));
+
+    // A sharp, empty box keeps zero radii rather than NaN from 0 / 0.
+    let sharp = CssBox::new(
+        Rect::ZERO,
+        Insets::ZERO,
+        Insets::ZERO,
+        0.0,
+        NonUniformRoundedRectRadii::default(),
+    );
+    assert_eq!(sharp.border_radii, NonUniformRoundedRectRadii::default());
+    assert!(!sharp.has_border_radius());
 }
