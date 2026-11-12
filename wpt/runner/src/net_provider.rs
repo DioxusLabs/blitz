@@ -1,3 +1,4 @@
+use crate::wptserve;
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
 use data_url::DataUrl;
 use log::{debug, warn};
@@ -74,11 +75,12 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                     .path()
                     .strip_prefix('/')
                     .unwrap_or(request.url.path());
-                let path = self.base_path.join(relative_path);
-                let file_content = std::fs::read(&path).inspect_err(|err| {
-                    warn!("Error loading {}: {}", path.display(), err);
-                    callback.queue.record_failure(request_id);
-                })?;
+                let response = wptserve::serve(&self.base_path, relative_path, &request.url)
+                    .inspect_err(|err| {
+                        warn!("Error loading {relative_path}: {err}");
+                        callback.queue.record_failure(request_id);
+                    })?;
+                let file_content = response.body;
                 catch_unwind(AssertUnwindSafe(|| {
                     handler.bytes(request.url.to_string(), Bytes::from(file_content))
                 }))

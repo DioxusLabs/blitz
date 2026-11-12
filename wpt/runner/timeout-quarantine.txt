@@ -14,6 +14,7 @@ css/css-cascade/layer-statement-before-import.html dynamic-load-events
 css/css-cascade/scope-implicit-external.html dynamic-load-events
 css/css-color-adjust/rendering/dark-color-scheme/color-scheme-iframe-dynamic.html dynamic-load-events
 css/css-color-adjust/rendering/dark-color-scheme/color-scheme-iframe-preferred-change-same-origin.html dynamic-load-events
+css/css-color-adjust/rendering/dark-color-scheme/color-scheme-iframe-preferred-nested.sub.html dynamic-load-events
 css/css-contain/content-visibility/content-visibility-047.html testdriver
 css/css-contain/content-visibility/content-visibility-auto-state-changed-first-observation.html content-visibility-events
 css/css-contain/content-visibility/content-visibility-auto-state-changed-removed.html content-visibility-events

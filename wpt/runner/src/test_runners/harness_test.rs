@@ -10,7 +10,7 @@ use log::{debug, warn};
 use url::Url;
 
 use super::{SubtestResult, parse_and_resolve_document, pump_timers, run_document_scripts};
-use crate::{SubtestCounts, TestStatus, ThreadCtx};
+use crate::{SubtestCounts, TestStatus, ThreadCtx, wptserve};
 
 /// How long to wait for the harness to complete (async tests, timers)
 const HARNESS_TIMEOUT: Duration = Duration::from_secs(10);
@@ -107,7 +107,14 @@ impl ScriptFetcher for WptScriptFetcher {
             path = "/resources/webidl2/lib/webidl2.js";
         }
         let relative_path = path.strip_prefix('/').unwrap_or(path);
-        std::fs::read_to_string(self.wpt_dir.join(relative_path)).map_err(FetchError::Io)
+        let response =
+            wptserve::serve(&self.wpt_dir, relative_path, url).map_err(FetchError::Io)?;
+        response.text().ok_or_else(|| {
+            FetchError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stream did not contain valid UTF-8",
+            ))
+        })
     }
 }
 

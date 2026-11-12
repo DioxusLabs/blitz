@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
-use std::{fs, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use blitz_dom::traversal::TreeTraverser;
 use blitz_dom::{BaseDocument, Document as _, DocumentConfig};
@@ -13,7 +13,7 @@ use regex::Regex;
 use harness_test::WptScriptFetcher;
 
 use crate::manifest::{TestType, is_xml};
-use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
+use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx, wptserve};
 
 mod attr_test;
 mod crash_test;
@@ -197,10 +197,16 @@ pub fn process_test_file(
         );
     }
 
-    let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
-            // Tests encoded as UTF-16 or a legacy encoding are not supported: skip them.
+    let request_url = ctx.dummy_base_url.join(test_url).unwrap();
+    let file_contents = match wptserve::serve(&ctx.wpt_dir, relative_path, &request_url) {
+        Ok(response) => response.text(),
+        Err(err) => panic!("Failed to read {relative_path}: {err}"),
+    };
+    let file_contents = match file_contents {
+        Some(contents) => contents,
+        None => {
+            // Tests encoded as UTF-16 or a legacy encoding are only supported when
+            // their `.headers` give a charset: skip the others.
             warn!("Skipping {relative_path}: not valid UTF-8");
             return (
                 TestKind::Unknown,
@@ -210,7 +216,6 @@ pub fn process_test_file(
                 Vec::new(),
             );
         }
-        Err(err) => panic!("Failed to read {relative_path}: {err}"),
     };
 
     // Compute flags
@@ -305,8 +310,11 @@ fn parse_and_resolve_document(
     relative_path: &str,
 ) -> BaseDocument {
     ctx.net_provider.reset();
+    let url = ctx.dummy_base_url.join(relative_path).unwrap();
+    let is_xml_document = wptserve::headers_say_xml(&ctx.wpt_dir, relative_path, &url)
+        .unwrap_or_else(|| is_xml(relative_path));
     let config = DocumentConfig {
-        base_url: Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
+        base_url: Some(url.to_string()),
         font_ctx: Some(ctx.font_ctx.clone()),
         net_provider: Some(Arc::clone(&ctx.net_provider) as _),
         navigation_provider: Some(Arc::clone(&ctx.navigation_provider)),
@@ -316,10 +324,10 @@ fn parse_and_resolve_document(
         ..Default::default()
     };
 
-    // Extensions which wptserve serves with an XML content type must be parsed
-    // as XML: content sniffing cannot detect all XHTML documents (e.g. ones
-    // with a plain `<!DOCTYPE html>`)
-    let mut document = if is_xml(relative_path) {
+    // Documents which wptserve serves with an XML content type (by extension or
+    // `.headers`) must be parsed as XML: content sniffing cannot detect all XHTML
+    // documents (e.g. ones with a plain `<!DOCTYPE html>`)
+    let mut document = if is_xml_document {
         HtmlDocument::from_xml(html, config)
     } else {
         HtmlDocument::from_html(html, config)

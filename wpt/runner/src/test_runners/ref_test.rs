@@ -22,7 +22,7 @@ use super::{
     run_document_scripts,
 };
 use crate::manifest::artifact_name;
-use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
+use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH, wptserve};
 
 pub fn process_ref_test(
     ctx: &mut ThreadCtx,
@@ -129,8 +129,12 @@ fn render_reference_and_compare(
         let ref_relative_path = ref_url[url::Position::BeforePath..]
             .trim_start_matches('/')
             .to_string();
-        let ref_path = ctx.wpt_dir.join(ref_url.path().trim_start_matches('/'));
-        match fs::read_to_string(&ref_path) {
+        let ref_path = ref_url.path().trim_start_matches('/');
+        match wptserve::serve(&ctx.wpt_dir, ref_path, &ref_url).and_then(|response| {
+            response.text().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "not valid UTF-8")
+            })
+        }) {
             Ok(html) => (ref_relative_path, html),
             Err(err) => {
                 warn!("Skipping {test_relative_path}: cannot read ref file {ref_file:?} ({err})");

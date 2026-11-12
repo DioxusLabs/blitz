@@ -31,6 +31,7 @@ peniko = { workspace = true }
 image = { workspace = true, features = ["png"] }
 url = { workspace = true }
 data-url = { workspace = true }
+encoding_rs = "0.8"
 png = { version = "0.17" }
 glob = { version = "0.3.1" }
 html-escape = { workspace = true }
