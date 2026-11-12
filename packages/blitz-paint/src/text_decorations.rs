@@ -1,10 +1,8 @@
 use anyrender::PaintScene;
-use anyrender::filters::{Filter, FilterEffect};
 use blitz_dom::CopyStyleGetters;
-use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
+use blitz_dom::{BaseDocument, NodeId, util::ToColorColor};
 use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke, Vec2};
-use parley::Line;
-use peniko::{Fill, Mix};
+use peniko::{Fill, FontData};
 use std::collections::HashMap;
 use std::sync::Arc;
 use style::properties::generated::longhands::text_decoration_style::computed_value::T as TextDecorationStyle;
@@ -14,7 +12,7 @@ use style::values::computed::{
 use style::values::generics::text::{GenericTextDecorationInset, GenericTextDecorationLength};
 
 use crate::color::{Color, ToColorColor as _};
-use crate::text::{RunRecord, TextPaintOptions, draw_glyph_run, glyph_run_rect, glyph_runs};
+use crate::text::TextPaintOptions;
 
 /// Per-font-face cache of the OS/2 `usWinAscent / unitsPerEm` ratio, keyed by the font
 /// blob's unique id and face index. `None` is cached for fonts without a usable OS/2 or
@@ -26,7 +24,7 @@ pub(crate) type WinAscentCache = HashMap<(u64, u32), Option<f32>>;
 /// This is the ascent browsers use as the top of the "em box" when positioning overlines. It
 /// is typically taller than the hhea ascent Parley exposes via [`parley::layout::run::RunMetrics`].
 /// Returns `None` when the font has no OS/2 table.
-fn win_ascent(cache: &mut WinAscentCache, font: &parley::FontData, font_size: f32) -> Option<f32> {
+fn win_ascent(cache: &mut WinAscentCache, font: &FontData, font_size: f32) -> Option<f32> {
     let ratio = *cache
         .entry((font.data.id(), font.index))
         .or_insert_with(|| win_ascent_ratio(font));
@@ -35,7 +33,7 @@ fn win_ascent(cache: &mut WinAscentCache, font: &parley::FontData, font_size: f3
 
 /// The unitless `usWinAscent / unitsPerEm` ratio for a font face, or `None` when the font
 /// has no usable head/OS/2 table.
-fn win_ascent_ratio(font: &parley::FontData) -> Option<f32> {
+fn win_ascent_ratio(font: &FontData) -> Option<f32> {
     use skrifa::raw::{FontRef, TableProvider as _};
     let font_ref = FontRef::from_index(font.data.as_ref(), font.index).ok()?;
     let units_per_em = font_ref.head().ok()?.units_per_em();
@@ -108,14 +106,14 @@ pub(crate) struct DecorationStackEntry {
 /// One `text-shadow` layer with all lengths resolved to device pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ResolvedTextShadow {
-    offset: Vec2,
+    pub(crate) offset: Vec2,
     /// Gaussian standard deviation (half the CSS blur radius); `0.0` for a sharp shadow.
-    std_dev: f64,
-    color: Color,
+    pub(crate) std_dev: f64,
+    pub(crate) color: Color,
 }
 
 impl ResolvedTextShadow {
-    fn is_blurred(&self) -> bool {
+    pub(crate) fn is_blurred(&self) -> bool {
         self.std_dev > 0.0
     }
 }
@@ -228,7 +226,7 @@ pub(crate) struct DecorationRunGeometry {
     pub(crate) underline_offset: f32,
     pub(crate) underline_size: f32,
     pub(crate) strikethrough_size: f32,
-    pub(crate) font: parley::FontData,
+    pub(crate) font: FontData,
     pub(crate) font_size: f32,
     pub(crate) css_font_size: f64,
 }
@@ -589,115 +587,5 @@ pub(crate) fn flush_line_decorations(
         if clip.is_some() {
             scene.pop_layer();
         }
-    }
-}
-
-/// Paint the `text-shadow`s of one line.
-///
-/// Like Blink and Gecko, a shadow is painted by drawing the text again, offset and in the
-/// shadow colour, beneath the real text; the shadows in a list are drawn last-to-first so
-/// the first one ends up on top. An unblurred shadow is just an extra glyph draw. A
-/// blurred one needs a blur filter layer, which is the expensive part, so consecutive runs
-/// that share the same `text-shadow` list (by `Arc` identity: a paragraph's runs normally
-/// all inherit one list) are batched into a single layer per shadow.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_line_text_shadows(
-    scene: &mut impl PaintScene,
-    line: &Line<'_, TextBrush>,
-    run_records: &[RunRecord],
-    deco_boxes: &[LineDecoration],
-    win_ascent_ratios: &mut WinAscentCache,
-    transform: Affine,
-    options: TextPaintOptions,
-    inline_root_id: NodeId,
-) {
-    let line_metrics = line.metrics();
-    let line_baseline = line_metrics.baseline;
-    let line_height = (line_metrics.block_max_coord - line_metrics.block_min_coord) as f64;
-
-    let mut start = 0;
-    while start < run_records.len() {
-        let Some(shadow_list) = &run_records[start].shadows else {
-            start += 1;
-            continue;
-        };
-
-        // The batch: this run plus following runs with the same shadow list.
-        let end = start
-            + run_records[start..]
-                .iter()
-                .take_while(|record| {
-                    record
-                        .shadows
-                        .as_ref()
-                        .is_some_and(|list| Arc::ptr_eq(list, shadow_list))
-                })
-                .count();
-        let batch = || glyph_runs(line).skip(start).take(end - start);
-
-        let glyph_bounds = batch()
-            .map(|run| glyph_run_rect(&run))
-            .reduce(|a, b| a.union(b))
-            .unwrap_or(Rect::ZERO);
-        // Decorations drawn under these runs are shadowed with them, clipped to the runs'
-        // horizontal extent. The vertical extent is generous to cover any decoration style.
-        let has_decorations = deco_boxes
-            .iter()
-            .any(|acc| acc.max_x > glyph_bounds.x0 && acc.min_x < glyph_bounds.x1);
-        let deco_clip = Rect::new(
-            glyph_bounds.x0,
-            line_metrics.block_min_coord as f64 - line_height,
-            glyph_bounds.x1,
-            line_metrics.block_max_coord as f64 + line_height,
-        );
-        let batch_bounds = if has_decorations {
-            glyph_bounds.union(deco_clip)
-        } else {
-            glyph_bounds
-        };
-
-        for shadow in shadow_list.iter().rev() {
-            if shadow.color.components[3] <= 0.0 {
-                continue;
-            }
-            if shadow.is_blurred() {
-                let filter = Arc::new(Filter::single(FilterEffect::blur(shadow.std_dev as f32)));
-                // Layer clip: the shadowed content's bounds, offset, plus room for the blur.
-                let margin = 3.0 * shadow.std_dev;
-                let clip = (batch_bounds + shadow.offset).inflate(margin, margin);
-                scene.push_layer(
-                    Fill::NonZero,
-                    Mix::Normal,
-                    1.0,
-                    transform,
-                    &clip,
-                    Some(filter),
-                    None,
-                );
-            }
-
-            let shadow_transform = transform * Affine::translate(shadow.offset);
-            for run in batch() {
-                draw_glyph_run(scene, &run, shadow.color, shadow_transform);
-            }
-            if has_decorations {
-                flush_line_decorations(
-                    scene,
-                    transform,
-                    options,
-                    deco_boxes,
-                    win_ascent_ratios,
-                    inline_root_id,
-                    line_baseline,
-                    Some((shadow, deco_clip)),
-                );
-            }
-
-            if shadow.is_blurred() {
-                scene.pop_layer();
-            }
-        }
-
-        start = end;
     }
 }

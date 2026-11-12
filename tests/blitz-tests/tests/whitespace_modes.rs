@@ -1,3 +1,4 @@
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, node::TextLayout};
 use blitz_test_harness::Harness;
 
@@ -19,7 +20,7 @@ fn pre_line_collapses_across_spans_and_preserves_breaks() {
     );
     let doc = harness.base();
     let text = inline(&doc, "#test");
-    assert_eq!(text.text, "a b\nc d\ne f");
+    assert_eq!(text.text(), "a b\nc d\ne f");
     assert_eq!(text.layout.len(), 3);
     assert!(text.layout.full_width() > 0.);
 }
@@ -31,7 +32,7 @@ fn preserved_spans_and_br_restore_parent_collapsing() {
     );
     let doc = harness.base();
     let text = inline(&doc, "#test");
-    assert_eq!(text.text, "x  y\nz  w q");
+    assert_eq!(text.text(), "x  y\nz  w q");
     assert_eq!(text.layout.len(), 2);
 }
 
@@ -41,7 +42,7 @@ fn display_contents_preserves_its_whitespace_mode() {
         "<div id='test'>a<span style='display:contents;white-space:pre'>b  c</span> d  e</div>",
     );
     let doc = harness.base();
-    assert_eq!(inline(&doc, "#test").text, "ab  c d e");
+    assert_eq!(inline(&doc, "#test").text(), "ab  c d e");
 }
 
 #[test]
@@ -62,7 +63,7 @@ fn out_of_flow_placeholder_retains_its_text_offset() {
     );
     let doc = harness.base();
     let text = inline(&doc, "#test");
-    assert_eq!(text.text, "unbroken");
+    assert_eq!(text.text(), "unbroken");
     assert_eq!(text.layout.inline_boxes().len(), 1);
     assert_eq!(text.layout.inline_boxes().next().unwrap().index, 2);
     assert_eq!(text.layout.len(), 1);
@@ -76,11 +77,11 @@ fn break_spaces_wraps_preserved_spaces_across_spans_and_br() {
         ));
         let doc = harness.base();
         let text = inline(&doc, "#test");
-        assert_eq!(text.text, "a   b\n  c");
+        assert_eq!(text.text(), "a   b\n  c");
         let lines: Vec<_> = text
             .layout
             .lines()
-            .map(|line| &text.text[line.text_range()])
+            .map(|line| &text.text()[line.text_range()])
             .collect();
         assert_eq!(lines, ["a ", " ", " ", "b\n", " ", " ", "c"]);
         for line in text.layout.lines() {
@@ -96,7 +97,7 @@ fn display_contents_break_spaces_restores_parent_collapsing() {
     );
     let doc = harness.base();
     let text = inline(&doc, "#test");
-    assert_eq!(text.text, "a   b\n  c d");
+    assert_eq!(text.text(), "a   b\n  c d");
     assert_eq!(text.layout.len(), 2);
 }
 

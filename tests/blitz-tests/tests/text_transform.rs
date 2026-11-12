@@ -1,3 +1,4 @@
+use blitz_dom::text::InlineText as _;
 use blitz_test_harness::Harness;
 
 fn layout_text(html: &str) -> String {
@@ -11,8 +12,8 @@ fn layout_text(html: &str) -> String {
         .inline_layout_data
         .as_ref()
         .unwrap()
-        .text
-        .clone()
+        .text()
+        .to_string()
 }
 
 #[test]

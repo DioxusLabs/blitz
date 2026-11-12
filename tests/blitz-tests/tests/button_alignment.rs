@@ -1,3 +1,4 @@
+use blitz_dom::text::InlineText as _;
 use blitz_test_harness::Harness;
 
 fn button(css: &str, child_css: &str) -> Harness {
@@ -40,7 +41,7 @@ fn default_button_centers_text() {
         .unwrap();
     assert!(layout.layout.width() > 0.0);
     assert_eq!(layout.layout.height(), 20.0);
-    assert_eq!(layout.block_offset, 40.0);
+    assert_eq!(layout.block_offset(), 40.0);
 }
 
 #[test]
@@ -189,7 +190,7 @@ fn button_like_inputs_use_block_centering_without_ua_flex_alignment() {
             .as_ref()
             .unwrap();
         assert_eq!(layout.layout.height(), 20.0);
-        assert_eq!(layout.block_offset, 40.0);
+        assert_eq!(layout.block_offset(), 40.0);
     }
 }
 
@@ -225,7 +226,7 @@ fn author_flex_and_grid_inputs_still_block_layout_their_labels() {
                 .as_ref()
                 .unwrap();
             assert_eq!(layout.layout.height(), 20.0);
-            assert_eq!(layout.block_offset, 40.0, "{input_type}, {display}");
+            assert_eq!(layout.block_offset(), 40.0, "{input_type}, {display}");
             let line = layout.layout.lines().next().unwrap();
             assert!(line.metrics().offset > 0.0, "{input_type}, {display}");
         }
@@ -255,7 +256,8 @@ fn button_input_block_alignment_overrides_and_overflow() {
                 .as_ref()
                 .unwrap();
             assert_eq!(
-                layout.block_offset, y,
+                layout.block_offset(),
+                y,
                 "{input_type}, {alignment}, {height}"
             );
         }
@@ -283,7 +285,7 @@ fn button_input_display_restyle_preserves_label_centering() {
             .inline_layout_data
             .as_ref()
             .unwrap()
-            .block_offset,
+            .block_offset(),
         40.0
     );
 }
