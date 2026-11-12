@@ -1770,10 +1770,9 @@ fn flood_color_comes_from_computed_style() {
 
 #[test]
 fn invalid_filter_reference_disables_rendering() {
-    // A filter that references a missing element or an empty region makes
-    // the element not render.
+    // A filter with an empty region or no primitives makes the element not
+    // render.
     for svg in [
-        filtered_rect(""),
         filtered_rect(r#"<filter id="f" width="0"><feGaussianBlur stdDeviation="1"/></filter>"#),
         filtered_rect(r#"<filter id="f"/>"#),
     ] {
@@ -1785,6 +1784,10 @@ fn invalid_filter_reference_disables_rendering() {
 
 #[test]
 fn unsupported_filter_primitives_paint_unfiltered() {
+    // So does a reference to a missing element.
+    let mut doc = load(&filtered_rect(""), true);
+    assert_eq!(pixel(&render(&mut doc), 40, 40), RED);
+
     let mut doc = load(
         &filtered_rect(r#"<filter id="f"><feTurbulence baseFrequency="0.1"/></filter>"#),
         true,

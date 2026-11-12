@@ -150,9 +150,9 @@ impl BaseDocument {
     /// Resolve the `filter` of an element with computed style `style`,
     /// object bounding box `bbox` and viewport `viewport`.
     ///
-    /// A reference to something other than a `<filter>`, an invalid region
-    /// or a filter without primitives disables rendering of the element, as
-    /// in usvg.
+    /// A reference to a missing element or something other than a `<filter>`
+    /// is ignored. An invalid region or a filter without primitives disables
+    /// rendering of the element.
     pub fn resolve_svg_filter(
         &self,
         style: &ComputedValues,
@@ -173,7 +173,7 @@ impl BaseDocument {
                 })
             })
         else {
-            return SvgReference::Invalid;
+            return SvgReference::None;
         };
 
         // The filter and the filters it inherits attributes and primitives
