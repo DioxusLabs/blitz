@@ -478,20 +478,12 @@ impl BaseDocument {
         }
         items.sort_by_key(|item| item.char_index);
 
-        // Apply the positioning attributes in logical order.
+        // https://svgwg.org/svg2-draft/text.html#TextLayoutAlgorithm
+        // Adjust positions: dx, dy.
         let mut shift = (0.0, 0.0);
         for (i, item) in items.iter_mut().enumerate() {
             let pos = positions[item.char_index];
-            let origin = if item.rtl { item.right() } else { item.x };
-            if let Some(x) = pos.x {
-                shift.0 = x - origin;
-                item.absolute = true;
-            }
-            if let Some(y) = pos.y {
-                shift.1 = y - item.y;
-                item.absolute = true;
-            }
-            item.absolute |= i == 0;
+            item.absolute = i == 0 || pos.x.is_some() || pos.y.is_some();
             shift.0 += pos.dx;
             shift.1 += pos.dy;
             item.x += shift.0;
@@ -499,7 +491,7 @@ impl BaseDocument {
             item.rotate = pos.rotate.unwrap_or(0.0);
         }
 
-        // `textLength`, innermost elements first.
+        // Apply `textLength`, innermost elements first.
         for el in elements.iter().rev() {
             let Some(element) = self.nodes[el.node].element_data() else {
                 continue;
@@ -517,6 +509,22 @@ impl BaseDocument {
             };
             let glyphs = attr(element, "lengthAdjust") == Some("spacingAndGlyphs");
             apply_text_length(&mut items, el.chars.clone(), text_length, glyphs);
+        }
+
+        // Adjust positions: x, y. The first character defaults to x=0, and
+        // a character's own dx/dy still applies on top of its x/y.
+        let mut shift = (0.0, 0.0);
+        for (i, item) in items.iter_mut().enumerate() {
+            let pos = positions[item.char_index];
+            if let Some(x) = pos.x.or((i == 0).then_some(0.0)) {
+                let origin = if item.rtl { item.right() } else { item.x };
+                shift.0 = x + pos.dx - origin;
+            }
+            if let Some(y) = pos.y {
+                shift.1 = y + pos.dy - item.y;
+            }
+            item.x += shift.0;
+            item.y += shift.1;
         }
 
         // Anchor each text chunk.

@@ -996,3 +996,35 @@ fn native_svg_text_position_attributes_relayout() {
     let buffer = render(&mut doc);
     assert!(count(&buffer, RED, 0..60) > 100, "anchored at its end");
 }
+
+fn assert_same_render(a: &str, b: &str) {
+    let a = render(&mut load(a, true));
+    let b = render(&mut load(b, true));
+    assert!(
+        count(&a, [0, 0, 0], 0..W as usize) > 0,
+        "the text is painted"
+    );
+    assert!(a == b, "renders differ");
+}
+
+#[test]
+fn text_without_x_starts_at_zero() {
+    let svg = |x: &str| {
+        format!(
+            r#"<svg width="100" height="100"><g transform="translate(50,0)" font-size="20">
+            <text {x} y="25">&#x5d0;&#x5d1; ab</text>
+            <text {x} y="55" text-anchor="middle">&#x5d0;&#x5d1; ab</text>
+            <text {x} y="85" direction="rtl">&#x202b;ab cd&#x202c;</text>
+            </g></svg>"#
+        )
+    };
+    assert_same_render(&svg(""), &svg(r#"x="0""#));
+}
+
+#[test]
+fn text_length_glyph_scaling_keeps_explicit_x() {
+    assert_same_render(
+        r#"<svg width="100" height="100"><text x="0 50" y="80" font-size="40" textLength="60" lengthAdjust="spacingAndGlyphs">HH</text></svg>"#,
+        r#"<svg width="100" height="100"><text x="0" y="80" font-size="40" textLength="30" lengthAdjust="spacingAndGlyphs">H</text><text x="50" y="80" font-size="40" textLength="30" lengthAdjust="spacingAndGlyphs">H</text></svg>"#,
+    );
+}
