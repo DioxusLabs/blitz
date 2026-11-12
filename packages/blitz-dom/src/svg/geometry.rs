@@ -157,11 +157,11 @@ pub(super) fn shape_path(
     None
 }
 
-/// An ellipse path starting at its rightmost point and going through the top
-/// first, as browsers draw it (which matters for dashing).
+/// An ellipse path starting at its rightmost point and going through
+/// `(cx, cy + ry)` first, as the spec says (which matters for dashing).
 /// <https://svgwg.org/svg2-draft/shapes.html#CircleElement>
 fn ellipse_path(center: Point, rx: f64, ry: f64) -> BezPath {
-    let arc = kurbo::Arc::new(center, (rx, ry), 0.0, -std::f64::consts::TAU, 0.0);
+    let arc = kurbo::Arc::new(center, (rx, ry), 0.0, std::f64::consts::TAU, 0.0);
     let mut path = BezPath::new();
     path.move_to(center + kurbo::Vec2::new(rx, 0.0));
     arc.to_cubic_beziers(TOLERANCE, |p1, p2, p| path.curve_to(p1, p2, p));
