@@ -936,3 +936,23 @@ fn single_stop_gradients_are_invalid_for_an_empty_bbox() {
     let buffer = render(&mut doc);
     assert_eq!(pixel(&buffer, 50, 50), LIME);
 }
+
+#[test]
+fn references_resolve_against_the_document_url() {
+    let html = r##"<html><body style="margin:0; background:#00f"><svg width="100" height="100">
+        <linearGradient id="g"><stop stop-color="lime"/><stop offset="1" stop-color="lime"/></linearGradient>
+        <rect width="100" height="100" fill="url(#g) red"/></svg></body></html>"##;
+    let mut doc = HtmlDocument::from_html(
+        html,
+        DocumentConfig {
+            base_url: Some("http://example.com/dir/doc.html".to_string()),
+            viewport: Some(Viewport::new(W, H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            native_svg: Some(true),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 50, 50), LIME);
+}

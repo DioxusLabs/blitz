@@ -246,7 +246,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     // with usvg's own on the outer `<svg>`.
     #[cfg(feature = "svg-native")]
     let svg_url_data = (elem.name.ns == ns!(svg) && node.tree().native_svg())
-        .then(|| crate::url::DocumentUrl::default().url_extra_data());
+        .then(|| node.tree().url_data().clone());
     // Stack buffer large enough for one declaration (or one expanded
     // shorthand), reused for every presentation attribute on the element.
     #[cfg(feature = "svg-native")]
