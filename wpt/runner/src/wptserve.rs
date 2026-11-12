@@ -4,7 +4,6 @@
 //! See `tools/wptserve/wptserve/{handlers,pipes}.py` in the WPT repository.
 
 use std::collections::HashMap;
-use std::hash::{BuildHasher, RandomState};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -447,7 +446,7 @@ impl TemplateCtx<'_> {
 
     fn call(&self, name: &str, args: &[String]) -> Result<String, String> {
         match (name, args) {
-            ("uuid", []) => Ok(uuid4()),
+            ("uuid", []) => Ok(uuid::Uuid::new_v4().to_string()),
             ("header_or_default", [_, default]) => Ok(default.clone()),
             ("fs_path", [path]) => {
                 let root_relative = match path.strip_prefix('/') {
@@ -457,6 +456,7 @@ impl TemplateCtx<'_> {
                         None => path.clone(),
                     },
                 };
+                let root_relative = root_relative.replace('/', std::path::MAIN_SEPARATOR_STR);
                 Ok(self
                     .wpt_dir
                     .join(root_relative)
@@ -466,22 +466,6 @@ impl TemplateCtx<'_> {
             _ => Err(format!("unsupported function {name}({})", args.join(", "))),
         }
     }
-}
-
-/// A random (version 4) UUID
-fn uuid4() -> String {
-    let random = || RandomState::new().hash_one(std::time::Instant::now());
-    let bits = (u128::from(random()) << 64) | u128::from(random());
-    let bits = (bits & !(0xf << 76) | (0x4 << 76)) & !(0x3 << 62) | (0x2 << 62);
-    let hex = format!("{bits:032x}");
-    format!(
-        "{}-{}-{}-{}-{}",
-        &hex[0..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..32]
-    )
 }
 
 #[cfg(test)]
@@ -533,7 +517,10 @@ mod tests {
         );
         assert_eq!(
             sub("{{fs_path(a.css)}}", url, Escape::Html),
-            "/wpt/css/a.css"
+            Path::new("/wpt")
+                .join("css")
+                .join("a.css")
+                .to_string_lossy()
         );
     }
 

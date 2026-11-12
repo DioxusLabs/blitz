@@ -30,6 +30,7 @@ parley = { workspace = true }
 peniko = { workspace = true }
 image = { workspace = true, features = ["png"] }
 url = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
 data-url = { workspace = true }
 encoding_rs = "0.8"
 png = { version = "0.17" }
