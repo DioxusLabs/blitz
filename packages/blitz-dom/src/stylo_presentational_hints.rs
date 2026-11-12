@@ -1,6 +1,6 @@
 //! Presentational hints: the style that legacy HTML and SVG attributes such as `bgcolor`,
 //! `width` or `cellpadding` map to.
-//! https://html.spec.whatwg.org/multipage/rendering.html#presentational-hints
+//! <https://html.spec.whatwg.org/multipage/rendering.html#presentational-hints>
 
 use markup5ever::{local_name, ns};
 use selectors::sink::Push;
