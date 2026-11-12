@@ -9,7 +9,7 @@ use crate::net::{
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
-use crate::stylo_device::{DeviceChanges, make_device};
+use crate::stylo_device::{DeviceChanges, make_device, make_media_data};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
@@ -2256,19 +2256,21 @@ impl BaseDocument {
         self.shell_provider.request_redraw();
     }
 
-    /// Apply any pending device changes to the stylist, coalescing all changes
-    /// since the last flush into a single device rebuild.
+    /// Apply any pending device changes to the stylist's device, coalescing all
+    /// changes since the last flush into a single update of its [`MediaData`](style::device::servo::MediaData).
     pub(crate) fn flush_pending_device_changes(&mut self) {
         let changes = std::mem::take(&mut self.pending_device_changes);
         if changes.is_empty() {
             return;
         }
 
-        self.set_stylist_device(make_device(
-            &self.viewport,
-            self.media_type.clone(),
-            self.font_ctx.clone(),
-        ));
+        let media_data = make_media_data(&self.viewport, self.media_type.clone());
+        let device = self.stylist.device_mut();
+        let old_viewport_size = device.au_viewport_size();
+        device.set_media_data(media_data);
+        let viewport_units_changed =
+            old_viewport_size != device.au_viewport_size() && device.used_viewport_size();
+        self.restyle_for_device_change(viewport_units_changed);
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
         // Text is shaped at a specific scale factor, so cached inline layouts
@@ -2313,17 +2315,24 @@ impl BaseDocument {
         }
         drop(root_styles);
 
-        let old_device = self.stylist.device();
-        let viewport_size_changed = old_device.au_viewport_size() != device.au_viewport_size();
-        let styles_use_viewport_units = old_device.used_viewport_size();
+        let viewport_size_changed =
+            self.stylist.device().au_viewport_size() != device.au_viewport_size();
+        let styles_used_viewport_units = self.stylist.device().used_viewport_size();
+        *self.stylist.device_mut() = device;
+        self.restyle_for_device_change(viewport_size_changed && styles_used_viewport_units);
+    }
 
+    /// Invalidate the styles that a change to the stylist's device affects.
+    /// `viewport_units_changed` is whether styles that used viewport units need recomputing.
+    fn restyle_for_device_change(&mut self, viewport_units_changed: bool) {
         let origins = {
             let guard = &self.guard;
             let guards = StylesheetGuards {
                 author: &guard.read(),
                 ua_or_user: &guard.read(),
             };
-            self.stylist.set_device(device, &guards)
+            self.stylist
+                .media_features_change_changed_style(&guards, self.stylist.device())
         };
 
         // Only fully invalidate element styles when the media query results of
@@ -2338,7 +2347,7 @@ impl BaseDocument {
         // when the viewport size changes, even if no media query results
         // changed. Invalidate just the elements whose styles use viewport
         // units (tracked via per-element computed value flags).
-        if viewport_size_changed && styles_use_viewport_units {
+        if viewport_units_changed {
             if self
                 .stylist
                 .get_custom_property_initial_values_flags()
