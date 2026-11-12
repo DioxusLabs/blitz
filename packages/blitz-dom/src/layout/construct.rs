@@ -463,6 +463,9 @@ fn collect_layout_children_with_wrap(
             match crate::util::parse_svg(outer_html.as_bytes(), Some((&doc.url, &doc.image_cache)))
             {
                 Ok(svg) => {
+                    if svg.lacks_intrinsic_geometry() {
+                        doc.inline_svg_viewport_nodes.insert(container_node_id);
+                    }
                     doc.get_node_mut(container_node_id)
                         .unwrap()
                         .element_data_mut()
