@@ -3,7 +3,7 @@ use blitz_traits::devtools::{
     AttributeChanged, CharacterDataChanged, MutationRecord, NodeInserted, NodeRemoved,
 };
 use blitz_traits::node_id::NodeId;
-use markup5ever::LocalName;
+use markup5ever::{LocalName, ns};
 use std::collections::HashSet;
 use std::mem;
 use std::ops::{Deref, DerefMut, Range};
@@ -383,7 +383,7 @@ impl DocumentMutator<'_> {
             element.flush_link_state();
         }
 
-        if name.local == local_name!("open") {
+        if name.ns == ns!() && name.local == local_name!("open") {
             element.flush_open_state();
         }
 
@@ -526,7 +526,7 @@ impl DocumentMutator<'_> {
             element.flush_link_state();
         }
 
-        if name.local == local_name!("open") {
+        if name.ns == ns!() && name.local == local_name!("open") {
             element.flush_open_state();
         }
 

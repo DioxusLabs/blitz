@@ -240,6 +240,46 @@ pub(super) fn set_disabled(
     Ok(JsValue::undefined())
 }
 
+fn supports_open(ctx: &DomCtx, node_id: NodeId) -> bool {
+    let doc = ctx.doc.borrow();
+    doc.get_node(node_id)
+        .and_then(|node| node.element_data())
+        .is_some_and(|element| {
+            element.name.ns == markup5ever::ns!(html)
+                && matches!(&*element.name.local, "details" | "dialog")
+        })
+}
+
+pub(super) fn get_open(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    if !supports_open(&ctx, node_id) {
+        return Ok(JsValue::undefined());
+    }
+    let doc = ctx.doc.borrow();
+    let element = doc.get_node(node_id).unwrap().element_data().unwrap();
+    Ok(JsValue::from(element.attrs().iter().any(|attr| {
+        attr.name.ns == markup5ever::ns!() && &*attr.name.local == "open"
+    })))
+}
+
+pub(super) fn set_open(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = this_node_id(this)?;
+    if supports_open(&ctx, node_id) {
+        if args.first().map(JsValue::to_boolean).unwrap_or(false) {
+            write_attr(&ctx, node_id, "open", "");
+        } else {
+            clear_attr(&ctx, node_id, "open");
+        }
+    }
+    Ok(JsValue::undefined())
+}
+
 pub(super) fn get_hidden(
     this: &JsValue,
     _: &[JsValue],
