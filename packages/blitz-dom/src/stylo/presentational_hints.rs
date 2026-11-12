@@ -241,9 +241,12 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
 
+    // Only the native backend styles SVG content; usvg re-parses the
+    // attributes itself, and a CSS `transform` from the hint would double up
+    // with usvg's own on the outer `<svg>`.
     #[cfg(feature = "svg-native")]
-    let svg_url_data =
-        (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
+    let svg_url_data = (elem.name.ns == ns!(svg) && node.tree().native_svg())
+        .then(|| crate::url::DocumentUrl::default().url_extra_data());
     // Stack buffer large enough for one declaration (or one expanded
     // shorthand), reused for every presentation attribute on the element.
     #[cfg(feature = "svg-native")]

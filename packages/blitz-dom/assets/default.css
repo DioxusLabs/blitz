@@ -1165,8 +1165,11 @@ slot {
 }
 
 /* SVG (https://svgwg.org/svg2-draft/styling.html#UAStyleSheet). The svg
-   namespace prefix is declared at the top of this file. */
-svg|svg:not(:root),
+   namespace prefix is declared at the top of this file. The spec's
+   `svg:not(:root) { overflow: hidden }` lives in `NATIVE_SVG_CSS` (applied only
+   to documents that render inline SVG natively): usvg applies the outermost
+   <svg>'s `transform` to its content rather than its CSS box, so clipping that
+   box would cut the content off. */
 svg|symbol,
 svg|image,
 svg|marker,

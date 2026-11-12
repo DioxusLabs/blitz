@@ -434,7 +434,10 @@ impl BaseDocument {
         let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
-        let nodes = Box::new(NodeTree::new());
+        // With one SVG backend compiled the flag is ignored.
+        let native_svg = cfg!(feature = "svg-native")
+            && (!cfg!(feature = "svg-usvg") || config.native_svg.unwrap_or(false));
+        let nodes = Box::new(NodeTree::new(native_svg));
         let guard = SharedRwLock::new();
         let nodes_to_id = HashMap::new();
 
@@ -476,9 +479,7 @@ impl BaseDocument {
             flags: DocumentFlags::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
-            // With one SVG backend compiled the flag is ignored.
-            native_svg: cfg!(feature = "svg-native")
-                && (!cfg!(feature = "svg-usvg") || config.native_svg.unwrap_or(false)),
+            native_svg,
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
@@ -540,6 +541,10 @@ impl BaseDocument {
 
         for sheet in config.ua_stylesheets {
             doc.add_user_agent_stylesheet(sheet);
+        }
+        #[cfg(feature = "svg-native")]
+        if native_svg {
+            doc.add_user_agent_stylesheet(UserAgentStylesheet::native_svg_sheet());
         }
 
         // Stylo data on the root node container is needed to render the node

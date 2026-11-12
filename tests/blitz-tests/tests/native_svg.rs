@@ -396,3 +396,18 @@ fn nested_svg_clips_to_its_viewport() {
     assert_eq!(pixel(&buf, 20, 50), BLUE, "outside the nested viewport");
     assert_eq!(pixel(&buf, 50, 80), BLUE, "outside the nested viewport");
 }
+
+#[test]
+fn usvg_mode_leaves_presentation_attributes_to_usvg() {
+    let body = r#"<svg id="s" width="50" height="50" transform="translate(10 0)"><rect width="50" height="50" fill="red"/></svg>"#;
+    for (native, expect_transform) in [(false, false), (true, true)] {
+        let doc = load(body, native);
+        let id = doc.query_selector("#s").unwrap().unwrap();
+        let styles = doc.get_node(id).unwrap().primary_styles().unwrap();
+        assert_eq!(
+            !styles.get_box().transform.0.is_empty(),
+            expect_transform,
+            "native_svg = {native}"
+        );
+    }
+}
