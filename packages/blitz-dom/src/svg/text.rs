@@ -33,6 +33,19 @@ pub struct SvgText {
     pub decorations: Vec<SvgTextDecoration>,
     /// The union of the glyph cells (advance by ascent and descent).
     pub bbox: Option<Rect>,
+    /// The cell of each typographic character, in paint order.
+    pub cells: Vec<SvgTextCell>,
+}
+
+/// The cell of a typographic character (its advance by the font's ascent and
+/// descent), which is its area for hit testing.
+#[derive(Debug, Clone, Copy)]
+pub struct SvgTextCell {
+    /// The `<text>` or innermost `<tspan>` containing the character.
+    pub node: NodeId,
+    /// Maps `rect` onto the `<text>` element's user space.
+    pub transform: Affine,
+    pub rect: Rect,
 }
 
 /// Glyphs of one font, painted with the computed style of `node` (the
@@ -562,12 +575,18 @@ impl BaseDocument {
         }
 
         let mut bbox: Option<Rect> = None;
+        let mut cells = Vec::with_capacity(items.len());
         for item in &items {
-            let cell = Rect::new(0.0, -item.ascent, item.advance, item.descent);
-            let cell = (Affine::translate((item.x, item.y))
-                * Affine::rotate(item.rotate.to_radians()))
-            .transform_rect_bbox(cell);
+            let rect = Rect::new(0.0, -item.ascent, item.advance, item.descent);
+            let transform =
+                Affine::translate((item.x, item.y)) * Affine::rotate(item.rotate.to_radians());
+            let cell = transform.transform_rect_bbox(rect);
             bbox = Some(bbox.map_or(cell, |b| b.union(cell)));
+            cells.push(SvgTextCell {
+                node: runs[item.run].node,
+                transform,
+                rect,
+            });
         }
         let decorations = self.svg_text_decorations(&elements, &items, viewport);
         for item in &items {
@@ -588,6 +607,7 @@ impl BaseDocument {
             runs,
             decorations,
             bbox,
+            cells,
         }
     }
 

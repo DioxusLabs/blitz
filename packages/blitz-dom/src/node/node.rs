@@ -1683,6 +1683,17 @@ impl Node {
             }
         }
 
+        // Content of a natively rendered `<svg>`
+        #[cfg(feature = "svg-native")]
+        if matches_self && let Some(node_id) = self.svg_hit(x, y) {
+            return Some(HitResult {
+                node_id,
+                x: x - content_box_offset.x,
+                y: y - content_box_offset.y,
+                is_text: false,
+            });
+        }
+
         // Self (this node)
         if matches_self && !pointer_events_none {
             return Some(HitResult {
