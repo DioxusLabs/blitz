@@ -62,6 +62,7 @@ impl NodeTree {
         }
     }
 
+    #[cfg_attr(not(feature = "svg-native"), allow(dead_code))]
     pub(crate) fn url_data(&self) -> &UrlExtraData {
         &self.url_data
     }
