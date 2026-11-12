@@ -116,14 +116,14 @@ skrifa = { version = "0.49", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", branch = "devin/1791068178-box-shadow-api" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -131,8 +131,8 @@ linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13.1"
 wgpu = "30"
-usvg = "0.48.1"
-svgtypes = "0.16.1" # Should match usvg's version
+usvg = "0.50.0"
+svgtypes = "0.16.2" # Should match usvg's version
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
