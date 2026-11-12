@@ -155,6 +155,19 @@ pub fn walk_tree(indent: usize, node: &Node) {
 
 /// Parse an SVG image.
 #[cfg(feature = "svg")]
+/// Parse an inline `<svg>` serialized by `Node::svg_source`, laying out its text against `fontdb`.
+#[cfg(feature = "svg")]
+pub(crate) fn parse_inline_svg(
+    source: &[u8],
+    fontdb: Arc<fontdb::Database>,
+) -> Result<crate::node::SvgImageData, usvg::Error> {
+    let options = usvg::Options {
+        fontdb,
+        ..Default::default()
+    };
+    crate::node::SvgImageData::from_data(source, &options)
+}
+
 pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData, usvg::Error> {
     let options = usvg::Options {
         fontdb: Arc::clone(&*FONT_DB),

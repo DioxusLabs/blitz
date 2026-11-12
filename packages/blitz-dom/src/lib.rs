@@ -64,6 +64,8 @@ mod stylo;
 mod stylo_to_cursor_icon;
 mod stylo_to_kurbo;
 mod stylo_to_parley;
+#[cfg(feature = "svg")]
+mod svg_fonts;
 pub mod traversal;
 /// Versioned storage for the nodes of the DOM tree.
 mod tree;
