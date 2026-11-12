@@ -4,6 +4,8 @@ mod box_shadow;
 mod clip_path;
 mod form_controls;
 mod mask;
+#[cfg(feature = "svg")]
+mod svg;
 
 use blitz_dom::CopyStyleGetters;
 use std::cell::RefCell;
@@ -682,6 +684,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_image(scene);
                                 #[cfg(feature = "svg")]
                                 cx.draw_svg(scene);
+                                #[cfg(feature = "svg")]
+                                cx.draw_native_svg(scene);
                                 #[cfg(feature = "custom-widget")]
                                 cx.draw_custom_widget(scene);
                                 cx.draw_sub_document(scene);

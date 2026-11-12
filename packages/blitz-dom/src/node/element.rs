@@ -379,6 +379,11 @@ pub enum SpecialElementData {
     Stylesheet(DocumentStyleSheet),
     /// An \<img\> element's image data
     Image(Box<ImageData>),
+    /// The root of a natively rendered inline \<svg\> subtree: the dimensions
+    /// declared on the element (`width`, `height`, `viewBox`,
+    /// `preserveAspectRatio`). The subtree itself stays in the DOM.
+    #[cfg(feature = "svg")]
+    SvgRoot(crate::node::SvgIntrinsicDimensions),
     /// A \<canvas\> element's custom paint source
     Canvas(CanvasData),
     /// Pre-computed table layout data
@@ -403,6 +408,8 @@ impl Clone for SpecialElementData {
             Self::CustomWidget(_) => Self::None, // TODO
             Self::Stylesheet(data) => Self::Stylesheet(data.clone()),
             Self::Image(data) => Self::Image(data.clone()),
+            #[cfg(feature = "svg")]
+            Self::SvgRoot(data) => Self::SvgRoot(*data),
             Self::Canvas(data) => Self::Canvas(data.clone()),
             Self::TableRoot(data) => Self::TableRoot(data.clone()),
             Self::TextInput(data) => Self::TextInput(data.clone()),
@@ -569,6 +576,15 @@ impl ElementData {
     pub fn raster_image_data_mut(&mut self) -> Option<&mut RasterImageData> {
         match self.image_data_mut()? {
             ImageData::Raster(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    /// The declared dimensions of a natively rendered inline `<svg>` root.
+    #[cfg(feature = "svg")]
+    pub fn svg_root_data(&self) -> Option<&crate::node::SvgIntrinsicDimensions> {
+        match &self.special_data {
+            SpecialElementData::SvgRoot(data) => Some(data),
             _ => None,
         }
     }
@@ -947,6 +963,8 @@ impl std::fmt::Debug for SpecialElementData {
                 ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
                 ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
             },
+            #[cfg(feature = "svg")]
+            SpecialElementData::SvgRoot(_) => f.write_str("NodeSpecificData::SvgRoot"),
             SpecialElementData::Canvas(_) => f.write_str("NodeSpecificData::Canvas"),
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),

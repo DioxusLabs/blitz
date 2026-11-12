@@ -431,6 +431,16 @@ impl LayoutPassState<'_> {
                             }
                             ImageData::None => (IntrinsicSizes::default(), taffy::Size::ZERO),
                         },
+                        // https://svgwg.org/svg2-draft/coords.html#SizingSVGInCSS
+                        #[cfg(feature = "svg")]
+                        SpecialElementData::SvgRoot(dims) => (
+                            IntrinsicSizes {
+                                width: dims.absolute_width(),
+                                height: dims.absolute_height(),
+                                ratio: dims.intrinsic_aspect_ratio(),
+                            },
+                            DEFAULT_OBJECT_SIZE,
+                        ),
                         SpecialElementData::Canvas(_)
                         | SpecialElementData::SubDocument(_)
                         | SpecialElementData::None => {

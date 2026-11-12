@@ -32,14 +32,19 @@ impl SvgIntrinsicDimensions {
     /// the XML document here.
     pub fn from_xmltree(doc: &roxmltree::Document) -> Self {
         let root = doc.root_element();
+        Self::from_attrs(|name| root.attribute(name))
+    }
 
+    /// Extract the declared dimensions from an attribute lookup, used both for
+    /// parsed SVG documents and for live inline `<svg>` DOM elements.
+    pub fn from_attrs<'a>(attr: impl Fn(&str) -> Option<&'a str>) -> Self {
         let parse_length = |name: &str| -> Option<svgtypes::Length> {
-            root.attribute(name)?.parse::<svgtypes::Length>().ok()
+            attr(name)?.parse::<svgtypes::Length>().ok()
         };
         // Parsed manually rather than via `svgtypes::ViewBox`, which rejects
         // zero sizes: a zero `viewBox` width/height is distinguished from an
         // invalid `viewBox` as it disables rendering of the element.
-        let view_box_dims = root.attribute("viewBox").and_then(|s| {
+        let view_box_dims = attr("viewBox").and_then(|s| {
             let mut numbers = svgtypes::NumberListParser::from(s);
             let x = numbers.next()?.ok()? as f32;
             let y = numbers.next()?.ok()? as f32;
@@ -51,8 +56,7 @@ impl SvgIntrinsicDimensions {
         let view_box =
             view_box_dims.and_then(|(x, y, w, h)| usvg::NonZeroRect::from_xywh(x, y, w, h));
         let degenerate_view_box = view_box_dims.is_some_and(|(_, _, w, h)| w == 0.0 || h == 0.0);
-        let preserve_aspect_ratio = root
-            .attribute("preserveAspectRatio")
+        let preserve_aspect_ratio = attr("preserveAspectRatio")
             .and_then(|s| s.parse().ok())
             .unwrap_or_default();
 
@@ -64,6 +68,55 @@ impl SvgIntrinsicDimensions {
             degenerate_view_box,
         }
     }
+
+    /// The root `width` attribute in CSS px when it is an absolute length
+    /// (`px`, `in`, `cm`, `mm`, `pt`, `pc` or unitless). Percentages and
+    /// font-relative units are `None`: they are not intrinsic.
+    pub fn absolute_width(&self) -> Option<f32> {
+        self.width.and_then(absolute_length_px)
+    }
+
+    /// The root `height` attribute in CSS px when it is an absolute length.
+    /// See [`Self::absolute_width`].
+    pub fn absolute_height(&self) -> Option<f32> {
+        self.height.and_then(absolute_length_px)
+    }
+
+    /// The intrinsic aspect ratio: the ratio of the absolute `width`/`height`
+    /// when both are declared, otherwise the `viewBox` ratio, otherwise `None`.
+    /// <https://svgwg.org/svg2-draft/coords.html#SizingSVGInCSS>
+    pub fn intrinsic_aspect_ratio(&self) -> Option<f32> {
+        match (self.absolute_width(), self.absolute_height()) {
+            (Some(w), Some(h)) if h > 0.0 => Some(w / h),
+            _ => self.view_box.map(|vb| vb.width() / vb.height()),
+        }
+    }
+
+    /// The transform from `viewBox` user space onto a viewport of the given
+    /// size, applying `preserveAspectRatio`. Identity without a `viewBox`.
+    pub fn viewport_transform(&self, width: f32, height: f32) -> usvg::Transform {
+        match self.view_box {
+            Some(view_box) => {
+                view_box_transform(view_box, self.preserve_aspect_ratio, width, height)
+            }
+            None => usvg::Transform::identity(),
+        }
+    }
+}
+
+/// Convert an absolute SVG length to CSS px (`None` for relative units).
+fn absolute_length_px(len: svgtypes::Length) -> Option<f32> {
+    use svgtypes::LengthUnit;
+    let n = len.number as f32;
+    Some(match len.unit {
+        LengthUnit::None | LengthUnit::Px => n,
+        LengthUnit::In => n * 96.0,
+        LengthUnit::Cm => n * 96.0 / 2.54,
+        LengthUnit::Mm => n * 96.0 / 25.4,
+        LengthUnit::Pt => n * 96.0 / 72.0,
+        LengthUnit::Pc => n * 16.0,
+        LengthUnit::Em | LengthUnit::Ex | LengthUnit::Percent => return None,
+    })
 }
 
 /// A parsed SVG image.

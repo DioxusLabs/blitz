@@ -215,6 +215,9 @@ pub struct BaseDocument {
     /// every node is treated as damaged on every `resolve`, so the same damage
     /// pipeline reconstructs and relays out the whole tree.
     pub(crate) incremental_layout: bool,
+    /// Whether inline `<svg>` subtrees are rendered natively from the live DOM
+    /// (`true`) or serialized and re-parsed with usvg (`false`).
+    pub(crate) native_svg: bool,
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub(crate) subdocument_depth: usize,
@@ -472,6 +475,7 @@ impl BaseDocument {
             flags: DocumentFlags::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
+            native_svg: config.native_svg.unwrap_or(false),
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
@@ -2103,6 +2107,13 @@ impl BaseDocument {
     /// start of each `resolve`, so everything is rebuilt each frame.
     pub fn incremental_layout(&self) -> bool {
         self.incremental_layout
+    }
+
+    /// Returns whether inline `<svg>` elements are rendered natively from the
+    /// live DOM rather than serialized and re-parsed with usvg.
+    /// See [`DocumentConfig::native_svg`](crate::DocumentConfig::native_svg).
+    pub fn native_svg(&self) -> bool {
+        self.native_svg
     }
 
     /// Enables or disables incremental layout for this document.

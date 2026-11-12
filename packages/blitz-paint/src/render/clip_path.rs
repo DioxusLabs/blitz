@@ -286,7 +286,7 @@ type GenericPathCommand<Angle, N> = GenericShapeCommand<Angle, N, GenericPositio
 /// Convert an SVG path() to a kurbo BezPath.
 /// The returned path is in the path's own coordinate system (origin at 0,0).
 /// The caller is responsible for translating it to the reference box origin.
-fn svg_path_to_bezpath<Angle: Copy, N>(
+pub(super) fn svg_path_to_bezpath<Angle: Copy, N>(
     commands: &[GenericPathCommand<Angle, N>],
     resolve_x: impl Fn(&N) -> f64,
     resolve_y: impl Fn(&N) -> f64,
