@@ -4,7 +4,8 @@
 use dioxus_native::prelude::*;
 
 fn main() {
-    dioxus_native::launch(app);
+    let config = dioxus_native::Config::new().with_native_svg(true);
+    dioxus_native::launch_cfg(app, vec![], vec![Box::new(config)]);
 }
 
 fn app() -> Element {
