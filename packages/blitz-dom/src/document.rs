@@ -318,6 +318,11 @@ pub struct BaseDocument {
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
+    /// Inline `<svg>` elements without a `viewBox` or intrinsic size, which are
+    /// re-parsed against their laid-out size after layout
+    #[cfg(feature = "svg")]
+    pub(crate) inline_svg_viewport_nodes: HashSet<NodeId>,
+
     /// Nodes that contain custom widgets
     #[cfg(feature = "custom-widget")]
     pub(crate) custom_widget_nodes: HashSet<NodeId>,
@@ -497,6 +502,8 @@ impl BaseDocument {
 
             #[cfg(feature = "custom-widget")]
             custom_widget_nodes: HashSet::new(),
+            #[cfg(feature = "svg")]
+            inline_svg_viewport_nodes: HashSet::new(),
             #[cfg(feature = "custom-widget")]
             pending_resource_deallocations: Vec::new(),
 

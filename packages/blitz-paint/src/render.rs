@@ -1299,11 +1299,19 @@ impl ElementCx<'_, '_> {
         let x = x + x_offset.px() as f64;
         let y = y + y_offset.px() as f64;
 
-        let viewport = svg_viewport_affine(svg, paint_size.width, paint_size.height);
+        // An inline `<svg>` re-parsed against its laid-out size has user units in CSS px,
+        // and its content is clipped to the viewport rather than scaled into it.
+        let in_own_viewport = svg.viewport_size.is_some();
+        let viewport = if in_own_viewport {
+            Affine::scale(self.scale * self.style.effective_zoom.value() as f64)
+        } else {
+            svg_viewport_affine(svg, paint_size.width, paint_size.height)
+        };
         let transform = (self.transform * viewport).then_translate(Vec2 { x, y });
 
         self.with_replaced_content_clip(
             scene,
+            in_own_viewport,
             container_size,
             paint_size,
             x_offset.px(),
@@ -1314,18 +1322,21 @@ impl ElementCx<'_, '_> {
         );
     }
 
-    /// Clip replaced content to the content box when its object-fit/object-position
-    /// rect overflows it.
+    /// Clip replaced content to the content box when `always` is set or its
+    /// object-fit/object-position rect overflows it.
+    #[allow(clippy::too_many_arguments)]
     fn with_replaced_content_clip<S: PaintScene>(
         &self,
         scene: &mut S,
+        always: bool,
         container_size: taffy::Size<f32>,
         paint_size: taffy::Size<f32>,
         x_offset: f32,
         y_offset: f32,
         paint: impl FnOnce(&mut S),
     ) {
-        let overflows = x_offset < 0.0
+        let overflows = always
+            || x_offset < 0.0
             || y_offset < 0.0
             || x_offset + paint_size.width > container_size.width
             || y_offset + paint_size.height > container_size.height;
@@ -1385,6 +1396,7 @@ impl ElementCx<'_, '_> {
 
             self.with_replaced_content_clip(
                 scene,
+                false,
                 container_size,
                 paint_size,
                 x_offset.px(),

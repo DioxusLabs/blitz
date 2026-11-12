@@ -1168,3 +1168,9 @@ slot {
         background-color: transparent;
     }
 }
+
+/* The outermost `<svg>` of a standalone SVG document fills the viewport by default */
+svg|svg:root {
+    width: 100%;
+    height: 100%;
+}
