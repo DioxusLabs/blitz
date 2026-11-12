@@ -380,6 +380,37 @@ fn dom_content_loaded_and_window_load_fire() {
 }
 
 #[test]
+fn dispatched_events_bubble_to_ancestors() {
+    let mut doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="target"></div>
+            <div id="out"></div>
+            <script>
+                const log = [];
+                const record = (name) => (event) => {
+                    log.push(`${name}:${event.type}:${event.target.id}`);
+                    document.getElementById("out").textContent = log.join(",");
+                };
+                document.getElementById("target").addEventListener("custom", record("target"));
+                document.body.addEventListener("custom", record("body"));
+            </script>
+        </body></html>
+        "#,
+    );
+    let target = doc.inner().query_selector("#target").unwrap().unwrap();
+
+    doc.dispatch_event(target, "custom", false);
+    assert_eq!(text_of_selector(&doc, "#out"), "target:custom:target");
+
+    doc.dispatch_event(target, "custom", true);
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "target:custom:target,target:custom:target,body:custom:target"
+    );
+}
+
+#[test]
 fn on_event_idl_properties_are_dispatched() {
     let mut doc = doc_from_html(
         r#"
