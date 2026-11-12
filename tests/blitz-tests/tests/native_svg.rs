@@ -586,12 +586,13 @@ fn non_css_geometry_attribute_change_relayouts() {
         true,
     );
     let buffer = render(&mut doc);
-    assert_eq!(pixel(&buffer, 35, 50), BLUE);
+    assert_eq!(pixel(&buffer, 30, 50), LIME);
     let path = doc.query_selector("#p").unwrap().unwrap();
-    doc.mutate().set_attribute(path, attr("pathlength"), "4");
+    doc.mutate().set_attribute(path, attr("pathLength"), "4");
     doc.resolve(0.0);
     let buffer = render(&mut doc);
+    // Dashes are now 25 user units long: [0, 25) on, [25, 50) off.
     assert_eq!(pixel(&buffer, 10, 50), LIME);
-    assert_eq!(pixel(&buffer, 35, 50), BLUE);
+    assert_eq!(pixel(&buffer, 30, 50), BLUE);
     assert_eq!(pixel(&buffer, 60, 50), LIME);
 }
