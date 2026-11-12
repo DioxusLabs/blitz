@@ -270,13 +270,7 @@ impl ElementCx<'_, '_> {
                         }
                         #[cfg(feature = "svg-usvg")]
                         ImageData::Svg(svg) => {
-                            let size = viewport.size();
-                            let fit = super::svg_viewport_affine(
-                                svg,
-                                size.width as f32,
-                                size.height as f32,
-                            );
-                            anyrender_svg::render_svg_tree(scene, &svg.tree, image_transform * fit);
+                            anyrender_svg::render_svg_tree(scene, &svg.tree, image_transform);
                         }
                         ImageData::None => {}
                     }

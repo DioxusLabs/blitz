@@ -137,8 +137,8 @@ pub enum SvgLayoutKind {
     /// `<image>` with a loaded image.
     Image {
         image: ImageData,
-        /// Maps raster image pixels to user space (`preserveAspectRatio`
-        /// applied). An SVG image is fitted to `viewport` by its own root.
+        /// Maps the image (raster pixels, or the SVG image's rendered tree)
+        /// to user space, with `preserveAspectRatio` applied.
         image_transform: Affine,
         /// The image viewport (`x`, `y`, `width`, `height`) in user space,
         /// which is also its bounding box.
@@ -680,7 +680,7 @@ fn nested_viewport(
 
 /// Size and place an `<image>`: `width`/`height` default (`auto`) to the
 /// image's intrinsic size, keeping its aspect ratio when only one is given,
-/// and `preserveAspectRatio` fits a raster image into that viewport.
+/// and `preserveAspectRatio` fits the image into that viewport.
 /// <https://svgwg.org/svg2-draft/embedded.html#ImageElement>
 fn image_layout(
     element: &ElementData,
@@ -689,15 +689,26 @@ fn image_layout(
     image: &ImageData,
 ) -> SvgLayoutKind {
     use style::values::computed::Size;
-    let (iw, ih) = match image {
-        ImageData::Raster(raster) => (raster.width as f64, raster.height as f64),
+    // The intrinsic size, and the size of the content the image draws.
+    let ((iw, ih), (cw, ch)) = match image {
+        ImageData::Raster(raster) => {
+            let size = (raster.width as f64, raster.height as f64);
+            (size, size)
+        }
         #[cfg(feature = "svg-usvg")]
         ImageData::Svg(svg) => {
             let (w, h) = svg.intrinsic_size();
-            (w as f64, h as f64)
+            let content = svg.tree.size();
+            (
+                (w as f64, h as f64),
+                (content.width() as f64, content.height() as f64),
+            )
         }
         ImageData::None => return SvgLayoutKind::NotRendered,
     };
+    if cw <= 0.0 || ch <= 0.0 {
+        return SvgLayoutKind::NotRendered;
+    }
     if iw <= 0.0 || ih <= 0.0 {
         return SvgLayoutKind::NotRendered;
     }
@@ -724,8 +735,8 @@ fn image_layout(
         view_box: Some(crate::node::SvgViewBox {
             x: 0.0,
             y: 0.0,
-            width: iw as f32,
-            height: ih as f32,
+            width: cw as f32,
+            height: ch as f32,
         }),
         ..SvgIntrinsicDimensions::from_attrs(|name| {
             (name == "preserveAspectRatio")
@@ -733,13 +744,10 @@ fn image_layout(
                 .flatten()
         })
     };
-    let image_transform = match image {
-        ImageData::Raster(_) => {
-            Affine::translate((x, y))
-                * svg_to_affine(dims.viewport_transform(width as f32, height as f32))
-        }
-        _ => Affine::translate((x, y)),
-    };
+    // An SVG image's own `preserveAspectRatio` is ignored in favour of the
+    // `<image>`'s.
+    let image_transform = Affine::translate((x, y))
+        * svg_to_affine(dims.viewport_transform(width as f32, height as f32));
     let box_style = style.get_box();
     SvgLayoutKind::Image {
         image: image.clone(),
