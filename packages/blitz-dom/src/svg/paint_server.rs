@@ -10,7 +10,11 @@ use kurbo::{Affine, Point, Rect};
 use markup5ever::{LocalName, local_name, ns};
 use style::color::AbsoluteColor;
 use style::computed_values::color_interpolation::T as ColorInterpolation;
+use style::properties::ComputedValues;
+use style::values::computed::Rotate;
 use style::values::computed::url::ComputedUrl;
+use style::values::generics::transform::{Scale, Translate};
+use url::Url;
 
 use super::geometry::{font_size, resolve_svg_length};
 use super::{SvgViewport, attr};
@@ -92,17 +96,38 @@ fn href(element: &ElementData) -> Option<&str> {
     find(ns!()).or_else(|| find(ns!(xlink)))
 }
 
-/// The id of a same-document fragment reference (`#id`).
-fn fragment_id(href: &str) -> Option<String> {
-    let fragment = href.trim().strip_prefix('#')?;
-    Some(
-        percent_encoding::percent_decode_str(fragment)
-            .decode_utf8_lossy()
-            .into_owned(),
-    )
+/// A displayed gradient: one with computed styles (not inside a
+/// `display: none` subtree) that is not itself `display: none`.
+fn is_displayed(node: &Node) -> bool {
+    node.primary_styles()
+        .is_some_and(|style| !style.get_box().display.is_none())
+}
+
+/// Whether a gradient specifies a transform: `gradientTransform` maps to
+/// `transform`, and the individual transform properties count too.
+fn specifies_transform(style: &ComputedValues) -> bool {
+    let b = style.get_box();
+    !b.transform.0.is_empty()
+        || !matches!(b.translate, Translate::None)
+        || !matches!(b.rotate, Rotate::None)
+        || !matches!(b.scale, Scale::None)
 }
 
 impl BaseDocument {
+    /// The id a reference to an element of this document points at, or
+    /// `None` for a reference to another document.
+    fn same_document_id(&self, url: &Url) -> Option<String> {
+        if !self.url.is_same_document(url) {
+            return None;
+        }
+        let fragment = url.fragment()?;
+        Some(
+            percent_encoding::percent_decode_str(fragment)
+                .decode_utf8_lossy()
+                .into_owned(),
+        )
+    }
+
     /// Resolve a `url()` paint to a paint server for an element with object
     /// bounding box `bbox` in `viewport`. `None` when the reference is
     /// invalid and the paint's fallback applies.
@@ -112,8 +137,7 @@ impl BaseDocument {
         bbox: Option<Rect>,
         viewport: SvgViewport,
     ) -> Option<SvgPaintServer> {
-        let id = url.url()?.fragment()?;
-        let id = percent_encoding::percent_decode_str(id).decode_utf8_lossy();
+        let id = self.same_document_id(url.url()?)?;
         let node = self.get_node(self.get_element_by_id(&id)?)?;
         if !is_gradient(node.element_data()?) {
             return None;
@@ -129,7 +153,8 @@ impl BaseDocument {
             let Some(next) = current
                 .element_data()
                 .and_then(href)
-                .and_then(fragment_id)
+                .and_then(|href| self.url.resolve_relative(href.trim()))
+                .and_then(|url| self.same_document_id(&url))
                 .and_then(|id| self.get_element_by_id(&id))
                 .and_then(|id| self.get_node(id))
             else {
@@ -153,20 +178,13 @@ impl BaseDocument {
         viewport: SvgViewport,
     ) -> Option<SvgPaintServer> {
         let chain = self.gradient_chain(node);
+        // SVG 2 keeps `display: none` gradients usable, but their stops then
+        // have no computed styles, so such a chain is treated as invalid.
+        if !chain.iter().all(|n| is_displayed(n)) {
+            return None;
+        }
         let element = node.element_data()?;
         let style = node.primary_styles()?;
-
-        // The stops of the first gradient in the chain that has any.
-        let stops = chain
-            .iter()
-            .map(|n| self.gradient_stops(n))
-            .find(|stops| !stops.is_empty())
-            .unwrap_or_default();
-        match stops.as_slice() {
-            [] => return Some(SvgPaintServer::None),
-            [stop] => return Some(SvgPaintServer::Color(stop.color)),
-            _ => {}
-        }
 
         // Attributes not set on a gradient are inherited along the chain.
         // Geometry is inherited only from gradients of the same kind.
@@ -179,31 +197,40 @@ impl BaseDocument {
         let geometry_attr = |name: &str| {
             chain
                 .iter()
-                .map_while(|n| {
-                    n.element_data()
-                        .filter(|el| el.name.local == element.name.local)
-                })
+                .filter_map(|n| n.element_data())
+                .filter(|el| el.name.local == element.name.local)
                 .find_map(|el| attr(el, name))
         };
 
-        let object_bbox = any_attr("gradientUnits") != Some("userSpaceOnUse");
+        let object_bbox = any_attr("gradientUnits").map(str::trim) != Some("userSpaceOnUse");
         let units = if object_bbox {
             let bbox = bbox.filter(|b| b.width() > 0.0 && b.height() > 0.0)?;
             Affine::new([bbox.width(), 0.0, 0.0, bbox.height(), bbox.x0, bbox.y0])
         } else {
             Affine::IDENTITY
         };
-        // `gradientTransform` maps to the `transform` property, so a gradient
-        // specifies one when its computed transform is not `none`.
         let gradient_transform = chain
             .iter()
             .filter_map(|n| n.primary_styles())
-            .find(|style| !style.get_box().transform.0.is_empty())
+            .find(|style| specifies_transform(style))
             .and_then(|style| resolve_2d_transform(style.get_box(), euclid::default::Rect::zero()))
             .unwrap_or_default();
         // A non-invertible transform makes the reference invalid.
-        if gradient_transform.determinant().abs() < f64::EPSILON {
+        let det = gradient_transform.determinant();
+        if det == 0.0 || !det.is_finite() {
             return None;
+        }
+
+        // The stops of the first gradient in the chain that has any.
+        let stops = chain
+            .iter()
+            .map(|n| self.gradient_stops(n))
+            .find(|stops| !stops.is_empty())
+            .unwrap_or_default();
+        match stops.as_slice() {
+            [] => return Some(SvgPaintServer::None),
+            [stop] => return Some(SvgPaintServer::Color(stop.color)),
+            _ => {}
         }
         let spread = match any_attr("spreadMethod").map(str::trim) {
             Some("reflect") => SvgSpreadMethod::Reflect,
@@ -297,16 +324,13 @@ impl BaseDocument {
                 }) as f32;
             let offset = offset.clamp(0.0, 1.0).max(last_offset);
             last_offset = offset;
-            // A stop without computed styles (in a `display: none` subtree)
-            // uses the initial values: opaque black.
-            let color = child
-                .primary_styles()
-                .map_or(AbsoluteColor::BLACK, |style| {
-                    let svg = style.get_svg();
-                    let mut color = style.resolve_color(&svg.stop_color);
-                    color.alpha *= svg.stop_opacity.clamp(0.0, 1.0);
-                    color
-                });
+            // Stops of a displayed gradient always have computed styles.
+            let Some(style) = child.primary_styles() else {
+                continue;
+            };
+            let svg = style.get_svg();
+            let mut color = style.resolve_color(&svg.stop_color);
+            color.alpha *= svg.stop_opacity.clamp(0.0, 1.0);
             stops.push(SvgGradientStop { offset, color });
         }
         stops

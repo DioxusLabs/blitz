@@ -156,7 +156,6 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
         | "text-decoration"
         | "text-overflow"
         | "text-rendering"
-        | "transform"
         | "transform-origin"
         | "unicode-bidi"
         | "vector-effect"
@@ -171,6 +170,9 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
             matches!(tag, "rect" | "image" | "foreignObject" | "svg")
         }
         "d" => tag == "path",
+        // `gradientTransform` replaces `transform` on gradients.
+        "transform" => !matches!(tag, "linearGradient" | "radialGradient"),
+        "gradientTransform" => matches!(tag, "linearGradient" | "radialGradient"),
         _ => false,
     }
 }

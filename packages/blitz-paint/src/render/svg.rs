@@ -14,7 +14,7 @@ use blitz_dom::svg::{
 };
 use color::{ColorSpaceTag, DynamicColor};
 use kurbo::{Affine, BezPath, Rect, Stroke};
-use peniko::{BlendMode, ColorStop, Extend, Fill, Gradient};
+use peniko::{BlendMode, ColorStop, Extend, Fill, Gradient, InterpolationAlphaSpace};
 use style::computed_values::fill_rule::T as FillRule;
 use style::computed_values::isolation::T as Isolation;
 use style::computed_values::visibility::T as Visibility;
@@ -24,7 +24,6 @@ use style::values::generics::svg::SVGPaintFallback;
 
 use super::ElementCx;
 use crate::blend::convert_blend_mode;
-
 use crate::color::{Color, ToColorColor};
 
 impl ElementCx<'_, '_> {
@@ -315,6 +314,7 @@ fn gradient_paint(gradient: &SvgGradient, alpha: f32) -> ShapePaint {
         } => Gradient::new_two_point_radial(focal, focal_radius as f32, center, radius as f32),
     }
     .with_stops(stops.as_slice())
+    .with_interpolation_alpha_space(InterpolationAlphaSpace::Unpremultiplied)
     .with_extend(match gradient.spread {
         SvgSpreadMethod::Pad => Extend::Pad,
         SvgSpreadMethod::Reflect => Extend::Reflect,
