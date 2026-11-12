@@ -46,7 +46,35 @@ impl ElementCx<'_, '_> {
             * Affine::translate(content_box.origin().to_vec2())
             * Affine::scale(self.scale)
             * layout.children_transform();
+        // The outermost `<svg>` is an isolated group, so blending inside it
+        // does not reach content behind it.
+        // https://drafts.fxtf.org/compositing/#csscompositingrules_SVG
+        if layout.has_blending {
+            scene.push_layer(
+                Fill::NonZero,
+                BlendMode::default(),
+                1.0,
+                Affine::IDENTITY,
+                &self.viewport_rect(),
+                None,
+                None,
+            );
+        }
         self.paint_svg_children(scene, self.node, transform);
+        if layout.has_blending {
+            scene.pop_layer();
+        }
+    }
+
+    /// The whole painted area in device pixels, for layers that must not clip.
+    fn viewport_rect(&self) -> Rect {
+        let painter = self.context;
+        Rect::new(
+            painter.initial_x,
+            painter.initial_y,
+            painter.initial_x + painter.width as f64,
+            painter.initial_y + painter.height as f64,
+        )
     }
 
     fn paint_svg_children(&self, scene: &mut impl PaintScene, node: &Node, transform: Affine) {
@@ -75,18 +103,12 @@ impl ElementCx<'_, '_> {
         if grouped {
             // The layer covers the whole viewport so that overflowing content
             // and strokes are not cut off; `<svg>` clipping is a separate layer.
-            let painter = self.context;
             scene.push_layer(
                 Fill::NonZero,
                 blend,
                 effects.opacity,
                 Affine::IDENTITY,
-                &Rect::new(
-                    painter.initial_x,
-                    painter.initial_y,
-                    painter.initial_x + painter.width as f64,
-                    painter.initial_y + painter.height as f64,
-                ),
+                &self.viewport_rect(),
                 None,
                 None,
             );

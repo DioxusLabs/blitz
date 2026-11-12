@@ -596,3 +596,88 @@ fn non_css_geometry_attribute_change_relayouts() {
     assert_eq!(pixel(&buffer, 30, 50), BLUE);
     assert_eq!(pixel(&buffer, 60, 50), LIME);
 }
+
+fn svg_layout_addr(doc: &HtmlDocument, selector: &str) -> usize {
+    let id = doc.query_selector(selector).unwrap().unwrap();
+    let layout = doc
+        .get_node(id)
+        .unwrap()
+        .element_data()
+        .unwrap()
+        .svg_layout()
+        .unwrap();
+    std::ptr::from_ref(layout) as usize
+}
+
+#[test]
+fn svg_layout_reuses_undamaged_elements() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><g id="g"><rect id="a" width="50" height="50" fill="red"/><rect id="b" x="50" width="50" height="50" fill="lime"/></g><svg id="n" width="100" height="100"><rect id="c" y="50" width="50" height="50" fill="lime"/></svg></svg>"#,
+        true,
+    );
+    let ids = ["#a", "#b", "#c", "#n"];
+    let before = ids.map(|sel| svg_layout_addr(&doc, sel));
+    let a = doc.query_selector("#a").unwrap().unwrap();
+    doc.mutate().set_attribute(a, attr("fill"), "lime");
+    doc.resolve(0.0);
+    let after = ids.map(|sel| svg_layout_addr(&doc, sel));
+    // `#a`'s own layout may land at the same address once it is rebuilt.
+    assert_eq!(before[1..], after[1..], "only #a is laid out again");
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 25), LIME);
+
+    doc.mutate().set_attribute(a, attr("x"), "50");
+    doc.mutate().set_attribute(a, attr("y"), "50");
+    doc.resolve(0.0);
+    let moved = ids.map(|sel| svg_layout_addr(&doc, sel));
+    assert_eq!(after[1..], moved[1..], "only #a is laid out again");
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 25), BLUE);
+    assert_eq!(pixel(&buffer, 75, 75), LIME);
+}
+
+#[test]
+fn outermost_svg_isolates_blending() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><rect width="100" height="100" fill="lime" style="mix-blend-mode: difference"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 50, 50), LIME);
+}
+
+#[test]
+fn nested_svg_overflow_clips_each_axis() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><svg width="50" height="50" style="overflow-x: clip; overflow-y: visible"><rect width="100" height="100" fill="lime"/></svg></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 75), LIME, "y is not clipped");
+    assert_eq!(pixel(&buffer, 75, 25), BLUE, "x is clipped");
+}
+
+#[test]
+fn nested_svg_overflow_auto_clips() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><svg width="50" height="50" style="overflow: auto"><rect width="100" height="100" fill="lime"/></svg></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 25), LIME);
+    assert_eq!(pixel(&buffer, 75, 75), BLUE);
+}
+
+#[test]
+fn unchanged_svg_skips_layout() {
+    let mut doc = load(
+        r#"<svg id="s1" width="50" height="100"><rect id="a" width="50" height="100" fill="red"/></svg><svg width="50" height="100"><g id="g"><rect id="b" width="50" height="100" fill="lime"/></g></svg>"#,
+        true,
+    );
+    let before = ["#g", "#b"].map(|sel| svg_layout_addr(&doc, sel));
+    let a = doc.query_selector("#a").unwrap().unwrap();
+    doc.mutate().set_attribute(a, attr("width"), "25");
+    doc.resolve(0.0);
+    let after = ["#g", "#b"].map(|sel| svg_layout_addr(&doc, sel));
+    assert_eq!(before, after, "the second <svg> is not laid out again");
+}

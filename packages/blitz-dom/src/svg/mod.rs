@@ -13,6 +13,7 @@ mod geometry;
 use blitz_traits::node_id::NodeId;
 use kurbo::{Affine, BezPath, Rect, Stroke};
 use markup5ever::{local_name, ns};
+use style::computed_values::mix_blend_mode::T as MixBlendMode;
 use style::computed_values::overflow_x::T as Overflow;
 use style::properties::ComputedValues;
 use style::values::computed::{Length, LengthPercentage};
@@ -79,6 +80,9 @@ pub struct SvgLayout {
     /// the space of its children). `None` when nothing contributes.
     pub bbox: Option<Rect>,
     pub kind: SvgLayoutKind,
+    /// Whether this element or a rendered descendant has a non-normal
+    /// `mix-blend-mode`, so the outermost `<svg>` must isolate its content.
+    pub has_blending: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +118,7 @@ impl SvgLayout {
             transform: Affine::IDENTITY,
             bbox: None,
             kind: SvgLayoutKind::NotRendered,
+            has_blending: false,
         }
     }
 
@@ -150,17 +155,11 @@ pub struct SvgRootData {
     /// The root's layout, with `content_transform` from the content box (in
     /// CSS px) to the root user space. `None` before the first layout pass.
     pub layout: Option<SvgLayout>,
-    /// The content box size the layout was computed for.
-    laid_out_size: Option<(f32, f32)>,
 }
 
 impl SvgRootData {
     pub fn new(dims: SvgIntrinsicDimensions) -> Self {
-        Self {
-            dims,
-            layout: None,
-            laid_out_size: None,
-        }
+        Self { dims, layout: None }
     }
 }
 
@@ -263,13 +262,6 @@ impl BaseDocument {
         let Some(data) = node.element_data().and_then(|el| el.svg_root_data()) else {
             return;
         };
-        let force = data.layout.is_none()
-            || data.laid_out_size != Some((width, height))
-            || node.damage().is_some_and(|d| !d.is_empty());
-        if !force && !node.has_damaged_descendants() {
-            return;
-        }
-
         let dims = data.dims;
         // Without a viewBox, a user unit is a CSS px before zoom.
         let zoom = node
@@ -285,7 +277,25 @@ impl BaseDocument {
                 Affine::scale(zoom),
             ),
         };
-        let bbox = self.layout_svg_children(root_id, viewport, force);
+        // Descendants are all laid out again only when the root viewport
+        // changes; otherwise only damaged ones are. The root's own damage
+        // does not matter: its style reaches descendants through their own
+        // restyle damage, and its attributes rebuild `SvgRootData`.
+        let force = !matches!(
+            &data.layout,
+            Some(SvgLayout {
+                kind: SvgLayoutKind::Viewport {
+                    content_transform: old_transform,
+                    viewport: old_viewport,
+                    ..
+                },
+                ..
+            }) if *old_transform == content_transform && *old_viewport == viewport
+        );
+        if !force && !node.has_damaged_descendants() {
+            return;
+        }
+        let (bbox, has_blending) = self.layout_svg_children(root_id, viewport, force);
 
         let root_layout = SvgLayout {
             transform: Affine::IDENTITY,
@@ -295,44 +305,60 @@ impl BaseDocument {
                 viewport,
                 clip: None,
             },
+            has_blending,
         };
         if let Some(SpecialElementData::SvgRoot(data)) = self.nodes[root_id]
             .element_data_mut()
             .map(|el| &mut el.special_data)
         {
             data.layout = Some(root_layout);
-            data.laid_out_size = Some((width, height));
         }
     }
 
     /// Lay out the children of `parent_id` and return the union of their
-    /// bounding boxes in `parent_id`'s children's user space.
+    /// bounding boxes in `parent_id`'s children's user space, and whether
+    /// any of them has blending.
     fn layout_svg_children(
         &mut self,
         parent_id: NodeId,
         viewport: SvgViewport,
         force: bool,
-    ) -> Option<Rect> {
+    ) -> (Option<Rect>, bool) {
         let children = self.nodes[parent_id].children.clone();
         let mut bbox = None;
+        let mut has_blending = false;
         for child in children {
-            bbox = union(bbox, self.layout_svg_node(child, viewport, force));
+            let (child_bbox, child_blending) = self.layout_svg_node(child, viewport, force);
+            bbox = union(bbox, child_bbox);
+            has_blending |= child_blending;
         }
-        bbox
+        (bbox, has_blending)
     }
 
     /// Lay out one SVG element (if it or a descendant is damaged, or `force`)
-    /// and return its bounding box in the parent's user space.
-    fn layout_svg_node(&mut self, id: NodeId, viewport: SvgViewport, force: bool) -> Option<Rect> {
+    /// and return its bounding box in the parent's user space and whether it
+    /// or a descendant has blending.
+    ///
+    /// Inside a native `<svg>` a node's damage is its own (see
+    /// `propagate_damage_flags`); damaged descendants are found through the
+    /// damaged-descendants flag.
+    fn layout_svg_node(
+        &mut self,
+        id: NodeId,
+        viewport: SvgViewport,
+        force: bool,
+    ) -> (Option<Rect>, bool) {
         let node = &self.nodes[id];
-        let element = node.element_data()?;
+        let Some(element) = node.element_data() else {
+            return (None, false);
+        };
         if element.name.ns != ns!(svg) {
-            return None;
+            return (None, false);
         }
         let existing = element.svg_layout();
         let dirty = force || existing.is_none() || node.damage().is_some_and(|d| !d.is_empty());
         if !dirty && !node.has_damaged_descendants() {
-            return existing.and_then(SvgLayout::bbox_in_parent);
+            return existing.map_or((None, false), |l| (l.bbox_in_parent(), l.has_blending));
         }
 
         let was_rendered = existing.is_some_and(|l| !matches!(l.kind, SvgLayoutKind::NotRendered));
@@ -350,14 +376,17 @@ impl BaseDocument {
         // descendants' damage was cleared without being laid out).
         let force_children = force
             || (dirty && (!was_rendered || matches!(layout.kind, SvgLayoutKind::Viewport { .. })));
+        let mut children_blending = false;
         match &mut layout.kind {
             SvgLayoutKind::NotRendered | SvgLayoutKind::Shape { .. } => {}
             SvgLayoutKind::Group => {
-                layout.bbox = self.layout_svg_children(id, viewport, force_children);
+                (layout.bbox, children_blending) =
+                    self.layout_svg_children(id, viewport, force_children);
             }
             SvgLayoutKind::Viewport { viewport, .. } => {
                 let viewport = *viewport;
-                layout.bbox = self.layout_svg_children(id, viewport, force_children);
+                (layout.bbox, children_blending) =
+                    self.layout_svg_children(id, viewport, force_children);
             }
             SvgLayoutKind::Switch { child } => {
                 let children = self.nodes[id].children.clone();
@@ -368,16 +397,23 @@ impl BaseDocument {
                 });
                 let mut bbox = None;
                 for c in children {
-                    let child_bbox = self.layout_svg_node(c, viewport, force_children);
+                    let (child_bbox, child_blending) =
+                        self.layout_svg_node(c, viewport, force_children);
                     if Some(c) == *child {
                         bbox = child_bbox;
+                        children_blending = child_blending;
                     }
                 }
                 layout.bbox = bbox;
             }
         }
+        layout.has_blending = !matches!(layout.kind, SvgLayoutKind::NotRendered)
+            && (children_blending
+                || self.nodes[id].primary_styles().is_some_and(|style| {
+                    style.get_effects().mix_blend_mode != MixBlendMode::Normal
+                }));
 
-        let bbox = layout.bbox_in_parent();
+        let result = (layout.bbox_in_parent(), layout.has_blending);
         let element = self.nodes[id].element_data_mut().unwrap();
         if matches!(
             element.special_data,
@@ -385,7 +421,7 @@ impl BaseDocument {
         ) {
             element.special_data = SpecialElementData::SvgNode(Box::new(layout));
         }
-        bbox
+        result
     }
 }
 
@@ -422,6 +458,7 @@ fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewpo
         transform,
         bbox,
         kind,
+        has_blending: false,
     }
 }
 
@@ -454,10 +491,26 @@ fn nested_viewport(
     };
     let content_transform = Affine::translate((x, y))
         * svg_to_affine(dims.viewport_transform(width as f32, height as f32));
-    let clips = style.get_box().overflow_x != Overflow::Visible;
+    // Any overflow value other than `visible` clips, `auto` included
+    // (svgwg#1072, WPT svg/painting/inner-outer-svg-overflow-auto.html);
+    // each axis clips separately.
+    const UNBOUNDED: f64 = 1e9;
+    let box_style = style.get_box();
+    let clip_x = box_style.overflow_x != Overflow::Visible;
+    let clip_y = box_style.overflow_y != Overflow::Visible;
+    let (x0, x1) = if clip_x {
+        (x, x + width)
+    } else {
+        (-UNBOUNDED, UNBOUNDED)
+    };
+    let (y0, y1) = if clip_y {
+        (y, y + height)
+    } else {
+        (-UNBOUNDED, UNBOUNDED)
+    };
     SvgLayoutKind::Viewport {
         content_transform,
         viewport: inner,
-        clip: clips.then(|| Rect::new(x, y, x + width, y + height)),
+        clip: (clip_x || clip_y).then(|| Rect::new(x0, y0, x1, y1)),
     }
 }
