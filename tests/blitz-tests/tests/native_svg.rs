@@ -411,3 +411,17 @@ fn usvg_mode_leaves_presentation_attributes_to_usvg() {
         );
     }
 }
+
+#[test]
+fn path_arcs_sweep_on_the_right_side() {
+    // sweep-flag 1 goes in the positive-angle direction (clockwise with y
+    // down), so this half circle from (10,50) to (90,50) bulges upwards.
+    let mut doc = load(
+        r#"<svg width="100" height="100"><path d="M 10 50 A 40 40 0 0 1 90 50 Z" fill="red"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 30), RED);
+    assert_eq!(pixel(&buf, 50, 70), BLUE);
+    assert_eq!(pixel(&buf, 15, 45), RED);
+}

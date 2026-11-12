@@ -373,7 +373,6 @@ pub(super) fn svg_path_to_bezpath<Angle: Copy, N>(
                 arc_size,
                 rotate,
             } => {
-                // SVG arc commands are complex; approximate as a line for now
                 let p = resolve_endpoint(point, cur, &resolve_x, &resolve_y);
                 let svg_arc = SvgArc {
                     from: cur,
@@ -387,10 +386,12 @@ pub(super) fn svg_path_to_bezpath<Angle: Copy, N>(
                         ArcSize::Large => true,
                         ArcSize::Small => false,
                     },
-                    // TODO: check mapping is correct
+                    // Stylo's `Cw` is the SVG sweep flag `1`, which is what
+                    // kurbo's `sweep` means (positive-angle direction, i.e.
+                    // clockwise with y down).
                     sweep: match arc_sweep {
-                        ArcSweep::Ccw => true,
-                        ArcSweep::Cw => false,
+                        ArcSweep::Cw => true,
+                        ArcSweep::Ccw => false,
                     },
                 };
                 let arc = kurbo::Arc::from_svg_arc(&svg_arc)?;
