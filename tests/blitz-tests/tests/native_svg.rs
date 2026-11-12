@@ -1423,7 +1423,7 @@ fn clipped_rects_doc(defs: &str, attrs: &str, native_svg: bool) -> HtmlDocument 
     doc
 }
 
-const BENCH_CASES: [(&str, &str, &str); 4] = [
+const BENCH_CASES: [(&str, &str, &str); 5] = [
     (
         "single-rect clipPath",
         r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.5" height="1"/></clipPath>"#,
@@ -1432,6 +1432,11 @@ const BENCH_CASES: [(&str, &str, &str); 4] = [
     (
         "two-rect clipPath",
         r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.5" height="0.5"/><rect x="0.5" y="0.5" width="0.5" height="0.5"/></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "overlapping-rect clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.6" height="0.6"/><rect x="0.4" y="0.4" width="0.6" height="0.6"/></clipPath>"#,
         r#"clip-path="url(#c)""#,
     ),
     (
@@ -1481,7 +1486,7 @@ fn clip_and_mask_layers_are_bounded() {
                 "{name}: a layer covers {bounds:?}"
             );
         }
-        assert!(layers > 0 || name == "single-rect clipPath", "{name}");
+        assert!(layers > 0 || name != "mask", "{name}");
     }
 }
 

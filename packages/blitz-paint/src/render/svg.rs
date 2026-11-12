@@ -266,26 +266,48 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    /// A clip path that is a single shape with no clip paths of its own, as
-    /// a fill rule, a transform to the referencing element's user space and
-    /// an outline, so it can be a plain clip layer.
+    /// A clip path that one outline with one fill rule can express, as a
+    /// fill rule, a transform to the referencing element's user space and
+    /// that outline, so it can be a plain clip layer instead of a mask.
+    ///
+    /// That holds when neither the clip path nor its children have clip
+    /// paths of their own, all children share a fill rule and their bounding
+    /// boxes don't overlap, so concatenating their outlines is their union.
+    /// `<text>` children contribute their glyph outlines.
     fn simple_svg_clip(&self, node: &Node, clip: &SvgClip) -> Option<(Fill, Affine, BezPath)> {
-        let [child] = clip.children.as_slice() else {
-            return None;
-        };
-        if clip.clip.is_some() || child.clip.is_some() {
+        const MAX_CHILDREN: usize = 16;
+        if clip.clip.is_some() || clip.children.len() > MAX_CHILDREN {
             return None;
         }
-        let layout = node.with(child.node).element_data()?.svg_layout()?;
-        let SvgLayoutKind::Shape { path, .. } = &layout.kind else {
-            return None;
-        };
-        let rule = if child.evenodd {
-            Fill::EvenOdd
-        } else {
-            Fill::NonZero
-        };
-        Some((rule, clip.transform * layout.transform, path.clone()))
+        let mut rule = None;
+        let mut outline = BezPath::new();
+        let mut boxes: Vec<Rect> = Vec::with_capacity(clip.children.len());
+        for child in &clip.children {
+            if child.clip.is_some() {
+                return None;
+            }
+            let layout = node.with(child.node).element_data()?.svg_layout()?;
+            let (child_rule, path) = match &layout.kind {
+                SvgLayoutKind::Shape { path, .. } if child.evenodd => (Fill::EvenOdd, path.clone()),
+                SvgLayoutKind::Shape { path, .. } => (Fill::NonZero, path.clone()),
+                SvgLayoutKind::Text(text) => (Fill::NonZero, svg_glyph_outlines(node, text)?),
+                _ => continue,
+            };
+            if rule.is_some_and(|rule| rule != child_rule) {
+                return None;
+            }
+            rule = Some(child_rule);
+            let path = layout.transform * path;
+            let bbox = path.bounding_box();
+            let overlaps =
+                |b: &Rect| b.x0 < bbox.x1 && bbox.x0 < b.x1 && b.y0 < bbox.y1 && bbox.y0 < b.y1;
+            if boxes.iter().any(overlaps) {
+                return None;
+            }
+            boxes.push(bbox);
+            outline.extend(path);
+        }
+        Some((rule.unwrap_or(Fill::NonZero), clip.transform, outline))
     }
 
     /// The device-space bounds of the area that `clip` lets through, where
@@ -564,6 +586,86 @@ fn draw_svg_glyphs(
             }),
         );
     }
+}
+
+/// The unhinted glyph outlines of the visible runs of `text` in its user
+/// space, placed as [`draw_svg_glyphs`] places them. `None` when the runs use
+/// more than one font, as outlines from different fonts may wind in opposite
+/// directions and cancel out under the nonzero rule.
+fn svg_glyph_outlines(node: &Node, text: &SvgText) -> Option<BezPath> {
+    use skrifa::MetadataProvider as _;
+    use skrifa::instance::{LocationRef, Size};
+    use skrifa::outline::DrawSettings;
+    use skrifa::raw::types::F2Dot14;
+
+    struct Pen(BezPath);
+    impl skrifa::outline::OutlinePen for Pen {
+        fn move_to(&mut self, x: f32, y: f32) {
+            self.0.move_to((x as f64, y as f64));
+        }
+        fn line_to(&mut self, x: f32, y: f32) {
+            self.0.line_to((x as f64, y as f64));
+        }
+        fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+            self.0
+                .quad_to((cx0 as f64, cy0 as f64), (x as f64, y as f64));
+        }
+        fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+            self.0.curve_to(
+                (cx0 as f64, cy0 as f64),
+                (cx1 as f64, cy1 as f64),
+                (x as f64, y as f64),
+            );
+        }
+        fn close(&mut self) {
+            self.0.close_path();
+        }
+    }
+
+    let mut outline = BezPath::new();
+    let mut font = None;
+    for run in &text.runs {
+        let visible = node
+            .with(run.node)
+            .svg_style()
+            .is_some_and(|s| s.get_inherited_box().visibility == Visibility::Visible);
+        if !visible || run.font_size <= 0.0 {
+            continue;
+        }
+        let id = (run.font.data.id(), run.font.index);
+        if font.is_some_and(|font| font != id) {
+            return None;
+        }
+        font = Some(id);
+        let font = skrifa::FontRef::from_index(run.font.data.data(), run.font.index).ok()?;
+        let glyphs = font.outline_glyphs();
+        let coords: Vec<F2Dot14> = run
+            .normalized_coords
+            .iter()
+            .map(|&c| F2Dot14::from_bits(c))
+            .collect();
+        let skew = run
+            .skew
+            .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
+        for glyph in &run.glyphs {
+            let Some(glyph_outline) = glyphs.get(skrifa::GlyphId::new(glyph.id)) else {
+                continue;
+            };
+            let mut pen = Pen(BezPath::new());
+            let settings =
+                DrawSettings::unhinted(Size::new(run.font_size), LocationRef::new(&coords));
+            glyph_outline.draw(settings, &mut pen).ok()?;
+            let glyph_transform = match (glyph.transform(), skew) {
+                (Some(t), Some(s)) => t * s,
+                (t, s) => t.or(s).unwrap_or_default(),
+            };
+            let transform = Affine::translate((glyph.x as f64, glyph.y as f64))
+                * glyph_transform
+                * Affine::FLIP_Y;
+            outline.extend(transform * pen.0);
+        }
+    }
+    Some(outline)
 }
 
 /// The element an SVG paint is resolved for.
