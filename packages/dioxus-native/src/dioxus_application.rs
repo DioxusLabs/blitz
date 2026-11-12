@@ -256,8 +256,23 @@ impl ApplicationHandler for DioxusNativeApplication {
         if self.handle_devtools_shortcut(window_id, &event) {
             return;
         }
+
+        // Resolve layout before RedrawRequested handlers so observers read settled geometry
+        if matches!(event, WindowEvent::RedrawRequested)
+            && let Some(window) = self.inner.windows.get_mut(&window_id)
+        {
+            let animation_time = window.current_animation_time();
+            window.doc.inner_mut().resolve(animation_time);
+        }
+
         self.event_handlers
             .apply_event(window_id, &event, event_loop);
+
+        // Flush reactive VirtualDom mutations immediately before the view redraws
+        if let Some(window) = self.inner.windows.get_mut(&window_id) {
+            window.poll();
+        }
+
         self.inner.window_event(event_loop, window_id, event);
     }
 
