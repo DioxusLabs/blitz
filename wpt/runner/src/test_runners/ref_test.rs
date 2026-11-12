@@ -21,13 +21,15 @@ use super::{
     document_has_scripts, parse_and_resolve_document, pump_net_provider, pump_timers,
     run_document_scripts,
 };
-use crate::manifest::artifact_name;
+use crate::manifest::{artifact_name, is_xml};
 use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
+#[allow(clippy::too_many_arguments)]
 pub fn process_ref_test(
     ctx: &mut ThreadCtx,
     test_relative_path: &str,
     test_html: &str,
+    test_is_xml: bool,
     match_references: &[String],
     mismatch_references: &[String],
     fuzzy_specs: &[FuzzySpec],
@@ -42,6 +44,7 @@ pub fn process_ref_test(
         test_relative_path,
         &test_out_path,
         test_html,
+        test_is_xml,
     );
 
     let image_is_blank = ctx.buffers.test_buffer.iter().all(|x| *x == 0);
@@ -59,6 +62,7 @@ pub fn process_ref_test(
         match render_reference_and_compare(
             ctx,
             test_relative_path,
+            test_is_xml,
             ref_file,
             ref_index,
             fuzzy_specs,
@@ -80,6 +84,7 @@ pub fn process_ref_test(
         match render_reference_and_compare(
             ctx,
             test_relative_path,
+            test_is_xml,
             ref_file,
             ref_index,
             fuzzy_specs,
@@ -107,6 +112,7 @@ pub fn process_ref_test(
 fn render_reference_and_compare(
     ctx: &mut ThreadCtx,
     test_relative_path: &str,
+    test_is_xml: bool,
     ref_file: &str,
     ref_index: usize,
     fuzzy_specs: &[FuzzySpec],
@@ -122,20 +128,25 @@ fn render_reference_and_compare(
     };
 
     // An `about:blank` reference is a blank page: render the ref as an empty document.
-    let (ref_relative_path, ref_html) = if ref_url.scheme() == "about" && ref_url.path() == "blank"
+    let (ref_relative_path, ref_html, ref_is_xml) = if ref_url.scheme() == "about"
+        && ref_url.path() == "blank"
     {
-        (test_relative_path.to_string(), String::new())
+        (test_relative_path.to_string(), String::new(), test_is_xml)
     } else if ref_url.scheme() == ctx.dummy_base_url.scheme() {
         let ref_relative_path = ref_url[url::Position::BeforePath..]
             .trim_start_matches('/')
             .to_string();
         let ref_path = ref_url.path().trim_start_matches('/');
         match wpt_serve::serve(&ctx.wpt_dir, ref_path, &ref_url).and_then(|response| {
-            response.text().ok_or_else(|| {
+            let is_xml_document = response
+                .is_xml()
+                .unwrap_or_else(|| is_xml(&ref_relative_path));
+            let html = response.text().ok_or_else(|| {
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "not valid UTF-8")
-            })
+            })?;
+            Ok((html, is_xml_document))
         }) {
-            Ok(html) => (ref_relative_path, html),
+            Ok((html, is_xml_document)) => (ref_relative_path, html, is_xml_document),
             Err(err) => {
                 warn!("Skipping {test_relative_path}: cannot read ref file {ref_file:?} ({err})");
                 return None;
@@ -183,6 +194,7 @@ fn render_reference_and_compare(
         &ref_relative_path,
         &ref_out_path,
         &ref_html,
+        ref_is_xml,
     );
 
     if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
@@ -232,8 +244,9 @@ fn render_html_to_buffer(
     relative_path: &str,
     out_path: &Path,
     html: &str,
+    is_xml_document: bool,
 ) {
-    let mut document = parse_and_resolve_document(ctx, html, relative_path);
+    let mut document = parse_and_resolve_document(ctx, html, is_xml_document, relative_path);
 
     if document_has_scripts(&document) {
         // The document contains scripts, so it (probably) requires JavaScript

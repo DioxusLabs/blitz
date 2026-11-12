@@ -198,10 +198,14 @@ pub fn process_test_file(
     }
 
     let request_url = ctx.dummy_base_url.join(test_url).unwrap();
-    let file_contents = match wpt_serve::serve(&ctx.wpt_dir, relative_path, &request_url) {
-        Ok(response) => response.text(),
-        Err(err) => panic!("Failed to read {relative_path}: {err}"),
-    };
+    let (file_contents, is_xml_document) =
+        match wpt_serve::serve(&ctx.wpt_dir, relative_path, &request_url) {
+            Ok(response) => {
+                let is_xml_document = response.is_xml().unwrap_or_else(|| is_xml(relative_path));
+                (response.text(), is_xml_document)
+            }
+            Err(err) => panic!("Failed to read {relative_path}: {err}"),
+        };
     let file_contents = match file_contents {
         Some(contents) => contents,
         None => {
@@ -247,7 +251,7 @@ pub fn process_test_file(
 
     match test_type {
         TestType::Crash => {
-            let counts = process_crash_test(ctx, test_url, &file_contents, flags);
+            let counts = process_crash_test(ctx, test_url, &file_contents, is_xml_document, flags);
             let status = counts.as_status();
             (TestKind::Crash, flags, status, counts, Vec::new())
         }
@@ -260,6 +264,7 @@ pub fn process_test_file(
                 ctx,
                 test_url,
                 file_contents.as_str(),
+                is_xml_document,
                 match_references,
                 mismatch_references,
                 fuzzy,
@@ -274,7 +279,7 @@ pub fn process_test_file(
             if relative_path.ends_with(".any.js") || relative_path.ends_with(".window.js") {
                 flags |= TestFlags::USES_SCRIPT;
                 let html = wrapper_html_for_js_test(relative_path, &file_contents);
-                let (status, counts, results) = process_harness_test(ctx, &html, test_url);
+                let (status, counts, results) = process_harness_test(ctx, &html, false, test_url);
                 return (TestKind::TestHarness, flags, status, counts, results);
             }
 
@@ -292,13 +297,14 @@ pub fn process_test_file(
                 debug!("{selector}");
 
                 let (status, counts, results) =
-                    process_attr_test(ctx, &selector, &file_contents, test_url);
+                    process_attr_test(ctx, &selector, &file_contents, is_xml_document, test_url);
 
                 return (TestKind::Attr, flags, status, counts, results);
             }
             drop(matches);
 
-            let (status, counts, results) = process_harness_test(ctx, &file_contents, test_url);
+            let (status, counts, results) =
+                process_harness_test(ctx, &file_contents, is_xml_document, test_url);
             (TestKind::TestHarness, flags, status, counts, results)
         }
     }
@@ -307,12 +313,11 @@ pub fn process_test_file(
 fn parse_and_resolve_document(
     ctx: &mut ThreadCtx,
     html: &str,
+    is_xml_document: bool,
     relative_path: &str,
 ) -> BaseDocument {
     ctx.net_provider.reset();
     let url = ctx.dummy_base_url.join(relative_path).unwrap();
-    let is_xml_document = wpt_serve::headers_say_xml(&ctx.wpt_dir, relative_path, &url)
-        .unwrap_or_else(|| is_xml(relative_path));
     let config = DocumentConfig {
         base_url: Some(url.to_string()),
         font_ctx: Some(ctx.font_ctx.clone()),

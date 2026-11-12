@@ -126,9 +126,10 @@ enum HarnessPumpOutcome {
 pub fn process_harness_test(
     ctx: &mut ThreadCtx,
     html: &str,
+    is_xml_document: bool,
     relative_path: &str,
 ) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
-    let document = parse_and_resolve_document(ctx, html, relative_path);
+    let document = parse_and_resolve_document(ctx, html, is_xml_document, relative_path);
     let mut document = run_document_scripts(ctx, document);
 
     // Pump timers until the harness reports results (or the timeout expires).
