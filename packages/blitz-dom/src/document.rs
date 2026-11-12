@@ -1448,6 +1448,30 @@ impl BaseDocument {
 
     /// Cache a loaded image and apply it to all nodes waiting on it
     /// (`<img>` elements, `background-image` layers and `mask-image` layers).
+    /// Give an `<img>` its loaded image. An SVG `<image>` reads its image
+    /// from the image cache during SVG layout, so it only needs relayout.
+    pub(crate) fn apply_image_to_node(&mut self, node_id: NodeId, image: ImageData) {
+        let Some(node) = self.get_node_mut(node_id) else {
+            return;
+        };
+        let Some(element) = node.element_data_mut() else {
+            return;
+        };
+        if element.name.ns == markup5ever::ns!(svg) {
+            node.insert_damage(style::selector_parser::RestyleDamage::REPAINT);
+            return;
+        }
+        #[cfg(feature = "custom-widget")]
+        if element.custom_widget_data().is_some() {
+            return;
+        }
+        element.special_data = SpecialElementData::Image(Box::new(image));
+
+        // Clear layout cache
+        node.clear_layout_cache();
+        node.insert_damage(ALL_DAMAGE);
+    }
+
     fn apply_loaded_image(&mut self, url: &str, image: ImageData) {
         // Get all nodes waiting for this image
         let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
@@ -1468,18 +1492,7 @@ impl BaseDocument {
             };
 
             match image_type {
-                ImageType::Image => {
-                    let element = node.element_data_mut().unwrap();
-                    #[cfg(feature = "custom-widget")]
-                    if element.custom_widget_data().is_some() {
-                        continue;
-                    }
-                    element.special_data = SpecialElementData::Image(Box::new(image.clone()));
-
-                    // Clear layout cache
-                    node.clear_layout_cache();
-                    node.insert_damage(ALL_DAMAGE);
-                }
+                ImageType::Image => self.apply_image_to_node(node_id, image.clone()),
                 ImageType::Background(idx) | ImageType::Mask(idx) => {
                     let layer_image = node.element_data_mut().and_then(|el| {
                         let images = match image_type {

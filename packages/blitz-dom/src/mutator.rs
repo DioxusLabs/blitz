@@ -441,7 +441,9 @@ impl DocumentMutator<'_> {
 
         if (tag, attr) == tag_and_attr!("input", "checked") {
             set_input_checked_state(element, value.to_string());
-        } else if (tag, attr) == tag_and_attr!("img", "src") {
+        } else if (tag, attr) == tag_and_attr!("img", "src")
+            || (self.doc.native_svg && is_svg_image(element) && *attr == local_name!("href"))
+        {
             self.load_image(node_id);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.load_custom_paint_src(node_id);
@@ -1251,6 +1253,9 @@ impl<'doc> DocumentMutator<'doc> {
                 _ if has_custom_widget => {}
                 "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
                 "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
+                "image" if doc.native_svg && is_svg_image(element) => {
+                    self.eager_op_queue.push(SpecialOp::LoadImage(node_id))
+                }
                 "iframe" => self.eager_op_queue.push(SpecialOp::LoadIframe(node_id)),
                 "canvas" => self
                     .eager_op_queue
@@ -1455,7 +1460,11 @@ impl<'doc> DocumentMutator<'doc> {
 
     fn load_image(&mut self, target_id: NodeId) {
         let node = &self.doc.nodes[target_id];
-        if let Some(raw_src) = node.attr(local_name!("src")) {
+        let raw_src = match node.element_data() {
+            Some(element) if is_svg_image(element) => svg_image_href(element),
+            _ => node.attr(local_name!("src")),
+        };
+        if let Some(raw_src) = raw_src {
             if !raw_src.is_empty()
                 && let Some(src) = self.doc.resolve_url(raw_src)
             {
@@ -1465,11 +1474,8 @@ impl<'doc> DocumentMutator<'doc> {
                 if let Some(cached_image) = self.doc.image_cache.get(src_string) {
                     #[cfg(feature = "tracing")]
                     tracing::info!("Loading image {src_string} from cache");
-                    let node = &mut self.doc.nodes[target_id];
-                    node.element_data_mut().unwrap().special_data =
-                        SpecialElementData::Image(Box::new(cached_image.clone()));
-                    node.clear_layout_cache();
-                    node.insert_damage(ALL_DAMAGE);
+                    let image = cached_image.clone();
+                    self.doc.apply_image_to_node(target_id, image);
                     return;
                 }
 
@@ -1665,6 +1671,24 @@ impl Drop for ViewportMut<'_> {
         let changes = DeviceChanges::from_viewports(&self.initial_viewport, &self.doc.viewport);
         self.doc.queue_device_changes(changes);
     }
+}
+
+/// An SVG `<image>`, which loads its `href` like an `<img>` loads its `src`
+/// when the document renders inline SVG natively.
+fn is_svg_image(element: &crate::node::ElementData) -> bool {
+    element.name.ns == markup5ever::ns!(svg) && element.name.local == local_name!("image")
+}
+
+/// `href`, which takes precedence over `xlink:href`.
+fn svg_image_href(element: &crate::node::ElementData) -> Option<&str> {
+    let find = |namespace| {
+        element
+            .attrs()
+            .iter()
+            .find(|a| a.name.local == local_name!("href") && a.name.ns == namespace)
+            .map(|a| a.value.as_str())
+    };
+    find(markup5ever::ns!()).or_else(|| find(markup5ever::ns!(xlink)))
 }
 
 #[cfg(test)]

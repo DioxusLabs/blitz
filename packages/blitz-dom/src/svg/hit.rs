@@ -129,6 +129,22 @@ fn hit_node(node: &Node, parent_transform: Affine, point: Point) -> Option<NodeI
             (fill_hit || stroke_hit).then_some(node.id)
         }
         SvgLayoutKind::Text(text) => hit_text(node, text, transform, point),
+        SvgLayoutKind::Image { viewport, .. } => {
+            // An image's whole viewport is its painted area.
+            let style = node.primary_styles()?;
+            let visible = style.get_inherited_box().visibility == Visibility::Visible;
+            let fill_area = match style.get_inherited_ui().pointer_events {
+                PointerEvents::None => false,
+                PointerEvents::Auto
+                | PointerEvents::Visiblepainted
+                | PointerEvents::Visiblefill
+                | PointerEvents::Visiblestroke
+                | PointerEvents::Visible => visible,
+                _ => true,
+            };
+            let local = invert(transform, point)?;
+            (fill_area && contains_inclusive(*viewport, local)).then_some(node.id)
+        }
     }
 }
 

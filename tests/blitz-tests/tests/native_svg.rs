@@ -1649,3 +1649,111 @@ fn circular_mask_references_are_ignored_everywhere() {
     assert_near(pixel(&buf, 25, 50), [128, 0, 128]);
     assert_near(pixel(&buf, 75, 50), [128, 0, 128]);
 }
+
+/// A 2x1 opaque lime PNG.
+const LIME_2X1_PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 1, 8, 6, 0,
+    0, 0, 244, 34, 127, 138, 0, 0, 0, 12, 73, 68, 65, 84, 120, 156, 99, 96, 248, 15, 129, 0, 15,
+    249, 3, 253, 216, 57, 113, 65, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
+/// A 1x1 opaque white PNG.
+const WHITE_1X1_PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0,
+    0, 0, 31, 21, 196, 137, 0, 0, 0, 11, 73, 68, 65, 84, 120, 156, 99, 248, 15, 4, 0, 9, 251, 3,
+    253, 251, 94, 107, 43, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
+/// Serves every request with the same bytes.
+struct StaticNetProvider(&'static [u8]);
+
+impl blitz_traits::net::NetProvider for StaticNetProvider {
+    fn fetch(
+        &self,
+        _doc_id: usize,
+        request: blitz_traits::net::Request,
+        handler: Box<dyn blitz_traits::net::NetHandler>,
+    ) {
+        handler.bytes(request.url.to_string(), self.0.into());
+    }
+}
+
+fn load_with_image(body: &str, image: &'static [u8]) -> HtmlDocument {
+    let html = format!(r#"<html><body style="margin:0; background:#00f">{body}</body></html>"#);
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            base_url: Some("http://example.com/".to_string()),
+            viewport: Some(Viewport::new(W, H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            net_provider: Some(Arc::new(StaticNetProvider(image))),
+            native_svg: Some(true),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc
+}
+
+#[test]
+fn image_paints_its_raster_into_its_viewport() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 5, 5), LIME);
+    assert_eq!(pixel(&buf, 95, 95), LIME);
+}
+
+#[test]
+fn image_preserves_its_aspect_ratio() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 10), BLUE);
+    assert_eq!(pixel(&buf, 50, 50), LIME);
+    assert_eq!(pixel(&buf, 50, 90), BLUE);
+}
+
+#[test]
+fn image_without_a_size_uses_its_intrinsic_size() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image x="10" y="10" xlink:href="a.png" transform="scale(2)"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 21, 20), LIME);
+    assert_eq!(pixel(&buf, 25, 20), BLUE);
+    assert_eq!(pixel(&buf, 21, 23), BLUE);
+}
+
+#[test]
+fn image_inside_a_mask_reveals_masked_content() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100">
+            <mask id="m"><g clip-path="url(#c)"><image href="a.png" width="100" height="100"/></g></mask>
+            <clipPath id="c"><rect width="50" height="100"/></clipPath>
+            <rect width="100" height="100" fill="lime" mask="url(#m)"/>
+        </svg>"#,
+        WHITE_1X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 50), LIME);
+    assert_eq!(pixel(&buf, 75, 50), BLUE);
+}
+
+#[test]
+fn image_href_change_loads_the_new_image() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image id="i" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().set_attribute(id, attr("href"), "b.png");
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}

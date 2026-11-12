@@ -85,7 +85,7 @@ fn is_gradient(element: &ElementData) -> bool {
 }
 
 /// `href`, which takes precedence over `xlink:href`.
-fn href(element: &ElementData) -> Option<&str> {
+pub(crate) fn href(element: &ElementData) -> Option<&str> {
     let attrs = element.attrs();
     let find = |namespace| {
         attrs

@@ -8,7 +8,7 @@
 //! `<image>`, markers, clipping, masking and filters are not painted yet.
 
 use anyrender::{MaskMode, PaintScene};
-use blitz_dom::node::Node;
+use blitz_dom::node::{ImageData, Node};
 use blitz_dom::svg::{
     SvgClip, SvgGlyphRun, SvgGradient, SvgGradientShape, SvgLayoutKind, SvgMask, SvgPaintServer,
     SvgReference, SvgReferenceState, SvgSpreadMethod, SvgText, SvgTextDecorationKind, SvgViewport,
@@ -249,6 +249,41 @@ impl ElementCx<'_, '_> {
             SvgLayoutKind::Text(text) => {
                 let bbox = layout.bbox;
                 self.paint_text(scene, node, text, transform, bbox, viewport);
+            }
+            SvgLayoutKind::Image {
+                image,
+                image_transform,
+                viewport,
+                clip,
+            } => {
+                if style.get_inherited_box().visibility == Visibility::Visible {
+                    if *clip {
+                        scene.push_clip_layer(Fill::NonZero, transform, viewport);
+                    }
+                    let image_transform = transform * *image_transform;
+                    match image {
+                        ImageData::Raster(image) => {
+                            let rendering = style.get_inherited_box().image_rendering;
+                            let quality = super::to_image_quality(rendering);
+                            let brush = super::to_peniko_image(image, quality);
+                            scene.draw_image(brush.as_ref(), image_transform);
+                        }
+                        #[cfg(feature = "svg-usvg")]
+                        ImageData::Svg(svg) => {
+                            let size = viewport.size();
+                            let fit = super::svg_viewport_affine(
+                                svg,
+                                size.width as f32,
+                                size.height as f32,
+                            );
+                            anyrender_svg::render_svg_tree(scene, &svg.tree, image_transform * fit);
+                        }
+                        ImageData::None => {}
+                    }
+                    if *clip {
+                        scene.pop_layer();
+                    }
+                }
             }
         }
 
