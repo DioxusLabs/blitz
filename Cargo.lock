@@ -2729,6 +2729,7 @@ dependencies = [
  "keyboard-types",
  "manganis",
  "peniko",
+ "percent-encoding",
  "slotmap",
  "tokio",
  "tracing",
