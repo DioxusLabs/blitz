@@ -9,8 +9,8 @@ use crate::net::{
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
+use crate::stylo::{BlitzNode, UserAgentStylesheet, init_stylo_prefs};
 use crate::stylo::{DeviceChanges, make_device, make_media_data};
-use crate::stylo::{UserAgentStylesheet, init_stylo_prefs};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
@@ -2262,7 +2262,7 @@ impl BaseDocument {
                 self.stylist.rebuild_initial_values_for_custom_properties();
             }
             if let Some(root) = self.try_root_element() {
-                style::invalidation::viewport_units::invalidate(root);
+                style::invalidation::viewport_units::invalidate(BlitzNode(root));
             }
         }
     }
