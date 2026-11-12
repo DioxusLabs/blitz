@@ -1,4 +1,3 @@
-use crate::wptserve;
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
 use data_url::DataUrl;
 use log::{debug, warn};
@@ -75,7 +74,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                     .path()
                     .strip_prefix('/')
                     .unwrap_or(request.url.path());
-                let response = wptserve::serve(&self.base_path, relative_path, &request.url)
+                let response = wpt_serve::serve(&self.base_path, relative_path, &request.url)
                     .inspect_err(|err| {
                         warn!("Error loading {relative_path}: {err}");
                         callback.queue.record_failure(request_id);

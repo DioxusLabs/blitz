@@ -10,7 +10,7 @@ use log::{debug, warn};
 use url::Url;
 
 use super::{SubtestResult, parse_and_resolve_document, pump_timers, run_document_scripts};
-use crate::{SubtestCounts, TestStatus, ThreadCtx, wptserve};
+use crate::{SubtestCounts, TestStatus, ThreadCtx};
 
 /// How long to wait for the harness to complete (async tests, timers)
 const HARNESS_TIMEOUT: Duration = Duration::from_secs(10);
@@ -108,7 +108,7 @@ impl ScriptFetcher for WptScriptFetcher {
         }
         let relative_path = path.strip_prefix('/').unwrap_or(path);
         let response =
-            wptserve::serve(&self.wpt_dir, relative_path, url).map_err(FetchError::Io)?;
+            wpt_serve::serve(&self.wpt_dir, relative_path, url).map_err(FetchError::Io)?;
         response.text().ok_or_else(|| {
             FetchError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

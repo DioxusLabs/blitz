@@ -13,7 +13,7 @@ use regex::Regex;
 use harness_test::WptScriptFetcher;
 
 use crate::manifest::{TestType, is_xml};
-use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx, wptserve};
+use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
 mod attr_test;
 mod crash_test;
@@ -198,7 +198,7 @@ pub fn process_test_file(
     }
 
     let request_url = ctx.dummy_base_url.join(test_url).unwrap();
-    let file_contents = match wptserve::serve(&ctx.wpt_dir, relative_path, &request_url) {
+    let file_contents = match wpt_serve::serve(&ctx.wpt_dir, relative_path, &request_url) {
         Ok(response) => response.text(),
         Err(err) => panic!("Failed to read {relative_path}: {err}"),
     };
@@ -311,7 +311,7 @@ fn parse_and_resolve_document(
 ) -> BaseDocument {
     ctx.net_provider.reset();
     let url = ctx.dummy_base_url.join(relative_path).unwrap();
-    let is_xml_document = wptserve::headers_say_xml(&ctx.wpt_dir, relative_path, &url)
+    let is_xml_document = wpt_serve::headers_say_xml(&ctx.wpt_dir, relative_path, &url)
         .unwrap_or_else(|| is_xml(relative_path));
     let config = DocumentConfig {
         base_url: Some(url.to_string()),

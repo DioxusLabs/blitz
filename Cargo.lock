@@ -10707,7 +10707,6 @@ dependencies = [
  "blitz-vibey-script",
  "data-url",
  "dify",
- "encoding_rs",
  "env_logger",
  "glob",
  "html-escape",
@@ -10732,8 +10731,8 @@ dependencies = [
  "terminal-link",
  "thread_local",
  "url",
- "uuid",
  "wpt_manifest",
+ "wpt_serve",
  "wptreport",
 ]
 
@@ -10753,6 +10752,17 @@ dependencies = [
  "sha1 0.10.7",
  "url",
  "xml5ever",
+]
+
+[[package]]
+name = "wpt_serve"
+version = "0.2.0"
+source = "git+https://github.com/nicoburns/wpt-rs?rev=d075675c3ae5ef6d7d4e82379fc59b5a5a9992f1#d075675c3ae5ef6d7d4e82379fc59b5a5a9992f1"
+dependencies = [
+ "encoding_rs",
+ "log",
+ "url",
+ "uuid",
 ]
 
 [[package]]

@@ -22,7 +22,7 @@ use super::{
     run_document_scripts,
 };
 use crate::manifest::artifact_name;
-use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH, wptserve};
+use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 pub fn process_ref_test(
     ctx: &mut ThreadCtx,
@@ -130,7 +130,7 @@ fn render_reference_and_compare(
             .trim_start_matches('/')
             .to_string();
         let ref_path = ref_url.path().trim_start_matches('/');
-        match wptserve::serve(&ctx.wpt_dir, ref_path, &ref_url).and_then(|response| {
+        match wpt_serve::serve(&ctx.wpt_dir, ref_path, &ref_url).and_then(|response| {
             response.text().ok_or_else(|| {
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "not valid UTF-8")
             })

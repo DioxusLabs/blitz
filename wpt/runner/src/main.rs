@@ -44,7 +44,6 @@ mod manifest;
 mod net_provider;
 mod panic_backtrace;
 mod report;
-mod wptserve;
 
 #[cfg(test)]
 use manifest::TestType;
@@ -457,7 +456,7 @@ fn main() {
                         Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
                             .unwrap();
 
-                    let dummy_base_url = Url::parse(wptserve::ORIGIN).unwrap();
+                    let dummy_base_url = Url::parse(wpt_serve::ORIGIN).unwrap();
                     let navigation_provider = Arc::new(DummyNavigationProvider);
 
                     RefCell::new(ThreadCtx {
