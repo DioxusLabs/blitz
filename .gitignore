@@ -11,7 +11,5 @@
 /wpt/resvg/out
 /wpt/*.json
 /apps/wpt/output
-/wpt/resvg/checkout
-/wpt/resvg/out
 /sites
 .blitz-cache
