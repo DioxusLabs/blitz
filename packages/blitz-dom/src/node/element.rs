@@ -8,6 +8,8 @@ use std::cell::Cell;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock};
+
+use crate::stylo_presentational_hints::PresentationalHints;
 use style::Atom;
 use style::parser::ParserContext;
 use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
@@ -44,16 +46,6 @@ macro_rules! local_names {
 
 pub(crate) fn parse_classes(value: &str) -> ThinVec<Atom> {
     value.split_ascii_whitespace().map(Atom::from).collect()
-}
-
-/// The declaration blocks an element's presentational attributes map to.
-#[derive(Default)]
-pub(crate) struct PresentationalHints {
-    /// The hints for the element itself.
-    pub own: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
-    /// For a table, the padding its `cellpadding` attribute gives its cells. Kept on the table
-    /// so that the cells' hints don't depend on their ancestors.
-    pub cell_padding: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
 }
 
 pub struct ElementData {
