@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock};
 
-use crate::stylo_presentational_hints::PresentationalHints;
+use crate::stylo::PresentationalHints;
 use style::Atom;
 use style::parser::ParserContext;
 use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
