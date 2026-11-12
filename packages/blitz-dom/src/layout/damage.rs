@@ -121,7 +121,6 @@ impl BaseDocument {
         // A usvg-rendered inline `<svg>` is a snapshot of its subtree (with
         // `currentColor` resolved) taken during box construction, so it must be
         // rebuilt whenever the style of the `<svg>` or any descendant changes.
-        // A natively rendered one paints from the live DOM and only repaints.
         //
         // A natively rendered one paints from the live DOM: its descendants have
         // no boxes, so their damage (most SVG properties are `affects = "layout"`
@@ -656,7 +655,7 @@ impl BaseDocument {
     }
 }
 
-#[cfg(all(test, feature = "svg-usvg"))]
+#[cfg(all(test, any(feature = "svg-usvg", feature = "svg-native")))]
 mod tests {
     use super::*;
     use crate::mutator::DocumentMutator;

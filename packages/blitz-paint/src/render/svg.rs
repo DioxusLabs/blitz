@@ -133,12 +133,21 @@ impl ElementCx<'_, '_> {
         let opacity = style.get_effects().opacity;
         let grouped = opacity < 1.0;
         if grouped {
+            // The root clips to its box unless its overflow is visible, in
+            // which case the layer must not cut anything off.
+            let root_clips =
+                self.style.get_box().overflow_x != style::computed_values::overflow_x::T::Visible;
+            let bounds = if root_clips {
+                self.frame.padding_box()
+            } else {
+                Rect::new(-1e9, -1e9, 1e9, 1e9)
+            };
             scene.push_layer(
                 Fill::NonZero,
                 peniko::Mix::Normal,
                 opacity,
                 self.transform,
-                &self.frame.padding_box(),
+                &bounds,
                 None,
                 None,
             );
@@ -151,6 +160,16 @@ impl ElementCx<'_, '_> {
             // Rendered only where referenced (not yet supported).
         } else if *tag == local_name!("g") || *tag == local_name!("a") {
             for child in node.children.iter() {
+                self.paint_svg_node(scene, node.with(*child), transform, viewport);
+            }
+        } else if *tag == local_name!("switch") {
+            // Conditional processing attributes are not evaluated yet, so the
+            // first child element is the one rendered.
+            if let Some(child) = node
+                .children
+                .iter()
+                .find(|id| node.with(**id).element_data().is_some())
+            {
                 self.paint_svg_node(scene, node.with(*child), transform, viewport);
             }
         } else if *tag == local_name!("svg") {
@@ -256,13 +275,29 @@ fn shape_geometry(
         NonNegativeLengthPercentageOrAuto::LengthPercentage(lp) => Some(resolve(&lp.0, basis)),
         NonNegativeLengthPercentageOrAuto::Auto => None,
     };
-    let attr_number = |name: &str| -> Option<f64> {
-        element
+    // A raw SVG length attribute (`x1="10%"`, `y2="1em"`): percentages
+    // resolve against the viewport dimension, font units against the
+    // element's font size.
+    let font_size = style.get_font().font_size.used_size().px() as f64;
+    let attr_length = |name: &str, basis: f64| -> Option<f64> {
+        use svgtypes::LengthUnit;
+        let len = element
             .attrs()
             .iter()
             .find(|a| &*a.name.local == name)
-            .and_then(|a| a.value.trim().parse::<svgtypes::Length>().ok())
-            .map(|len| len.number)
+            .and_then(|a| a.value.trim().parse::<svgtypes::Length>().ok())?;
+        let n = len.number;
+        Some(match len.unit {
+            LengthUnit::None | LengthUnit::Px => n,
+            LengthUnit::Percent => basis * n / 100.0,
+            LengthUnit::Em => n * font_size,
+            LengthUnit::Ex => n * font_size / 2.0,
+            LengthUnit::In => n * 96.0,
+            LengthUnit::Cm => n * 96.0 / 2.54,
+            LengthUnit::Mm => n * 96.0 / 25.4,
+            LengthUnit::Pt => n * 96.0 / 72.0,
+            LengthUnit::Pc => n * 16.0,
+        })
     };
 
     if *tag == local_name!("rect") {
@@ -322,12 +357,12 @@ fn shape_geometry(
     }
     if *tag == local_name!("line") {
         let p0 = Point::new(
-            attr_number("x1").unwrap_or(0.0),
-            attr_number("y1").unwrap_or(0.0),
+            attr_length("x1", viewport.width).unwrap_or(0.0),
+            attr_length("y1", viewport.height).unwrap_or(0.0),
         );
         let p1 = Point::new(
-            attr_number("x2").unwrap_or(0.0),
-            attr_number("y2").unwrap_or(0.0),
+            attr_length("x2", viewport.width).unwrap_or(0.0),
+            attr_length("y2", viewport.height).unwrap_or(0.0),
         );
         return Some(Line::new(p0, p1).to_path(0.1));
     }

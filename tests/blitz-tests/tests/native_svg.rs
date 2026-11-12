@@ -425,3 +425,71 @@ fn path_arcs_sweep_on_the_right_side() {
     assert_eq!(pixel(&buf, 50, 70), BLUE);
     assert_eq!(pixel(&buf, 15, 45), RED);
 }
+
+#[test]
+fn non_presentation_attributes_do_not_style_the_box() {
+    let doc = load(
+        r#"<svg id="s" width="100" height="100" padding="30" background="red" margin-left="200" border="5px solid blue"><rect width="100" height="100" fill="red"/></svg>"#,
+        true,
+    );
+    let id = doc.query_selector("#s").unwrap().unwrap();
+    let layout = *doc.get_node(id).unwrap().final_layout();
+    assert_eq!((layout.location.x, layout.size.width), (0.0, 100.0));
+    assert_eq!(layout.padding.left, 0.0);
+}
+
+#[test]
+fn degenerate_arcs_do_not_drop_the_path() {
+    for d in [
+        "M10 10 L50 10 A0 0 0 0 1 90 50 L10 90 Z",
+        "M10 10 L50 10 A20 20 0 0 1 50 10 L90 90 L10 90 Z",
+    ] {
+        let mut doc = load(
+            &format!(r#"<svg width="100" height="100"><path d="{d}" fill="red"/></svg>"#),
+            true,
+        );
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 30, 50), RED, "{d}");
+    }
+}
+
+#[test]
+fn native_svg_flex_item_keeps_its_specified_size() {
+    let doc = load(
+        r#"<div style="display:flex;width:50px"><svg id="s" width="100" height="100"></svg></div>"#,
+        true,
+    );
+    let id = doc.query_selector("#s").unwrap().unwrap();
+    assert_eq!(doc.get_node(id).unwrap().final_layout().size.width, 100.0);
+}
+
+#[test]
+fn switch_paints_its_first_child() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><switch><rect width="100" height="100" fill="red"/><rect width="100" height="100" fill="lime"/></switch></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 50), RED);
+}
+
+#[test]
+fn line_attributes_resolve_percentages() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><line x1="50%" y1="0" x2="50%" y2="100%" stroke="red" stroke-width="20"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 50), RED);
+    assert_eq!(pixel(&buf, 20, 50), BLUE);
+}
+
+#[test]
+fn group_opacity_is_not_clipped_when_overflow_is_visible() {
+    let mut doc = load(
+        r#"<svg width="50" height="50" style="overflow:visible"><g opacity="0.5"><rect width="100" height="50" fill="red"/></g></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_ne!(pixel(&buf, 75, 25), BLUE, "content outside the root box");
+}

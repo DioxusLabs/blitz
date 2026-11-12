@@ -31,7 +31,7 @@ use style::values::specified::svg_path::SVGPathData;
 use style_traits::ParsingMode;
 
 /// Parse one SVG presentation attribute on element `tag` into CSS
-/// declarations (a shorthand such as `font` expands into several), pushed
+/// declarations (`text-decoration` is a shorthand and expands into several), pushed
 /// onto `out`, a stack-allocated buffer the caller reuses across attributes.
 /// Nothing is pushed when `name` is not a presentation attribute for this
 /// element or `value` does not parse as that property's value.
@@ -88,8 +88,71 @@ pub(crate) fn svg_presentation_hint(
 /// of; every other CSS property is a presentation attribute on all elements.
 fn is_presentation_attribute(tag: &str, name: &str) -> bool {
     match name {
-        // `all` is a CSS shorthand but not an SVG presentation attribute.
-        "all" => false,
+        // https://svgwg.org/svg2-draft/styling.html#PresentationAttributes
+        // Only this list maps to CSS; any other attribute that happens to
+        // name a CSS property (`padding`, `background`, `rotate` on <text>,
+        // `scale` on <feDisplacementMap>) stays a plain attribute.
+        "alignment-baseline"
+        | "baseline-shift"
+        | "clip-path"
+        | "clip-rule"
+        | "color"
+        | "color-interpolation"
+        | "color-interpolation-filters"
+        | "cursor"
+        | "direction"
+        | "display"
+        | "dominant-baseline"
+        | "fill"
+        | "fill-opacity"
+        | "fill-rule"
+        | "filter"
+        | "flood-color"
+        | "flood-opacity"
+        | "font-family"
+        | "font-size"
+        | "font-size-adjust"
+        | "font-stretch"
+        | "font-style"
+        | "font-variant"
+        | "font-weight"
+        | "glyph-orientation-horizontal"
+        | "glyph-orientation-vertical"
+        | "image-rendering"
+        | "letter-spacing"
+        | "lighting-color"
+        | "marker-end"
+        | "marker-mid"
+        | "marker-start"
+        | "mask"
+        | "mask-type"
+        | "opacity"
+        | "overflow"
+        | "paint-order"
+        | "pointer-events"
+        | "shape-rendering"
+        | "stop-color"
+        | "stop-opacity"
+        | "stroke"
+        | "stroke-dasharray"
+        | "stroke-dashoffset"
+        | "stroke-linecap"
+        | "stroke-linejoin"
+        | "stroke-miterlimit"
+        | "stroke-opacity"
+        | "stroke-width"
+        | "text-anchor"
+        | "text-decoration"
+        | "text-overflow"
+        | "text-rendering"
+        | "transform"
+        | "transform-origin"
+        | "unicode-bidi"
+        | "vector-effect"
+        | "visibility"
+        | "white-space"
+        | "word-spacing"
+        | "writing-mode" => true,
         "cx" | "cy" => matches!(tag, "circle" | "ellipse"),
         "r" => tag == "circle",
         "rx" | "ry" => matches!(tag, "ellipse" | "rect"),
@@ -97,7 +160,7 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
             matches!(tag, "rect" | "image" | "foreignObject" | "svg")
         }
         "d" => tag == "path",
-        _ => true,
+        _ => false,
     }
 }
 
@@ -141,8 +204,17 @@ mod tests {
     }
 
     #[test]
-    fn all_shorthand_is_not_a_presentation_attribute() {
+    fn only_svg_presentation_attributes_map_to_css() {
         assert!(parse_on("rect", "all", "unset").is_empty());
+        assert!(parse_on("svg", "padding", "30").is_empty());
+        assert!(parse_on("svg", "background", "red").is_empty());
+        assert!(parse_on("svg", "margin-left", "200").is_empty());
+        assert!(parse_on("svg", "border", "5px solid blue").is_empty());
+        assert!(parse_on("rect", "position", "absolute").is_empty());
+        assert!(parse_on("text", "rotate", "45").is_empty());
+        assert!(parse_on("g", "font", "12px serif").is_empty());
+        assert!(!parse_on("g", "stroke-linecap", "round").is_empty());
+        assert!(!parse_on("g", "transform-origin", "10px 10px").is_empty());
     }
 
     #[test]

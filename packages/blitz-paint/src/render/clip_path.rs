@@ -374,6 +374,12 @@ pub(super) fn svg_path_to_bezpath<Angle: Copy, N>(
                 rotate,
             } => {
                 let p = resolve_endpoint(point, cur, &resolve_x, &resolve_y);
+                // https://svgwg.org/svg2-draft/paths.html#ArcOutOfRangeParameters
+                // Coincident end points omit the segment; a zero radius is a
+                // straight line.
+                if p == cur {
+                    continue;
+                }
                 let svg_arc = SvgArc {
                     from: cur,
                     to: p,
@@ -394,9 +400,13 @@ pub(super) fn svg_path_to_bezpath<Angle: Copy, N>(
                         ArcSweep::Ccw => false,
                     },
                 };
-                let arc = kurbo::Arc::from_svg_arc(&svg_arc)?;
-                for el in arc.append_iter(0.1) {
-                    bez.push(el);
+                match kurbo::Arc::from_svg_arc(&svg_arc) {
+                    Some(arc) => {
+                        for el in arc.append_iter(0.1) {
+                            bez.push(el);
+                        }
+                    }
+                    None => bez.line_to(p),
                 }
                 last_control = None;
                 cur = p;
