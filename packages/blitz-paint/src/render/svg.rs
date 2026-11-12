@@ -11,9 +11,8 @@ use anyrender::{MaskMode, PaintScene};
 use blitz_dom::node::Node;
 use blitz_dom::svg::{
     SvgClip, SvgGlyphRun, SvgGradient, SvgGradientShape, SvgLayoutKind, SvgMask, SvgPaintServer,
-    SvgReference, SvgSpreadMethod, SvgText, SvgTextDecorationKind, SvgViewport,
+    SvgReference, SvgReferenceState, SvgSpreadMethod, SvgText, SvgTextDecorationKind, SvgViewport,
 };
-use blitz_traits::node_id::NodeId;
 use color::{ColorSpaceTag, DynamicColor};
 use kurbo::{Affine, BezPath, Rect, Shape, Stroke, Vec2};
 use peniko::{BlendMode, ColorStop, Extend, Fill, Gradient, InterpolationAlphaSpace, StyleRef};
@@ -68,7 +67,8 @@ impl ElementCx<'_, '_> {
                 None,
             );
         }
-        self.paint_svg_children(scene, self.node, transform, viewport, &mut Vec::new());
+        let mut state = SvgReferenceState::default();
+        self.paint_svg_children(scene, self.node, transform, viewport, &mut state);
         if layout.has_blending {
             scene.pop_layer();
         }
@@ -91,22 +91,28 @@ impl ElementCx<'_, '_> {
         node: &Node,
         transform: Affine,
         viewport: SvgViewport,
-        active: &mut Vec<NodeId>,
+        state: &mut SvgReferenceState,
     ) {
         for child in node.children.iter() {
-            self.paint_svg_node(scene, node.with(*child), transform, viewport, active);
+            self.paint_svg_node(scene, node.with(*child), transform, viewport, state);
         }
     }
 
-    /// An isolated group covering the whole viewport, for clip and mask
-    /// layers to apply to.
-    fn push_svg_group(&self, scene: &mut impl PaintScene, blend: BlendMode, alpha: f32) {
+    /// An isolated group covering `bounds` (in device pixels), for clip and
+    /// mask layers to apply to.
+    fn push_svg_group(
+        &self,
+        scene: &mut impl PaintScene,
+        blend: BlendMode,
+        alpha: f32,
+        bounds: &Rect,
+    ) {
         scene.push_layer(
             Fill::NonZero,
             blend,
             alpha.min(ALMOST_OPAQUE),
             Affine::IDENTITY,
-            &self.viewport_rect(),
+            bounds,
             None,
             None,
         );
@@ -118,7 +124,7 @@ impl ElementCx<'_, '_> {
         node: &Node,
         parent_transform: Affine,
         viewport: SvgViewport,
-        active: &mut Vec<NodeId>,
+        state: &mut SvgReferenceState,
     ) {
         let Some(layout) = node.element_data().and_then(|el| el.svg_layout()) else {
             return;
@@ -129,28 +135,30 @@ impl ElementCx<'_, '_> {
         ) {
             return;
         }
-        let Some(style) = node.primary_styles() else {
+        let Some(style) = node.svg_style() else {
             return;
         };
         let transform = parent_transform * layout.transform;
 
-        // `clip-path` and `mask` use the bounding box in the element's own
-        // user space.
-        let bbox = match &layout.kind {
+        // `clip-path` and `mask` apply in the element's own user space, which
+        // for a nested `<svg>` is the one its `viewBox` establishes.
+        let (effect_transform, effect_viewport) = match &layout.kind {
             SvgLayoutKind::Viewport {
-                content_transform, ..
-            } => layout
-                .bbox
-                .map(|b| content_transform.transform_rect_bbox(b)),
-            _ => layout.bbox,
+                content_transform,
+                viewport,
+                ..
+            } => (transform * *content_transform, *viewport),
+            _ => (transform, viewport),
         };
+        let bbox = layout.bbox;
         let dom = self.context.dom;
-        let clip = match dom.resolve_svg_clip_path(&style, bbox, active) {
+        state.start_element();
+        let clip = match dom.resolve_svg_clip_path(node.id, &style, bbox, state) {
             SvgReference::None => None,
             SvgReference::Invalid => return,
             SvgReference::Valid(clip) => Some(clip),
         };
-        let mask = match dom.resolve_svg_mask(&style, bbox, viewport, active) {
+        let mask = match dom.resolve_svg_mask(node.id, &style, bbox, effect_viewport, state) {
             SvgReference::None => None,
             SvgReference::Invalid => return,
             SvgReference::Valid(mask) => Some(mask),
@@ -158,6 +166,20 @@ impl ElementCx<'_, '_> {
         let simple_clip = clip
             .as_ref()
             .and_then(|clip| self.simple_svg_clip(node, clip));
+
+        // Clip and mask groups only cover what the clip path and mask region
+        // let through, as compositing a group costs its whole area.
+        let mut bounds = self.viewport_rect();
+        if let Some(clip) = &clip {
+            bounds = bounds.intersect(self.svg_clip_bounds(node, clip, effect_transform));
+        }
+        if let Some(mask) = &mask {
+            bounds = bounds.intersect(effect_transform.transform_rect_bbox(mask.rect));
+        }
+        if (clip.is_some() || mask.is_some()) && bounds.area() <= 0.0 {
+            return;
+        }
+        let bounds = bounds.inflate(1.0, 1.0).expand();
 
         // https://drafts.fxtf.org/compositing/#csscompositingrules_SVG
         let effects = style.get_effects();
@@ -169,10 +191,11 @@ impl ElementCx<'_, '_> {
             || mask.is_some()
             || (clip.is_some() && simple_clip.is_none());
         if grouped {
-            // The layer covers the whole viewport so that overflowing content
-            // and strokes are not cut off; `<svg>` clipping is a separate layer.
+            // Without a clip or mask, the layer covers the whole viewport so
+            // that overflowing content and strokes are not cut off; `<svg>`
+            // clipping is a separate layer.
             if mask.is_some() || clip.is_some() {
-                self.push_svg_group(scene, blend, effects.opacity);
+                self.push_svg_group(scene, blend, effects.opacity, &bounds);
             } else {
                 scene.push_layer(
                     Fill::NonZero,
@@ -186,17 +209,17 @@ impl ElementCx<'_, '_> {
             }
         }
         if let Some((rule, clip_transform, path)) = &simple_clip {
-            scene.push_clip_layer(*rule, transform * *clip_transform, path);
+            scene.push_clip_layer(*rule, effect_transform * *clip_transform, path);
         }
 
         match &layout.kind {
             SvgLayoutKind::NotRendered | SvgLayoutKind::Resource => {}
             SvgLayoutKind::Group => {
-                self.paint_svg_children(scene, node, transform, viewport, active)
+                self.paint_svg_children(scene, node, transform, viewport, state)
             }
             SvgLayoutKind::Switch { child } => {
                 if let Some(child) = child {
-                    self.paint_svg_node(scene, node.with(*child), transform, viewport, active);
+                    self.paint_svg_node(scene, node.with(*child), transform, viewport, state);
                 }
             }
             SvgLayoutKind::Viewport {
@@ -208,7 +231,7 @@ impl ElementCx<'_, '_> {
                     scene.push_clip_layer(Fill::NonZero, transform, clip);
                 }
                 let content_transform = transform * *content_transform;
-                self.paint_svg_children(scene, node, content_transform, *viewport, active);
+                self.paint_svg_children(scene, node, content_transform, *viewport, state);
                 if clip.is_some() {
                     scene.pop_layer();
                 }
@@ -232,10 +255,11 @@ impl ElementCx<'_, '_> {
         if simple_clip.is_some() {
             scene.pop_layer();
         } else if let Some(clip) = &clip {
-            self.apply_svg_clip(scene, node, clip, transform);
+            self.apply_svg_clip(scene, node, clip, effect_transform, &bounds);
         }
         if let Some(mask) = &mask {
-            self.apply_svg_mask(scene, node, mask, transform, viewport, active);
+            let (transform, viewport) = (effect_transform, effect_viewport);
+            self.apply_svg_mask(scene, node, mask, transform, viewport, &bounds, state);
         }
         if grouped {
             scene.pop_layer();
@@ -264,19 +288,43 @@ impl ElementCx<'_, '_> {
         Some((rule, clip.transform * layout.transform, path.clone()))
     }
 
+    /// The device-space bounds of the area that `clip` lets through, where
+    /// `transform` maps the referencing element's user space to device space.
+    fn svg_clip_bounds(&self, node: &Node, clip: &SvgClip, transform: Affine) -> Rect {
+        let content_transform = transform * clip.transform;
+        let mut bounds: Option<Rect> = None;
+        for child in &clip.children {
+            let child_node = node.with(child.node);
+            let Some(layout) = child_node.element_data().and_then(|el| el.svg_layout()) else {
+                continue;
+            };
+            let Some(mut bbox) = layout.bbox else {
+                continue;
+            };
+            if matches!(layout.kind, SvgLayoutKind::Text(_)) {
+                // Glyph outlines can overhang their cells.
+                bbox = bbox.inflate(bbox.height(), bbox.height());
+            }
+            let child_bounds = (content_transform * layout.transform).transform_rect_bbox(bbox);
+            bounds = Some(bounds.map_or(child_bounds, |b| b.union(child_bounds)));
+        }
+        bounds.unwrap_or(Rect::ZERO)
+    }
+
     /// Clip the content painted since the enclosing group was pushed by
-    /// `clip`, whose content `transform` maps to device space.
+    /// `clip`, whose content `transform` maps to device space. `bounds` is
+    /// the device-space area of that group.
     fn apply_svg_clip(
         &self,
         scene: &mut impl PaintScene,
         node: &Node,
         clip: &SvgClip,
         transform: Affine,
+        bounds: &Rect,
     ) {
-        let viewport = self.viewport_rect();
-        scene.push_mask_layer(Fill::NonZero, MaskMode::Alpha, Affine::IDENTITY, &viewport);
+        scene.push_mask_layer(Fill::NonZero, MaskMode::Alpha, Affine::IDENTITY, bounds);
         if clip.clip.is_some() {
-            self.push_svg_group(scene, BlendMode::default(), 1.0);
+            self.push_svg_group(scene, BlendMode::default(), 1.0, bounds);
         }
         let content_transform = transform * clip.transform;
         for child in &clip.children {
@@ -286,7 +334,7 @@ impl ElementCx<'_, '_> {
             };
             let child_transform = content_transform * layout.transform;
             if child.clip.is_some() {
-                self.push_svg_group(scene, BlendMode::default(), 1.0);
+                self.push_svg_group(scene, BlendMode::default(), 1.0, bounds);
             }
             match &layout.kind {
                 SvgLayoutKind::Shape { path, .. } => {
@@ -300,7 +348,7 @@ impl ElementCx<'_, '_> {
                 SvgLayoutKind::Text(text) => {
                     let paint = ShapePaint::Solid(Color::BLACK);
                     for run in &text.runs {
-                        let visible = node.with(run.node).primary_styles().is_some_and(|s| {
+                        let visible = node.with(run.node).svg_style().is_some_and(|s| {
                             s.get_inherited_box().visibility == Visibility::Visible
                         });
                         if visible {
@@ -311,12 +359,12 @@ impl ElementCx<'_, '_> {
                 _ => {}
             }
             if let Some(child_clip) = &child.clip {
-                self.apply_svg_clip(scene, node, child_clip, child_transform);
+                self.apply_svg_clip(scene, node, child_clip, child_transform, bounds);
                 scene.pop_layer();
             }
         }
         if let Some(own) = &clip.clip {
-            self.apply_svg_clip(scene, node, own, transform);
+            self.apply_svg_clip(scene, node, own, transform, bounds);
             scene.pop_layer();
         }
         scene.pop_layer();
@@ -324,6 +372,8 @@ impl ElementCx<'_, '_> {
 
     /// Mask the content painted since the enclosing group was pushed by
     /// `mask`, in the user space that `transform` maps to device space.
+    /// `bounds` is the device-space area of that group.
+    #[allow(clippy::too_many_arguments)]
     fn apply_svg_mask(
         &self,
         scene: &mut impl PaintScene,
@@ -331,7 +381,8 @@ impl ElementCx<'_, '_> {
         mask: &SvgMask,
         transform: Affine,
         viewport: SvgViewport,
-        active: &mut Vec<NodeId>,
+        bounds: &Rect,
+        state: &mut SvgReferenceState,
     ) {
         let mode = if mask.alpha {
             MaskMode::Alpha
@@ -340,15 +391,15 @@ impl ElementCx<'_, '_> {
         };
         scene.push_mask_layer(Fill::NonZero, mode, transform, &mask.rect);
         if mask.mask.is_some() {
-            self.push_svg_group(scene, BlendMode::default(), 1.0);
+            self.push_svg_group(scene, BlendMode::default(), 1.0, bounds);
         }
         let mask_node = node.with(mask.node);
-        active.push(mask.node);
+        state.push(mask.node);
         let content_transform = transform * mask.content_transform;
-        self.paint_svg_children(scene, mask_node, content_transform, viewport, active);
-        active.pop();
+        self.paint_svg_children(scene, mask_node, content_transform, viewport, state);
+        state.pop();
         if let Some(own) = &mask.mask {
-            self.apply_svg_mask(scene, node, own, transform, viewport, active);
+            self.apply_svg_mask(scene, node, own, transform, viewport, bounds, state);
             scene.pop_layer();
         }
         scene.pop_layer();
@@ -371,7 +422,7 @@ impl ElementCx<'_, '_> {
                 if (deco.kind == SvgTextDecorationKind::LineThrough) != line_through {
                     continue;
                 }
-                let Some(style) = node.with(deco.node).primary_styles() else {
+                let Some(style) = node.with(deco.node).svg_style() else {
                     continue;
                 };
                 if style.get_inherited_box().visibility != Visibility::Visible {
@@ -388,7 +439,7 @@ impl ElementCx<'_, '_> {
         };
         paint_decorations(scene, false);
         for run in &text.runs {
-            let Some(style) = node.with(run.node).primary_styles() else {
+            let Some(style) = node.with(run.node).svg_style() else {
                 continue;
             };
             if style.get_inherited_box().visibility != Visibility::Visible {
@@ -407,9 +458,7 @@ impl ElementCx<'_, '_> {
                 && id != node.id
             {
                 let span = node.with(id);
-                alpha *= span
-                    .primary_styles()
-                    .map_or(1.0, |s| s.get_effects().opacity);
+                alpha *= span.svg_style().map_or(1.0, |s| s.get_effects().opacity);
                 current = span.parent;
             }
             if alpha < 1.0 {

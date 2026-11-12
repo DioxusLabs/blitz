@@ -200,7 +200,7 @@ impl Collector<'_> {
         parent_transform: &CaseTransform,
     ) {
         let node = &self.nodes[id];
-        let Some(style) = node.primary_styles() else {
+        let Some(style) = node.svg_style() else {
             return;
         };
         if !root {
@@ -262,7 +262,7 @@ impl Collector<'_> {
                 && el.name.ns == ns!(svg)
                 && matches!(el.name.local, local_name!("tspan") | local_name!("a"))
                 && child
-                    .primary_styles()
+                    .svg_style()
                     .is_some_and(|s| !s.clone_display().is_none())
                 && super::conditions_pass(el)
             {
@@ -317,7 +317,7 @@ impl BaseDocument {
         // Shape the text as one unwrapped line, in user units.
         let zoom_scale = viewport.unzoom(1.0) as f32;
         let mut layout: Layout<TextBrush> = Layout::new();
-        let Some(root_style) = self.nodes[text_id].primary_styles() else {
+        let Some(root_style) = self.nodes[text_id].svg_style() else {
             return SvgText::default();
         };
         let rtl = root_style.clone_direction() == Direction::Rtl;
@@ -357,7 +357,7 @@ impl BaseDocument {
         let mut positions = vec![CharPosition::default(); char_count];
         for el in &elements {
             let node = &self.nodes[el.node];
-            let (Some(element), Some(style)) = (node.element_data(), node.primary_styles()) else {
+            let (Some(element), Some(style)) = (node.element_data(), node.svg_style()) else {
                 continue;
             };
             let font_size = viewport.unzoom(geometry::font_size(&style));
@@ -408,7 +408,7 @@ impl BaseDocument {
                 };
                 let run = glyph_run.run();
                 let node = glyph_run.style().brush.id;
-                let Some(style) = self.nodes[node].primary_styles() else {
+                let Some(style) = self.nodes[node].svg_style() else {
                     continue;
                 };
                 let metrics = run.font_metrics();
@@ -509,7 +509,7 @@ impl BaseDocument {
             let Some(element) = self.nodes[el.node].element_data() else {
                 continue;
             };
-            let Some(style) = self.nodes[el.node].primary_styles() else {
+            let Some(style) = self.nodes[el.node].svg_style() else {
                 continue;
             };
             let font_size = viewport.unzoom(geometry::font_size(&style));
@@ -554,7 +554,7 @@ impl BaseDocument {
                 .find(|el| el.chars.contains(&chunk[0].char_index))
                 .map_or(text_id, |el| el.node);
             let anchor = self.nodes[node]
-                .primary_styles()
+                .svg_style()
                 .map_or(TextAnchor::Start, |s| s.get_inherited_svg().text_anchor);
             let min = chunk.iter().map(|i| i.x).fold(f64::INFINITY, f64::min);
             let max = chunk
@@ -619,7 +619,7 @@ impl BaseDocument {
     ) -> Vec<SvgTextDecoration> {
         let mut out = Vec::new();
         for el in elements {
-            let Some(style) = self.nodes[el.node].primary_styles() else {
+            let Some(style) = self.nodes[el.node].svg_style() else {
                 continue;
             };
             let line = style.get_text().text_decoration_line;

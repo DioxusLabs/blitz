@@ -222,6 +222,11 @@ pub struct BaseDocument {
     /// The natively rendered inline `<svg>` roots, for SVG layout.
     #[cfg(feature = "svg-native")]
     pub(crate) svg_roots: Vec<blitz_traits::node_id::NodeId>,
+    /// The `clip-path` and `mask` references that close a cycle between
+    /// `<clipPath>` and `<mask>` elements, ignored everywhere, as the
+    /// element that uses the reference and whether it is a mask.
+    #[cfg(feature = "svg-native")]
+    pub(crate) svg_circular_references: HashSet<(NodeId, bool)>,
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub(crate) subdocument_depth: usize,
@@ -484,6 +489,8 @@ impl BaseDocument {
             native_svg,
             #[cfg(feature = "svg-native")]
             svg_roots: Vec::new(),
+            #[cfg(feature = "svg-native")]
+            svg_circular_references: HashSet::new(),
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
