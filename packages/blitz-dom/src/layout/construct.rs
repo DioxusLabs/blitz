@@ -468,7 +468,11 @@ fn collect_layout_children_with_wrap(
                     .unwrap()
                     .element_data_mut()
                     .unwrap()
-                    .special_data = SpecialElementData::SvgRoot(dims);
+                    .special_data =
+                    SpecialElementData::SvgRoot(Box::new(crate::svg::SvgRootData::new(dims)));
+                if !doc.svg_roots.contains(&container_node_id) {
+                    doc.svg_roots.push(container_node_id);
+                }
                 return;
             }
 

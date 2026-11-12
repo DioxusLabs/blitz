@@ -379,11 +379,13 @@ pub enum SpecialElementData {
     Stylesheet(DocumentStyleSheet),
     /// An \<img\> element's image data
     Image(Box<ImageData>),
-    /// The root of a natively rendered inline \<svg\> subtree: the dimensions
-    /// declared on the element (`width`, `height`, `viewBox`,
-    /// `preserveAspectRatio`). The subtree itself stays in the DOM.
+    /// The root of a natively rendered inline \<svg\> subtree: its declared
+    /// dimensions and SVG layout. The subtree itself stays in the DOM.
     #[cfg(feature = "svg-native")]
-    SvgRoot(crate::node::SvgIntrinsicDimensions),
+    SvgRoot(Box<crate::svg::SvgRootData>),
+    /// An element inside a natively rendered inline \<svg\>: its SVG layout.
+    #[cfg(feature = "svg-native")]
+    SvgNode(Box<crate::svg::SvgLayout>),
     /// A \<canvas\> element's custom paint source
     Canvas(CanvasData),
     /// Pre-computed table layout data
@@ -409,7 +411,9 @@ impl Clone for SpecialElementData {
             Self::Stylesheet(data) => Self::Stylesheet(data.clone()),
             Self::Image(data) => Self::Image(data.clone()),
             #[cfg(feature = "svg-native")]
-            Self::SvgRoot(data) => Self::SvgRoot(*data),
+            Self::SvgRoot(data) => Self::SvgRoot(data.clone()),
+            #[cfg(feature = "svg-native")]
+            Self::SvgNode(data) => Self::SvgNode(data.clone()),
             Self::Canvas(data) => Self::Canvas(data.clone()),
             Self::TableRoot(data) => Self::TableRoot(data.clone()),
             Self::TextInput(data) => Self::TextInput(data.clone()),
@@ -580,11 +584,22 @@ impl ElementData {
         }
     }
 
-    /// The declared dimensions of a natively rendered inline `<svg>` root.
+    /// The data of a natively rendered inline `<svg>` root.
     #[cfg(feature = "svg-native")]
-    pub fn svg_root_data(&self) -> Option<&crate::node::SvgIntrinsicDimensions> {
+    pub fn svg_root_data(&self) -> Option<&crate::svg::SvgRootData> {
         match &self.special_data {
             SpecialElementData::SvgRoot(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    /// The SVG layout of an element in a natively rendered inline `<svg>`:
+    /// the root's own layout, or a descendant's.
+    #[cfg(feature = "svg-native")]
+    pub fn svg_layout(&self) -> Option<&crate::svg::SvgLayout> {
+        match &self.special_data {
+            SpecialElementData::SvgRoot(data) => data.layout.as_ref(),
+            SpecialElementData::SvgNode(layout) => Some(layout),
             _ => None,
         }
     }
@@ -965,6 +980,8 @@ impl std::fmt::Debug for SpecialElementData {
             },
             #[cfg(feature = "svg-native")]
             SpecialElementData::SvgRoot(_) => f.write_str("NodeSpecificData::SvgRoot"),
+            #[cfg(feature = "svg-native")]
+            SpecialElementData::SvgNode(_) => f.write_str("NodeSpecificData::SvgNode"),
             SpecialElementData::Canvas(_) => f.write_str("NodeSpecificData::Canvas"),
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),

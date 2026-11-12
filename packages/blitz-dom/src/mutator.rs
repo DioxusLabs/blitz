@@ -720,7 +720,7 @@ impl DocumentMutator<'_> {
             true
         };
         // Geometry that is not CSS-backed (`points`, `x1`, `viewBox` of a nested `<svg>`, ...)
-        // is read at paint time, so the change needs a repaint but no relayout.
+        // is read by SVG layout, which stays inside the `<svg>`: no CSS relayout is needed.
         let svg_repaint = is_svg && self.doc.native_svg;
         let read_by_layout = (is_svg && svg_read_by_layout)
             || matches!(
@@ -761,6 +761,15 @@ impl DocumentMutator<'_> {
         }
         if read_by_layout || svg_repaint {
             node.mark_damaged();
+        }
+        // SVG layout reads non-CSS geometry (`points`, `pathLength`, ...) from attributes, so
+        // drop the element's layout to have it recomputed.
+        #[cfg(feature = "svg-native")]
+        if svg_repaint
+            && let Some(element) = node.element_data_mut()
+            && matches!(element.special_data, SpecialElementData::SvgNode(_))
+        {
+            element.special_data = SpecialElementData::None;
         }
         // Mark ancestors dirty so the style traversal visits this subtree.
         node.mark_ancestors_dirty();
@@ -1326,7 +1335,7 @@ impl<'doc> DocumentMutator<'doc> {
                     .push(SpecialOp::UnloadStylesheet(node_id)),
                 SpecialElementData::Image(_) => {}
                 #[cfg(feature = "svg-native")]
-                SpecialElementData::SvgRoot(_) => {}
+                SpecialElementData::SvgRoot(_) | SpecialElementData::SvgNode(_) => {}
                 SpecialElementData::Canvas(_) => {
                     self.recompute_is_animating = true;
                 }
