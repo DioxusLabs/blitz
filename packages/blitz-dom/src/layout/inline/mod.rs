@@ -23,4 +23,6 @@ pub(crate) struct Frame {
     pub(crate) collapses_through: bool,
     pub(crate) suppresses_baseline: bool,
     pub(crate) is_scroll_container: bool,
+    /// Device pixels per CSS pixel.
+    pub(crate) scale: f32,
 }

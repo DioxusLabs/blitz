@@ -76,6 +76,7 @@ impl BaseDocument {
             // A sub-document is a separate devtools target with its own provider
             #[cfg(feature = "devtools")]
             devtools_provider: None,
+            reveal_typed_password_character: self.reveal_typed_password,
         }
     }
 
