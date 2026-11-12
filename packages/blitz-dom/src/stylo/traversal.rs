@@ -6,7 +6,6 @@ use std::sync::atomic::Ordering;
 
 use crate::StyleThreading;
 use crate::node::Node;
-use selectors::Element;
 use style::animation::AnimationState;
 use style::global_style_data::STYLE_THREAD_POOL;
 use style::invalidation::element::restyle_hints::RestyleHint;

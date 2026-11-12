@@ -30,7 +30,7 @@ use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
 use parley::{FontContext, PlainEditorDriver};
-use selectors::{Element, matching::QuirksMode};
+use selectors::matching::QuirksMode;
 use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
@@ -58,7 +58,6 @@ use style::values::computed::UserSelect;
 use style::values::computed::ui::CursorKind;
 use style::{
     device::Device,
-    dom::{TDocument, TNode},
     media_queries::MediaList,
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
@@ -877,15 +876,11 @@ impl BaseDocument {
     }
 
     pub fn try_root_element(&self) -> Option<&Node> {
-        TDocument::as_node(&self.root_node()).first_element_child()
+        self.root_node().first_element_child()
     }
 
     pub fn root_element(&self) -> &Node {
-        TDocument::as_node(&self.root_node())
-            .first_element_child()
-            .unwrap()
-            .as_element()
-            .unwrap()
+        self.try_root_element().unwrap()
     }
 
     pub fn create_node(&mut self, node_data: NodeData) -> NodeId {
@@ -1506,7 +1501,7 @@ impl BaseDocument {
             return;
         }
 
-        let opaque_node_id = TNode::opaque(&&*node);
+        let opaque_node_id = node.opaque();
         node.set_has_snapshot(true);
         node.snapshot_handled()
             .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -1909,10 +1904,7 @@ impl BaseDocument {
         x: f32,
         y: f32,
     ) -> (Option<HitResult>, Option<crate::node::ScrollbarRef>) {
-        if TDocument::as_node(&self.root_node())
-            .first_element_child()
-            .is_none()
-        {
+        if self.root_node().first_element_child().is_none() {
             #[cfg(feature = "tracing")]
             tracing::warn!("No DOM - not resolving hit test");
             return (None, None);
@@ -2323,7 +2315,7 @@ impl BaseDocument {
         // (such as `<a>`) between them.
         let mut maybe_node = Some(node);
         while let Some(node) = maybe_node {
-            if node.is_link() {
+            if node.data.is_element_with_tag_name(&local_name!("a")) {
                 return Some(CursorIcon::Pointer);
             }
 

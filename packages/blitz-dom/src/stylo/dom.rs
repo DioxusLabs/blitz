@@ -9,7 +9,7 @@ use crate::node::NodeData;
 use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name};
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
-    Element, OpaqueElement,
+    OpaqueElement,
     attr::{AttrSelectorOperation, NamespaceConstraint},
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
@@ -97,7 +97,7 @@ impl<'a> TNode for BlitzNode<'a> {
     type ConcreteShadowRoot = BlitzNode<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        self.parent.map(|id| self.with(id))
+        Node::parent_node(self)
     }
 
     fn first_child(&self) -> Option<Self> {
@@ -117,12 +117,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        // Walk up the (layout-)parent chain to the root Document node.
-        let mut node = *self;
-        while let Some(parent_id) = node.parent {
-            node = node.with(parent_id);
-        }
-        node
+        Node::owner_doc(self)
     }
 
     fn is_in_document(&self) -> bool {
@@ -138,7 +133,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn opaque(&self) -> OpaqueNode {
-        OpaqueNode(self.id.as_u64() as usize)
+        Node::opaque(self)
     }
 
     fn debug_id(self) -> usize {
@@ -224,8 +219,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn first_element_child(&self) -> Option<Self> {
-        let mut children = self.dom_children();
-        children.find(|child| child.is_element())
+        Node::first_element_child(self)
     }
 
     fn is_html_element_in_html_document(&self) -> bool {

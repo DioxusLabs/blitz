@@ -1279,7 +1279,7 @@ impl<'doc> DocumentMutator<'doc> {
             // Remove any snapshot for this node to prevent stale snapshot references
             // during style invalidation.
             if node.has_snapshot() {
-                let opaque_id = style::dom::TNode::opaque(&&*node);
+                let opaque_id = node.opaque();
                 doc.snapshots.remove(&opaque_id);
                 node.set_has_snapshot(false);
             }

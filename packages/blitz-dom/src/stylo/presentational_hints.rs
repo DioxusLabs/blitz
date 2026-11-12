@@ -7,7 +7,6 @@ use selectors::sink::Push;
 use style::Atom;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
-use style::dom::TNode;
 use style::properties::{Importance, PropertyDeclaration, PropertyDeclarationBlock};
 use style::rule_tree::{CascadeLevel, CascadeOrigin, StyleSourceBorrow};
 use style::servo_arc::Arc as ServoArc;

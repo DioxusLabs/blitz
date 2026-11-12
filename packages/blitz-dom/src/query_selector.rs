@@ -1,7 +1,7 @@
 use blitz_traits::node_id::NodeId;
 use selectors::SelectorList;
 use smallvec::SmallVec;
-use style::dom::{TDocument, TNode};
+use style::dom::TDocument;
 use style::dom_apis::{
     MayUseInvalidation, QueryAll, QueryFirst, element_closest, element_matches, query_selector,
 };
