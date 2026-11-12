@@ -9,6 +9,11 @@
 //! recomputing geometry every frame.
 
 mod geometry;
+mod paint_server;
+
+pub use paint_server::{
+    SvgGradient, SvgGradientShape, SvgGradientStop, SvgPaintServer, SvgSpreadMethod,
+};
 
 use blitz_traits::node_id::NodeId;
 use kurbo::{Affine, BezPath, Rect, Stroke};
