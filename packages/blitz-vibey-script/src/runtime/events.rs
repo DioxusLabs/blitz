@@ -376,12 +376,22 @@ impl ScriptRuntime {
     /// Dispatch a simple event (e.g. `DOMContentLoaded`) targeting the document node
     pub fn dispatch_document_event(&mut self, name: &str) -> bool {
         let root_id = self.ctx.doc.borrow().root_node().id;
+        self.dispatch_simple_event(root_id, name, true)
+    }
+
+    /// Dispatch a simple, non-cancelable event named `name` at `target`,
+    /// propagating through its ancestors if `bubbles` is set
+    pub fn dispatch_simple_event(&mut self, target: NodeId, name: &str, bubbles: bool) -> bool {
+        let chain: Vec<NodeId> = {
+            let doc = self.ctx.doc.borrow();
+            std::iter::successors(Some(target), |&id| doc.get_node(id)?.parent).collect()
+        };
         let mut event_state = EventState::default();
         let ran = self.dispatch_event_inner(
-            &[root_id],
+            &chain,
             name,
-            true,
-            |ctx, target, context| create_event(ctx, name, true, false, target, context),
+            bubbles,
+            |ctx, target, context| create_event(ctx, name, bubbles, false, target, context),
             &mut event_state,
         );
         if ran {

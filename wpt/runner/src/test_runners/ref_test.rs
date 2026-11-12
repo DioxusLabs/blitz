@@ -297,9 +297,10 @@ fn wait_for_screenshot_ready(document: &mut ScriptDocument) {
             // The listener may already remove `reftest-wait` synchronously,
             // so check again straight away.
             test_rendered_fired = true;
-            doc.eval(
-                "document.documentElement.dispatchEvent(new Event('TestRendered', { bubbles: true }));",
-            );
+            let root_element = doc.inner().try_root_element().map(|root| root.id);
+            if let Some(root_element) = root_element {
+                doc.dispatch_event(root_element, "TestRendered", true);
+            }
         }
     });
 }

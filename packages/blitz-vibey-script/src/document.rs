@@ -6,7 +6,9 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Waker};
 
-use blitz_dom::{BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver};
+use blitz_dom::{
+    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, NodeId,
+};
 use blitz_html::{DocumentHtmlParser, HtmlProvider};
 use blitz_traits::events::{DomEvent, UiEvent};
 use url::Url;
@@ -287,6 +289,16 @@ impl ScriptDocument {
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_dom_event(event);
 
+        self.request_redraw();
+        self.arm_timer_thread();
+    }
+
+    /// Dispatch a simple (non-cancelable) event named `name` at the node
+    /// `target` to JavaScript event listeners, bubbling through its ancestors
+    /// if `bubbles` is set: the equivalent of
+    /// `target.dispatchEvent(new Event(name, { bubbles }))`.
+    pub fn dispatch_event(&mut self, target: NodeId, name: &str, bubbles: bool) {
+        self.runtime.dispatch_simple_event(target, name, bubbles);
         self.request_redraw();
         self.arm_timer_thread();
     }
