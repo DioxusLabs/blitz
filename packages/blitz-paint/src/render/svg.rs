@@ -7,12 +7,17 @@
 //! properties from computed styles. Patterns, `<use>`,
 //! `<image>`, markers, clipping, masking and filters are not painted yet.
 
+use std::sync::Arc;
+
+use anyrender::filters::{Filter, FilterEffect, FilterId, FilterInput, FilterInputs, FilterSource};
 use anyrender::{MaskMode, PaintScene};
 use blitz_dom::node::Node;
 use blitz_dom::svg::{
-    SvgClip, SvgGlyphRun, SvgGradient, SvgGradientShape, SvgLayoutKind, SvgMask, SvgPaintServer,
-    SvgReference, SvgReferenceState, SvgSpreadMethod, SvgText, SvgTextDecorationKind, SvgViewport,
+    SvgClip, SvgFilter, SvgFilterInput, SvgFilterKind, SvgGlyphRun, SvgGradient, SvgGradientShape,
+    SvgLayoutKind, SvgMask, SvgPaintServer, SvgReference, SvgReferenceState, SvgSpreadMethod,
+    SvgText, SvgTextDecorationKind, SvgViewport,
 };
+use blitz_dom::util::ToColorColor as _;
 use color::{ColorSpaceTag, DynamicColor};
 use kurbo::{Affine, BezPath, Rect, Shape, Stroke, Vec2};
 use peniko::{BlendMode, ColorStop, Extend, Fill, Gradient, InterpolationAlphaSpace, StyleRef};
@@ -163,12 +168,19 @@ impl ElementCx<'_, '_> {
             SvgReference::Invalid => return,
             SvgReference::Valid(mask) => Some(mask),
         };
+        // The filter region and its graph, or `None` when the filter only
+        // clips to the region.
+        let filter = match dom.resolve_svg_filter(&style, bbox, effect_viewport) {
+            SvgReference::None => None,
+            SvgReference::Invalid => return,
+            SvgReference::Valid(filter) => Some((filter.rect, convert_svg_filter(&filter))),
+        };
         let simple_clip = clip
             .as_ref()
             .and_then(|clip| self.simple_svg_clip(node, clip));
 
         // Clip and mask groups only cover what the clip path and mask region
-        // let through, as compositing a group costs its whole area.
+        // let through, and the filter region, as compositing a group costs its whole area.
         let mut bounds = self.viewport_rect();
         if let Some(clip) = &clip {
             bounds = bounds.intersect(self.svg_clip_bounds(node, clip, effect_transform));
@@ -176,7 +188,11 @@ impl ElementCx<'_, '_> {
         if let Some(mask) = &mask {
             bounds = bounds.intersect(effect_transform.transform_rect_bbox(mask.rect));
         }
-        if (clip.is_some() || mask.is_some()) && bounds.area() <= 0.0 {
+        if let Some((rect, _)) = &filter {
+            bounds = bounds.intersect(effect_transform.transform_rect_bbox(*rect));
+        }
+        let bounded = clip.is_some() || mask.is_some() || filter.is_some();
+        if bounded && bounds.area() <= 0.0 {
             return;
         }
         let bounds = bounds.inflate(1.0, 1.0).expand();
@@ -194,7 +210,7 @@ impl ElementCx<'_, '_> {
             // Without a clip or mask, the layer covers the whole viewport so
             // that overflowing content and strokes are not cut off; `<svg>`
             // clipping is a separate layer.
-            if mask.is_some() || clip.is_some() {
+            if bounded {
                 self.push_svg_group(scene, blend, effects.opacity, &bounds);
             } else {
                 scene.push_layer(
@@ -210,6 +226,21 @@ impl ElementCx<'_, '_> {
         }
         if let Some((rule, clip_transform, path)) = &simple_clip {
             scene.push_clip_layer(*rule, effect_transform * *clip_transform, path);
+        }
+        // The filter applies before clipping, masking and opacity.
+        if let Some((rect, graph)) = &filter {
+            match graph {
+                Some(graph) => scene.push_layer(
+                    Fill::NonZero,
+                    BlendMode::default(),
+                    1.0,
+                    effect_transform,
+                    rect,
+                    Some(graph.clone()),
+                    None,
+                ),
+                None => scene.push_clip_layer(Fill::NonZero, effect_transform, rect),
+            }
         }
 
         match &layout.kind {
@@ -252,6 +283,9 @@ impl ElementCx<'_, '_> {
             }
         }
 
+        if filter.is_some() {
+            scene.pop_layer();
+        }
         if simple_clip.is_some() {
             scene.pop_layer();
         } else if let Some(clip) = &clip {
@@ -821,4 +855,51 @@ fn gradient_paint(gradient: &SvgGradient, alpha: f32) -> ShapePaint {
         brush.interpolation_cs = ColorSpaceTag::LinearSrgb;
     }
     ShapePaint::Gradient(brush, gradient.transform)
+}
+
+/// The AnyRender filter graph of a `<filter>`, with no-op primitives folded
+/// away, or `None` when nothing is left (the filter only clips to its
+/// region).
+fn convert_svg_filter(filter: &SvgFilter) -> Option<Arc<Filter>> {
+    let mut graph = Filter::empty();
+    let mut ids: Vec<FilterId> = Vec::with_capacity(filter.primitives.len());
+    for primitive in &filter.primitives {
+        let input = |input| match input {
+            SvgFilterInput::SourceGraphic => FilterInput::Source(FilterSource::SourceGraphic),
+            SvgFilterInput::SourceAlpha => FilterInput::Source(FilterSource::SourceAlpha),
+            SvgFilterInput::Result(index) => FilterInput::Result(ids[index]),
+        };
+        let single = FilterInputs::single(input(primitive.input));
+        let (effect, inputs) = match &primitive.kind {
+            SvgFilterKind::Flood(color) => (
+                FilterEffect::Flood(color.as_color_color()),
+                FilterInputs::NONE,
+            ),
+            SvgFilterKind::GaussianBlur { std_deviation } => {
+                (FilterEffect::blur(*std_deviation as f32), single)
+            }
+            SvgFilterKind::Offset { dx, dy } => (FilterEffect::Offset(Vec2::new(*dx, *dy)), single),
+            SvgFilterKind::DropShadow {
+                dx,
+                dy,
+                std_deviation,
+                color,
+            } => (
+                FilterEffect::drop_shadow(
+                    *dx as f32,
+                    *dy as f32,
+                    *std_deviation as f32,
+                    color.as_color_color(),
+                ),
+                single,
+            ),
+            SvgFilterKind::Blend(mode) => (
+                FilterEffect::Blend(convert_blend_mode(*mode).mix),
+                FilterInputs::dual(input(primitive.input), input(primitive.input2)),
+            ),
+        };
+        ids.push(graph.add(effect, inputs));
+    }
+    let graph = graph.without_noops();
+    (!graph.nodes().is_empty()).then(|| Arc::new(graph))
 }

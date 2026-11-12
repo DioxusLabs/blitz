@@ -82,7 +82,7 @@ pub struct SvgMask {
 
 /// The transform that maps the unit square onto `bbox`, or `None` when the
 /// box is empty and `objectBoundingBox` units cannot be used.
-fn bbox_transform(bbox: Option<Rect>) -> Option<Affine> {
+pub(super) fn bbox_transform(bbox: Option<Rect>) -> Option<Affine> {
     let bbox = bbox.filter(|b| b.width() > 0.0 && b.height() > 0.0)?;
     Some(Affine::new([
         bbox.width(),
@@ -92,6 +92,45 @@ fn bbox_transform(bbox: Option<Rect>) -> Option<Affine> {
         bbox.x0,
         bbox.y0,
     ]))
+}
+
+/// The region of a mask or filter from its `x`, `y`, `width` and `height`
+/// (read with `get`; -10%/-10%/120%/120% by default), in user space or as
+/// fractions of `bbox`. `None` when the region is empty or `bbox` is needed
+/// but empty.
+pub(super) fn resource_region<'a>(
+    get: impl Fn(&str) -> Option<&'a str>,
+    user_space: bool,
+    bbox: Option<Rect>,
+    viewport: SvgViewport,
+    font_size: f64,
+) -> Option<Rect> {
+    let length = |name: &str, default: f64| {
+        get(name)
+            .and_then(|value| value.parse::<svgtypes::Length>().ok())
+            .unwrap_or(svgtypes::Length::new(
+                default,
+                svgtypes::LengthUnit::Percent,
+            ))
+    };
+    let (x, y) = (length("x", -10.0), length("y", -10.0));
+    let (width, height) = (length("width", 120.0), length("height", 120.0));
+    let rect = if user_space {
+        let x = resolve_svg_length(x, viewport.width, font_size);
+        let y = resolve_svg_length(y, viewport.height, font_size);
+        let width = resolve_svg_length(width, viewport.width, font_size);
+        let height = resolve_svg_length(height, viewport.height, font_size);
+        Rect::new(x, y, x + width, y + height)
+    } else {
+        let bbox = bbox_transform(bbox)?;
+        let fraction = |len: svgtypes::Length| match len.unit {
+            svgtypes::LengthUnit::Percent => len.number / 100.0,
+            _ => len.number,
+        };
+        let (x, y) = (fraction(x), fraction(y));
+        bbox.transform_rect_bbox(Rect::new(x, y, x + fraction(width), y + fraction(height)))
+    };
+    (rect.width() > 0.0 && rect.height() > 0.0).then_some(rect)
 }
 
 /// How many clip paths and masks can be nested inside each other.
@@ -374,39 +413,13 @@ impl BaseDocument {
             return SvgReference::None;
         };
 
-        // The mask region: `maskUnits` defaults to `objectBoundingBox` and
-        // the region to -10%/-10%/120%/120%.
-        let length = |name: &str, default: f64| {
-            units_attr(node, name)
-                .and_then(|value| value.parse::<svgtypes::Length>().ok())
-                .unwrap_or(svgtypes::Length::new(
-                    default,
-                    svgtypes::LengthUnit::Percent,
-                ))
-        };
-        let (x, y) = (length("x", -10.0), length("y", -10.0));
-        let (width, height) = (length("width", 120.0), length("height", 120.0));
-        let rect = if units_attr(node, "maskUnits") == Some("userSpaceOnUse") {
-            let fs = font_size(&mask_style);
-            let x = resolve_svg_length(x, viewport.width, fs);
-            let y = resolve_svg_length(y, viewport.height, fs);
-            let width = resolve_svg_length(width, viewport.width, fs);
-            let height = resolve_svg_length(height, viewport.height, fs);
-            Rect::new(x, y, x + width, y + height)
-        } else {
-            let Some(bbox) = bbox_transform(bbox) else {
-                return SvgReference::Invalid;
-            };
-            let fraction = |len: svgtypes::Length| match len.unit {
-                svgtypes::LengthUnit::Percent => len.number / 100.0,
-                _ => len.number,
-            };
-            let (x, y) = (fraction(x), fraction(y));
-            bbox.transform_rect_bbox(Rect::new(x, y, x + fraction(width), y + fraction(height)))
-        };
-        if !(rect.width() > 0.0 && rect.height() > 0.0) {
+        // The mask region: `maskUnits` defaults to `objectBoundingBox`.
+        let user_space = units_attr(node, "maskUnits") == Some("userSpaceOnUse");
+        let get = |name: &str| units_attr(node, name);
+        let fs = font_size(&mask_style);
+        let Some(rect) = resource_region(get, user_space, bbox, viewport, fs) else {
             return SvgReference::Invalid;
-        }
+        };
         let content_transform = if units_attr(node, "maskContentUnits") == Some("objectBoundingBox")
         {
             let Some(bbox) = bbox_transform(bbox) else {

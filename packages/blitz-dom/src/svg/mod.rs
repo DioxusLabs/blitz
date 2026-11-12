@@ -9,12 +9,14 @@
 //! recomputing geometry every frame.
 
 mod clip_mask;
+mod filter;
 mod geometry;
 mod hit;
 mod paint_server;
 mod text;
 
 pub use clip_mask::{SvgClip, SvgClipChild, SvgMask, SvgReference, SvgReferenceState};
+pub use filter::{SvgFilter, SvgFilterInput, SvgFilterKind, SvgFilterPrimitive};
 pub use paint_server::{
     SvgGradient, SvgGradientShape, SvgGradientStop, SvgPaintServer, SvgSpreadMethod,
 };
