@@ -10757,7 +10757,7 @@ dependencies = [
 [[package]]
 name = "wpt_serve"
 version = "0.2.0"
-source = "git+https://github.com/nicoburns/wpt-rs?rev=92beb602b99eb9ab6800a764eb948a804667f9d0#92beb602b99eb9ab6800a764eb948a804667f9d0"
+source = "git+https://github.com/nicoburns/wpt-rs?rev=072a04752e8e291a5db4a33a317872a823f71d49#072a04752e8e291a5db4a33a317872a823f71d49"
 dependencies = [
  "encoding_rs",
  "log",
