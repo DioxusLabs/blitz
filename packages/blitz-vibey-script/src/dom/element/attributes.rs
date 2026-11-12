@@ -14,6 +14,21 @@ pub(crate) fn attr_name(local: &str) -> QualName {
 
 // === Attribute helpers ===
 
+/// Attribute names passed to `getAttribute` and friends are lowercased only on
+/// HTML elements; SVG and MathML attributes are case-sensitive (`pathLength`).
+fn attr_case(ctx: &DomCtx, node_id: NodeId, name: String) -> String {
+    let doc = ctx.doc.borrow();
+    let is_html = doc
+        .get_node(node_id)
+        .and_then(|node| node.element_data())
+        .is_none_or(|element| element.name.ns == markup5ever::ns!(html));
+    if is_html {
+        name.to_ascii_lowercase()
+    } else {
+        name
+    }
+}
+
 pub(crate) fn read_attr(ctx: &DomCtx, node_id: NodeId, name: &str) -> Option<String> {
     let doc = ctx.doc.borrow();
     let node = doc.get_node(node_id)?;
@@ -63,8 +78,8 @@ pub(super) fn get_attribute(
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
+    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let name = attr_case(&ctx, node_id, name);
     match read_attr(&ctx, node_id, &name) {
         Some(value) => Ok(js_str(&value)),
         None => Ok(JsValue::null()),
@@ -134,8 +149,8 @@ pub(super) fn set_attribute(
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
+    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let name = attr_case(&ctx, node_id, name);
     let value = to_rust_string(args.get(1).unwrap_or(&JsValue::undefined()), context)?;
     write_attr(&ctx, node_id, &name, &value);
     Ok(JsValue::undefined())
@@ -148,8 +163,8 @@ pub(super) fn remove_attribute(
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
+    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let name = attr_case(&ctx, node_id, name);
     clear_attr(&ctx, node_id, &name);
     Ok(JsValue::undefined())
 }
@@ -161,8 +176,8 @@ pub(super) fn has_attribute(
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?
-        .to_ascii_lowercase();
+    let name = to_rust_string(args.first().unwrap_or(&JsValue::undefined()), context)?;
+    let name = attr_case(&ctx, node_id, name);
     Ok(JsValue::from(read_attr(&ctx, node_id, &name).is_some()))
 }
 

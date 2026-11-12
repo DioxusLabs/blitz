@@ -316,9 +316,7 @@ impl ScriptDocument {
                     );
                     if is_js {
                         scripts.push(PendingScript {
-                            src: element
-                                .attr(blitz_dom::local_name!("src"))
-                                .map(str::to_string),
+                            src: script_src(element).map(str::to_string),
                             inline_text: node.text_content(),
                             is_module: script_type == "module",
                         });
@@ -443,5 +441,14 @@ impl Document for ScriptDocument {
         ran |= self.runtime.run_due_timers();
         self.arm_timer_thread();
         ran
+    }
+}
+
+/// The URL of an external script: `src` on HTML `<script>`, `href` on SVG `<script>`.
+pub fn script_src(element: &blitz_dom::node::ElementData) -> Option<&str> {
+    if element.name.ns == markup5ever::ns!(svg) {
+        element.attr(blitz_dom::local_name!("href"))
+    } else {
+        element.attr(blitz_dom::local_name!("src"))
     }
 }
