@@ -1378,3 +1378,16 @@ fn recursive_masks_ignore_the_cycle() {
     assert_eq!(pixel(&buf, 25, 50), RED);
     assert_eq!(pixel(&buf, 75, 50), BLUE);
 }
+
+#[test]
+fn clip_rule_comes_from_the_computed_style() {
+    let mut doc = load(
+        r#"<style>#c { clip-rule: evenodd }</style><svg width="100" height="100">
+        <clipPath id="c"><path d="M0 0H100V100H0Z M25 25H75V75H25Z"/></clipPath>
+        <rect width="100" height="100" fill="red" clip-path="url(#c)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 10, 10), RED);
+    assert_eq!(pixel(&buf, 50, 50), BLUE, "the evenodd hole");
+}

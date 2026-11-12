@@ -9,6 +9,7 @@
 use blitz_traits::node_id::NodeId;
 use kurbo::{Affine, Rect};
 use markup5ever::{LocalName, local_name, ns};
+use style::computed_values::fill_rule::T as FillRule;
 use style::computed_values::visibility::T as Visibility;
 use style::properties::ComputedValues;
 use style::values::computed::basic_shape::ClipPath;
@@ -87,21 +88,6 @@ fn bbox_transform(bbox: Option<Rect>) -> Option<Affine> {
 
 fn units_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     attr(node.element_data()?, name).map(str::trim)
-}
-
-/// The `clip-rule` of a clip path child. It is read from inherited
-/// presentation attributes because Stylo only supports the property for Gecko.
-fn clip_rule_evenodd(node: &Node) -> bool {
-    let mut current = Some(node);
-    while let Some(n) = current {
-        match units_attr(n, "clip-rule") {
-            Some("evenodd") => return true,
-            Some("nonzero") => return false,
-            _ => {}
-        }
-        current = n.parent.map(|p| n.with(p));
-    }
-    false
 }
 
 impl BaseDocument {
@@ -198,7 +184,7 @@ impl BaseDocument {
                 };
                 children.push(SvgClipChild {
                     node: child,
-                    evenodd: clip_rule_evenodd(child_node),
+                    evenodd: child_style.get_inherited_svg().clip_rule == FillRule::Evenodd,
                     clip,
                 });
             }
