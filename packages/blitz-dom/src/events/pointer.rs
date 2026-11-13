@@ -721,10 +721,16 @@ pub(crate) fn handle_click(
                         }
                     }
                 }
-                // Clicking labels triggers click, and possibly input event, of associated input
+                // Clicking labels triggers click, and possibly input event, of associated input.
+                // Not when the click was already on that input (or inside it): then the input
+                // had its turn and the label does nothing more, as in browsers. Without this
+                // check an input with no click action of its own (a range, say) was clicked by
+                // the label, walked back up to the label, and was clicked again, without end.
                 local_name!("label") => {
-                    if let Some(target_node_id) =
-                        doc.label_bound_input_element(node_id).map(|n| n.id)
+                    if let Some(target_node_id) = doc
+                        .label_bound_input_element(node_id)
+                        .map(|n| n.id)
+                        .filter(|&input| input != target && !doc.is_ancestor_of(input, target))
                     {
                         // Apply default click event action for target node
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
