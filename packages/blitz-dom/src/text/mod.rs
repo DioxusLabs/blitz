@@ -12,6 +12,11 @@
 //! - [`FaceDescriptors`]: an `@font-face` rule's descriptors, which a backend registers a face by,
 //!   in [`parlance`]'s font value types.
 //!
+//! Lengths across these traits are in CSS pixels, in and out. Device pixels (CSS pixels times
+//! [`InlineText::scale`]) are only for paint-facing geometry: selection and caret rectangles, and
+//! what blitz-paint reads from a backend's own types. A backend that works in device pixels scales
+//! at its side of the boundary.
+//!
 //! Painting is the renderer's part: blitz-paint paints each backend's types in a module of its own,
 //! which [`cfg_text_backend!`](crate::cfg_text_backend) selects.
 
