@@ -60,12 +60,12 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-style = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo" }
-style_traits = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo_traits" }
-style_atoms = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo_atoms" }
-style_config = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo_static_prefs" }
-style_dom = { version = "0.23.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "stylo_dom" }
-selectors = { version = "0.42.0", git = "https://github.com/servo/stylo", rev = "2dca34592ced37c6aa01733e94206a767194cf9d", package = "selectors" }
+style = { version = "0.24.0", package = "stylo" }
+style_traits = { version = "0.24.0", package = "stylo_traits" }
+style_atoms = { version = "0.24.0", package = "stylo_atoms" }
+style_config = { version = "0.24.0", package = "stylo_static_prefs" }
+style_dom = { version = "0.24.0", package = "stylo_dom" }
+selectors = { version = "0.43.0", package = "selectors" }
 cssparser = { version = "0.38.0" }
 
 # HTML5ever dependencies
@@ -100,7 +100,7 @@ dioxus-cli-config = { version = "0.8.0-alpha.3" }
 dioxus-core-macro = { version = "0.8.0-alpha.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4aca4f4933aa9cb7a3266050c788aad4c90288d2", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "a3997d55bacd1fb6cd12fe31db0be15b20f91528", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
@@ -116,14 +116,14 @@ skrifa = { version = "0.49", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "93cf99f6650219e79a77b868f0ebca2d8d8c1d53" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "1a314052b7b19cc510606d2d3c6145cf8b9a8a84" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "1a314052b7b19cc510606d2d3c6145cf8b9a8a84" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "1a314052b7b19cc510606d2d3c6145cf8b9a8a84" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "1a314052b7b19cc510606d2d3c6145cf8b9a8a84" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "1a314052b7b19cc510606d2d3c6145cf8b9a8a84" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "1a314052b7b19cc510606d2d3c6145cf8b9a8a84" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "1a314052b7b19cc510606d2d3c6145cf8b9a8a84" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "1a314052b7b19cc510606d2d3c6145cf8b9a8a84" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"

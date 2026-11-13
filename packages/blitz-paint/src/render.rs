@@ -30,7 +30,6 @@ use blitz_traits::devtools::DevtoolSettings;
 
 use style::values::computed::{BorderCornerRadius, ColorOrAuto};
 use style::{
-    dom::TElement,
     properties::{
         ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::Font,
@@ -51,8 +50,8 @@ use taffy::Layout;
 /// An opacity just below 1.0, used to force the renderer to allocate an isolated
 /// buffer for mask and text-clip isolation layers. Renderers (e.g. vello_cpu) may optimize
 /// layers with `Mix::Normal`/`Compose::SrcOver` and an opacity of exactly 1.0 into
-/// plain non-isolated clip layers, in which case the `Compose::DestIn` mask
-/// compositing would erase the backdrop behind the element rather than just the
+/// plain non-isolated clip layers, in which case the mask layer (or `Compose::DestIn`
+/// text-clip layer) would erase the backdrop behind the element rather than just the
 /// element's own content.
 pub(super) const ALMOST_OPAQUE: f32 = 1.0 - f32::EPSILON;
 
@@ -426,7 +425,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
-        if node.local_name() == "input" && node.attr(local_name!("type")) == Some("hidden") {
+        if node.data.is_element_with_tag_name(&local_name!("input"))
+            && node.attr(local_name!("type")) == Some("hidden")
+        {
             return;
         }
 

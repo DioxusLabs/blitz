@@ -21,6 +21,7 @@ use style::computed_values::flex_direction::T as FlexDirection;
 use style::computed_values::isolation::T as Isolation;
 use style::computed_values::overflow_x::T as Overflow;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
+use style::dom::OpaqueNode;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
@@ -214,6 +215,17 @@ impl Node {
             NodeData::Element(data) | NodeData::AnonymousBlock(data) => data.layout_data_mut(),
             NodeData::Document(data) => data.layout_data_mut(),
             _ => panic!("`layout_data` is not available on this node kind"),
+        }
+    }
+
+    /// This node's layout output state, if it has been allocated. Returns
+    /// `None` for node kinds which do not participate in layout.
+    #[inline]
+    pub fn try_layout_data(&self) -> Option<&LayoutData> {
+        match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => data.layout_data.as_deref(),
+            NodeData::Document(data) => data.layout_data.as_deref(),
+            _ => None,
         }
     }
 
@@ -1006,6 +1018,34 @@ impl Node {
     #[track_caller]
     pub fn with(&self, id: NodeId) -> &Node {
         self.tree().get(id).unwrap()
+    }
+
+    /// The node's DOM parent.
+    pub fn parent_node(&self) -> Option<&Node> {
+        self.parent.map(|id| self.with(id))
+    }
+
+    /// The node's first DOM child that is an element.
+    pub fn first_element_child(&self) -> Option<&Node> {
+        self.children
+            .iter()
+            .map(|id| self.with(*id))
+            .find(|child| child.is_element())
+    }
+
+    /// The root of the tree containing the node: the document node, for a node in the document.
+    pub fn owner_doc(&self) -> &Node {
+        // Walk up the (layout-)parent chain to the root Document node.
+        let mut node = self;
+        while let Some(parent) = node.parent_node() {
+            node = parent;
+        }
+        node
+    }
+
+    /// The node's identity in Stylo (the key of its snapshot).
+    pub(crate) fn opaque(&self) -> OpaqueNode {
+        OpaqueNode(self.id.as_u64() as usize)
     }
 
     pub fn print_tree(&self, level: usize) {

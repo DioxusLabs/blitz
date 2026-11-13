@@ -272,7 +272,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -283,7 +283,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -295,7 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "kurbo",
  "peniko",
@@ -307,7 +307,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "anyrender",
  "image",
@@ -325,7 +325,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "anyrender",
  "ash",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "anyrender",
  "image",
@@ -368,7 +368,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -386,7 +386,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -404,7 +404,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1803,7 +1803,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -2856,7 +2856,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5531,7 +5531,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6406,7 +6406,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -7438,8 +7438,9 @@ dependencies = [
 
 [[package]]
 name = "selectors"
-version = "0.42.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.43.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "474a2075f58859e8482495e1a2ae9634754ee383ad09a3c4093b8d9a51910fa3"
 dependencies = [
  "bitflags 2.13.2",
  "cssparser",
@@ -7579,7 +7580,8 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.6.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f121f129345b5201873a0e253f630413d750b9d799613e2873fb768e592c2a7"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -7888,7 +7890,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7926,7 +7928,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8048,8 +8050,9 @@ dependencies = [
 
 [[package]]
 name = "stylo"
-version = "0.23.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bcaf37ee278f57db8274561000dd859cb94d82871fbfde34bbf3045914855376"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -8106,8 +8109,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_atoms"
-version = "0.23.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bda4fa668ec6d629dbb031f7ea4adda29f4a2fc7183a89ae57f0b2dcd72b558"
 dependencies = [
  "string_cache 0.11.0",
  "string_cache_codegen",
@@ -8115,8 +8119,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_derive"
-version = "0.23.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e9b573e308906d63eea0209657edb6579aec8ab9f0065f636264e653bd5c477"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -8127,8 +8132,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_dom"
-version = "0.23.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2314cdccd7c410b760eeaaaf1cb69b2077c8e3b35fb9d994f8396ee602ccaed4"
 dependencies = [
  "bitflags 2.13.2",
  "stylo_malloc_size_of",
@@ -8136,8 +8142,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_malloc_size_of"
-version = "0.23.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d346459a462f869a5b0a80170b0f84e89011e5f60f1cdab42248979c6b229931"
 dependencies = [
  "app_units",
  "cssparser",
@@ -8155,8 +8162,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_static_prefs"
-version = "0.23.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54e6457da825822c818512048e8adcbb80d12a4dc7bd4f848495d54cdcb5aed6"
 dependencies = [
  "toml",
 ]
@@ -8173,8 +8181,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_traits"
-version = "0.23.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44414414caccb82c06ff460ab36d2de9d92ffa49f3bcfd6cd9e2e3d287f64bb3"
 dependencies = [
  "app_units",
  "bitflags 2.13.2",
@@ -8333,7 +8342,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=4aca4f4933aa9cb7a3266050c788aad4c90288d2#4aca4f4933aa9cb7a3266050c788aad4c90288d2"
+source = "git+https://github.com/DioxusLabs/taffy?rev=a3997d55bacd1fb6cd12fe31db0be15b20f91528#a3997d55bacd1fb6cd12fe31db0be15b20f91528"
 dependencies = [
  "serde",
  "slotmap",
@@ -8414,7 +8423,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8612,8 +8621,9 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "to_shmem"
-version = "0.7.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c542ebb3b1d82d6567b3bc827a826d415c5c9565dec5bc985b9879bf2572567c"
 dependencies = [
  "cssparser",
  "hashbrown 0.17.1",
@@ -8627,7 +8637,8 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.3.0"
-source = "git+https://github.com/servo/stylo?rev=2dca34592ced37c6aa01733e94206a767194cf9d#2dca34592ced37c6aa01733e94206a767194cf9d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41fef02c6bedb48041c2d9c9883cfd677afb3bc026435bf6828b74e9db30068d"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -8977,7 +8988,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10027,7 +10038,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=93cf99f6650219e79a77b868f0ebca2d8d8c1d53#93cf99f6650219e79a77b868f0ebca2d8d8c1d53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",

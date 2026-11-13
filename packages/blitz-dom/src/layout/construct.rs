@@ -16,6 +16,8 @@ use style::{
 };
 use thin_vec::ThinVec;
 
+use crate::stylo::BlitzNode;
+
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
     layout::damage::{
@@ -141,7 +143,7 @@ impl LayoutChildren {
         let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
         let read_guard = doc.guard.read();
         let guards = StylesheetGuards::same(&read_guard);
-        let style = doc.stylist.style_for_anonymous::<&Node>(
+        let style = doc.stylist.style_for_anonymous::<BlitzNode>(
             &guards,
             &PseudoElement::ServoAnonymousBox,
             &parent_style,
