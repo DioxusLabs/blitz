@@ -1,7 +1,10 @@
 use crate::{
     BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId, local_name,
 };
-use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
+use accesskit::{
+    AriaCurrent, HasPopup, Invalid, Live, Node as AccessKitNode, NodeId, Orientation, Role,
+    Toggled, TreeId, TreeInfo, TreeUpdate,
+};
 use style::properties::longhands::visibility;
 use stylo_taffy::CopyStyleGetters;
 
@@ -12,6 +15,7 @@ impl BaseDocument {
         let mut hidden_nodes = std::collections::HashSet::new();
         let mut labelled_by_nodes = Vec::new();
         let mut described_by_nodes = Vec::new();
+        let mut id_ref_nodes = Vec::new();
 
         self.visit(|node_id, node| {
             if node.is_hidden_from_accessibility_tree()
@@ -35,6 +39,11 @@ impl BaseDocument {
             }
             if node.attr(local_name!("aria-describedby")).is_some() {
                 described_by_nodes.push(node_id);
+            }
+            if node.attr(local_name!("aria-activedescendant")).is_some()
+                || node.attr(local_name!("aria-controls")).is_some()
+            {
+                id_ref_nodes.push(node_id);
             }
             nodes.insert(node_id, (id, builder));
         });
@@ -81,6 +90,30 @@ impl BaseDocument {
             nodes.insert(node_id, (id, builder));
         }
 
+        // `aria-activedescendant` and `aria-controls` name other elements by
+        // id: like the labels above, they need every node built first.
+        for node_id in id_ref_nodes {
+            let Some((id, mut builder)) = nodes.remove(&node_id) else {
+                continue;
+            };
+            let node = &self.nodes[node_id];
+            if let Some(target) = node
+                .attr(local_name!("aria-activedescendant"))
+                .and_then(|id_ref| self.referenced_dom_ids_to_node_ids(id_ref).next())
+                .filter(|target| nodes.contains_key(target))
+            {
+                builder.set_active_descendant(NodeId(target.as_u64()));
+            }
+            if let Some(id_refs) = node.attr(local_name!("aria-controls")) {
+                for target in self.referenced_dom_ids_to_node_ids(id_refs) {
+                    if target == node_id || nodes.contains_key(&target) {
+                        builder.push_controlled(NodeId(target.as_u64()));
+                    }
+                }
+            }
+            nodes.insert(node_id, (id, builder));
+        }
+
         let mut nodes: Vec<_> = nodes
             .into_iter()
             .map(|(_, (id, node))| (id, node))
@@ -121,8 +154,9 @@ impl BaseDocument {
 
             // TODO: The roles of elements with strong native semantics cannot be overridden; see
             // https://www.w3.org/TR/wai-aria-1.2/#host_general_conflict.
+            // `role` is a list of tokens: the first one known wins.
             let role = role_attr
-                .and_then(role_from_name)
+                .and_then(|roles| roles.split_ascii_whitespace().find_map(role_from_name))
                 .or_else(|| role_from_element_data(element_data))
                 .unwrap_or(Role::Unknown);
 
@@ -139,7 +173,9 @@ impl BaseDocument {
                 builder.set_expanded(aria_expanded);
             }
 
-            if element_data.attr(local_name!("aria-disabled")) == Some("true") {
+            if element_data.attr(local_name!("aria-disabled")) == Some("true")
+                || (is_form_control(&name) && element_data.attr(local_name!("disabled")).is_some())
+            {
                 builder.set_disabled();
             }
 
@@ -167,6 +203,8 @@ impl BaseDocument {
             } else if let Some(default_level) = default_level_for_role(role) {
                 builder.set_level(default_level);
             }
+
+            set_states_and_properties(&mut builder, element_data, &name, role);
 
             builder.set_html_tag(name);
         } else if node.is_text_node() {
@@ -311,7 +349,201 @@ fn role_from_name(name: &str) -> Option<Role> {
         "main" => Some(Role::Main),
         "navigation" => Some(Role::Navigation),
         "search" => Some(Role::Search),
+        "switch" => Some(Role::Switch),
+        "searchbox" => Some(Role::SearchInput),
+        "separator" => Some(Role::Splitter),
+        "meter" => Some(Role::Meter),
+        "figure" => Some(Role::Figure),
+        "table" => Some(Role::Table),
+        "cell" => Some(Role::Cell),
+        "paragraph" => Some(Role::Paragraph),
+        "feed" => Some(Role::Feed),
+        "term" => Some(Role::Term),
+        "generic" | "none" | "presentation" => Some(Role::GenericContainer),
         _ => None,
+    }
+}
+
+fn is_form_control(tag: &str) -> bool {
+    matches!(
+        tag,
+        "button" | "input" | "select" | "textarea" | "option" | "optgroup" | "fieldset"
+    )
+}
+
+fn parse_f64(value: Option<&str>) -> Option<f64> {
+    value
+        .and_then(|value| value.trim_ascii().parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+}
+
+/// ARIA's states and properties, and the native state of form controls
+/// (<https://www.w3.org/TR/wai-aria-1.2/#state_prop_def>,
+/// <https://www.w3.org/TR/html-aam-1.0/>).
+fn set_states_and_properties(
+    builder: &mut AccessKitNode,
+    element_data: &ElementData,
+    tag: &str,
+    role: Role,
+) {
+    let attr = |name| element_data.attr(name);
+    let is_true = |name| attr(name) == Some("true");
+    let input_type = (tag == "input").then(|| attr(local_name!("type")).unwrap_or("text"));
+
+    // Checked and pressed: native checkboxes and radio buttons first.
+    if let Some(checked) = element_data.checkbox_input_checked() {
+        builder.set_toggled(if checked {
+            Toggled::True
+        } else {
+            Toggled::False
+        });
+    } else {
+        let toggled = match role {
+            Role::Button => attr(local_name!("aria-pressed")),
+            _ => attr(local_name!("aria-checked")),
+        };
+        match toggled {
+            Some("true") => builder.set_toggled(Toggled::True),
+            Some("false") => builder.set_toggled(Toggled::False),
+            Some("mixed") => builder.set_toggled(Toggled::Mixed),
+            _ => {}
+        }
+    }
+
+    match attr(local_name!("aria-current")) {
+        Some("page") => builder.set_aria_current(AriaCurrent::Page),
+        Some("step") => builder.set_aria_current(AriaCurrent::Step),
+        Some("location") => builder.set_aria_current(AriaCurrent::Location),
+        Some("date") => builder.set_aria_current(AriaCurrent::Date),
+        Some("time") => builder.set_aria_current(AriaCurrent::Time),
+        Some("false") | Some("") | None => {}
+        Some(_) => builder.set_aria_current(AriaCurrent::True),
+    }
+
+    // Live regions: `aria-live`, or the implicit value of the live roles.
+    let live = match attr(local_name!("aria-live")) {
+        Some("assertive") => Some(Live::Assertive),
+        Some("polite") => Some(Live::Polite),
+        Some("off") => Some(Live::Off),
+        _ => match role {
+            Role::Alert => Some(Live::Assertive),
+            Role::Status | Role::Log => Some(Live::Polite),
+            _ => None,
+        },
+    };
+    if let Some(live) = live {
+        builder.set_live(live);
+    }
+    match attr(local_name!("aria-atomic")) {
+        Some("true") => builder.set_live_atomic(),
+        Some("false") => {}
+        _ if matches!(role, Role::Alert | Role::Status) => builder.set_live_atomic(),
+        _ => {}
+    }
+    if is_true(local_name!("aria-busy")) {
+        builder.set_busy();
+    }
+    if is_true(local_name!("aria-modal")) {
+        builder.set_modal();
+    }
+
+    // Values: `aria-value*`, then the native ones of range controls.
+    let (now, min, max) = match (tag, input_type) {
+        ("progress", _) => {
+            let max = parse_f64(attr(local_name!("max"))).filter(|max| *max > 0.0);
+            (
+                parse_f64(attr(local_name!("value"))),
+                Some(0.0),
+                Some(max.unwrap_or(1.0)),
+            )
+        }
+        ("meter", _) | (_, Some("range" | "number")) => (
+            parse_f64(attr(local_name!("value"))).or_else(|| {
+                element_data
+                    .text_input_data()
+                    .and_then(|input| input.editor.raw_text().trim_ascii().parse().ok())
+            }),
+            parse_f64(attr(local_name!("min"))),
+            parse_f64(attr(local_name!("max"))),
+        ),
+        _ => (None, None, None),
+    };
+    if let Some(now) = parse_f64(attr(local_name!("aria-valuenow"))).or(now) {
+        builder.set_numeric_value(now);
+    }
+    if let Some(min) = parse_f64(attr(local_name!("aria-valuemin"))).or(min) {
+        builder.set_min_numeric_value(min);
+    }
+    if let Some(max) = parse_f64(attr(local_name!("aria-valuemax"))).or(max) {
+        builder.set_max_numeric_value(max);
+    }
+    if let Some(text) = attr(local_name!("aria-valuetext")) {
+        builder.set_value(text);
+    } else if let Some(input) = element_data.text_input_data() {
+        // A password's characters are not read out.
+        if input_type == Some("password") {
+            builder.set_value("\u{2022}".repeat(input.editor.raw_text().chars().count()));
+        } else {
+            builder.set_value(input.editor.raw_text());
+        }
+    }
+    if let Some(placeholder) = attr(local_name!("aria-placeholder")).or_else(|| {
+        matches!(tag, "input" | "textarea").then(|| attr(local_name!("placeholder")))?
+    }) {
+        builder.set_placeholder(placeholder);
+    }
+
+    match attr(local_name!("aria-invalid")) {
+        Some("grammar") => builder.set_invalid(Invalid::Grammar),
+        Some("spelling") => builder.set_invalid(Invalid::Spelling),
+        Some("false") | Some("") | None => {}
+        Some(_) => builder.set_invalid(Invalid::True),
+    }
+    if is_true(local_name!("aria-required"))
+        || (matches!(tag, "input" | "select" | "textarea")
+            && attr(local_name!("required")).is_some())
+    {
+        builder.set_required();
+    }
+    if is_true(local_name!("aria-readonly"))
+        || (matches!(tag, "input" | "textarea") && attr(local_name!("readonly")).is_some())
+    {
+        builder.set_read_only();
+    }
+    if is_true(local_name!("aria-multiselectable"))
+        || (tag == "select" && attr(local_name!("multiple")).is_some())
+    {
+        builder.set_multiselectable();
+    }
+
+    match attr(local_name!("aria-haspopup")) {
+        Some("menu") | Some("true") => builder.set_has_popup(HasPopup::Menu),
+        Some("listbox") => builder.set_has_popup(HasPopup::Listbox),
+        Some("tree") => builder.set_has_popup(HasPopup::Tree),
+        Some("grid") => builder.set_has_popup(HasPopup::Grid),
+        Some("dialog") => builder.set_has_popup(HasPopup::Dialog),
+        _ => {}
+    }
+    match attr(local_name!("aria-orientation")) {
+        Some("horizontal") => builder.set_orientation(Orientation::Horizontal),
+        Some("vertical") => builder.set_orientation(Orientation::Vertical),
+        _ => {}
+    }
+
+    // `aria-posinset` and `aria-setsize` are 1-based, like AccessKit's.
+    let parse_usize =
+        |name| attr(name).and_then(|value: &str| value.trim_ascii().parse::<usize>().ok());
+    if let Some(position) = parse_usize(local_name!("aria-posinset")).filter(|p| *p > 0) {
+        builder.set_position_in_set(position);
+    }
+    if let Some(size) = parse_usize(local_name!("aria-setsize")) {
+        builder.set_size_of_set(size);
+    }
+
+    if role == Role::Link
+        && let Some(href) = attr(local_name!("href"))
+    {
+        builder.set_url(href);
     }
 }
 

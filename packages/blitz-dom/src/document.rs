@@ -1612,6 +1612,10 @@ impl BaseDocument {
         if self.style_depends_on_state(state) {
             self.snapshot_node_state_only(node_id);
         }
+        // A checked state is in the accessibility tree.
+        if state.intersects(ElementState::CHECKED) {
+            self.has_changes = true;
+        }
         cb(&mut self.nodes[node_id]);
     }
 
