@@ -629,4 +629,31 @@ impl ElementCx<'_, '_> {
 
         scene.fill(Fill::NonZero, self.transform, color, None, &path);
     }
+
+    pub(crate) fn outline_bounds(&self) -> Option<Rect> {
+        let outline = self.style.get_outline();
+
+        let style = match outline.outline_style {
+            OutlineStyle::Auto => return None,
+            OutlineStyle::BorderStyle(style) => style,
+        };
+
+        if matches!(style, BorderStyle::None | BorderStyle::Hidden)
+            || self.frame.outline_width <= 0.0
+        {
+            return None;
+        }
+
+        let current_color = self.style.clone_color();
+        let color = outline
+            .outline_color
+            .resolve_to_absolute(&current_color)
+            .as_srgb_color();
+
+        if color.components[3] == 0.0 {
+            return None;
+        }
+
+        Some(self.frame.outline_box())
+    }
 }
