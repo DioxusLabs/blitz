@@ -16,6 +16,8 @@ mod window;
 
 #[cfg(feature = "accessibility")]
 mod accessibility;
+#[cfg(feature = "devtools")]
+mod devtools;
 
 pub use crate::application::BlitzApplication;
 pub use crate::event::{BlitzShellEvent, BlitzShellProxy};
@@ -157,6 +159,12 @@ impl ShellProvider for BlitzShellProvider {
     }
     fn drag_window(&self) {
         let _ = self.window.drag_window();
+    }
+
+    #[cfg(feature = "devtools")]
+    fn open_devtools(&self, doc_id: usize) {
+        self.proxy
+            .send_event(BlitzShellEvent::OpenDevtools { doc_id });
     }
 
     fn request_clipboard_text(&self) -> Result<(), blitz_traits::shell::ClipboardError> {

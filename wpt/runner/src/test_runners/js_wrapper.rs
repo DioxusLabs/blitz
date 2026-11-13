@@ -24,30 +24,6 @@ fn parse_metas(js_source: &str) -> Vec<(&str, &str)> {
     metas
 }
 
-pub fn js_test_variants(js_source: &str) -> Vec<String> {
-    parse_metas(js_source)
-        .into_iter()
-        .filter(|(key, _)| *key == "variant")
-        .map(|(_, value)| value.to_string())
-        .collect()
-}
-
-/// Does the test's `// META: global=` line (or the `.any.js` default of
-/// "window,dedicatedworker") include the `window` global?
-fn globals_include_window(metas: &[(&str, &str)]) -> bool {
-    let Some((_, value)) = metas.iter().find(|(key, _)| *key == "global") else {
-        return true;
-    };
-    value.split(',').any(|item| item.trim() == "window")
-}
-
-/// Whether the runner can run this `.any.js` / `.window.js` test, i.e.
-/// whether it has a window variant. `.any.js` tests whose `// META: global=`
-/// list excludes the `window` global (worker-only tests) cannot be run.
-pub fn js_test_has_window_variant(relative_path: &str, js_source: &str) -> bool {
-    !relative_path.ends_with(".any.js") || globals_include_window(&parse_metas(js_source))
-}
-
 /// Build the wrapper HTML for a `.any.js` or `.window.js` test.
 pub fn wrapper_html_for_js_test(relative_path: &str, js_source: &str) -> String {
     let is_any = relative_path.ends_with(".any.js");
@@ -128,14 +104,5 @@ mod tests {
         let html = wrapper_html_for_js_test("dom/foo.window.js", "test(() => {});");
         assert!(!html.contains("self.GLOBAL"));
         assert!(html.contains("<script src=\"/dom/foo.window.js\"></script>"));
-    }
-
-    #[test]
-    fn worker_only_any_js_is_excluded() {
-        let js = "// META: global=worker\ntest(() => {});";
-        assert!(!js_test_has_window_variant("dom/foo.any.js", js));
-        let js = "// META: global=window,worker\ntest(() => {});";
-        assert!(js_test_has_window_variant("dom/foo.any.js", js));
-        assert!(js_test_has_window_variant("dom/foo.window.js", js));
     }
 }

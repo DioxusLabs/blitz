@@ -306,14 +306,31 @@ impl LayoutPassState<'_> {
             unrounded.scrollable_overflow_rect.is_reversed(),
         );
 
+        let content_box_subpixel_offset = Point {
+            x: (pos.x + unrounded.border.left + unrounded.padding.left)
+                - (rounded_pos.x + layout.border.left + layout.padding.left),
+            y: (pos.y + unrounded.border.top + unrounded.padding.top)
+                - (rounded_pos.y + layout.border.top + layout.padding.top),
+        };
+
         // `unrounded_layout` is left in the placer's writing mode: Taffy's cache may skip re-placing
         // this node on a later layout, and only `final_layout` is read downstream.
         self.set_final_layout(node_id, &layout);
 
         let wm = self.layout_wm_of(dom_node_id(node_id));
-        self.node_from_id_mut(node_id)
-            .layout_data_mut()
-            .writing_mode = wm;
+        let node = self.node_from_id_mut(node_id);
+        node.layout_data_mut().writing_mode = wm;
+        if let Some(element) = node.element_data_mut() {
+            if let Some(inline_layout) = element.inline_layout_data.as_mut() {
+                inline_layout.content_box_subpixel_offset = content_box_subpixel_offset;
+            }
+            if let Some(list_item) = element.list_item_data.as_mut() {
+                list_item.content_box_subpixel_offset = content_box_subpixel_offset;
+            }
+            if let Some(text_input) = element.text_input_data_mut() {
+                text_input.content_box_subpixel_offset = content_box_subpixel_offset;
+            }
+        }
         for index in 0..self.child_count(node_id) {
             let child = self.get_child_id(node_id, index);
             if !self.is_out_of_flow(child) {
