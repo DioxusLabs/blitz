@@ -4,16 +4,21 @@
 //! its subtree as live DOM nodes styled by Stylo. SVG layout
 //! (`blitz_dom::svg`) has already resolved each element's transform, geometry
 //! and stroke; painting walks the subtree, reads those results and the paint
-//! properties from computed styles. Patterns, `<use>`,
-//! `<image>`, markers, clipping, masking and filters are not painted yet.
+//! properties from computed styles. Patterns, `<use>`, markers and filters
+//! are not painted yet.
 
+use std::sync::Arc;
+
+use anyrender::filters::color_transformation::ColorMatrix;
+use anyrender::filters::{Filter, FilterEffect, FilterId, FilterInput, FilterInputs, FilterSource};
 use anyrender::{MaskMode, PaintScene};
-use blitz_dom::node::Node;
+use blitz_dom::node::{ImageData, Node};
 use blitz_dom::svg::{
-    SvgClip, SvgGlyphRun, SvgGradient, SvgGradientShape, SvgLayoutKind, SvgMask, SvgPaintServer,
-    SvgReference, SvgSpreadMethod, SvgText, SvgTextDecorationKind, SvgViewport,
+    SvgClip, SvgFilter, SvgFilterInput, SvgFilterKind, SvgGlyphRun, SvgGradient, SvgGradientShape,
+    SvgLayoutKind, SvgMask, SvgPaintServer, SvgReference, SvgReferenceState, SvgSpreadMethod,
+    SvgText, SvgTextDecorationKind, SvgViewport,
 };
-use blitz_traits::node_id::NodeId;
+use blitz_dom::util::ToColorColor as _;
 use color::{ColorSpaceTag, DynamicColor};
 use kurbo::{Affine, BezPath, Rect, Shape, Stroke, Vec2};
 use peniko::{BlendMode, ColorStop, Extend, Fill, Gradient, InterpolationAlphaSpace, StyleRef};
@@ -27,37 +32,95 @@ use style::values::generics::svg::SVGPaintFallback;
 use super::{ALMOST_OPAQUE, ElementCx};
 use crate::blend::convert_blend_mode;
 use crate::color::{Color, ToColorColor};
+use crate::filters::{StyloFilter, convert_single_filter};
 
 impl ElementCx<'_, '_> {
-    /// Paint a natively rendered inline `<svg>` root into its content box.
-    pub(super) fn draw_native_svg(&self, scene: &mut impl PaintScene) {
-        let Some(root) = self.element.svg_root_data() else {
-            return;
-        };
+    /// The transform from a natively rendered inline `<svg>` root's user
+    /// space to device pixels when its box is at `transform`, and its
+    /// viewport, or `None` when it renders nothing.
+    fn native_svg_root(&self, transform: Affine) -> Option<(Affine, SvgViewport, bool)> {
+        let root = self.element.svg_root_data()?;
         // A zero-sized viewBox disables rendering of the element.
-        let Some(layout) = &root.layout else {
-            return;
-        };
+        let layout = root.layout.as_ref()?;
         if root.dims.degenerate_view_box {
-            return;
+            return None;
         }
         let content_box = self.frame.content_box();
         if content_box.width() <= 0.0 || content_box.height() <= 0.0 {
-            return;
+            return None;
         }
         // The content box is in device pixels and the root layout maps user
         // units onto CSS pixels.
-        let transform = self.transform
+        let transform = transform
             * Affine::translate(content_box.origin().to_vec2())
             * Affine::scale(self.scale)
             * layout.children_transform();
         let SvgLayoutKind::Viewport { viewport, .. } = layout.kind else {
+            return None;
+        };
+        Some((transform, viewport, layout.has_blending))
+    }
+
+    /// Whether this is a natively rendered inline `<svg>` root, painted at
+    /// `transform`, whose content stays within `clip` (in device pixels), so
+    /// clipping its overflow can be skipped. Every draw under a clip pays
+    /// for intersecting with it.
+    pub(super) fn native_svg_within(&self, transform: Affine, clip: &impl Shape) -> bool {
+        let [a, b, c, d, ..] = transform.as_coeffs();
+        let Some(clip) = clip
+            .as_rect()
+            .filter(|_| b == 0.0 && c == 0.0 && a > 0.0 && d > 0.0)
+        else {
+            return false;
+        };
+        // Allow for rounding error in curve bounds, far too small to cover any
+        // pixel outside the clip.
+        let clip = transform.transform_rect_bbox(clip).inflate(1e-3, 1e-3);
+        let Some((content_transform, ..)) = self.native_svg_root(transform) else {
+            return false;
+        };
+        let Some(layout) = self
+            .element
+            .svg_root_data()
+            .and_then(|root| root.layout.as_ref())
+        else {
+            return false;
+        };
+        !layout.has_filter
+            && layout
+                .ink
+                .is_none_or(|ink| clip.contains_rect(content_transform.transform_rect_bbox(ink)))
+    }
+
+    /// Paint a natively rendered inline `<svg>` root into its content box.
+    pub(super) fn draw_native_svg(&self, scene: &mut impl PaintScene) {
+        let Some((transform, viewport, has_blending)) = self.native_svg_root(self.transform) else {
             return;
         };
+        // A filter on the `<svg>` itself; the CSS painter applies filter
+        // functions to its box.
+        let bbox = self
+            .element
+            .svg_root_data()
+            .and_then(|root| root.layout.as_ref()?.bbox);
+        let filter = match self.resolve_svg_filters(&self.style, bbox, viewport, false) {
+            SvgReference::None => None,
+            SvgReference::Invalid => return,
+            SvgReference::Valid(filter) => Some(filter),
+        };
+        if let Some((rect, graph)) = &filter {
+            let bounds = self
+                .viewport_rect()
+                .intersect(transform.transform_rect_bbox(*rect));
+            if bounds.area() <= 0.0 {
+                return;
+            }
+            push_svg_filter(scene, transform, rect, graph);
+        }
         // The outermost `<svg>` is an isolated group, so blending inside it
         // does not reach content behind it.
         // https://drafts.fxtf.org/compositing/#csscompositingrules_SVG
-        if layout.has_blending {
+        if has_blending {
             scene.push_layer(
                 Fill::NonZero,
                 BlendMode::default(),
@@ -68,10 +131,59 @@ impl ElementCx<'_, '_> {
                 None,
             );
         }
-        self.paint_svg_children(scene, self.node, transform, viewport, &mut Vec::new());
-        if layout.has_blending {
+        let mut state = SvgReferenceState::default();
+        self.paint_svg_children(scene, self.node, transform, viewport, &mut state);
+        if has_blending {
             scene.pop_layer();
         }
+        if filter.is_some() {
+            scene.pop_layer();
+        }
+    }
+
+    /// The filter region and graph for `style`'s `filter` list, in the
+    /// element's user space. The graph is `None` when the filter only clips
+    /// to its region. CSS filter functions are skipped unless `functions`.
+    fn resolve_svg_filters(
+        &self,
+        style: &ComputedValues,
+        bbox: Option<Rect>,
+        viewport: SvgViewport,
+        functions: bool,
+    ) -> SvgReference<(Rect, Option<Arc<Filter>>)> {
+        let mut region: Option<Rect> = None;
+        let mut graph = Filter::empty();
+        let mut source = FilterInput::Source(FilterSource::SourceGraphic);
+        for item in style.get_effects().filter.0.iter() {
+            if let StyloFilter::Url(_) = item {
+                let filter = match self.context.dom.resolve_svg_filter(item, bbox, viewport) {
+                    SvgReference::Valid(filter) => filter,
+                    SvgReference::None => return SvgReference::None,
+                    SvgReference::Invalid => return SvgReference::Invalid,
+                };
+                region = Some(region.map_or(filter.rect, |r| r.union(filter.rect)));
+                source = append_svg_filter(&mut graph, &filter, source);
+            } else if functions && let Some(effect) = convert_single_filter(item) {
+                // A filter function covers the default filter region, grown by
+                // how far the function reaches.
+                let Some(base) = region.or_else(|| bbox.map(default_filter_region)) else {
+                    return SvgReference::None;
+                };
+                let reach = effect.expansion_rect();
+                region = Some(base.union(Rect::new(
+                    base.x0 + reach.x0,
+                    base.y0 + reach.y0,
+                    base.x1 + reach.x1,
+                    base.y1 + reach.y1,
+                )));
+                source = FilterInput::Result(graph.add(effect, FilterInputs::single(source)));
+            }
+        }
+        let Some(region) = region else {
+            return SvgReference::None;
+        };
+        let graph = graph.without_noops();
+        SvgReference::Valid((region, (!graph.nodes().is_empty()).then(|| Arc::new(graph))))
     }
 
     /// The whole painted area in device pixels, for layers that must not clip.
@@ -91,22 +203,28 @@ impl ElementCx<'_, '_> {
         node: &Node,
         transform: Affine,
         viewport: SvgViewport,
-        active: &mut Vec<NodeId>,
+        state: &mut SvgReferenceState,
     ) {
         for child in node.children.iter() {
-            self.paint_svg_node(scene, node.with(*child), transform, viewport, active);
+            self.paint_svg_node(scene, node.with(*child), transform, viewport, state);
         }
     }
 
-    /// An isolated group covering the whole viewport, for clip and mask
-    /// layers to apply to.
-    fn push_svg_group(&self, scene: &mut impl PaintScene, blend: BlendMode, alpha: f32) {
+    /// An isolated group covering `bounds` (in device pixels), for clip and
+    /// mask layers to apply to.
+    fn push_svg_group(
+        &self,
+        scene: &mut impl PaintScene,
+        blend: BlendMode,
+        alpha: f32,
+        bounds: &Rect,
+    ) {
         scene.push_layer(
             Fill::NonZero,
             blend,
             alpha.min(ALMOST_OPAQUE),
             Affine::IDENTITY,
-            &self.viewport_rect(),
+            bounds,
             None,
             None,
         );
@@ -118,7 +236,7 @@ impl ElementCx<'_, '_> {
         node: &Node,
         parent_transform: Affine,
         viewport: SvgViewport,
-        active: &mut Vec<NodeId>,
+        state: &mut SvgReferenceState,
     ) {
         let Some(layout) = node.element_data().and_then(|el| el.svg_layout()) else {
             return;
@@ -129,35 +247,59 @@ impl ElementCx<'_, '_> {
         ) {
             return;
         }
-        let Some(style) = node.primary_styles() else {
+        let Some(style) = node.svg_style() else {
             return;
         };
         let transform = parent_transform * layout.transform;
 
-        // `clip-path` and `mask` use the bounding box in the element's own
-        // user space.
-        let bbox = match &layout.kind {
+        // `clip-path` and `mask` apply in the element's own user space, which
+        // for a nested `<svg>` is the one its `viewBox` establishes.
+        let (effect_transform, effect_viewport) = match &layout.kind {
             SvgLayoutKind::Viewport {
-                content_transform, ..
-            } => layout
-                .bbox
-                .map(|b| content_transform.transform_rect_bbox(b)),
-            _ => layout.bbox,
+                content_transform,
+                viewport,
+                ..
+            } => (transform * *content_transform, *viewport),
+            _ => (transform, viewport),
         };
+        let bbox = layout.bbox;
         let dom = self.context.dom;
-        let clip = match dom.resolve_svg_clip_path(&style, bbox, active) {
+        state.start_element();
+        let clip = match dom.resolve_svg_clip_path(node.id, &style, bbox, state) {
             SvgReference::None => None,
             SvgReference::Invalid => return,
             SvgReference::Valid(clip) => Some(clip),
         };
-        let mask = match dom.resolve_svg_mask(&style, bbox, viewport, active) {
+        let mask = match dom.resolve_svg_mask(node.id, &style, bbox, effect_viewport, state) {
             SvgReference::None => None,
             SvgReference::Invalid => return,
             SvgReference::Valid(mask) => Some(mask),
         };
+        // The filter region and its graph, or `None` when the filter only
+        // clips to the region.
+        let filter = match self.resolve_svg_filters(&style, bbox, effect_viewport, true) {
+            SvgReference::None => None,
+            SvgReference::Invalid => return,
+            SvgReference::Valid(filter) => Some(filter),
+        };
         let simple_clip = clip
             .as_ref()
             .and_then(|clip| self.simple_svg_clip(node, clip));
+
+        // Groups only cover what the element paints and the clip path, mask
+        // region and filter region let through, as compositing a group costs
+        // its whole area.
+        let mut bounds = self.viewport_rect();
+        if let Some(clip) = &clip {
+            bounds = bounds.intersect(self.svg_clip_bounds(node, clip, effect_transform));
+        }
+        if let Some(mask) = &mask {
+            bounds = bounds.intersect(effect_transform.transform_rect_bbox(mask.rect));
+        }
+        if let Some((rect, _)) = &filter {
+            bounds = bounds.intersect(effect_transform.transform_rect_bbox(*rect));
+        }
+        let bounded = clip.is_some() || mask.is_some() || filter.is_some();
 
         // https://drafts.fxtf.org/compositing/#csscompositingrules_SVG
         let effects = style.get_effects();
@@ -168,35 +310,50 @@ impl ElementCx<'_, '_> {
             || blend != BlendMode::default()
             || mask.is_some()
             || (clip.is_some() && simple_clip.is_none());
+        // A filtered descendant can paint past the ink bounds.
+        if grouped && !layout.has_filter {
+            let Some(ink) = self.svg_ink_bounds(node, parent_transform) else {
+                return;
+            };
+            bounds = bounds.intersect(ink);
+            if bounds.area() <= 0.0 {
+                return;
+            }
+        } else if bounded && bounds.area() <= 0.0 {
+            return;
+        }
+        let bounds = bounds.inflate(1.0, 1.0).expand();
         if grouped {
-            // The layer covers the whole viewport so that overflowing content
-            // and strokes are not cut off; `<svg>` clipping is a separate layer.
-            if mask.is_some() || clip.is_some() {
-                self.push_svg_group(scene, blend, effects.opacity);
+            if bounded {
+                self.push_svg_group(scene, blend, effects.opacity, &bounds);
             } else {
                 scene.push_layer(
                     Fill::NonZero,
                     blend,
                     effects.opacity,
                     Affine::IDENTITY,
-                    &self.viewport_rect(),
+                    &bounds,
                     None,
                     None,
                 );
             }
         }
         if let Some((rule, clip_transform, path)) = &simple_clip {
-            scene.push_clip_layer(*rule, transform * *clip_transform, path);
+            scene.push_clip_layer(*rule, effect_transform * *clip_transform, path);
+        }
+        // The filter applies before clipping, masking and opacity.
+        if let Some((rect, graph)) = &filter {
+            push_svg_filter(scene, effect_transform, rect, graph);
         }
 
         match &layout.kind {
             SvgLayoutKind::NotRendered | SvgLayoutKind::Resource => {}
             SvgLayoutKind::Group => {
-                self.paint_svg_children(scene, node, transform, viewport, active)
+                self.paint_svg_children(scene, node, transform, viewport, state)
             }
             SvgLayoutKind::Switch { child } => {
                 if let Some(child) = child {
-                    self.paint_svg_node(scene, node.with(*child), transform, viewport, active);
+                    self.paint_svg_node(scene, node.with(*child), transform, viewport, state);
                 }
             }
             SvgLayoutKind::Viewport {
@@ -208,7 +365,7 @@ impl ElementCx<'_, '_> {
                     scene.push_clip_layer(Fill::NonZero, transform, clip);
                 }
                 let content_transform = transform * *content_transform;
-                self.paint_svg_children(scene, node, content_transform, *viewport, active);
+                self.paint_svg_children(scene, node, content_transform, *viewport, state);
                 if clip.is_some() {
                     scene.pop_layer();
                 }
@@ -227,56 +384,143 @@ impl ElementCx<'_, '_> {
                 let bbox = layout.bbox;
                 self.paint_text(scene, node, text, transform, bbox, viewport);
             }
+            SvgLayoutKind::Image {
+                image,
+                image_transform,
+                clip,
+                ..
+            } => {
+                if style.get_inherited_box().visibility == Visibility::Visible {
+                    if let Some(clip) = clip {
+                        scene.push_clip_layer(Fill::NonZero, transform, clip);
+                    }
+                    let image_transform = transform * *image_transform;
+                    match image {
+                        ImageData::Raster(image) => {
+                            let rendering = style.get_inherited_box().image_rendering;
+                            let quality = super::to_image_quality(rendering);
+                            let brush = super::to_peniko_image(image, quality);
+                            scene.draw_image(brush.as_ref(), image_transform);
+                        }
+                        #[cfg(feature = "svg-usvg")]
+                        ImageData::Svg(svg) => {
+                            anyrender_svg::render_svg_tree(scene, &svg.tree, image_transform);
+                        }
+                        ImageData::None => {}
+                    }
+                    if clip.is_some() {
+                        scene.pop_layer();
+                    }
+                }
+            }
         }
 
+        if filter.is_some() {
+            scene.pop_layer();
+        }
         if simple_clip.is_some() {
             scene.pop_layer();
         } else if let Some(clip) = &clip {
-            self.apply_svg_clip(scene, node, clip, transform);
+            self.apply_svg_clip(scene, node, clip, effect_transform, &bounds);
         }
         if let Some(mask) = &mask {
-            self.apply_svg_mask(scene, node, mask, transform, viewport, active);
+            let (transform, viewport) = (effect_transform, effect_viewport);
+            self.apply_svg_mask(scene, node, mask, transform, viewport, &bounds, state);
         }
         if grouped {
             scene.pop_layer();
         }
     }
 
-    /// A clip path that is a single shape with no clip paths of its own, as
-    /// a fill rule, a transform to the referencing element's user space and
-    /// an outline, so it can be a plain clip layer.
+    /// A conservative bound, in device pixels, of what `node` paints when its
+    /// parent's user space maps to device pixels by `parent_transform`, or
+    /// `None` when it paints nothing.
+    fn svg_ink_bounds(&self, node: &Node, parent_transform: Affine) -> Option<Rect> {
+        let ink = node.element_data()?.svg_layout()?.ink_in_parent()?;
+        Some(parent_transform.transform_rect_bbox(ink))
+    }
+
+    /// A clip path that one outline with one fill rule can express, as a
+    /// fill rule, a transform to the referencing element's user space and
+    /// that outline, so it can be a plain clip layer instead of a mask.
+    ///
+    /// That holds when neither the clip path nor its children have clip
+    /// paths of their own, all children share a fill rule and their bounding
+    /// boxes don't overlap, so concatenating their outlines is their union.
+    /// `<text>` children contribute their glyph outlines.
     fn simple_svg_clip(&self, node: &Node, clip: &SvgClip) -> Option<(Fill, Affine, BezPath)> {
-        let [child] = clip.children.as_slice() else {
-            return None;
-        };
-        if clip.clip.is_some() || child.clip.is_some() {
+        const MAX_CHILDREN: usize = 16;
+        if clip.clip.is_some() || clip.children.len() > MAX_CHILDREN {
             return None;
         }
-        let layout = node.with(child.node).element_data()?.svg_layout()?;
-        let SvgLayoutKind::Shape { path, .. } = &layout.kind else {
-            return None;
-        };
-        let rule = if child.evenodd {
-            Fill::EvenOdd
-        } else {
-            Fill::NonZero
-        };
-        Some((rule, clip.transform * layout.transform, path.clone()))
+        let mut rule = None;
+        let mut outline = BezPath::new();
+        let mut boxes: Vec<Rect> = Vec::with_capacity(clip.children.len());
+        for child in &clip.children {
+            if child.clip.is_some() {
+                return None;
+            }
+            let layout = node.with(child.node).element_data()?.svg_layout()?;
+            let (child_rule, path) = match &layout.kind {
+                SvgLayoutKind::Shape { path, .. } if child.evenodd => (Fill::EvenOdd, path.clone()),
+                SvgLayoutKind::Shape { path, .. } => (Fill::NonZero, path.clone()),
+                SvgLayoutKind::Text(text) => (Fill::NonZero, svg_glyph_outlines(node, text)?),
+                _ => continue,
+            };
+            if rule.is_some_and(|rule| rule != child_rule) {
+                return None;
+            }
+            rule = Some(child_rule);
+            let path = layout.transform * path;
+            let bbox = path.bounding_box();
+            let overlaps =
+                |b: &Rect| b.x0 < bbox.x1 && bbox.x0 < b.x1 && b.y0 < bbox.y1 && bbox.y0 < b.y1;
+            if boxes.iter().any(overlaps) {
+                return None;
+            }
+            boxes.push(bbox);
+            outline.extend(path);
+        }
+        Some((rule.unwrap_or(Fill::NonZero), clip.transform, outline))
+    }
+
+    /// The device-space bounds of the area that `clip` lets through, where
+    /// `transform` maps the referencing element's user space to device space.
+    fn svg_clip_bounds(&self, node: &Node, clip: &SvgClip, transform: Affine) -> Rect {
+        let content_transform = transform * clip.transform;
+        let mut bounds: Option<Rect> = None;
+        for child in &clip.children {
+            let child_node = node.with(child.node);
+            let Some(layout) = child_node.element_data().and_then(|el| el.svg_layout()) else {
+                continue;
+            };
+            let Some(mut bbox) = layout.bbox else {
+                continue;
+            };
+            if matches!(layout.kind, SvgLayoutKind::Text(_)) {
+                // Glyph outlines can overhang their cells.
+                bbox = bbox.inflate(bbox.height(), bbox.height());
+            }
+            let child_bounds = (content_transform * layout.transform).transform_rect_bbox(bbox);
+            bounds = Some(bounds.map_or(child_bounds, |b| b.union(child_bounds)));
+        }
+        bounds.unwrap_or(Rect::ZERO)
     }
 
     /// Clip the content painted since the enclosing group was pushed by
-    /// `clip`, whose content `transform` maps to device space.
+    /// `clip`, whose content `transform` maps to device space. `bounds` is
+    /// the device-space area of that group.
     fn apply_svg_clip(
         &self,
         scene: &mut impl PaintScene,
         node: &Node,
         clip: &SvgClip,
         transform: Affine,
+        bounds: &Rect,
     ) {
-        let viewport = self.viewport_rect();
-        scene.push_mask_layer(Fill::NonZero, MaskMode::Alpha, Affine::IDENTITY, &viewport);
+        scene.push_mask_layer(Fill::NonZero, MaskMode::Alpha, Affine::IDENTITY, bounds);
         if clip.clip.is_some() {
-            self.push_svg_group(scene, BlendMode::default(), 1.0);
+            self.push_svg_group(scene, BlendMode::default(), 1.0, bounds);
         }
         let content_transform = transform * clip.transform;
         for child in &clip.children {
@@ -286,7 +530,7 @@ impl ElementCx<'_, '_> {
             };
             let child_transform = content_transform * layout.transform;
             if child.clip.is_some() {
-                self.push_svg_group(scene, BlendMode::default(), 1.0);
+                self.push_svg_group(scene, BlendMode::default(), 1.0, bounds);
             }
             match &layout.kind {
                 SvgLayoutKind::Shape { path, .. } => {
@@ -300,7 +544,7 @@ impl ElementCx<'_, '_> {
                 SvgLayoutKind::Text(text) => {
                     let paint = ShapePaint::Solid(Color::BLACK);
                     for run in &text.runs {
-                        let visible = node.with(run.node).primary_styles().is_some_and(|s| {
+                        let visible = node.with(run.node).svg_style().is_some_and(|s| {
                             s.get_inherited_box().visibility == Visibility::Visible
                         });
                         if visible {
@@ -311,12 +555,12 @@ impl ElementCx<'_, '_> {
                 _ => {}
             }
             if let Some(child_clip) = &child.clip {
-                self.apply_svg_clip(scene, node, child_clip, child_transform);
+                self.apply_svg_clip(scene, node, child_clip, child_transform, bounds);
                 scene.pop_layer();
             }
         }
         if let Some(own) = &clip.clip {
-            self.apply_svg_clip(scene, node, own, transform);
+            self.apply_svg_clip(scene, node, own, transform, bounds);
             scene.pop_layer();
         }
         scene.pop_layer();
@@ -324,6 +568,8 @@ impl ElementCx<'_, '_> {
 
     /// Mask the content painted since the enclosing group was pushed by
     /// `mask`, in the user space that `transform` maps to device space.
+    /// `bounds` is the device-space area of that group.
+    #[allow(clippy::too_many_arguments)]
     fn apply_svg_mask(
         &self,
         scene: &mut impl PaintScene,
@@ -331,7 +577,8 @@ impl ElementCx<'_, '_> {
         mask: &SvgMask,
         transform: Affine,
         viewport: SvgViewport,
-        active: &mut Vec<NodeId>,
+        bounds: &Rect,
+        state: &mut SvgReferenceState,
     ) {
         let mode = if mask.alpha {
             MaskMode::Alpha
@@ -340,15 +587,15 @@ impl ElementCx<'_, '_> {
         };
         scene.push_mask_layer(Fill::NonZero, mode, transform, &mask.rect);
         if mask.mask.is_some() {
-            self.push_svg_group(scene, BlendMode::default(), 1.0);
+            self.push_svg_group(scene, BlendMode::default(), 1.0, bounds);
         }
         let mask_node = node.with(mask.node);
-        active.push(mask.node);
+        state.push(mask.node);
         let content_transform = transform * mask.content_transform;
-        self.paint_svg_children(scene, mask_node, content_transform, viewport, active);
-        active.pop();
+        self.paint_svg_children(scene, mask_node, content_transform, viewport, state);
+        state.pop();
         if let Some(own) = &mask.mask {
-            self.apply_svg_mask(scene, node, own, transform, viewport, active);
+            self.apply_svg_mask(scene, node, own, transform, viewport, bounds, state);
             scene.pop_layer();
         }
         scene.pop_layer();
@@ -371,7 +618,7 @@ impl ElementCx<'_, '_> {
                 if (deco.kind == SvgTextDecorationKind::LineThrough) != line_through {
                     continue;
                 }
-                let Some(style) = node.with(deco.node).primary_styles() else {
+                let Some(style) = node.with(deco.node).svg_style() else {
                     continue;
                 };
                 if style.get_inherited_box().visibility != Visibility::Visible {
@@ -388,7 +635,7 @@ impl ElementCx<'_, '_> {
         };
         paint_decorations(scene, false);
         for run in &text.runs {
-            let Some(style) = node.with(run.node).primary_styles() else {
+            let Some(style) = node.with(run.node).svg_style() else {
                 continue;
             };
             if style.get_inherited_box().visibility != Visibility::Visible {
@@ -407,24 +654,24 @@ impl ElementCx<'_, '_> {
                 && id != node.id
             {
                 let span = node.with(id);
-                alpha *= span
-                    .primary_styles()
-                    .map_or(1.0, |s| s.get_effects().opacity);
+                alpha *= span.svg_style().map_or(1.0, |s| s.get_effects().opacity);
                 current = span.parent;
             }
             if alpha < 1.0 {
-                let painter = self.context;
+                let Some(ink) = run.ink else {
+                    continue;
+                };
+                let bounds = self
+                    .viewport_rect()
+                    .intersect(transform.transform_rect_bbox(ink))
+                    .inflate(1.0, 1.0)
+                    .expand();
                 scene.push_layer(
                     Fill::NonZero,
                     BlendMode::default(),
                     alpha,
                     Affine::IDENTITY,
-                    &Rect::new(
-                        painter.initial_x,
-                        painter.initial_y,
-                        painter.initial_x + painter.width as f64,
-                        painter.initial_y + painter.height as f64,
-                    ),
+                    &bounds,
                     None,
                     None,
                 );
@@ -515,6 +762,86 @@ fn draw_svg_glyphs(
             }),
         );
     }
+}
+
+/// The unhinted glyph outlines of the visible runs of `text` in its user
+/// space, placed as [`draw_svg_glyphs`] places them. `None` when the runs use
+/// more than one font, as outlines from different fonts may wind in opposite
+/// directions and cancel out under the nonzero rule.
+fn svg_glyph_outlines(node: &Node, text: &SvgText) -> Option<BezPath> {
+    use skrifa::MetadataProvider as _;
+    use skrifa::instance::{LocationRef, Size};
+    use skrifa::outline::DrawSettings;
+    use skrifa::raw::types::F2Dot14;
+
+    struct Pen(BezPath);
+    impl skrifa::outline::OutlinePen for Pen {
+        fn move_to(&mut self, x: f32, y: f32) {
+            self.0.move_to((x as f64, y as f64));
+        }
+        fn line_to(&mut self, x: f32, y: f32) {
+            self.0.line_to((x as f64, y as f64));
+        }
+        fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+            self.0
+                .quad_to((cx0 as f64, cy0 as f64), (x as f64, y as f64));
+        }
+        fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+            self.0.curve_to(
+                (cx0 as f64, cy0 as f64),
+                (cx1 as f64, cy1 as f64),
+                (x as f64, y as f64),
+            );
+        }
+        fn close(&mut self) {
+            self.0.close_path();
+        }
+    }
+
+    let mut outline = BezPath::new();
+    let mut font = None;
+    for run in &text.runs {
+        let visible = node
+            .with(run.node)
+            .svg_style()
+            .is_some_and(|s| s.get_inherited_box().visibility == Visibility::Visible);
+        if !visible || run.font_size <= 0.0 {
+            continue;
+        }
+        let id = (run.font.data.id(), run.font.index);
+        if font.is_some_and(|font| font != id) {
+            return None;
+        }
+        font = Some(id);
+        let font = skrifa::FontRef::from_index(run.font.data.data(), run.font.index).ok()?;
+        let glyphs = font.outline_glyphs();
+        let coords: Vec<F2Dot14> = run
+            .normalized_coords
+            .iter()
+            .map(|&c| F2Dot14::from_bits(c))
+            .collect();
+        let skew = run
+            .skew
+            .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
+        for glyph in &run.glyphs {
+            let Some(glyph_outline) = glyphs.get(skrifa::GlyphId::new(glyph.id)) else {
+                continue;
+            };
+            let mut pen = Pen(BezPath::new());
+            let settings =
+                DrawSettings::unhinted(Size::new(run.font_size), LocationRef::new(&coords));
+            glyph_outline.draw(settings, &mut pen).ok()?;
+            let glyph_transform = match (glyph.transform(), skew) {
+                (Some(t), Some(s)) => t * s,
+                (t, s) => t.or(s).unwrap_or_default(),
+            };
+            let transform = Affine::translate((glyph.x as f64, glyph.y as f64))
+                * glyph_transform
+                * Affine::FLIP_Y;
+            outline.extend(transform * pen.0);
+        }
+    }
+    Some(outline)
 }
 
 /// The element an SVG paint is resolved for.
@@ -670,4 +997,86 @@ fn gradient_paint(gradient: &SvgGradient, alpha: f32) -> ShapePaint {
         brush.interpolation_cs = ColorSpaceTag::LinearSrgb;
     }
     ShapePaint::Gradient(brush, gradient.transform)
+}
+
+/// The AnyRender filter graph of a `<filter>`, with no-op primitives folded
+/// away, or `None` when nothing is left (the filter only clips to its
+/// region).
+fn append_svg_filter(graph: &mut Filter, filter: &SvgFilter, source: FilterInput) -> FilterInput {
+    // `SourceAlpha` of an earlier filter's result in the list.
+    let uses_alpha = filter.primitives.iter().any(|primitive| {
+        [primitive.input, primitive.input2].contains(&SvgFilterInput::SourceAlpha)
+    });
+    let alpha = match &source {
+        FilterInput::Result(_) if uses_alpha => FilterInput::Result(graph.add(
+            FilterEffect::ColorMatrix(ColorMatrix::SOURCE_ALPHA),
+            FilterInputs::single(source.clone()),
+        )),
+        _ => FilterInput::Source(FilterSource::SourceAlpha),
+    };
+    let mut ids: Vec<FilterId> = Vec::with_capacity(filter.primitives.len());
+    for primitive in &filter.primitives {
+        let input = |input| match input {
+            SvgFilterInput::SourceGraphic => source.clone(),
+            SvgFilterInput::SourceAlpha => alpha.clone(),
+            SvgFilterInput::Result(index) => FilterInput::Result(ids[index]),
+        };
+        let single = FilterInputs::single(input(primitive.input));
+        let (effect, inputs) = match &primitive.kind {
+            SvgFilterKind::Flood(color) => (
+                FilterEffect::Flood(color.as_color_color()),
+                FilterInputs::NONE,
+            ),
+            SvgFilterKind::GaussianBlur { std_deviation } => {
+                (FilterEffect::blur(*std_deviation as f32), single)
+            }
+            SvgFilterKind::Offset { dx, dy } => (FilterEffect::Offset(Vec2::new(*dx, *dy)), single),
+            SvgFilterKind::DropShadow {
+                dx,
+                dy,
+                std_deviation,
+                color,
+            } => (
+                FilterEffect::drop_shadow(
+                    *dx as f32,
+                    *dy as f32,
+                    *std_deviation as f32,
+                    color.as_color_color(),
+                ),
+                single,
+            ),
+            SvgFilterKind::Blend(mode) => (
+                FilterEffect::Blend(convert_blend_mode(*mode).mix),
+                FilterInputs::dual(input(primitive.input), input(primitive.input2)),
+            ),
+        };
+        ids.push(graph.add(effect, inputs));
+    }
+    ids.last().map_or(source, |&id| FilterInput::Result(id))
+}
+
+fn push_svg_filter(
+    scene: &mut impl PaintScene,
+    transform: Affine,
+    rect: &Rect,
+    graph: &Option<Arc<Filter>>,
+) {
+    match graph {
+        Some(graph) => scene.push_layer(
+            Fill::NonZero,
+            BlendMode::default(),
+            1.0,
+            transform,
+            rect,
+            Some(graph.clone()),
+            None,
+        ),
+        None => scene.push_clip_layer(Fill::NonZero, transform, rect),
+    }
+}
+
+/// The default `<filter>` region, `-10% -10% 120% 120%` of `bbox`.
+fn default_filter_region(bbox: Rect) -> Rect {
+    let (dx, dy) = (bbox.width() * 0.1, bbox.height() * 0.1);
+    Rect::new(bbox.x0 - dx, bbox.y0 - dy, bbox.x1 + dx, bbox.y1 + dy)
 }

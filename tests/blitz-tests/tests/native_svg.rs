@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use anyrender::render_to_buffer;
+use anyrender::{ImageRenderer, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::{CopyStyleGetters, DocumentConfig, LocalName, QualName, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
@@ -1311,17 +1311,20 @@ fn recursive_clip_paths_ignore_the_cycle() {
 }
 
 #[test]
-fn clip_path_to_a_missing_element_is_ignored_and_to_another_element_hides() {
+fn references_to_missing_or_other_elements_are_ignored() {
     let mut doc = load(
         r#"<svg width="100" height="100">
         <rect id="g" width="0" height="0"/>
-        <rect width="50" height="100" fill="red" clip-path="url(#missing)"/>
-        <rect x="50" width="50" height="100" fill="red" clip-path="url(#g)"/></svg>"#,
+        <rect width="50" height="50" fill="red" clip-path="url(#missing)"/>
+        <rect x="50" width="50" height="50" fill="red" clip-path="url(#g)"/>
+        <rect y="50" width="50" height="50" fill="red" mask="url(#missing)"/>
+        <rect x="50" y="50" width="50" height="50" fill="red" mask="url(#g)"/></svg>"#,
         true,
     );
     let buf = render(&mut doc);
-    assert_eq!(pixel(&buf, 25, 50), RED);
-    assert_eq!(pixel(&buf, 75, 50), BLUE);
+    for (x, y) in [(25, 25), (75, 25), (25, 75), (75, 75)] {
+        assert_eq!(pixel(&buf, x, y), RED, "({x}, {y})");
+    }
 }
 
 #[test]
@@ -1390,4 +1393,982 @@ fn clip_rule_comes_from_the_computed_style() {
     let buf = render(&mut doc);
     assert_eq!(pixel(&buf, 10, 10), RED);
     assert_eq!(pixel(&buf, 50, 50), BLUE, "the evenodd hole");
+}
+
+const BENCH_W: u32 = 1600;
+const BENCH_H: u32 = 1200;
+
+/// 100 small rects at 1600x1200, each with `attrs` and the `defs` resources.
+fn clipped_rects_doc(defs: &str, attrs: &str, native_svg: bool) -> HtmlDocument {
+    let mut rects = String::new();
+    for i in 0..100 {
+        let (x, y) = ((i % 10) * 150 + 10, (i / 10) * 110 + 10);
+        rects.push_str(&format!(
+            r#"<rect x="{x}" y="{y}" width="40" height="40" fill="red" {attrs}/>"#
+        ));
+    }
+    let html = format!(
+        r#"<html><body style="margin:0"><svg width="{BENCH_W}" height="{BENCH_H}"><defs>{defs}</defs>{rects}</svg></body></html>"#
+    );
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(BENCH_W, BENCH_H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            native_svg: Some(native_svg),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc
+}
+
+const BENCH_CASES: [(&str, &str, &str); 5] = [
+    (
+        "single-rect clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.5" height="1"/></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "two-rect clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.5" height="0.5"/><rect x="0.5" y="0.5" width="0.5" height="0.5"/></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "overlapping-rect clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.6" height="0.6"/><rect x="0.4" y="0.4" width="0.6" height="0.6"/></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "text clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><text y="0.8" font-size="1">A</text></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "mask",
+        r#"<mask id="m" maskContentUnits="objectBoundingBox"><rect width="0.5" height="1" fill="white"/></mask>"#,
+        r#"mask="url(#m)""#,
+    ),
+];
+
+/// Clip path and mask groups are bounded by what they let through, not the
+/// whole viewport, as vello_cpu composites a layer's whole area.
+#[test]
+fn clip_and_mask_layers_are_bounded() {
+    for (name, defs, attrs) in BENCH_CASES {
+        let mut doc = clipped_rects_doc(defs, attrs, true);
+        let mut scene = anyrender::recording::Scene::new();
+        paint_scene(&mut scene, doc.as_mut(), 1.0, BENCH_W, BENCH_H, 0, 0);
+        let mut layers = 0;
+        for command in &scene.commands {
+            let (transform, clip) = match command {
+                anyrender::recording::RenderCommand::PushLayer(l) => (l.transform, &l.clip),
+                anyrender::recording::RenderCommand::PushMaskLayer(l) => (l.transform, &l.clip),
+                _ => continue,
+            };
+            layers += 1;
+            // The clip's control points in device space (no kurbo dependency
+            // here, so read them back from its SVG path data).
+            let [a, b, c, d, e, f] = transform.as_coeffs();
+            let numbers: Vec<f64> = clip
+                .to_svg()
+                .split(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == 'e'))
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for p in numbers.chunks_exact(2) {
+                let (x, y) = (a * p[0] + c * p[1] + e, b * p[0] + d * p[1] + f);
+                (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+            }
+            let bounds = (x1 - x0, y1 - y0);
+            assert!(
+                bounds.0 <= 200.0 && bounds.1 <= 200.0,
+                "{name}: a layer covers {bounds:?}"
+            );
+        }
+        assert!(layers > 0 || name != "mask", "{name}");
+    }
+}
+
+/// Run with: `cargo test -p blitz-tests --release --test all native_svg::clip_and_mask_bench -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn clip_and_mask_bench() {
+    use anyrender::ImageRenderer;
+    for native_svg in [true, false] {
+        for (name, defs, attrs) in BENCH_CASES {
+            let mut doc = clipped_rects_doc(defs, attrs, native_svg);
+            let mut renderer = VelloCpuImageRenderer::new(BENCH_W, BENCH_H);
+            let mut buf = Vec::new();
+            let mut frame = |doc: &mut HtmlDocument| {
+                buf.clear();
+                renderer.reset();
+                renderer.render_to_vec(
+                    |scene| paint_scene(scene, doc.as_mut(), 1.0, BENCH_W, BENCH_H, 0, 0),
+                    &mut buf,
+                );
+            };
+            frame(&mut doc);
+            let frames = 10;
+            let start = std::time::Instant::now();
+            for _ in 0..frames {
+                frame(&mut doc);
+            }
+            let per_frame = start.elapsed() / frames;
+            let mode = if native_svg { "native" } else { "usvg" };
+            println!("{mode} {name}: {per_frame:?}/frame");
+        }
+    }
+}
+
+#[test]
+fn long_reference_chains_are_cut_off() {
+    for (tag, property, content) in [
+        ("clipPath", "clip-path", ""),
+        ("mask", "mask", r#" fill="white""#),
+    ] {
+        let mut svg = String::from(r#"<svg width="100" height="100">"#);
+        for i in 0..10_000 {
+            let next = i + 1;
+            svg += &format!(
+                r#"<{tag} id="c{i}" {property}="url(#c{next})"><rect width="100" height="100"{content}/></{tag}>"#
+            );
+        }
+        svg +=
+            &format!(r#"<rect width="100" height="100" fill="red" {property}="url(#c0)"/></svg>"#);
+        let mut doc = load(&svg, true);
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 50, 50), RED, "{tag}");
+    }
+}
+
+#[test]
+fn branching_reference_graphs_are_bounded() {
+    let depth = 20;
+    let mut svg = String::from(r#"<svg width="100" height="100">"#);
+    for i in 0..depth {
+        let next = i + 1;
+        svg += &format!(
+            r#"<clipPath id="c{i}"><rect width="100" height="100" clip-path="url(#c{next})"/><rect width="100" height="100" clip-path="url(#c{next})"/></clipPath>"#
+        );
+    }
+    svg += &format!(r#"<clipPath id="c{depth}"><rect width="100" height="100"/></clipPath>"#);
+    svg += r#"<rect width="100" height="100" fill="red" clip-path="url(#c0)"/></svg>"#;
+    let mut doc = load(&svg, true);
+    let start = std::time::Instant::now();
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 50), RED);
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+}
+
+/// `<clipPath>` and `<mask>` can be referenced wherever they are, even
+/// inside elements that are not rendered.
+#[test]
+fn resources_inside_unrendered_elements_apply() {
+    let containers = [
+        (r#"<g style="display:none">"#, "</g>"),
+        ("<symbol>", "</symbol>"),
+        ("<pattern>", "</pattern>"),
+        ("<marker>", "</marker>"),
+        (r#"<g systemLanguage="xx">"#, "</g>"),
+    ];
+    let mut svg = String::from(r#"<svg width="100" height="100">"#);
+    for (i, (open, close)) in containers.iter().enumerate() {
+        let y = i * 20;
+        svg += &format!(
+            r#"{open}<clipPath id="c{i}"><rect width="50" height="100"/></clipPath>{close}
+            <rect y="{y}" width="100" height="20" fill="red" clip-path="url(#c{i})"/>"#
+        );
+    }
+    svg += "</svg>";
+    let mut doc = load(&svg, true);
+    let buf = render(&mut doc);
+    for i in 0..containers.len() {
+        let y = i * 20 + 10;
+        assert_eq!(pixel(&buf, 25, y), RED, "{}", containers[i].0);
+        assert_eq!(pixel(&buf, 75, y), BLUE, "{}", containers[i].0);
+    }
+}
+
+#[test]
+fn masks_inside_display_none_apply() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <g style="display:none"><g><mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+          <rect width="50" height="100" fill="white"/>
+        </mask></g></g>
+        <rect width="100" height="100" fill="red" mask="url(#m)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 50), RED);
+    assert_eq!(pixel(&buf, 75, 50), BLUE);
+}
+
+/// `clip-path` and `mask` on a nested `<svg>` apply in the user space its
+/// `viewBox` establishes.
+#[test]
+fn clip_and_mask_on_nested_svg_use_its_user_space() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="c"><rect width="5" height="5"/></clipPath>
+        <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="5" height="10">
+          <rect width="10" height="10" fill="white"/>
+        </mask>
+        <svg width="100" height="50" viewBox="0 0 10 10" preserveAspectRatio="none" clip-path="url(#c)">
+          <rect width="10" height="10" fill="red"/>
+        </svg>
+        <svg y="50" width="100" height="50" viewBox="0 0 10 10" preserveAspectRatio="none" mask="url(#m)">
+          <rect width="10" height="10" fill="red"/>
+        </svg></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 12), RED, "inside the clip path");
+    assert_eq!(pixel(&buf, 75, 12), BLUE);
+    assert_eq!(pixel(&buf, 25, 37), BLUE);
+    assert_eq!(pixel(&buf, 25, 75), RED, "inside the mask region");
+    assert_eq!(pixel(&buf, 75, 75), BLUE);
+}
+
+/// A reference that closes a cycle is ignored for the whole document (as
+/// usvg does), not only where it re-enters a mask being applied: with
+/// `mask2`'s own `mask` ignored, each mask applies once.
+#[test]
+fn circular_mask_references_are_ignored_everywhere() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <mask id="self1" mask="url(#self2)" style="mask-type: alpha"><rect width="100" height="100" fill-opacity="0.5"/></mask>
+        <mask id="self2" mask="url(#self1)" style="mask-type: alpha"><rect width="100" height="100" fill-opacity="0.5"/></mask>
+        <mask id="child1" style="mask-type: alpha"><rect width="100" height="100" fill-opacity="0.5" mask="url(#child2)"/></mask>
+        <mask id="child2" style="mask-type: alpha"><rect width="100" height="100" fill-opacity="0.5" mask="url(#child1)"/></mask>
+        <rect width="50" height="100" fill="red" mask="url(#self2)"/>
+        <rect x="50" width="50" height="100" fill="red" mask="url(#child2)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_near(pixel(&buf, 25, 50), [128, 0, 128]);
+    assert_near(pixel(&buf, 75, 50), [128, 0, 128]);
+}
+
+/// The commands painting `doc` records.
+fn record(doc: &mut HtmlDocument) -> Vec<anyrender::recording::RenderCommand> {
+    let mut scene = anyrender::Scene::new();
+    paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+    scene.commands
+}
+
+/// The filter layers in `commands`, as their clip bounds and filter graphs.
+fn filter_layers(
+    commands: &[anyrender::recording::RenderCommand],
+) -> Vec<(kurbo::Rect, Arc<anyrender::Filter>)> {
+    use kurbo::Shape as _;
+    commands
+        .iter()
+        .filter_map(|cmd| match cmd {
+            anyrender::recording::RenderCommand::PushLayer(layer) => {
+                let filter = layer.filter.clone()?;
+                Some((
+                    layer
+                        .transform
+                        .transform_rect_bbox(layer.clip.bounding_box())
+                        .round(),
+                    filter,
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn filtered_rect(filter: &str) -> String {
+    format!(
+        r#"<svg width="100" height="100"><defs>{filter}</defs>
+        <rect x="20" y="20" width="40" height="40" fill="red" filter="url(#f)"/></svg>"#
+    )
+}
+
+#[test]
+fn filter_layer_is_bounded_by_the_filter_region() {
+    use anyrender::filters::FilterEffect;
+    // The default region is the bounding box grown by 10% on each side.
+    let mut doc = load(
+        &filtered_rect(r#"<filter id="f"><feGaussianBlur stdDeviation="2"/></filter>"#),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    let (bounds, filter) = &layers[0];
+    assert_eq!(*bounds, kurbo::Rect::new(16.0, 16.0, 64.0, 64.0));
+    assert_eq!(filter.nodes().len(), 1);
+    assert!(matches!(
+        &filter.nodes()[0].effect,
+        FilterEffect::GaussianBlur(blur) if blur.std_deviation == 2.0
+    ));
+
+    let mut doc = load(
+        &filtered_rect(
+            r#"<filter id="f" filterUnits="userSpaceOnUse" x="10" y="5" width="50" height="60">
+            <feOffset dx="3" dy="4"/></filter>"#,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers[0].0, kurbo::Rect::new(10.0, 5.0, 60.0, 65.0));
+}
+
+#[test]
+fn figma_layer_blur_folds_to_one_blur() {
+    use anyrender::filters::FilterEffect;
+    let mut doc = load(
+        &filtered_rect(
+            r#"<filter id="f" color-interpolation-filters="sRGB">
+            <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+            <feGaussianBlur stdDeviation="10.5" result="effect1_foregroundBlur"/></filter>"#,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    let nodes = layers[0].1.nodes();
+    assert_eq!(nodes.len(), 1);
+    assert!(matches!(&nodes[0].effect, FilterEffect::GaussianBlur(_)));
+}
+
+#[test]
+fn filter_href_inherits_primitives_and_attributes() {
+    let mut doc = load(
+        &filtered_rect(
+            r##"<filter id="base" filterUnits="userSpaceOnUse" x="0" y="0" width="80" height="80">
+            <feGaussianBlur stdDeviation="1"/></filter>
+            <filter id="f" href="#base"/>"##,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    assert_eq!(layers[0].0, kurbo::Rect::new(0.0, 0.0, 80.0, 80.0));
+}
+
+#[test]
+fn flood_color_comes_from_computed_style() {
+    use anyrender::filters::FilterEffect;
+    let mut doc = load(
+        &format!(
+            "<style>feFlood {{ flood-color: lime; flood-opacity: 0.5 }}</style>{}",
+            filtered_rect(r#"<filter id="f"><feFlood/></filter>"#)
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    let FilterEffect::Flood(color) = &layers[0].1.nodes()[0].effect else {
+        panic!("expected a flood");
+    };
+    assert_eq!(color.components, [0.0, 1.0, 0.0, 0.5]);
+}
+
+#[test]
+fn invalid_filter_reference_disables_rendering() {
+    // A filter with an empty region or no primitives makes the element not
+    // render.
+    for svg in [
+        filtered_rect(r#"<filter id="f" width="0"><feGaussianBlur stdDeviation="1"/></filter>"#),
+        filtered_rect(r#"<filter id="f"/>"#),
+    ] {
+        let mut doc = load(&svg, true);
+        let buffer = render(&mut doc);
+        assert_eq!(pixel(&buffer, 40, 40), BLUE, "{svg}");
+    }
+}
+
+#[test]
+fn unsupported_filter_primitives_paint_unfiltered() {
+    // So does a reference to a missing element.
+    let mut doc = load(&filtered_rect(""), true);
+    assert_eq!(pixel(&render(&mut doc), 40, 40), RED);
+
+    let mut doc = load(
+        &filtered_rect(r#"<filter id="f"><feTurbulence baseFrequency="0.1"/></filter>"#),
+        true,
+    );
+    assert!(filter_layers(&record(&mut doc)).is_empty());
+    assert_eq!(pixel(&render(&mut doc), 40, 40), RED);
+}
+
+/// Renders `doc` with a single-threaded `vello_cpu`, which applies filters.
+fn render_filtered(doc: &mut HtmlDocument) -> Vec<u8> {
+    let mut renderer = VelloCpuImageRenderer::new_single_threaded(W, H);
+    let mut buffer = Vec::new();
+    renderer.render_to_vec(
+        |scene| paint_scene(scene, doc.as_mut(), 1.0, W, H, 0, 0),
+        &mut buffer,
+    );
+    buffer
+}
+
+/// Whether `color` is a blend of red and blue, as at a blurred edge.
+fn is_soft(color: [u8; 3]) -> bool {
+    (16..240).contains(&color[0]) && color[1] == 0
+}
+
+#[test]
+fn blur_crossing_the_svg_clip_stays_soft() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><defs><filter id="f">
+        <feGaussianBlur stdDeviation="3"/></filter></defs>
+        <rect x="4" y="4" width="40" height="40" fill="red" filter="url(#f)"/></svg>"#,
+        true,
+    );
+    let buf = render_filtered(&mut doc);
+    assert!(is_soft(pixel(&buf, 2, 24)), "{:?}", pixel(&buf, 2, 24));
+    assert!(is_soft(pixel(&buf, 4, 24)), "{:?}", pixel(&buf, 4, 24));
+    assert_eq!(pixel(&buf, 24, 24), RED);
+}
+
+#[test]
+fn css_filter_functions_apply_to_svg_shapes() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <rect x="20" y="20" width="40" height="40" fill="red" style="filter: blur(3px)"/></svg>"#,
+        true,
+    );
+    let buf = render_filtered(&mut doc);
+    assert!(is_soft(pixel(&buf, 19, 40)), "{:?}", pixel(&buf, 19, 40));
+    assert_eq!(pixel(&buf, 40, 40), RED);
+}
+
+#[test]
+fn filter_lists_chain_urls_and_functions() {
+    use anyrender::filters::{FilterEffect, FilterInput, FilterSource};
+    let mut doc = load(
+        r#"<svg width="100" height="100"><defs>
+        <filter id="a" filterUnits="userSpaceOnUse" x="0" y="0" width="80" height="80">
+        <feOffset dx="10" dy="10"/></filter>
+        <filter id="b"><feGaussianBlur in="SourceAlpha" stdDeviation="2"/></filter></defs>
+        <rect x="20" y="20" width="40" height="40" fill="red"
+        style="filter: url(#a) url(#b) opacity(0.5)"/></svg>"#,
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    let (bounds, filter) = &layers[0];
+    assert_eq!(*bounds, kurbo::Rect::new(0.0, 0.0, 80.0, 80.0));
+    let nodes = filter.nodes();
+    assert!(matches!(nodes[0].effect, FilterEffect::Offset { .. }));
+    // `SourceAlpha` in the second filter is the alpha of the first's result.
+    assert!(matches!(nodes[1].effect, FilterEffect::ColorMatrix(_)));
+    assert!(matches!(nodes[2].effect, FilterEffect::GaussianBlur(_)));
+    assert!(!matches!(
+        nodes[2].inputs.primary,
+        Some(FilterInput::Source(FilterSource::SourceAlpha))
+    ));
+    assert_eq!(nodes.len(), 4);
+}
+
+#[test]
+fn filter_on_the_outer_svg_applies() {
+    let mut doc = load(
+        r#"<svg width="100" height="100" style="filter: url(#f)"><defs>
+        <filter id="f" filterUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+        <feOffset dx="30" dy="30"/></filter></defs>
+        <rect width="50" height="50" fill="red"/></svg>"#,
+        true,
+    );
+    let buf = render_filtered(&mut doc);
+    assert_eq!(pixel(&buf, 10, 10), BLUE);
+    assert_eq!(pixel(&buf, 70, 70), RED);
+}
+
+#[test]
+fn flood_fills_the_filter_region() {
+    let mut doc = load(
+        &filtered_rect(r#"<filter id="f"><feFlood flood-color="lime"/></filter>"#),
+        true,
+    );
+    let buf = render_filtered(&mut doc);
+    assert_eq!(pixel(&buf, 10, 10), BLUE);
+    assert_eq!(pixel(&buf, 17, 17), LIME);
+    assert_eq!(pixel(&buf, 62, 62), LIME);
+    assert_eq!(pixel(&buf, 66, 66), BLUE);
+}
+
+#[test]
+fn flood_color_resolves_in_a_display_none_subtree() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><g style="display: none">
+        <filter id="f"><feFlood flood-color="lime"/></filter></g>
+        <rect x="20" y="20" width="40" height="40" fill="red" filter="url(#f)"/></svg>"#,
+        true,
+    );
+    assert_eq!(pixel(&render_filtered(&mut doc), 40, 40), LIME);
+}
+
+#[test]
+fn filter_graphs_vello_cpu_cannot_run_paint_unfiltered() {
+    // A blur then an offset, and a blur of `SourceAlpha`.
+    for filter in [
+        r#"<filter id="f"><feGaussianBlur stdDeviation="2"/><feOffset dx="30"/></filter>"#,
+        r#"<filter id="f"><feOffset in="SourceAlpha" dx="1"/></filter>"#,
+    ] {
+        let mut doc = load(&filtered_rect(filter), true);
+        let buf = render_filtered(&mut doc);
+        assert_eq!(pixel(&buf, 40, 40), RED, "{filter}");
+        assert_eq!(pixel(&buf, 21, 21), RED, "{filter}");
+    }
+}
+
+/// A 2x1 opaque lime PNG.
+const LIME_2X1_PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 1, 8, 6, 0,
+    0, 0, 244, 34, 127, 138, 0, 0, 0, 12, 73, 68, 65, 84, 120, 156, 99, 96, 248, 15, 129, 0, 15,
+    249, 3, 253, 216, 57, 113, 65, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
+/// A 1x1 opaque white PNG.
+const WHITE_1X1_PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0,
+    0, 0, 31, 21, 196, 137, 0, 0, 0, 11, 73, 68, 65, 84, 120, 156, 99, 248, 15, 4, 0, 9, 251, 3,
+    253, 251, 94, 107, 43, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
+/// Serves every request with the same bytes.
+struct StaticNetProvider(&'static [u8]);
+
+impl blitz_traits::net::NetProvider for StaticNetProvider {
+    fn fetch(
+        &self,
+        _doc_id: usize,
+        request: blitz_traits::net::Request,
+        handler: Box<dyn blitz_traits::net::NetHandler>,
+    ) {
+        handler.bytes(request.url.to_string(), self.0.into());
+    }
+}
+
+fn load_with_image(body: &str, image: &'static [u8]) -> HtmlDocument {
+    let html = format!(r#"<html><body style="margin:0; background:#00f">{body}</body></html>"#);
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            base_url: Some("http://example.com/".to_string()),
+            viewport: Some(Viewport::new(W, H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            net_provider: Some(Arc::new(StaticNetProvider(image))),
+            native_svg: Some(true),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc
+}
+
+#[test]
+fn image_paints_its_raster_into_its_viewport() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 5, 5), LIME);
+    assert_eq!(pixel(&buf, 95, 95), LIME);
+}
+
+#[test]
+fn image_preserves_its_aspect_ratio() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 10), BLUE);
+    assert_eq!(pixel(&buf, 50, 50), LIME);
+    assert_eq!(pixel(&buf, 50, 90), BLUE);
+}
+
+#[test]
+fn image_without_a_size_uses_its_intrinsic_size() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image x="10" y="10" xlink:href="a.png" transform="scale(2)"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 21, 20), LIME);
+    assert_eq!(pixel(&buf, 25, 20), BLUE);
+    assert_eq!(pixel(&buf, 21, 23), BLUE);
+}
+
+#[test]
+fn image_inside_a_mask_reveals_masked_content() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100">
+            <mask id="m"><g clip-path="url(#c)"><image href="a.png" width="100" height="100"/></g></mask>
+            <clipPath id="c"><rect width="50" height="100"/></clipPath>
+            <rect width="100" height="100" fill="lime" mask="url(#m)"/>
+        </svg>"#,
+        WHITE_1X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 50), LIME);
+    assert_eq!(pixel(&buf, 75, 50), BLUE);
+}
+
+#[test]
+fn image_href_change_loads_the_new_image() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image id="i" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().set_attribute(id, attr("href"), "b.png");
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}
+
+/// Records every request and serves the named files, holding the responses
+/// until `flush` when `hold` is set.
+struct RecordingNet {
+    files: Vec<(&'static str, &'static [u8])>,
+    hold: bool,
+    pending: std::sync::Mutex<Vec<(String, Box<dyn blitz_traits::net::NetHandler>)>>,
+    urls: std::sync::Mutex<Vec<String>>,
+}
+
+impl RecordingNet {
+    fn new(files: &[(&'static str, &'static [u8])], hold: bool) -> Arc<Self> {
+        Arc::new(Self {
+            files: files.to_vec(),
+            hold,
+            pending: Default::default(),
+            urls: Default::default(),
+        })
+    }
+
+    fn deliver(&self, url: String, handler: Box<dyn blitz_traits::net::NetHandler>) {
+        let name = url.rsplit('/').next().unwrap();
+        match self.files.iter().find(|(file, _)| *file == name) {
+            Some((_, bytes)) => handler.bytes(url, bytes.to_vec().into()),
+            None => handler.error(url, "404".into()),
+        }
+    }
+
+    fn flush(&self) {
+        for (url, handler) in std::mem::take(&mut *self.pending.lock().unwrap()) {
+            self.deliver(url, handler);
+        }
+    }
+
+    fn urls(&self) -> Vec<String> {
+        self.urls.lock().unwrap().clone()
+    }
+}
+
+struct RecordingNetProvider(Arc<RecordingNet>);
+
+impl blitz_traits::net::NetProvider for RecordingNetProvider {
+    fn fetch(
+        &self,
+        _doc_id: usize,
+        request: blitz_traits::net::Request,
+        handler: Box<dyn blitz_traits::net::NetHandler>,
+    ) {
+        let url = request.url.to_string();
+        self.0.urls.lock().unwrap().push(url.clone());
+        if self.0.hold {
+            self.0.pending.lock().unwrap().push((url, handler));
+        } else {
+            self.0.deliver(url, handler);
+        }
+    }
+}
+
+fn load_with_net(body: &str, net: &Arc<RecordingNet>) -> HtmlDocument {
+    let html = format!(r#"<html><body style="margin:0; background:#00f">{body}</body></html>"#);
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            base_url: Some("http://example.com/".to_string()),
+            viewport: Some(Viewport::new(W, H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            net_provider: Some(Arc::new(RecordingNetProvider(net.clone()))),
+            native_svg: Some(true),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc
+}
+
+#[test]
+fn image_paints_once_it_arrives() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], true);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+    net.flush();
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}
+
+#[test]
+fn late_image_in_a_mask_inside_display_none_paints() {
+    let net = RecordingNet::new(&[("w.png", WHITE_1X1_PNG)], true);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100">
+            <g style="display:none"><mask id="m"><image href="w.png" width="100" height="100"/></mask></g>
+            <rect width="100" height="100" fill="lime" mask="url(#m)"/>
+        </svg>"#,
+        &net,
+    );
+    net.flush();
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}
+
+#[test]
+fn removing_href_falls_back_to_xlink_href() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG), ("w.png", WHITE_1X1_PNG)], false);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" xlink:href="w.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().clear_attribute(id, attr("href"));
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), [255, 255, 255]);
+}
+
+#[test]
+fn removing_the_only_href_removes_the_image() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().clear_attribute(id, attr("href"));
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+}
+
+#[test]
+fn image_ignores_a_fragment_href_and_fetches_each_url_once() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    load_with_net(
+        r##"<svg width="100" height="100"><image href="#x" width="10" height="10"/><image href="" width="10" height="10"/><image href="a.png" width="10" height="10"/><image href="a.png" width="10" height="10"/></svg>"##,
+        &net,
+    );
+    assert_eq!(net.urls(), ["http://example.com/a.png"]);
+}
+
+/// A 50x50 SVG image with lime inside its viewport and red outside it.
+const OVERFLOWING_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" fill="lime"/><rect x="50" width="50" height="100" fill="red"/></svg>"#;
+
+#[test]
+fn svg_image_is_clipped_to_its_own_viewport() {
+    for overflow in ["hidden", "visible"] {
+        let net = RecordingNet::new(&[("s.svg", OVERFLOWING_SVG)], false);
+        let mut doc = load_with_net(
+            &format!(
+                r#"<svg width="100" height="100"><image href="s.svg" width="50" height="50" style="overflow:{overflow}"/></svg>"#
+            ),
+            &net,
+        );
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 25, 25), LIME, "overflow: {overflow}");
+        assert_eq!(pixel(&buf, 75, 25), BLUE, "overflow: {overflow}");
+    }
+}
+
+#[test]
+fn sliced_image_is_clipped_unless_overflow_is_visible() {
+    for (overflow, outside) in [("hidden", BLUE), ("visible", LIME)] {
+        let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+        let mut doc = load_with_net(
+            &format!(
+                r#"<svg width="100" height="100"><image href="a.png" x="25" y="25" width="50" height="50" preserveAspectRatio="xMidYMid slice" style="overflow:{overflow}"/></svg>"#
+            ),
+            &net,
+        );
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 50, 50), LIME, "overflow: {overflow}");
+        assert_eq!(pixel(&buf, 10, 50), outside, "overflow: {overflow}");
+    }
+}
+
+#[test]
+fn fitted_raster_image_needs_no_clip() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    let doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" width="100" height="100"/></svg>"#,
+        &net,
+    );
+    let id = doc.get_element_by_id("i").unwrap();
+    let layout = doc
+        .get_node(id)
+        .unwrap()
+        .element_data()
+        .unwrap()
+        .svg_layout()
+        .unwrap();
+    assert!(matches!(
+        layout.kind,
+        blitz_dom::svg::SvgLayoutKind::Image { clip: None, .. }
+    ));
+}
+
+/// The bounding box `(x0, y0, x1, y1)` of the pixels that aren't background.
+fn ink_box(buffer: &[u8]) -> Option<(usize, usize, usize, usize)> {
+    let mut ink: Option<(usize, usize, usize, usize)> = None;
+    for y in 0..H as usize {
+        for x in 0..W as usize {
+            if pixel(buffer, x, y) != BLUE {
+                ink = Some(ink.map_or((x, y, x, y), |(x0, y0, x1, y1)| {
+                    (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
+                }));
+            }
+        }
+    }
+    ink
+}
+
+/// Asserts `grouped` paints as far as `ungrouped`, allowing a pixel of faint
+/// antialiasing lost to the group's opacity.
+fn assert_not_clipped(grouped: &str, ungrouped: &str) {
+    let grouped = ink_box(&render(&mut load(grouped, true))).expect("grouped ink");
+    let ungrouped = ink_box(&render(&mut load(ungrouped, true))).expect("ungrouped ink");
+    assert!(
+        grouped.0 <= ungrouped.0 + 1
+            && grouped.1 <= ungrouped.1 + 1
+            && grouped.2 + 1 >= ungrouped.2
+            && grouped.3 + 1 >= ungrouped.3,
+        "group layer clipped its content: {grouped:?} vs {ungrouped:?}"
+    );
+}
+
+/// An `a` with 14 stacked acute accents, reaching far above its line.
+const STACKED_MARKS: &str = "a\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}";
+
+#[test]
+fn group_opacity_does_not_clip_stacked_combining_marks() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><g opacity="{opacity}"><text x="10" y="95" font-size="20" fill="red">{STACKED_MARKS}</text></g></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn group_opacity_does_not_clip_a_wide_text_stroke() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><text opacity="{opacity}" x="40" y="55" font-size="20" font-style="italic" stroke="red" stroke-width="60" stroke-linejoin="round" fill="none">jf</text></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn tspan_opacity_does_not_clip_stacked_combining_marks() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><text x="10" y="95" font-size="12" fill="red"><tspan opacity="{opacity}">{STACKED_MARKS}</tspan></text></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn root_clip_still_clips_text_overflowing_the_svg() {
+    let mut doc = load(
+        &format!(
+            r#"<div style="height:50px"></div><svg width="100" height="50" style="display:block"><text x="40" y="30" font-size="12" fill="red">{STACKED_MARKS}</text></svg>"#
+        ),
+        true,
+    );
+    let buf = render(&mut doc);
+    let (_, top, ..) = ink_box(&buf).expect("text ink");
+    assert!(top >= 50, "text painted above the svg box, from y = {top}");
+}
+
+/// Paints `doc` into a recording and counts the layers pushed.
+fn layer_count(doc: &mut HtmlDocument) -> usize {
+    use anyrender::recording::RenderCommand;
+    let mut scene = anyrender::Scene::new();
+    paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+    scene
+        .commands
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                RenderCommand::PushLayer(_) | RenderCommand::PushClipLayer(_)
+            )
+        })
+        .count()
+}
+
+#[test]
+fn root_clip_is_skipped_only_when_content_fits() {
+    let fits = layer_count(&mut load(SQUARE, true));
+    let overflows = layer_count(&mut load(
+        r#"<svg width="50" height="50"><rect width="100" height="50" fill="red"/></svg>"#,
+        true,
+    ));
+    let text_fits = layer_count(&mut load(
+        &format!(
+            r#"<svg width="100" height="100"><text x="40" y="95" font-size="20" fill="red">{STACKED_MARKS}</text></svg>"#
+        ),
+        true,
+    ));
+    assert_eq!(fits, 0, "content inside the svg box needs no clip");
+    assert_eq!(text_fits, 0, "text inside the svg box needs no clip");
+    assert_eq!(overflows, 1, "overflowing content needs the root clip");
+}
+
+#[test]
+fn group_layers_are_bounded_by_their_content() {
+    use anyrender::recording::RenderCommand;
+    use kurbo::{Rect, Shape};
+    for (svg, content) in [
+        (
+            r#"<svg width="100" height="100"><g opacity="0.5"><rect x="10" y="20" width="30" height="40" fill="red"/></g></svg>"#,
+            Rect::new(10.0, 20.0, 40.0, 60.0),
+        ),
+        (
+            r#"<svg width="100" height="100"><g opacity="0.5"><rect x="10" y="20" width="20" height="30" fill="red" stroke="red" stroke-width="10" stroke-linejoin="round"/></g></svg>"#,
+            Rect::new(5.0, 15.0, 35.0, 55.0),
+        ),
+    ] {
+        let mut doc = load(svg, true);
+        let mut scene = anyrender::Scene::new();
+        paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+        let layers: Vec<_> = scene
+            .commands
+            .iter()
+            .filter_map(|cmd| match cmd {
+                RenderCommand::PushLayer(layer) => Some(
+                    layer
+                        .transform
+                        .transform_rect_bbox(layer.clip.bounding_box()),
+                ),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(layers.len(), 1, "{svg}");
+        let bounds = layers[0];
+        assert!(
+            bounds.contains_rect(content),
+            "layer {bounds:?} clips its content in {svg}"
+        );
+        assert!(
+            content.inflate(2.0, 2.0).contains_rect(bounds),
+            "layer {bounds:?} is wider than its content in {svg}"
+        );
+    }
 }

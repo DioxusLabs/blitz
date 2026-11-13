@@ -295,7 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "kurbo",
  "peniko",
@@ -307,7 +307,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "anyrender",
  "image",
@@ -325,7 +325,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "anyrender",
  "ash",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "anyrender",
  "image",
@@ -368,7 +368,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -386,7 +386,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -404,7 +404,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1107,6 +1107,7 @@ dependencies = [
  "dioxus-core",
  "dioxus-native-dom",
  "keyboard-types",
+ "kurbo",
  "markup5ever",
  "stylo",
  "taffy",
@@ -1807,7 +1808,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.2.2",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -3154,7 +3155,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6411,7 +6412,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6724,7 +6725,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7247,7 +7248,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7304,7 +7305,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7444,7 +7445,7 @@ dependencies = [
 [[package]]
 name = "selectors"
 version = "0.43.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "bitflags 2.13.2",
  "cssparser",
@@ -7584,7 +7585,7 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.6.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -7931,7 +7932,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8054,7 +8055,7 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.24.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -8112,7 +8113,7 @@ dependencies = [
 [[package]]
 name = "stylo_atoms"
 version = "0.24.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "string_cache 0.11.0",
  "string_cache_codegen",
@@ -8121,7 +8122,7 @@ dependencies = [
 [[package]]
 name = "stylo_derive"
 version = "0.24.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -8133,7 +8134,7 @@ dependencies = [
 [[package]]
 name = "stylo_dom"
 version = "0.24.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "bitflags 2.13.2",
  "stylo_malloc_size_of",
@@ -8142,7 +8143,7 @@ dependencies = [
 [[package]]
 name = "stylo_malloc_size_of"
 version = "0.24.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "app_units",
  "cssparser",
@@ -8161,7 +8162,7 @@ dependencies = [
 [[package]]
 name = "stylo_static_prefs"
 version = "0.24.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "toml",
 ]
@@ -8179,7 +8180,7 @@ dependencies = [
 [[package]]
 name = "stylo_traits"
 version = "0.24.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "app_units",
  "bitflags 2.13.2",
@@ -8384,7 +8385,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8618,7 +8619,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 [[package]]
 name = "to_shmem"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "cssparser",
  "hashbrown 0.17.1",
@@ -8632,7 +8633,7 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.3.0"
-source = "git+https://github.com/DioxusLabs/stylo?rev=c9967c68c95f98979fd4d17feee447201c63abec#c9967c68c95f98979fd4d17feee447201c63abec"
+source = "git+https://github.com/DioxusLabs/stylo?rev=0be88b480f58144879bb51478fb9e298f1d92a07#0be88b480f58144879bb51478fb9e298f1d92a07"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -10036,7 +10037,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=abec906ca8c036e87eee493c99c52e75a893ca72#abec906ca8c036e87eee493c99c52e75a893ca72"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=7fb69188dd02dfb42a19181e2697264bafb4a36e#7fb69188dd02dfb42a19181e2697264bafb4a36e"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
@@ -10109,7 +10110,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

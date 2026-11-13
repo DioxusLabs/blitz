@@ -84,18 +84,6 @@ fn is_gradient(element: &ElementData) -> bool {
             || element.name.local == local_name!("radialGradient"))
 }
 
-/// `href`, which takes precedence over `xlink:href`.
-fn href(element: &ElementData) -> Option<&str> {
-    let attrs = element.attrs();
-    let find = |namespace| {
-        attrs
-            .iter()
-            .find(|a| a.name.local == local_name!("href") && a.name.ns == namespace)
-            .map(|a| a.value.as_str())
-    };
-    find(ns!()).or_else(|| find(ns!(xlink)))
-}
-
 /// A displayed gradient: one with computed styles (not inside a
 /// `display: none` subtree) that is not itself `display: none`.
 fn is_displayed(node: &Node) -> bool {
@@ -152,7 +140,7 @@ impl BaseDocument {
         while chain.len() < MAX_HREF_DEPTH {
             let Some(next) = current
                 .element_data()
-                .and_then(href)
+                .and_then(ElementData::svg_href)
                 .and_then(|href| self.url.resolve_relative(href.trim()))
                 .and_then(|url| self.same_document_id(&url))
                 .and_then(|id| self.get_element_by_id(&id))
