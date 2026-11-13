@@ -148,6 +148,14 @@ jobs:
         if: ${{ startsWith(matrix.platform.os, 'ubuntu') }}
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
 
+      # The skia-binaries prebuilt for Android are built with NDK r30, whose libc++ the runner's default NDK (r27) can't link
+      - name: Use latest Android NDK
+        if: ${{ matrix.platform.target == 'aarch64-linux-android' }}
+        run: |
+          for var in ANDROID_NDK ANDROID_NDK_HOME ANDROID_NDK_ROOT NDK_HOME; do
+            echo "$var=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          done
+
       - name: Bundle browser
         shell: bash
         run: |

@@ -30,7 +30,6 @@ use blitz_traits::devtools::DevtoolSettings;
 
 use style::values::computed::{BorderCornerRadius, ColorOrAuto};
 use style::{
-    dom::TElement,
     properties::{
         ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::Font,
@@ -51,8 +50,8 @@ use taffy::Layout;
 /// An opacity just below 1.0, used to force the renderer to allocate an isolated
 /// buffer for mask and text-clip isolation layers. Renderers (e.g. vello_cpu) may optimize
 /// layers with `Mix::Normal`/`Compose::SrcOver` and an opacity of exactly 1.0 into
-/// plain non-isolated clip layers, in which case the `Compose::DestIn` mask
-/// compositing would erase the backdrop behind the element rather than just the
+/// plain non-isolated clip layers, in which case the mask layer (or `Compose::DestIn`
+/// text-clip layer) would erase the backdrop behind the element rather than just the
 /// element's own content.
 pub(super) const ALMOST_OPAQUE: f32 = 1.0 - f32::EPSILON;
 
@@ -343,9 +342,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         }
         let cx = self.element_cx(node, *node.final_layout(), transform, None);
         let clip = if cx.text_input.is_some() {
-            cx.frame.content_box_path()
+            cx.frame.text_input_clip_shape()
         } else {
-            cx.frame.padding_box_path()
+            cx.frame.padding_box_shape()
         };
         let pushed = self.layer_manager.maybe_push_layer(
             scene,
@@ -426,7 +425,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
-        if node.local_name() == "input" && node.attr(local_name!("type")) == Some("hidden") {
+        if node.data.is_element_with_tag_name(&local_name!("input"))
+            && node.attr(local_name!("type")) == Some("hidden")
+        {
             return;
         }
 
@@ -453,12 +454,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             size,
             border,
             padding,
-            location,
             ..
         } = *node.final_layout();
-        let box_position = Vec2::new(location.x as f64, location.y as f64) * self.scale;
-        let box_size = Size::new(size.width as f64, size.height as f64);
-        let border_box = Rect::from_origin_size(box_position.to_point(), box_size);
+        let box_size = Size::new(
+            size.width as f64 * self.scale,
+            size.height as f64 * self.scale,
+        );
+        let border_box = Rect::from_origin_size(Point::ORIGIN, box_size);
         let scaled_pb = (padding + border).map(f64::from);
         let content_position = kurbo::Point {
             x: scaled_pb.left,
@@ -529,9 +531,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // here matches the clip applied to the content below.
         let child_clip_rect = if should_clip {
             let clip_box = if is_text_input {
-                cx.frame.content_box_path()
+                cx.frame.text_input_clip_shape()
             } else {
-                cx.frame.padding_box_path()
+                cx.frame.padding_box_shape()
             };
             clip_rect.intersect(screen_transform.transform_rect_bbox(clip_box.bounding_box()))
         } else {
@@ -654,9 +656,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
                         let clip = if is_text_input {
-                            &cx.frame.content_box_path()
+                            &cx.frame.text_input_clip_shape()
                         } else {
-                            &cx.frame.padding_box_path()
+                            &cx.frame.padding_box_shape()
                         };
 
                         // Clip layer if box requires clipping. Opacity set to 1.0
@@ -910,7 +912,7 @@ impl ElementCx<'_, '_> {
 
             // Track (only when the author specified a track color)
             if let Some(track_color) = custom_track {
-                let padding_box = self.frame.padding_box;
+                let padding_box = self.frame.padding_box();
                 let track_rect = match axis {
                     AbsoluteAxis::Horizontal => {
                         Rect::new(padding_box.x0, rect.y0, padding_box.x1, rect.y1)
@@ -975,9 +977,11 @@ impl ElementCx<'_, '_> {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
                 });
 
+            // Text keeps its unrounded position; only box edges are snapped to whole pixels.
+            let subpixel_offset = text_layout.content_box_subpixel_offset;
             let pos = Point {
-                x: pos.x,
-                y: pos.y + text_layout.block_offset as f64,
+                x: pos.x + subpixel_offset.x as f64,
+                y: pos.y + subpixel_offset.y as f64 + text_layout.block_offset as f64,
             };
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
@@ -1026,9 +1030,10 @@ impl ElementCx<'_, '_> {
             // For single-line inputs, add an offset to vertically center the text input layout
             // within the content box of it's node.
             let y_offset = self.node.text_input_v_centering_offset(self.scale);
+            let subpixel_offset = input_data.content_box_subpixel_offset;
             let pos = Point {
-                x: pos.x,
-                y: pos.y + y_offset,
+                x: pos.x + subpixel_offset.x as f64,
+                y: pos.y + subpixel_offset.y as f64 + y_offset,
             };
 
             // Apply the scroll offset (stored in CSS pixels, scaled here to device pixels) so
@@ -1093,6 +1098,7 @@ impl ElementCx<'_, '_> {
         if let Some(ListItemLayout {
             marker,
             position: ListItemLayoutPosition::Outside(layout),
+            content_box_subpixel_offset,
         }) = self.list_item
         {
             // Right align and pad the bullet when rendering outside
@@ -1124,8 +1130,8 @@ impl ElementCx<'_, '_> {
             };
 
             let pos = Point {
-                x: pos.x + x_offset as f64,
-                y: pos.y + y_offset as f64,
+                x: pos.x + (content_box_subpixel_offset.x + x_offset) as f64,
+                y: pos.y + (content_box_subpixel_offset.y + y_offset) as f64,
             };
 
             let transform =
@@ -1187,6 +1193,11 @@ impl ElementCx<'_, '_> {
                         x: scroll.x * self.scale,
                         y: scroll.y * self.scale,
                     })
+                } else if let Some(offset) = child.lifted_paint_offset(self.node.id) {
+                    parent_style_transform.pre_translate(kurbo::Vec2 {
+                        x: offset.x as f64 * self.scale,
+                        y: offset.y as f64 * self.scale,
+                    })
                 } else {
                     parent_style_transform
                 };
@@ -1220,12 +1231,13 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let width = self.frame.content_box.width() as f32;
-        let height = self.frame.content_box.height() as f32;
+        let content_box = self.frame.content_box();
+        let width = content_box.width() as f32;
+        let height = content_box.height() as f32;
         let svg_size = svg.tree.size();
 
-        let x = self.frame.content_box.origin().x;
-        let y = self.frame.content_box.origin().y;
+        let x = content_box.origin().x;
+        let y = content_box.origin().y;
 
         // An SVG with an aspect ratio but no natural size is sized by the default sizing
         // algorithm, which for `none` and `scale-down` contains it within the content box.
@@ -1304,10 +1316,11 @@ impl ElementCx<'_, '_> {
 
     fn draw_image(&self, scene: &mut impl PaintScene) {
         if let Some(image) = self.element.raster_image_data() {
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
-            let x = self.frame.content_box.origin().x;
-            let y = self.frame.content_box.origin().y;
+            let content_box = self.frame.content_box();
+            let width = content_box.width() as u32;
+            let height = content_box.height() as u32;
+            let x = content_box.origin().x;
+            let y = content_box.origin().y;
 
             let object_fit = self.style.clone_object_fit();
             let object_position = self.style.get_object_position();
@@ -1358,8 +1371,7 @@ impl ElementCx<'_, '_> {
     #[cfg(feature = "custom-widget")]
     fn draw_custom_widget(&self, scene: &mut impl PaintScene) {
         if let Some(widget_scene) = self.custom_widget_scene {
-            let x = self.frame.content_box.origin().x;
-            let y = self.frame.content_box.origin().y;
+            let Point { x, y } = self.frame.content_box().origin();
             let transform = self.transform.then_translate(Vec2 { x, y });
 
             // TODO: eliminate clone
@@ -1370,13 +1382,14 @@ impl ElementCx<'_, '_> {
     fn draw_sub_document(&self, scene: &mut impl PaintScene) {
         if let Some(sub_doc) = self.element.sub_doc_data().map(|doc| doc.inner()) {
             let scale = self.scale;
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
+            let content_box = self.frame.content_box();
+            let width = content_box.width() as u32;
+            let height = content_box.height() as u32;
 
             // TODO: Support arbitrary transforms of subdocuments
             let translation = self.transform.translation();
-            let initial_x = translation.x + self.frame.content_box.origin().x;
-            let initial_y = translation.y + self.frame.content_box.origin().y;
+            let initial_x = translation.x + content_box.origin().x;
+            let initial_y = translation.y + content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
             let painter = BlitzDomPainter::new(

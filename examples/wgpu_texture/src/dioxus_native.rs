@@ -25,6 +25,7 @@ fn app() -> Element {
     use_effect(move || println!("{:?}", color().components));
 
     rsx!(
+        document::Title { "WGPU Texture" }
         style { {STYLES} }
         div { id: "overlay",
             h2 { "Control Panel" }

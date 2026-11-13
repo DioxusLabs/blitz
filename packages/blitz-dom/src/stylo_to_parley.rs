@@ -21,12 +21,13 @@ pub(crate) mod stylo {
     pub(crate) use style::values::computed::LineBreak;
     pub(crate) use style::values::computed::OverflowWrap;
     pub(crate) use style::values::computed::WordBreak;
+    pub(crate) use style::values::computed::font::FontFamilyList;
     pub(crate) use style::values::computed::font::FontFeatureSettings;
+    pub(crate) use style::values::computed::font::FontOpticalSizing;
     pub(crate) use style::values::computed::font::FontStyle;
     pub(crate) use style::values::computed::font::FontVariantEastAsian;
     pub(crate) use style::values::computed::font::FontVariantLigatures;
     pub(crate) use style::values::computed::font::FontVariantNumeric;
-    pub(crate) use style::values::computed::font::FontVariationSettings;
     pub(crate) use style::values::computed::font::FontWeight;
     pub(crate) use style::values::computed::font::FontWidth;
     pub(crate) use style::values::computed::font::GenericFontFamily;
@@ -57,6 +58,20 @@ pub(crate) fn generic_font_family(input: stylo::GenericFontFamily) -> parley::Ge
         stylo::GenericFontFamily::Fantasy => parley::GenericFamily::Fantasy,
         stylo::GenericFontFamily::SystemUi => parley::GenericFamily::SystemUi,
     }
+}
+
+/// The family to end a `font-family` list with, if any. When none of the listed
+/// families is available, browsers use their default font rather than the
+/// system fallback for the script (CSS 2.1 § 15.5, step 4). Blitz's default font
+/// is the initial value, `serif`. A list that names a generic family always
+/// finds a font, so it needs none.
+pub(crate) fn fallback_font_family(
+    families: &stylo::FontFamilyList,
+) -> Option<parley::GenericFamily> {
+    let names_generic = families
+        .iter()
+        .any(|family| matches!(family, stylo::SingleFontFamily::Generic(_)));
+    (!names_generic).then_some(parley::GenericFamily::Serif)
 }
 
 pub(crate) fn query_font_family(input: &stylo::SingleFontFamily) -> parley::QueryFamily<'_> {
@@ -100,15 +115,28 @@ pub(crate) fn font_style(input: stylo::FontStyle) -> parley::FontStyle {
     }
 }
 
-pub(crate) fn font_variations(input: &stylo::FontVariationSettings) -> Vec<parley::FontVariation> {
-    input
-        .0
-        .iter()
-        .map(|v| parley::FontVariation {
-            tag: parley::Tag::from_bytes(v.tag.0.to_be_bytes()),
-            value: v.value,
-        })
-        .collect()
+/// Converts `font-variation-settings`, adding an `opsz` axis value equal to the font size in CSS
+/// pixels when `font-optical-sizing` is `auto` (as browsers do), unless `opsz` is set explicitly.
+pub(crate) fn font_variations(
+    font_styles: &stylo::Font,
+    font_size: f32,
+) -> Vec<parley::FontVariation> {
+    const OPSZ: parley::Tag = parley::Tag::new(b"opsz");
+    let settings = &font_styles.font_variation_settings.0;
+    let auto_opsz = font_styles.font_optical_sizing == stylo::FontOpticalSizing::Auto
+        && !settings.iter().any(|v| v.tag.0.to_be_bytes() == *b"opsz");
+    let mut variations = Vec::with_capacity(settings.len() + usize::from(auto_opsz));
+    if auto_opsz {
+        variations.push(parley::FontVariation {
+            tag: OPSZ,
+            value: font_size,
+        });
+    }
+    variations.extend(settings.iter().map(|v| parley::FontVariation {
+        tag: parley::Tag::from_bytes(v.tag.0.to_be_bytes()),
+        value: v.value,
+    }));
+    variations
 }
 
 #[inline]
@@ -440,11 +468,11 @@ pub(crate) fn style(
     let font_weight = self::font_weight(font_styles.font_weight);
     let font_style = self::font_style(font_styles.font_style);
     let font_width = self::font_width(font_styles.font_width);
-    let font_variations = self::font_variations(&font_styles.font_variation_settings);
+    let font_variations = self::font_variations(font_styles, font_size);
     let font_features = self::font_features(font_styles);
 
     // Convert font family
-    let families: Vec<_> = font_styles
+    let mut families: Vec<_> = font_styles
         .font_family
         .families
         .list
@@ -476,6 +504,10 @@ pub(crate) fn style(
             }
         })
         .collect();
+    families.extend(
+        self::fallback_font_family(&font_styles.font_family.families)
+            .map(parley::FontFamilyName::Generic),
+    );
 
     // Wrapping and breaking
     let word_break = match itext_styles.word_break {
@@ -520,6 +552,7 @@ pub(crate) fn style(
         overflow_wrap,
         word_break,
         line_break,
+        collapsed_space: Default::default(),
 
         // Contains NodeId
         brush: TextBrush::from_id(span_id),

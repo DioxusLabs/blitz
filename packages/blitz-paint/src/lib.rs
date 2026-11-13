@@ -13,6 +13,7 @@ mod layers;
 mod render;
 mod sizing;
 mod text;
+mod text_decorations;
 
 use std::collections::HashMap;
 

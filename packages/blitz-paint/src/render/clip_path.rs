@@ -76,18 +76,22 @@ impl ElementCx<'_, '_> {
                 width: self.frame.border_box.width() / self.scale,
                 height: self.frame.border_box.height() / self.scale,
             },
-            ShapeGeometryBox::ShapeBox(ShapeBox::PaddingBox) => ReferenceBox {
-                x: self.frame.border_width.x0 / self.scale,
-                y: self.frame.border_width.y0 / self.scale,
-                width: self.frame.padding_box.width() / self.scale,
-                height: self.frame.padding_box.height() / self.scale,
-            },
+            ShapeGeometryBox::ShapeBox(ShapeBox::PaddingBox) => {
+                let padding_box = self.frame.padding_box();
+                ReferenceBox {
+                    x: self.frame.border_width.x0 / self.scale,
+                    y: self.frame.border_width.y0 / self.scale,
+                    width: padding_box.width() / self.scale,
+                    height: padding_box.height() / self.scale,
+                }
+            }
             ShapeGeometryBox::FillBox | ShapeGeometryBox::ShapeBox(ShapeBox::ContentBox) => {
+                let content_box = self.frame.content_box();
                 ReferenceBox {
                     x: (self.frame.border_width.x0 + self.frame.padding_width.x0) / self.scale,
                     y: (self.frame.border_width.y0 + self.frame.padding_width.y0) / self.scale,
-                    width: self.frame.content_box.width() / self.scale,
-                    height: self.frame.content_box.height() / self.scale,
+                    width: content_box.width() / self.scale,
+                    height: content_box.height() / self.scale,
                 }
             }
             ShapeGeometryBox::ShapeBox(ShapeBox::MarginBox) => {

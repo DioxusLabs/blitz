@@ -1,0 +1,42 @@
+[package]
+name = "blitz-vibey-cdp-server"
+description = "Chrome DevTools Protocol server implementation"
+documentation = "https://docs.rs/blitz-vibey-cdp-server"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+
+[features]
+default = ["embedded-frontend"]
+# Embed a DevTools frontend (about 2 MB) and serve it, so that `frontend_url`
+# is a local URL that browsers such as Chrome and Firefox can open. Without it,
+# `frontend_url` is a `devtools://` URL to Chrome's own frontend, which only
+# Chrome can open.
+embedded-frontend = ["dep:blitz-chrome-devtools-frontend"]
+
+[dependencies]
+# Blitz dependencies
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true, features = ["devtools"] }
+blitz-chrome-devtools-frontend = { workspace = true, optional = true }
+
+# Style / layout dependencies
+style = { workspace = true }
+cssparser = { workspace = true }
+
+# Networking dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+tungstenite = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+blitz-html = { workspace = true }
+# Text must be laid out with real fonts for inline fragment geometry to be non-zero
+blitz-dom = { workspace = true, features = ["system-fonts"] }
+tungstenite = { workspace = true }
