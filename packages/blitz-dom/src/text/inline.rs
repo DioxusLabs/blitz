@@ -424,6 +424,44 @@ impl LineExclusions for NoLineExclusions {
     }
 }
 
+/// `exclusions`, which measures in CSS pixels, asked by a backend that breaks lines in device
+/// pixels: every question and answer is scaled on the way through.
+pub(crate) struct DeviceExclusions<'a, E> {
+    pub(crate) exclusions: &'a mut E,
+    /// Device pixels a CSS pixel.
+    pub(crate) scale: f32,
+}
+
+impl<E: LineExclusions> LineExclusions for DeviceExclusions<'_, E> {
+    fn slot(&self, top: f32, height: f32, search: SlotSearch) -> LineSlot {
+        let scale = self.scale;
+        let slot = self.exclusions.slot(top / scale, height / scale, search);
+        LineSlot {
+            top: slot.top * scale,
+            left: slot.left * scale,
+            width: slot.width * scale,
+            height: slot.height * scale,
+            segment: slot.segment,
+        }
+    }
+
+    fn place(&mut self, float: FloatRequest) -> PlacedFloat {
+        let scale = self.scale;
+        let placed = self.exclusions.place(FloatRequest {
+            inline_size: float.inline_size / scale,
+            block_size: float.block_size / scale,
+            block_start: float.block_start / scale,
+            ..float
+        });
+        PlacedFloat {
+            left: placed.left * scale,
+            right: placed.left * scale + float.inline_size,
+            top: placed.top * scale,
+            bottom: placed.top * scale + float.block_size,
+        }
+    }
+}
+
 /// The room a line has beside the floats, in CSS pixels from the content box's top left.
 #[cfg_attr(not(feature = "floats"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq)]
