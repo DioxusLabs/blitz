@@ -62,6 +62,7 @@ mod pseudo_element_update;
 mod rem_after_viewport_change;
 mod render_blocking_stylesheet;
 mod resize_restyle;
+mod reversed_list;
 mod rotate_z_axis;
 mod scale_change_overflow;
 mod scoped_query_selector;
