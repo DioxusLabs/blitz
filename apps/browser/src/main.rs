@@ -94,7 +94,13 @@ fn main() {
             Box::new(initial_url_ctx.clone()) as Box<dyn std::any::Any>
         })];
 
-    dioxus_native::launch_cfg(app, contexts, vec![Box::new(window_attributes)])
+    // The toolbar handles the devtools shortcuts itself, to inspect the active
+    // tab rather than the browser UI
+    let config = dioxus_native::Config::new()
+        .with_window_attributes(window_attributes)
+        .with_devtools_shortcuts([]);
+
+    dioxus_native::launch_cfg(app, contexts, vec![Box::new(config)])
 }
 
 fn app() -> Element {
@@ -170,6 +176,7 @@ fn app() -> Element {
             id: "frame",
             style: "--safe-area-top: {TOP_PAD}; padding-top: {TOP_PAD}; padding-bottom: {BOTTOM_PAD};",
             class: if IS_MOBILE { "mobile" } else { "" },
+            onmounted: set_devtools_title,
             title { "{window_title}" }
             document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
             TabStrip {
@@ -198,4 +205,16 @@ fn app() -> Element {
             StatusBar { tabs, active_tab_id }
         }
     )
+}
+
+/// Name the browser UI's document in devtools: its `<title>` is the active
+/// tab's title (for the window titlebar), which would make it look like the page
+#[allow(unused_variables)]
+fn set_devtools_title(evt: Event<MountedData>) {
+    #[cfg(feature = "devtools")]
+    if let Some(handle) = evt.downcast::<NodeHandle>() {
+        handle
+            .doc_mut()
+            .set_devtools_title(Some("Blitz Browser UI".to_string()));
+    }
 }

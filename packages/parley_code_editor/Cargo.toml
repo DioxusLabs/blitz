@@ -1,0 +1,46 @@
+[package]
+name = "parley_code_editor"
+description = "A code editing control built on floem-editor-core, Parley and AnyRender"
+version = "0.1.0"
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+default = ["system-fonts", "syntaxmate"]
+system-fonts = ["parley/system"]
+# Syntax highlighting with TextMate grammars, through the `SyntaxHighlighter` trait
+syntaxmate = ["dep:syntaxmate"]
+
+[dependencies]
+# Editing model (rope, selections, undo, edit commands) from Lapce/Floem
+floem-editor-core = { git = "https://github.com/lapce/floem", rev = "1351ffb162faeb8be983f1301d718a0d5fb59c27" }
+
+# Linebender dependencies
+parley = { workspace = true, features = ["bytemuck"] }
+peniko = { workspace = true }
+kurbo = { workspace = true }
+anyrender = { workspace = true }
+
+# Other dependencies
+bytemuck = { workspace = true }
+# Pinned exactly: young, single-maintainer crate. Review the diff before upgrading.
+syntaxmate = { version = "=0.3.0", default-features = false, features = ["bundled-grammars", "bundled-themes"], optional = true }
+
+[dev-dependencies]
+winit = { workspace = true }
+anyrender_vello = { workspace = true }
+anyrender_vello_cpu = { workspace = true, features = ["softbuffer_window_renderer", "multithreading"] }
+png = { workspace = true }
+
+[[example]]
+name = "editor"
+required-features = ["syntaxmate"]
+
+[[example]]
+name = "screenshot"
+required-features = ["syntaxmate"]

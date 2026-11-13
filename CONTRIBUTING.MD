@@ -62,7 +62,7 @@ a dialog to actually open:
 
 
 ### VSCode
-You can add the following JSON to your `.vscode/settings.json` to automically build Blitz on all supported targets.
+You can add the following JSON to your `.vscode/settings.json` to automatically build Blitz on all supported targets.
 ```json
 {
     "rust-analyzer.check.features": "all",
