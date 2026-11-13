@@ -4,8 +4,8 @@
 //! its subtree as live DOM nodes styled by Stylo. SVG layout
 //! (`blitz_dom::svg`) has already resolved each element's transform, geometry
 //! and stroke; painting walks the subtree, reads those results and the paint
-//! properties from computed styles. Patterns, `<use>`,
-//! `<image>`, markers, clipping, masking and filters are not painted yet.
+//! properties from computed styles. Patterns, `<use>`, markers and filters
+//! are not painted yet.
 
 use anyrender::{MaskMode, PaintScene};
 use blitz_dom::node::{ImageData, Node};
@@ -253,12 +253,12 @@ impl ElementCx<'_, '_> {
             SvgLayoutKind::Image {
                 image,
                 image_transform,
-                viewport,
                 clip,
+                ..
             } => {
                 if style.get_inherited_box().visibility == Visibility::Visible {
-                    if *clip {
-                        scene.push_clip_layer(Fill::NonZero, transform, viewport);
+                    if let Some(clip) = clip {
+                        scene.push_clip_layer(Fill::NonZero, transform, clip);
                     }
                     let image_transform = transform * *image_transform;
                     match image {
@@ -274,7 +274,7 @@ impl ElementCx<'_, '_> {
                         }
                         ImageData::None => {}
                     }
-                    if *clip {
+                    if clip.is_some() {
                         scene.pop_layer();
                     }
                 }

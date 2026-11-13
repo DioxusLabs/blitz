@@ -143,8 +143,11 @@ pub enum SvgLayoutKind {
         /// The image viewport (`x`, `y`, `width`, `height`) in user space,
         /// which is also its bounding box.
         viewport: Rect,
-        /// Whether `overflow` clips the image to its viewport.
-        clip: bool,
+        /// The rectangle (in user space) the image is clipped to, if its
+        /// content can reach outside it: the viewport, when `overflow` clips
+        /// and the image overflows it (`slice`), and an SVG image's own
+        /// viewport, which always clips its content.
+        clip: Option<Rect>,
     },
 }
 
@@ -422,9 +425,7 @@ impl BaseDocument {
         let was_rendered = existing.is_some_and(|l| !matches!(l.kind, SvgLayoutKind::NotRendered));
         let style = node.svg_style();
         let mut layout = if dirty {
-            let image = (element.name.local == local_name!("image"))
-                .then(|| self.svg_image(element))
-                .flatten();
+            let image = self.svg_images.get(&id);
             let mut layout = match &style {
                 Some(style) => layout_own(element, style, viewport, image),
                 None => SvgLayout::not_rendered(),
@@ -436,7 +437,10 @@ impl BaseDocument {
         } else {
             existing.cloned().unwrap()
         };
-        let undisplayed = dirty && style.is_some_and(|style| style.clone_display().is_none());
+        // The `<clipPath>` and `<mask>` elements inside a `display: none` element
+        // are laid out again when it or any of its descendants is damaged (an
+        // `<image>` inside one has loaded, ...).
+        let undisplayed = style.is_some_and(|style| style.clone_display().is_none());
 
         // Children are laid out again from scratch when this element's
         // viewport may have changed, or when it was not rendered before (its
@@ -508,20 +512,6 @@ impl BaseDocument {
             element.special_data = SpecialElementData::SvgNode(Box::new(layout));
         }
         result
-    }
-
-    /// The loaded raster image an `<image>` element's `href` points to.
-    /// Images load through the document's image cache, which notifies the
-    /// element (with damage) when its image arrives.
-    fn svg_image(&self, element: &ElementData) -> Option<&ImageData> {
-        let href = paint_server::href(element)?;
-        if href.is_empty() {
-            return None;
-        }
-        let url = self.resolve_url(href)?;
-        self.image_cache
-            .get(url.as_str())
-            .filter(|image| !matches!(image, ImageData::None))
     }
 
     /// Lay out the `<clipPath>` and `<mask>` elements inside `id`, a
@@ -748,12 +738,24 @@ fn image_layout(
     // `<image>`'s.
     let image_transform = Affine::translate((x, y))
         * svg_to_affine(dims.viewport_transform(width as f32, height as f32));
+    let viewport = Rect::new(x, y, x + width, y + height);
+    let content = image_transform.transform_rect_bbox(Rect::new(0.0, 0.0, cw, ch));
     let box_style = style.get_box();
+    let overflow_clips =
+        box_style.overflow_x != Overflow::Visible || box_style.overflow_y != Overflow::Visible;
+    // A raster image draws nothing outside its own rectangle.
+    let content_clips = !matches!(image, ImageData::Raster(_));
+    let overflows = !viewport.inflate(1e-3, 1e-3).contains_rect(content);
+    let clip = match (overflow_clips && overflows, content_clips) {
+        (true, true) => Some(viewport.intersect(content)),
+        (true, false) => Some(viewport),
+        (false, true) => Some(content),
+        (false, false) => None,
+    };
     SvgLayoutKind::Image {
         image: image.clone(),
         image_transform,
-        viewport: Rect::new(x, y, x + width, y + height),
-        clip: box_style.overflow_x != Overflow::Visible
-            || box_style.overflow_y != Overflow::Visible,
+        viewport,
+        clip,
     }
 }

@@ -1757,3 +1757,198 @@ fn image_href_change_loads_the_new_image() {
     doc.resolve(0.0);
     assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
 }
+
+/// Records every request and serves the named files, holding the responses
+/// until `flush` when `hold` is set.
+struct RecordingNet {
+    files: Vec<(&'static str, &'static [u8])>,
+    hold: bool,
+    pending: std::sync::Mutex<Vec<(String, Box<dyn blitz_traits::net::NetHandler>)>>,
+    urls: std::sync::Mutex<Vec<String>>,
+}
+
+impl RecordingNet {
+    fn new(files: &[(&'static str, &'static [u8])], hold: bool) -> Arc<Self> {
+        Arc::new(Self {
+            files: files.to_vec(),
+            hold,
+            pending: Default::default(),
+            urls: Default::default(),
+        })
+    }
+
+    fn deliver(&self, url: String, handler: Box<dyn blitz_traits::net::NetHandler>) {
+        let name = url.rsplit('/').next().unwrap();
+        match self.files.iter().find(|(file, _)| *file == name) {
+            Some((_, bytes)) => handler.bytes(url, bytes.to_vec().into()),
+            None => handler.error(url, "404".into()),
+        }
+    }
+
+    fn flush(&self) {
+        for (url, handler) in std::mem::take(&mut *self.pending.lock().unwrap()) {
+            self.deliver(url, handler);
+        }
+    }
+
+    fn urls(&self) -> Vec<String> {
+        self.urls.lock().unwrap().clone()
+    }
+}
+
+struct RecordingNetProvider(Arc<RecordingNet>);
+
+impl blitz_traits::net::NetProvider for RecordingNetProvider {
+    fn fetch(
+        &self,
+        _doc_id: usize,
+        request: blitz_traits::net::Request,
+        handler: Box<dyn blitz_traits::net::NetHandler>,
+    ) {
+        let url = request.url.to_string();
+        self.0.urls.lock().unwrap().push(url.clone());
+        if self.0.hold {
+            self.0.pending.lock().unwrap().push((url, handler));
+        } else {
+            self.0.deliver(url, handler);
+        }
+    }
+}
+
+fn load_with_net(body: &str, net: &Arc<RecordingNet>) -> HtmlDocument {
+    let html = format!(r#"<html><body style="margin:0; background:#00f">{body}</body></html>"#);
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            base_url: Some("http://example.com/".to_string()),
+            viewport: Some(Viewport::new(W, H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            net_provider: Some(Arc::new(RecordingNetProvider(net.clone()))),
+            native_svg: Some(true),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc
+}
+
+#[test]
+fn image_paints_once_it_arrives() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], true);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+    net.flush();
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}
+
+#[test]
+fn late_image_in_a_mask_inside_display_none_paints() {
+    let net = RecordingNet::new(&[("w.png", WHITE_1X1_PNG)], true);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100">
+            <g style="display:none"><mask id="m"><image href="w.png" width="100" height="100"/></mask></g>
+            <rect width="100" height="100" fill="lime" mask="url(#m)"/>
+        </svg>"#,
+        &net,
+    );
+    net.flush();
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}
+
+#[test]
+fn removing_href_falls_back_to_xlink_href() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG), ("w.png", WHITE_1X1_PNG)], false);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" xlink:href="w.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().clear_attribute(id, attr("href"));
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), [255, 255, 255]);
+}
+
+#[test]
+fn removing_the_only_href_removes_the_image() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().clear_attribute(id, attr("href"));
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+}
+
+#[test]
+fn image_ignores_a_fragment_href_and_fetches_each_url_once() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    load_with_net(
+        r##"<svg width="100" height="100"><image href="#x" width="10" height="10"/><image href="" width="10" height="10"/><image href="a.png" width="10" height="10"/><image href="a.png" width="10" height="10"/></svg>"##,
+        &net,
+    );
+    assert_eq!(net.urls(), ["http://example.com/a.png"]);
+}
+
+/// A 50x50 SVG image with lime inside its viewport and red outside it.
+const OVERFLOWING_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" fill="lime"/><rect x="50" width="50" height="100" fill="red"/></svg>"#;
+
+#[test]
+fn svg_image_is_clipped_to_its_own_viewport() {
+    for overflow in ["hidden", "visible"] {
+        let net = RecordingNet::new(&[("s.svg", OVERFLOWING_SVG)], false);
+        let mut doc = load_with_net(
+            &format!(
+                r#"<svg width="100" height="100"><image href="s.svg" width="50" height="50" style="overflow:{overflow}"/></svg>"#
+            ),
+            &net,
+        );
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 25, 25), LIME, "overflow: {overflow}");
+        assert_eq!(pixel(&buf, 75, 25), BLUE, "overflow: {overflow}");
+    }
+}
+
+#[test]
+fn sliced_image_is_clipped_unless_overflow_is_visible() {
+    for (overflow, outside) in [("hidden", BLUE), ("visible", LIME)] {
+        let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+        let mut doc = load_with_net(
+            &format!(
+                r#"<svg width="100" height="100"><image href="a.png" x="25" y="25" width="50" height="50" preserveAspectRatio="xMidYMid slice" style="overflow:{overflow}"/></svg>"#
+            ),
+            &net,
+        );
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 50, 50), LIME, "overflow: {overflow}");
+        assert_eq!(pixel(&buf, 10, 50), outside, "overflow: {overflow}");
+    }
+}
+
+#[test]
+fn fitted_raster_image_needs_no_clip() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    let doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" width="100" height="100"/></svg>"#,
+        &net,
+    );
+    let id = doc.get_element_by_id("i").unwrap();
+    let layout = doc
+        .get_node(id)
+        .unwrap()
+        .element_data()
+        .unwrap()
+        .svg_layout()
+        .unwrap();
+    assert!(matches!(
+        layout.kind,
+        blitz_dom::svg::SvgLayoutKind::Image { clip: None, .. }
+    ));
+}
