@@ -31,15 +31,6 @@ pub struct TextLayout {
     source_map: source_map::SourceMap,
     /// Parley's layout of the text and inline boxes, which the renderer paints.
     pub layout: parley::Layout<TextBrush>,
-    /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
-    /// box, as applied by `align-content`.
-    pub(crate) block_offset: f32,
-    /// The offset (in CSS px) between the content box's unrounded and rounded positions.
-    pub content_box_subpixel_offset: taffy::Point<f32>,
-    /// The out-of-flow positions for which some inline span with an inline box below it is a
-    /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
-    /// Set by each `RunMode::PerformLayout` run of inline layout.
-    pub(crate) span_cb_flags: stylo_taffy::StyleFlags,
     /// The floats, as the lines place them: each one's node, side, `clear` and margin box's size in device
     /// pixels.
     floats: Vec<(u64, FloatSide, FloatClear, f32, f32)>,
@@ -60,11 +51,6 @@ impl InlineText for TextLayout {
     #[inline]
     fn scale(&self) -> f32 {
         self.layout.scale()
-    }
-
-    #[inline]
-    fn block_offset(&self) -> f32 {
-        self.block_offset
     }
 
     #[inline]
@@ -195,12 +181,12 @@ impl InlineText for TextLayout {
 
     fn first_baseline(&self) -> Option<f32> {
         let line = self.layout.lines().next()?;
-        Some(line.metrics().baseline / self.layout.scale() + self.block_offset)
+        Some(line.metrics().baseline / self.layout.scale())
     }
 
     fn hit_test(&self, x: f32, y: f32, exact: bool) -> Option<InlineTextHit> {
         let layout = &self.layout;
-        let point = (x * layout.scale(), (y - self.block_offset) * layout.scale());
+        let point = (x * layout.scale(), y * layout.scale());
         let (cluster, side) = if exact {
             Cluster::from_point_exact(layout, point.0, point.1)?
         } else {
@@ -259,7 +245,7 @@ impl InlineText for TextLayout {
         let root_layout = root.unrounded_layout();
         let content_box_inset = root_layout.padding + root_layout.border;
         let origin_x = content_box_inset.left;
-        let origin_y = content_box_inset.top + self.block_offset;
+        let origin_y = content_box_inset.top;
 
         fn union(acc: &mut Option<taffy::Rect<f32>>, left: f32, top: f32, right: f32, bottom: f32) {
             *acc = Some(match *acc {

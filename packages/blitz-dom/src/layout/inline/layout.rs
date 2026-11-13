@@ -442,7 +442,7 @@ impl LayoutPassState<'_> {
         let known_dimensions = inputs.known_dimensions;
 
         // Short circuit if inline context contains no text or inline boxes
-        if !collapses_through && inline_layout.is_empty() {
+        if !collapses_through && inline_layout.backend.is_empty() {
             self.put_inline_layout(node_id, inline_layout);
             return LayoutOutput::from_outer_size(
                 Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
@@ -466,7 +466,7 @@ impl LayoutPassState<'_> {
             ..child_inputs
         };
         let sizes = self.measure_inline_boxes(node_id, child_inputs, pass);
-        inline_layout.prepare(
+        inline_layout.backend.prepare(
             &sizes,
             self.nodes[node_id]
                 .primary_styles()
@@ -479,7 +479,7 @@ impl LayoutPassState<'_> {
             .width
             .map(|w| (w * scale) - pbw)
             .unwrap_or_else(|| {
-                let widths = inline_layout.content_widths();
+                let widths = inline_layout.backend.content_widths();
                 let computed_width = match available_space.width {
                     AvailableSpace::MinContent => widths.min.max(widths.float_min),
                     AvailableSpace::MaxContent => widths.max,
@@ -548,7 +548,7 @@ impl LayoutPassState<'_> {
         #[cfg(feature = "floats")]
         let float_mark = block_ctx.float_mark();
         #[cfg(feature = "floats")]
-        inline_layout.break_lines(
+        inline_layout.backend.break_lines(
             width,
             pbw,
             style.as_deref(),
@@ -558,10 +558,12 @@ impl LayoutPassState<'_> {
             },
         );
         #[cfg(not(feature = "floats"))]
-        inline_layout.break_lines(width, pbw, style.as_deref(), &mut NoLineExclusions);
+        inline_layout
+            .backend
+            .break_lines(width, pbw, style.as_deref(), &mut NoLineExclusions);
         drop(style);
 
-        let extent = inline_layout.extent();
+        let extent = inline_layout.backend.extent();
         #[cfg_attr(not(feature = "floats"), allow(unused_mut))]
         let mut height = extent.height;
 
@@ -615,14 +617,14 @@ impl LayoutPassState<'_> {
                 final_size.height - content_box_inset.vertical_axis_sum() - measured_size.height;
             taffy::compute_block_align_content_offset(align_content, free_space)
         };
-        inline_layout.set_block_offset(block_offset);
+        inline_layout.block_offset = block_offset;
         let line_box_top = container_pb.top + block_offset;
 
         // Store sizes and positions of inline boxes. A pass that only sizes the block places
         // nothing.
         let mut span_cb_flags = StyleFlags::empty();
         let placements = (pass == Measure::Layout)
-            .then(|| inline_layout.placements())
+            .then(|| inline_layout.backend.placements())
             .into_iter()
             .flatten()
             .enumerate();

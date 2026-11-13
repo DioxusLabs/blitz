@@ -5,7 +5,8 @@ use anyrender::filters::{Filter, FilterEffect};
 use blitz_dom::node::Marker;
 use blitz_dom::text::InlineText as _;
 use blitz_dom::text::parley::parley::{GlyphRun, Line, PositionedLayoutItem};
-use blitz_dom::text::parley::{MarkerLayout, TextBrush, TextEditor, TextLayout};
+use blitz_dom::node::TextLayout;
+use blitz_dom::text::parley::{MarkerLayout, TextBrush, TextEditor};
 use blitz_dom::{BaseDocument, CopyStyleGetters, NodeId};
 use kurbo::{Affine, Point, Rect};
 use peniko::{Fill, Mix};
@@ -38,7 +39,7 @@ pub(crate) fn paint_inline_layout(
 ) {
     // Render inline element backgrounds (e.g. `<span style="background: ...">`)
     // behind the text and selection highlight.
-    draw_inline_backgrounds(scene, text_layout.layout.lines(), doc, transform, root);
+    draw_inline_backgrounds(scene, text_layout.backend.layout.lines(), doc, transform, root);
 
     // Render text selection highlight (if any) using cached selection ranges
     if let Some((sel_start, sel_end)) = selection {
@@ -48,7 +49,7 @@ pub(crate) fn paint_inline_layout(
     // Render text
     stroke_text(
         scene,
-        text_layout.layout.lines(),
+        text_layout.backend.layout.lines(),
         doc,
         transform,
         options,
@@ -188,7 +189,7 @@ pub(crate) fn paint_inline_text(
 ) {
     stroke_text(
         scene,
-        text_layout.layout.lines(),
+        text_layout.backend.layout.lines(),
         doc,
         transform,
         options,

@@ -6,8 +6,104 @@ use kurbo::Rect;
 use super::{TextContext, backend};
 use crate::node::{InlineContent, InlineTextHit, Node};
 
-/// An inline formatting context, as the text backend lays it out.
-pub type TextLayout = backend::TextLayout;
+/// An inline formatting context: the text backend's layout of its lines, and where Blitz put
+/// them in the inline root's content box.
+///
+/// Its [`InlineText`] reads are relative to the inline root's content box, where the backend's
+/// are relative to the top of its lines.
+#[derive(Clone, Debug, Default)]
+pub struct TextLayout {
+    /// The lines, as the text backend lays them out.
+    pub backend: backend::TextLayout,
+    /// How far `align-content` moves the line boxes down the content box, in CSS pixels.
+    pub(crate) block_offset: f32,
+    /// The offset (in CSS px) between the content box's unrounded and rounded positions.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
+    /// The out-of-flow positions for which some inline span with an inline box below it is a
+    /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
+    /// Set by each `RunMode::PerformLayout` run of inline layout.
+    pub(crate) span_cb_flags: stylo_taffy::StyleFlags,
+}
+
+impl TextLayout {
+    /// How far `align-content` moves the line boxes down the content box, in CSS pixels.
+    #[inline]
+    pub fn block_offset(&self) -> f32 {
+        self.block_offset
+    }
+
+    /// Builds the content of each inline formatting context in `layouts` from the DOM: see
+    /// [`InlineLayoutEngine::build_layouts`].
+    pub(crate) fn build_layouts(
+        cx: &mut TextContext,
+        nodes: &crate::NodeTree,
+        scale: f32,
+        layouts: &mut [(NodeId, Box<Self>)],
+    ) {
+        let mut backends: Vec<_> = layouts
+            .iter_mut()
+            .map(|(node_id, layout)| (*node_id, &mut layout.backend))
+            .collect();
+        backend::TextLayout::build_layouts(cx, nodes, scale, &mut backends);
+    }
+}
+
+impl InlineText for TextLayout {
+    #[inline]
+    fn scale(&self) -> f32 {
+        self.backend.scale()
+    }
+
+    #[inline]
+    fn text(&self) -> &str {
+        self.backend.text()
+    }
+
+    #[inline]
+    fn text_len(&self) -> usize {
+        self.backend.text_len()
+    }
+
+    fn selected_text(&self, start: usize, end: usize) -> impl Iterator<Item = &str> {
+        self.backend.selected_text(start, end)
+    }
+
+    fn logical_content(&self) -> impl Iterator<Item = InlineContent> {
+        self.backend.logical_content()
+    }
+
+    #[inline]
+    fn source_offset(&self, node_id: NodeId, offset: usize) -> Option<usize> {
+        self.backend.source_offset(node_id, offset)
+    }
+
+    fn first_baseline(&self) -> Option<f32> {
+        Some(self.backend.first_baseline()? + self.block_offset)
+    }
+
+    fn hit_test(&self, x: f32, y: f32, exact: bool) -> Option<InlineTextHit> {
+        self.backend.hit_test(x, y - self.block_offset, exact)
+    }
+
+    fn for_each_selection_rect(&self, start: usize, end: usize, f: impl FnMut(Rect)) {
+        self.backend.for_each_selection_rect(start, end, f);
+    }
+
+    fn fragment_rects(&self, root: &Node, node: &Node) -> impl Iterator<Item = taffy::Rect<f32>> {
+        let offset = self.block_offset;
+        self.backend
+            .fragment_rects(root, node)
+            .map(move |rect| taffy::Rect {
+                top: rect.top + offset,
+                bottom: rect.bottom + offset,
+                ..rect
+            })
+    }
+
+    fn debug_print(&self) {
+        self.backend.debug_print();
+    }
+}
 
 /// An outside list marker, as the text backend lays it out.
 pub type MarkerLayout = backend::MarkerLayout;
@@ -19,9 +115,6 @@ pub type MarkerLayout = backend::MarkerLayout;
 pub trait InlineText: Default + Clone + std::fmt::Debug {
     /// Device pixels per CSS pixel that the layout was built at.
     fn scale(&self) -> f32;
-
-    /// How far `align-content` moves the line boxes down the content box, in CSS pixels.
-    fn block_offset(&self) -> f32;
 
     /// The laid-out text, which the layout's byte offsets index.
     fn text(&self) -> &str;
@@ -43,21 +136,22 @@ pub trait InlineText: Default + Clone + std::fmt::Debug {
     fn source_offset(&self, node_id: NodeId, offset: usize) -> Option<usize>;
 
     /// The baseline of the first line, in CSS pixels below the top of the inline root's content
-    /// box, or `None` where the layout has no lines.
+    /// box (of the lines, for a backend's layout), or `None` where the layout has no lines.
     fn first_baseline(&self) -> Option<f32>;
 
     /// The text position at physical CSS-pixel coordinates relative to the inline root's content
-    /// box. `exact` requires the point to be within a line and its text.
+    /// box (to the top of the lines, for a backend's layout). `exact` requires the point to be
+    /// within a line and its text.
     fn hit_test(&self, x: f32, y: f32, exact: bool) -> Option<InlineTextHit>;
 
     /// Calls `f` with each rectangle that highlights the text between `start` and `end`, in
-    /// device pixels relative to the inline root's content box moved down by
-    /// [`block_offset`](Self::block_offset).
+    /// device pixels relative to the top of the lines: the inline root's content box moved down
+    /// by [`TextLayout::block_offset`].
     fn for_each_selection_rect(&self, start: usize, end: usize, f: impl FnMut(Rect));
 
     /// The boxes `node`, a non-atomic inline element inside the inline root `root`, has on each
-    /// line, first line first, in CSS pixels relative to `root`'s border box, computed as they are
-    /// walked.
+    /// line, first line first, in CSS pixels relative to `root`'s border box (moved down to the
+    /// top of the lines, for a backend's layout), computed as they are walked.
     fn fragment_rects(&self, root: &Node, node: &Node) -> impl Iterator<Item = taffy::Rect<f32>>;
 
     /// Prints the layout's lines and what they hold, for debugging.
@@ -140,7 +234,7 @@ pub(crate) trait InlineLayoutEngine: InlineText {
         cx: &mut TextContext,
         nodes: &crate::NodeTree,
         scale: f32,
-        layouts: &mut [(NodeId, Box<Self>)],
+        layouts: &mut [(NodeId, &mut Self)],
     );
 
     /// Whether the content holds no text and no inline boxes.
@@ -172,9 +266,6 @@ pub(crate) trait InlineLayoutEngine: InlineText {
     /// Returns how far the lines reach and where their baselines are, in device pixels from the
     /// content box's top.
     fn extent(&self) -> LinesExtent;
-
-    /// Sets how far `align-content` moves the line boxes down the content box, in CSS pixels.
-    fn set_block_offset(&mut self, offset: f32);
 
     /// Returns where the lines put each inline box, in the order they are on the lines.
     fn placements(&self) -> impl Iterator<Item = Placement>;

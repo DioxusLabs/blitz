@@ -24,7 +24,6 @@ use anyrender::{PaintScene, Scene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, NodeData, RasterImageData, TextInputData, TextNodeData,
 };
-use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, ElementData, Node, NodeId, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
