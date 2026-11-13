@@ -9,7 +9,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["accesskit_unix", "async-io"]
+default = ["accesskit_unix", "tokio"]
 async-io = ["accesskit_unix/async-io"]
 tokio = ["accesskit_unix/tokio"]
 
