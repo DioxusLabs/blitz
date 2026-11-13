@@ -1502,6 +1502,7 @@ fn clip_and_mask_bench() {
             let mut buf = Vec::new();
             let mut frame = |doc: &mut HtmlDocument| {
                 buf.clear();
+                renderer.reset();
                 renderer.render_to_vec(
                     |scene| paint_scene(scene, doc.as_mut(), 1.0, BENCH_W, BENCH_H, 0, 0),
                     &mut buf,
@@ -1951,4 +1952,156 @@ fn fitted_raster_image_needs_no_clip() {
         layout.kind,
         blitz_dom::svg::SvgLayoutKind::Image { clip: None, .. }
     ));
+}
+
+/// The bounding box `(x0, y0, x1, y1)` of the pixels that aren't background.
+fn ink_box(buffer: &[u8]) -> Option<(usize, usize, usize, usize)> {
+    let mut ink: Option<(usize, usize, usize, usize)> = None;
+    for y in 0..H as usize {
+        for x in 0..W as usize {
+            if pixel(buffer, x, y) != BLUE {
+                ink = Some(ink.map_or((x, y, x, y), |(x0, y0, x1, y1)| {
+                    (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
+                }));
+            }
+        }
+    }
+    ink
+}
+
+/// Asserts `grouped` paints as far as `ungrouped`, allowing a pixel of faint
+/// antialiasing lost to the group's opacity.
+fn assert_not_clipped(grouped: &str, ungrouped: &str) {
+    let grouped = ink_box(&render(&mut load(grouped, true))).expect("grouped ink");
+    let ungrouped = ink_box(&render(&mut load(ungrouped, true))).expect("ungrouped ink");
+    assert!(
+        grouped.0 <= ungrouped.0 + 1
+            && grouped.1 <= ungrouped.1 + 1
+            && grouped.2 + 1 >= ungrouped.2
+            && grouped.3 + 1 >= ungrouped.3,
+        "group layer clipped its content: {grouped:?} vs {ungrouped:?}"
+    );
+}
+
+/// An `a` with 14 stacked acute accents, reaching far above its line.
+const STACKED_MARKS: &str = "a\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}";
+
+#[test]
+fn group_opacity_does_not_clip_stacked_combining_marks() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><g opacity="{opacity}"><text x="10" y="95" font-size="20" fill="red">{STACKED_MARKS}</text></g></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn group_opacity_does_not_clip_a_wide_text_stroke() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><text opacity="{opacity}" x="40" y="55" font-size="20" font-style="italic" stroke="red" stroke-width="60" stroke-linejoin="round" fill="none">jf</text></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn tspan_opacity_does_not_clip_stacked_combining_marks() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><text x="10" y="95" font-size="12" fill="red"><tspan opacity="{opacity}">{STACKED_MARKS}</tspan></text></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn root_clip_still_clips_text_overflowing_the_svg() {
+    let mut doc = load(
+        &format!(
+            r#"<div style="height:50px"></div><svg width="100" height="50" style="display:block"><text x="40" y="30" font-size="12" fill="red">{STACKED_MARKS}</text></svg>"#
+        ),
+        true,
+    );
+    let buf = render(&mut doc);
+    let (_, top, ..) = ink_box(&buf).expect("text ink");
+    assert!(top >= 50, "text painted above the svg box, from y = {top}");
+}
+
+/// Paints `doc` into a recording and counts the layers pushed.
+fn layer_count(doc: &mut HtmlDocument) -> usize {
+    use anyrender::recording::RenderCommand;
+    let mut scene = anyrender::Scene::new();
+    paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+    scene
+        .commands
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                RenderCommand::PushLayer(_) | RenderCommand::PushClipLayer(_)
+            )
+        })
+        .count()
+}
+
+#[test]
+fn root_clip_is_skipped_only_when_content_fits() {
+    let fits = layer_count(&mut load(SQUARE, true));
+    let overflows = layer_count(&mut load(
+        r#"<svg width="50" height="50"><rect width="100" height="50" fill="red"/></svg>"#,
+        true,
+    ));
+    let text_fits = layer_count(&mut load(
+        &format!(
+            r#"<svg width="100" height="100"><text x="40" y="95" font-size="20" fill="red">{STACKED_MARKS}</text></svg>"#
+        ),
+        true,
+    ));
+    assert_eq!(fits, 0, "content inside the svg box needs no clip");
+    assert_eq!(text_fits, 0, "text inside the svg box needs no clip");
+    assert_eq!(overflows, 1, "overflowing content needs the root clip");
+}
+
+#[test]
+fn group_layers_are_bounded_by_their_content() {
+    use anyrender::recording::RenderCommand;
+    use kurbo::{Rect, Shape};
+    for (svg, content) in [
+        (
+            r#"<svg width="100" height="100"><g opacity="0.5"><rect x="10" y="20" width="30" height="40" fill="red"/></g></svg>"#,
+            Rect::new(10.0, 20.0, 40.0, 60.0),
+        ),
+        (
+            r#"<svg width="100" height="100"><g opacity="0.5"><rect x="10" y="20" width="20" height="30" fill="red" stroke="red" stroke-width="10" stroke-linejoin="round"/></g></svg>"#,
+            Rect::new(5.0, 15.0, 35.0, 55.0),
+        ),
+    ] {
+        let mut doc = load(svg, true);
+        let mut scene = anyrender::Scene::new();
+        paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+        let layers: Vec<_> = scene
+            .commands
+            .iter()
+            .filter_map(|cmd| match cmd {
+                RenderCommand::PushLayer(layer) => Some(
+                    layer
+                        .transform
+                        .transform_rect_bbox(layer.clip.bounding_box()),
+                ),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(layers.len(), 1, "{svg}");
+        let bounds = layers[0];
+        assert!(
+            bounds.contains_rect(content),
+            "layer {bounds:?} clips its content in {svg}"
+        );
+        assert!(
+            content.inflate(2.0, 2.0).contains_rect(bounds),
+            "layer {bounds:?} is wider than its content in {svg}"
+        );
+    }
 }
