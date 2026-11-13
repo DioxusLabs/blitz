@@ -4,15 +4,15 @@
 //! its subtree as live DOM nodes styled by Stylo. SVG layout
 //! (`blitz_dom::svg`) has already resolved each element's transform, geometry
 //! and stroke; painting walks the subtree, reads those results and the paint
-//! properties from computed styles. Patterns, `<use>`,
-//! `<image>`, markers, clipping, masking and filters are not painted yet.
+//! properties from computed styles. Patterns, `<use>`, markers and filters
+//! are not painted yet.
 
 use std::sync::Arc;
 
 use anyrender::filters::color_transformation::ColorMatrix;
 use anyrender::filters::{Filter, FilterEffect, FilterId, FilterInput, FilterInputs, FilterSource};
 use anyrender::{MaskMode, PaintScene};
-use blitz_dom::node::Node;
+use blitz_dom::node::{ImageData, Node};
 use blitz_dom::svg::{
     SvgClip, SvgFilter, SvgFilterInput, SvgFilterKind, SvgGlyphRun, SvgGradient, SvgGradientShape,
     SvgLayoutKind, SvgMask, SvgPaintServer, SvgReference, SvgReferenceState, SvgSpreadMethod,
@@ -35,34 +35,75 @@ use crate::color::{Color, ToColorColor};
 use crate::filters::{StyloFilter, convert_single_filter};
 
 impl ElementCx<'_, '_> {
-    /// Paint a natively rendered inline `<svg>` root into its content box.
-    pub(super) fn draw_native_svg(&self, scene: &mut impl PaintScene) {
-        let Some(root) = self.element.svg_root_data() else {
-            return;
-        };
+    /// The transform from a natively rendered inline `<svg>` root's user
+    /// space to device pixels when its box is at `transform`, and its
+    /// viewport, or `None` when it renders nothing.
+    fn native_svg_root(&self, transform: Affine) -> Option<(Affine, SvgViewport, bool)> {
+        let root = self.element.svg_root_data()?;
         // A zero-sized viewBox disables rendering of the element.
-        let Some(layout) = &root.layout else {
-            return;
-        };
+        let layout = root.layout.as_ref()?;
         if root.dims.degenerate_view_box {
-            return;
+            return None;
         }
         let content_box = self.frame.content_box();
         if content_box.width() <= 0.0 || content_box.height() <= 0.0 {
-            return;
+            return None;
         }
         // The content box is in device pixels and the root layout maps user
         // units onto CSS pixels.
-        let transform = self.transform
+        let transform = transform
             * Affine::translate(content_box.origin().to_vec2())
             * Affine::scale(self.scale)
             * layout.children_transform();
         let SvgLayoutKind::Viewport { viewport, .. } = layout.kind else {
+            return None;
+        };
+        Some((transform, viewport, layout.has_blending))
+    }
+
+    /// Whether this is a natively rendered inline `<svg>` root, painted at
+    /// `transform`, whose content stays within `clip` (in device pixels), so
+    /// clipping its overflow can be skipped. Every draw under a clip pays
+    /// for intersecting with it.
+    pub(super) fn native_svg_within(&self, transform: Affine, clip: &impl Shape) -> bool {
+        let [a, b, c, d, ..] = transform.as_coeffs();
+        let Some(clip) = clip
+            .as_rect()
+            .filter(|_| b == 0.0 && c == 0.0 && a > 0.0 && d > 0.0)
+        else {
+            return false;
+        };
+        // Allow for rounding error in curve bounds, far too small to cover any
+        // pixel outside the clip.
+        let clip = transform.transform_rect_bbox(clip).inflate(1e-3, 1e-3);
+        let Some((content_transform, ..)) = self.native_svg_root(transform) else {
+            return false;
+        };
+        let Some(layout) = self
+            .element
+            .svg_root_data()
+            .and_then(|root| root.layout.as_ref())
+        else {
+            return false;
+        };
+        !layout.has_filter
+            && layout
+                .ink
+                .is_none_or(|ink| clip.contains_rect(content_transform.transform_rect_bbox(ink)))
+    }
+
+    /// Paint a natively rendered inline `<svg>` root into its content box.
+    pub(super) fn draw_native_svg(&self, scene: &mut impl PaintScene) {
+        let Some((transform, viewport, has_blending)) = self.native_svg_root(self.transform) else {
             return;
         };
         // A filter on the `<svg>` itself; the CSS painter applies filter
         // functions to its box.
-        let filter = match self.resolve_svg_filters(&self.style, layout.bbox, viewport, false) {
+        let bbox = self
+            .element
+            .svg_root_data()
+            .and_then(|root| root.layout.as_ref()?.bbox);
+        let filter = match self.resolve_svg_filters(&self.style, bbox, viewport, false) {
             SvgReference::None => None,
             SvgReference::Invalid => return,
             SvgReference::Valid(filter) => Some(filter),
@@ -79,7 +120,7 @@ impl ElementCx<'_, '_> {
         // The outermost `<svg>` is an isolated group, so blending inside it
         // does not reach content behind it.
         // https://drafts.fxtf.org/compositing/#csscompositingrules_SVG
-        if layout.has_blending {
+        if has_blending {
             scene.push_layer(
                 Fill::NonZero,
                 BlendMode::default(),
@@ -92,7 +133,7 @@ impl ElementCx<'_, '_> {
         }
         let mut state = SvgReferenceState::default();
         self.paint_svg_children(scene, self.node, transform, viewport, &mut state);
-        if layout.has_blending {
+        if has_blending {
             scene.pop_layer();
         }
         if filter.is_some() {
@@ -245,8 +286,9 @@ impl ElementCx<'_, '_> {
             .as_ref()
             .and_then(|clip| self.simple_svg_clip(node, clip));
 
-        // Clip and mask groups only cover what the clip path and mask region
-        // let through, and the filter region, as compositing a group costs its whole area.
+        // Groups only cover what the element paints and the clip path, mask
+        // region and filter region let through, as compositing a group costs
+        // its whole area.
         let mut bounds = self.viewport_rect();
         if let Some(clip) = &clip {
             bounds = bounds.intersect(self.svg_clip_bounds(node, clip, effect_transform));
@@ -258,10 +300,6 @@ impl ElementCx<'_, '_> {
             bounds = bounds.intersect(effect_transform.transform_rect_bbox(*rect));
         }
         let bounded = clip.is_some() || mask.is_some() || filter.is_some();
-        if bounded && bounds.area() <= 0.0 {
-            return;
-        }
-        let bounds = bounds.inflate(1.0, 1.0).expand();
 
         // https://drafts.fxtf.org/compositing/#csscompositingrules_SVG
         let effects = style.get_effects();
@@ -272,10 +310,20 @@ impl ElementCx<'_, '_> {
             || blend != BlendMode::default()
             || mask.is_some()
             || (clip.is_some() && simple_clip.is_none());
+        // A filtered descendant can paint past the ink bounds.
+        if grouped && !layout.has_filter {
+            let Some(ink) = self.svg_ink_bounds(node, parent_transform) else {
+                return;
+            };
+            bounds = bounds.intersect(ink);
+            if bounds.area() <= 0.0 {
+                return;
+            }
+        } else if bounded && bounds.area() <= 0.0 {
+            return;
+        }
+        let bounds = bounds.inflate(1.0, 1.0).expand();
         if grouped {
-            // Without a clip or mask, the layer covers the whole viewport so
-            // that overflowing content and strokes are not cut off; `<svg>`
-            // clipping is a separate layer.
             if bounded {
                 self.push_svg_group(scene, blend, effects.opacity, &bounds);
             } else {
@@ -284,7 +332,7 @@ impl ElementCx<'_, '_> {
                     blend,
                     effects.opacity,
                     Affine::IDENTITY,
-                    &self.viewport_rect(),
+                    &bounds,
                     None,
                     None,
                 );
@@ -336,6 +384,35 @@ impl ElementCx<'_, '_> {
                 let bbox = layout.bbox;
                 self.paint_text(scene, node, text, transform, bbox, viewport);
             }
+            SvgLayoutKind::Image {
+                image,
+                image_transform,
+                clip,
+                ..
+            } => {
+                if style.get_inherited_box().visibility == Visibility::Visible {
+                    if let Some(clip) = clip {
+                        scene.push_clip_layer(Fill::NonZero, transform, clip);
+                    }
+                    let image_transform = transform * *image_transform;
+                    match image {
+                        ImageData::Raster(image) => {
+                            let rendering = style.get_inherited_box().image_rendering;
+                            let quality = super::to_image_quality(rendering);
+                            let brush = super::to_peniko_image(image, quality);
+                            scene.draw_image(brush.as_ref(), image_transform);
+                        }
+                        #[cfg(feature = "svg-usvg")]
+                        ImageData::Svg(svg) => {
+                            anyrender_svg::render_svg_tree(scene, &svg.tree, image_transform);
+                        }
+                        ImageData::None => {}
+                    }
+                    if clip.is_some() {
+                        scene.pop_layer();
+                    }
+                }
+            }
         }
 
         if filter.is_some() {
@@ -353,6 +430,14 @@ impl ElementCx<'_, '_> {
         if grouped {
             scene.pop_layer();
         }
+    }
+
+    /// A conservative bound, in device pixels, of what `node` paints when its
+    /// parent's user space maps to device pixels by `parent_transform`, or
+    /// `None` when it paints nothing.
+    fn svg_ink_bounds(&self, node: &Node, parent_transform: Affine) -> Option<Rect> {
+        let ink = node.element_data()?.svg_layout()?.ink_in_parent()?;
+        Some(parent_transform.transform_rect_bbox(ink))
     }
 
     /// A clip path that one outline with one fill rule can express, as a
@@ -573,18 +658,20 @@ impl ElementCx<'_, '_> {
                 current = span.parent;
             }
             if alpha < 1.0 {
-                let painter = self.context;
+                let Some(ink) = run.ink else {
+                    continue;
+                };
+                let bounds = self
+                    .viewport_rect()
+                    .intersect(transform.transform_rect_bbox(ink))
+                    .inflate(1.0, 1.0)
+                    .expand();
                 scene.push_layer(
                     Fill::NonZero,
                     BlendMode::default(),
                     alpha,
                     Affine::IDENTITY,
-                    &Rect::new(
-                        painter.initial_x,
-                        painter.initial_y,
-                        painter.initial_x + painter.width as f64,
-                        painter.initial_y + painter.height as f64,
-                    ),
+                    &bounds,
                     None,
                     None,
                 );

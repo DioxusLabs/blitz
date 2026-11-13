@@ -230,6 +230,21 @@ pub(super) fn stroke(
     })
 }
 
+/// How far a stroke can extend beyond its path's bounding box: half its width,
+/// scaled by the miter limit for miter joins and by √2 for square caps.
+pub(super) fn stroke_outset(stroke: &Stroke) -> f64 {
+    let mut scale = 1.0_f64;
+    if matches!(stroke.join, kurbo::Join::Miter) {
+        scale = scale.max(stroke.miter_limit);
+    }
+    if matches!(stroke.start_cap, kurbo::Cap::Square)
+        || matches!(stroke.end_cap, kurbo::Cap::Square)
+    {
+        scale = scale.max(std::f64::consts::SQRT_2);
+    }
+    stroke.width * 0.5 * scale
+}
+
 /// The stroke style of an element without `pathLength` (text).
 pub(super) fn stroke_style(style: &ComputedValues, viewport: SvgViewport) -> Option<Stroke> {
     stroke_with_path_length(style, viewport, || None)

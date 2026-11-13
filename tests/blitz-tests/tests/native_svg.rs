@@ -1917,3 +1917,458 @@ fn filter_graphs_vello_cpu_cannot_run_paint_unfiltered() {
         assert_eq!(pixel(&buf, 21, 21), RED, "{filter}");
     }
 }
+
+/// A 2x1 opaque lime PNG.
+const LIME_2X1_PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 1, 8, 6, 0,
+    0, 0, 244, 34, 127, 138, 0, 0, 0, 12, 73, 68, 65, 84, 120, 156, 99, 96, 248, 15, 129, 0, 15,
+    249, 3, 253, 216, 57, 113, 65, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
+/// A 1x1 opaque white PNG.
+const WHITE_1X1_PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0,
+    0, 0, 31, 21, 196, 137, 0, 0, 0, 11, 73, 68, 65, 84, 120, 156, 99, 248, 15, 4, 0, 9, 251, 3,
+    253, 251, 94, 107, 43, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+];
+
+/// Serves every request with the same bytes.
+struct StaticNetProvider(&'static [u8]);
+
+impl blitz_traits::net::NetProvider for StaticNetProvider {
+    fn fetch(
+        &self,
+        _doc_id: usize,
+        request: blitz_traits::net::Request,
+        handler: Box<dyn blitz_traits::net::NetHandler>,
+    ) {
+        handler.bytes(request.url.to_string(), self.0.into());
+    }
+}
+
+fn load_with_image(body: &str, image: &'static [u8]) -> HtmlDocument {
+    let html = format!(r#"<html><body style="margin:0; background:#00f">{body}</body></html>"#);
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            base_url: Some("http://example.com/".to_string()),
+            viewport: Some(Viewport::new(W, H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            net_provider: Some(Arc::new(StaticNetProvider(image))),
+            native_svg: Some(true),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc
+}
+
+#[test]
+fn image_paints_its_raster_into_its_viewport() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 5, 5), LIME);
+    assert_eq!(pixel(&buf, 95, 95), LIME);
+}
+
+#[test]
+fn image_preserves_its_aspect_ratio() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 10), BLUE);
+    assert_eq!(pixel(&buf, 50, 50), LIME);
+    assert_eq!(pixel(&buf, 50, 90), BLUE);
+}
+
+#[test]
+fn image_without_a_size_uses_its_intrinsic_size() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image x="10" y="10" xlink:href="a.png" transform="scale(2)"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 21, 20), LIME);
+    assert_eq!(pixel(&buf, 25, 20), BLUE);
+    assert_eq!(pixel(&buf, 21, 23), BLUE);
+}
+
+#[test]
+fn image_inside_a_mask_reveals_masked_content() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100">
+            <mask id="m"><g clip-path="url(#c)"><image href="a.png" width="100" height="100"/></g></mask>
+            <clipPath id="c"><rect width="50" height="100"/></clipPath>
+            <rect width="100" height="100" fill="lime" mask="url(#m)"/>
+        </svg>"#,
+        WHITE_1X1_PNG,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 50), LIME);
+    assert_eq!(pixel(&buf, 75, 50), BLUE);
+}
+
+#[test]
+fn image_href_change_loads_the_new_image() {
+    let mut doc = load_with_image(
+        r#"<svg width="100" height="100"><image id="i" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        LIME_2X1_PNG,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().set_attribute(id, attr("href"), "b.png");
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}
+
+/// Records every request and serves the named files, holding the responses
+/// until `flush` when `hold` is set.
+struct RecordingNet {
+    files: Vec<(&'static str, &'static [u8])>,
+    hold: bool,
+    pending: std::sync::Mutex<Vec<(String, Box<dyn blitz_traits::net::NetHandler>)>>,
+    urls: std::sync::Mutex<Vec<String>>,
+}
+
+impl RecordingNet {
+    fn new(files: &[(&'static str, &'static [u8])], hold: bool) -> Arc<Self> {
+        Arc::new(Self {
+            files: files.to_vec(),
+            hold,
+            pending: Default::default(),
+            urls: Default::default(),
+        })
+    }
+
+    fn deliver(&self, url: String, handler: Box<dyn blitz_traits::net::NetHandler>) {
+        let name = url.rsplit('/').next().unwrap();
+        match self.files.iter().find(|(file, _)| *file == name) {
+            Some((_, bytes)) => handler.bytes(url, bytes.to_vec().into()),
+            None => handler.error(url, "404".into()),
+        }
+    }
+
+    fn flush(&self) {
+        for (url, handler) in std::mem::take(&mut *self.pending.lock().unwrap()) {
+            self.deliver(url, handler);
+        }
+    }
+
+    fn urls(&self) -> Vec<String> {
+        self.urls.lock().unwrap().clone()
+    }
+}
+
+struct RecordingNetProvider(Arc<RecordingNet>);
+
+impl blitz_traits::net::NetProvider for RecordingNetProvider {
+    fn fetch(
+        &self,
+        _doc_id: usize,
+        request: blitz_traits::net::Request,
+        handler: Box<dyn blitz_traits::net::NetHandler>,
+    ) {
+        let url = request.url.to_string();
+        self.0.urls.lock().unwrap().push(url.clone());
+        if self.0.hold {
+            self.0.pending.lock().unwrap().push((url, handler));
+        } else {
+            self.0.deliver(url, handler);
+        }
+    }
+}
+
+fn load_with_net(body: &str, net: &Arc<RecordingNet>) -> HtmlDocument {
+    let html = format!(r#"<html><body style="margin:0; background:#00f">{body}</body></html>"#);
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            base_url: Some("http://example.com/".to_string()),
+            viewport: Some(Viewport::new(W, H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            net_provider: Some(Arc::new(RecordingNetProvider(net.clone()))),
+            native_svg: Some(true),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc
+}
+
+#[test]
+fn image_paints_once_it_arrives() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], true);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+    net.flush();
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}
+
+#[test]
+fn late_image_in_a_mask_inside_display_none_paints() {
+    let net = RecordingNet::new(&[("w.png", WHITE_1X1_PNG)], true);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100">
+            <g style="display:none"><mask id="m"><image href="w.png" width="100" height="100"/></mask></g>
+            <rect width="100" height="100" fill="lime" mask="url(#m)"/>
+        </svg>"#,
+        &net,
+    );
+    net.flush();
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+}
+
+#[test]
+fn removing_href_falls_back_to_xlink_href() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG), ("w.png", WHITE_1X1_PNG)], false);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" xlink:href="w.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    assert_eq!(pixel(&render(&mut doc), 50, 50), LIME);
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().clear_attribute(id, attr("href"));
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), [255, 255, 255]);
+}
+
+#[test]
+fn removing_the_only_href_removes_the_image() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    let mut doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" width="100" height="100" preserveAspectRatio="none"/></svg>"#,
+        &net,
+    );
+    let id = doc.get_element_by_id("i").unwrap();
+    doc.mutate().clear_attribute(id, attr("href"));
+    doc.resolve(0.0);
+    assert_eq!(pixel(&render(&mut doc), 50, 50), BLUE);
+}
+
+#[test]
+fn image_ignores_a_fragment_href_and_fetches_each_url_once() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    load_with_net(
+        r##"<svg width="100" height="100"><image href="#x" width="10" height="10"/><image href="" width="10" height="10"/><image href="a.png" width="10" height="10"/><image href="a.png" width="10" height="10"/></svg>"##,
+        &net,
+    );
+    assert_eq!(net.urls(), ["http://example.com/a.png"]);
+}
+
+/// A 50x50 SVG image with lime inside its viewport and red outside it.
+const OVERFLOWING_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" fill="lime"/><rect x="50" width="50" height="100" fill="red"/></svg>"#;
+
+#[test]
+fn svg_image_is_clipped_to_its_own_viewport() {
+    for overflow in ["hidden", "visible"] {
+        let net = RecordingNet::new(&[("s.svg", OVERFLOWING_SVG)], false);
+        let mut doc = load_with_net(
+            &format!(
+                r#"<svg width="100" height="100"><image href="s.svg" width="50" height="50" style="overflow:{overflow}"/></svg>"#
+            ),
+            &net,
+        );
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 25, 25), LIME, "overflow: {overflow}");
+        assert_eq!(pixel(&buf, 75, 25), BLUE, "overflow: {overflow}");
+    }
+}
+
+#[test]
+fn sliced_image_is_clipped_unless_overflow_is_visible() {
+    for (overflow, outside) in [("hidden", BLUE), ("visible", LIME)] {
+        let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+        let mut doc = load_with_net(
+            &format!(
+                r#"<svg width="100" height="100"><image href="a.png" x="25" y="25" width="50" height="50" preserveAspectRatio="xMidYMid slice" style="overflow:{overflow}"/></svg>"#
+            ),
+            &net,
+        );
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 50, 50), LIME, "overflow: {overflow}");
+        assert_eq!(pixel(&buf, 10, 50), outside, "overflow: {overflow}");
+    }
+}
+
+#[test]
+fn fitted_raster_image_needs_no_clip() {
+    let net = RecordingNet::new(&[("a.png", LIME_2X1_PNG)], false);
+    let doc = load_with_net(
+        r#"<svg width="100" height="100"><image id="i" href="a.png" width="100" height="100"/></svg>"#,
+        &net,
+    );
+    let id = doc.get_element_by_id("i").unwrap();
+    let layout = doc
+        .get_node(id)
+        .unwrap()
+        .element_data()
+        .unwrap()
+        .svg_layout()
+        .unwrap();
+    assert!(matches!(
+        layout.kind,
+        blitz_dom::svg::SvgLayoutKind::Image { clip: None, .. }
+    ));
+}
+
+/// The bounding box `(x0, y0, x1, y1)` of the pixels that aren't background.
+fn ink_box(buffer: &[u8]) -> Option<(usize, usize, usize, usize)> {
+    let mut ink: Option<(usize, usize, usize, usize)> = None;
+    for y in 0..H as usize {
+        for x in 0..W as usize {
+            if pixel(buffer, x, y) != BLUE {
+                ink = Some(ink.map_or((x, y, x, y), |(x0, y0, x1, y1)| {
+                    (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
+                }));
+            }
+        }
+    }
+    ink
+}
+
+/// Asserts `grouped` paints as far as `ungrouped`, allowing a pixel of faint
+/// antialiasing lost to the group's opacity.
+fn assert_not_clipped(grouped: &str, ungrouped: &str) {
+    let grouped = ink_box(&render(&mut load(grouped, true))).expect("grouped ink");
+    let ungrouped = ink_box(&render(&mut load(ungrouped, true))).expect("ungrouped ink");
+    assert!(
+        grouped.0 <= ungrouped.0 + 1
+            && grouped.1 <= ungrouped.1 + 1
+            && grouped.2 + 1 >= ungrouped.2
+            && grouped.3 + 1 >= ungrouped.3,
+        "group layer clipped its content: {grouped:?} vs {ungrouped:?}"
+    );
+}
+
+/// An `a` with 14 stacked acute accents, reaching far above its line.
+const STACKED_MARKS: &str = "a\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}";
+
+#[test]
+fn group_opacity_does_not_clip_stacked_combining_marks() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><g opacity="{opacity}"><text x="10" y="95" font-size="20" fill="red">{STACKED_MARKS}</text></g></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn group_opacity_does_not_clip_a_wide_text_stroke() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><text opacity="{opacity}" x="40" y="55" font-size="20" font-style="italic" stroke="red" stroke-width="60" stroke-linejoin="round" fill="none">jf</text></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn tspan_opacity_does_not_clip_stacked_combining_marks() {
+    let svg = |opacity: &str| {
+        format!(
+            r#"<svg width="100" height="100"><text x="10" y="95" font-size="12" fill="red"><tspan opacity="{opacity}">{STACKED_MARKS}</tspan></text></svg>"#
+        )
+    };
+    assert_not_clipped(&svg("0.99"), &svg("1"));
+}
+
+#[test]
+fn root_clip_still_clips_text_overflowing_the_svg() {
+    let mut doc = load(
+        &format!(
+            r#"<div style="height:50px"></div><svg width="100" height="50" style="display:block"><text x="40" y="30" font-size="12" fill="red">{STACKED_MARKS}</text></svg>"#
+        ),
+        true,
+    );
+    let buf = render(&mut doc);
+    let (_, top, ..) = ink_box(&buf).expect("text ink");
+    assert!(top >= 50, "text painted above the svg box, from y = {top}");
+}
+
+/// Paints `doc` into a recording and counts the layers pushed.
+fn layer_count(doc: &mut HtmlDocument) -> usize {
+    use anyrender::recording::RenderCommand;
+    let mut scene = anyrender::Scene::new();
+    paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+    scene
+        .commands
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                RenderCommand::PushLayer(_) | RenderCommand::PushClipLayer(_)
+            )
+        })
+        .count()
+}
+
+#[test]
+fn root_clip_is_skipped_only_when_content_fits() {
+    let fits = layer_count(&mut load(SQUARE, true));
+    let overflows = layer_count(&mut load(
+        r#"<svg width="50" height="50"><rect width="100" height="50" fill="red"/></svg>"#,
+        true,
+    ));
+    let text_fits = layer_count(&mut load(
+        &format!(
+            r#"<svg width="100" height="100"><text x="40" y="95" font-size="20" fill="red">{STACKED_MARKS}</text></svg>"#
+        ),
+        true,
+    ));
+    assert_eq!(fits, 0, "content inside the svg box needs no clip");
+    assert_eq!(text_fits, 0, "text inside the svg box needs no clip");
+    assert_eq!(overflows, 1, "overflowing content needs the root clip");
+}
+
+#[test]
+fn group_layers_are_bounded_by_their_content() {
+    use anyrender::recording::RenderCommand;
+    use kurbo::{Rect, Shape};
+    for (svg, content) in [
+        (
+            r#"<svg width="100" height="100"><g opacity="0.5"><rect x="10" y="20" width="30" height="40" fill="red"/></g></svg>"#,
+            Rect::new(10.0, 20.0, 40.0, 60.0),
+        ),
+        (
+            r#"<svg width="100" height="100"><g opacity="0.5"><rect x="10" y="20" width="20" height="30" fill="red" stroke="red" stroke-width="10" stroke-linejoin="round"/></g></svg>"#,
+            Rect::new(5.0, 15.0, 35.0, 55.0),
+        ),
+    ] {
+        let mut doc = load(svg, true);
+        let mut scene = anyrender::Scene::new();
+        paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+        let layers: Vec<_> = scene
+            .commands
+            .iter()
+            .filter_map(|cmd| match cmd {
+                RenderCommand::PushLayer(layer) => Some(
+                    layer
+                        .transform
+                        .transform_rect_bbox(layer.clip.bounding_box()),
+                ),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(layers.len(), 1, "{svg}");
+        let bounds = layers[0];
+        assert!(
+            bounds.contains_rect(content),
+            "layer {bounds:?} clips its content in {svg}"
+        );
+        assert!(
+            content.inflate(2.0, 2.0).contains_rect(bounds),
+            "layer {bounds:?} is wider than its content in {svg}"
+        );
+    }
+}

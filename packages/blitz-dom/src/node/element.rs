@@ -513,6 +513,17 @@ impl ElementData {
         Some(&attr.value)
     }
 
+    /// An SVG element's `href`, which takes precedence over `xlink:href`.
+    pub(crate) fn svg_href(&self) -> Option<&str> {
+        let find = |namespace| {
+            self.attrs
+                .iter()
+                .find(|a| a.name.local == local_name!("href") && a.name.ns == namespace)
+                .map(|a| a.value.as_str())
+        };
+        find(markup5ever::ns!()).or_else(|| find(markup5ever::ns!(xlink)))
+    }
+
     pub fn attr_parsed<T: FromStr>(&self, name: impl PartialEq<LocalName>) -> Option<T> {
         let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
         attr.value.parse::<T>().ok()

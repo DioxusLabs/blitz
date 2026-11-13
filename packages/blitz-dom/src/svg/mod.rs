@@ -31,9 +31,10 @@ use style::computed_values::mix_blend_mode::T as MixBlendMode;
 use style::computed_values::overflow_x::T as Overflow;
 use style::properties::ComputedValues;
 use style::servo_arc::Arc as ServoArc;
+use style::values::computed::svg::SVGPaintKind;
 use style::values::computed::{Length, LengthPercentage};
 
-use crate::node::{ElementData, Node, SpecialElementData, SvgIntrinsicDimensions};
+use crate::node::{ElementData, ImageData, Node, SpecialElementData, SvgIntrinsicDimensions};
 use crate::{BaseDocument, CopyStyleGetters, resolve_2d_transform};
 
 /// The SVG viewport that percentages resolve against, in user units.
@@ -94,10 +95,17 @@ pub struct SvgLayout {
     /// The object bounding box in this element's user space (for an `<svg>`,
     /// the space of its children). `None` when nothing contributes.
     pub bbox: Option<Rect>,
+    /// A conservative bound of what this element paints, in the same space
+    /// as `bbox`, ignoring clip paths and masks (which only take away from
+    /// it). `None` when it paints nothing.
+    pub ink: Option<Rect>,
     pub kind: SvgLayoutKind,
     /// Whether this element or a rendered descendant has a non-normal
     /// `mix-blend-mode`, so the outermost `<svg>` must isolate its content.
     pub has_blending: bool,
+    /// Whether this element or a rendered descendant has a `filter`, whose
+    /// output can reach past `ink`.
+    pub has_filter: bool,
     /// The computed style of an element inside a `display: none` subtree
     /// (which Stylo does not style) that is laid out as part of a
     /// `<clipPath>` or `<mask>`, as those can still be referenced.
@@ -136,6 +144,21 @@ pub enum SvgLayoutKind {
     /// `<text>`: its shaped and positioned glyphs. The content of its
     /// `<tspan>` descendants is laid out with it.
     Text(Box<SvgText>),
+    /// `<image>` with a loaded image.
+    Image {
+        image: ImageData,
+        /// Maps the image (raster pixels, or the SVG image's rendered tree)
+        /// to user space, with `preserveAspectRatio` applied.
+        image_transform: Affine,
+        /// The image viewport (`x`, `y`, `width`, `height`) in user space,
+        /// which is also its bounding box.
+        viewport: Rect,
+        /// The rectangle (in user space) the image is clipped to, if its
+        /// content can reach outside it: the viewport, when `overflow` clips
+        /// and the image overflows it (`slice`), and an SVG image's own
+        /// viewport, which always clips its content.
+        clip: Option<Rect>,
+    },
 }
 
 impl SvgLayout {
@@ -143,8 +166,10 @@ impl SvgLayout {
         Self {
             transform: Affine::IDENTITY,
             bbox: None,
+            ink: None,
             kind: SvgLayoutKind::NotRendered,
             has_blending: false,
+            has_filter: false,
             undisplayed_style: None,
         }
     }
@@ -157,6 +182,25 @@ impl SvgLayout {
                 content_transform, ..
             } => self.transform * *content_transform,
             _ => self.transform,
+        }
+    }
+
+    /// [`Self::ink`] in the parent's user space, clipped by a nested
+    /// `<svg>`'s viewport clip.
+    pub fn ink_in_parent(&self) -> Option<Rect> {
+        let ink = self.ink?;
+        match &self.kind {
+            SvgLayoutKind::NotRendered | SvgLayoutKind::Resource => None,
+            SvgLayoutKind::Viewport {
+                content_transform,
+                clip,
+                ..
+            } => {
+                let ink = content_transform.transform_rect_bbox(ink);
+                let ink = clip.map_or(ink, |clip| ink.intersect(clip));
+                Some(self.transform.transform_rect_bbox(ink))
+            }
+            _ => Some(self.transform.transform_rect_bbox(ink)),
         }
     }
 
@@ -342,16 +386,23 @@ impl BaseDocument {
             return false;
         }
         let (bbox, has_blending) = self.layout_svg_children(root_id, viewport, force);
+        let ink = self.svg_children_ink(root_id);
+        let has_filter = self.svg_children_filtered(root_id)
+            || self.nodes[root_id]
+                .primary_styles()
+                .is_some_and(|style| !style.get_effects().filter.0.is_empty());
 
         let root_layout = SvgLayout {
             transform: Affine::IDENTITY,
             bbox,
+            ink,
             kind: SvgLayoutKind::Viewport {
                 content_transform,
                 viewport,
                 clip: None,
             },
             has_blending,
+            has_filter,
             undisplayed_style: None,
         };
         if let Some(SpecialElementData::SvgRoot(data)) = self.nodes[root_id]
@@ -412,8 +463,9 @@ impl BaseDocument {
         let was_rendered = existing.is_some_and(|l| !matches!(l.kind, SvgLayoutKind::NotRendered));
         let style = node.svg_style();
         let mut layout = if dirty {
+            let image = self.svg_images.get(&id);
             let mut layout = match &style {
-                Some(style) => layout_own(element, style, viewport),
+                Some(style) => layout_own(element, style, viewport, image),
                 None => SvgLayout::not_rendered(),
             };
             if node.primary_styles().is_none() {
@@ -423,7 +475,10 @@ impl BaseDocument {
         } else {
             existing.cloned().unwrap()
         };
-        let undisplayed = dirty && style.is_some_and(|style| style.clone_display().is_none());
+        // The `<clipPath>` and `<mask>` elements inside a `display: none` element
+        // are laid out again when it or any of its descendants is damaged (an
+        // `<image>` inside one has loaded, ...).
+        let undisplayed = style.is_some_and(|style| style.clone_display().is_none());
 
         // Children are laid out again from scratch when this element's
         // viewport may have changed, or when it was not rendered before (its
@@ -435,7 +490,9 @@ impl BaseDocument {
             SvgLayoutKind::NotRendered if undisplayed => {
                 self.layout_undisplayed_resources(id, viewport);
             }
-            SvgLayoutKind::NotRendered | SvgLayoutKind::Shape { .. } => {}
+            SvgLayoutKind::NotRendered
+            | SvgLayoutKind::Shape { .. }
+            | SvgLayoutKind::Image { .. } => {}
             // Text is laid out again whenever it or its content is damaged.
             SvgLayoutKind::Text(text) => {
                 let style = self.nodes[id].svg_style().unwrap();
@@ -476,6 +533,41 @@ impl BaseDocument {
                 layout.bbox = bbox;
             }
         }
+        layout.ink = match &layout.kind {
+            SvgLayoutKind::NotRendered | SvgLayoutKind::Resource => None,
+            SvgLayoutKind::Shape { path, stroke } => {
+                let stroked = self.nodes[id].svg_style().is_some_and(|style| {
+                    style.get_inherited_svg().stroke.kind != SVGPaintKind::None
+                });
+                let outset = stroke
+                    .as_ref()
+                    .filter(|_| stroked)
+                    .map_or(0.0, geometry::stroke_outset);
+                Some(kurbo::Shape::bounding_box(path).inflate(outset, outset))
+            }
+            SvgLayoutKind::Text(text) => text.ink,
+            SvgLayoutKind::Switch { child } => child.and_then(|child| {
+                self.nodes[child]
+                    .element_data()
+                    .and_then(|el| el.svg_layout())
+                    .and_then(SvgLayout::ink_in_parent)
+            }),
+            SvgLayoutKind::Group | SvgLayoutKind::Viewport { .. } => self.svg_children_ink(id),
+            SvgLayoutKind::Image {
+                image,
+                image_transform,
+                clip,
+                ..
+            } => match image {
+                ImageData::Raster(raster) => {
+                    let size = Rect::new(0.0, 0.0, raster.width as f64, raster.height as f64);
+                    let content = image_transform.transform_rect_bbox(size);
+                    Some(clip.map_or(content, |clip| clip.intersect(content)))
+                }
+                // An SVG image is always clipped to its own viewport.
+                _ => *clip,
+            },
+        };
         layout.has_blending = !matches!(
             layout.kind,
             SvgLayoutKind::NotRendered | SvgLayoutKind::Resource
@@ -483,6 +575,13 @@ impl BaseDocument {
             || self.nodes[id]
                 .svg_style()
                 .is_some_and(|style| style.get_effects().mix_blend_mode != MixBlendMode::Normal));
+        layout.has_filter = !matches!(
+            layout.kind,
+            SvgLayoutKind::NotRendered | SvgLayoutKind::Resource
+        ) && (self.svg_children_filtered(id)
+            || self.nodes[id]
+                .svg_style()
+                .is_some_and(|style| !style.get_effects().filter.0.is_empty()));
 
         let result = (layout.bbox_in_parent(), layout.has_blending);
         let element = self.nodes[id].element_data_mut().unwrap();
@@ -493,6 +592,31 @@ impl BaseDocument {
             element.special_data = SpecialElementData::SvgNode(Box::new(layout));
         }
         result
+    }
+
+    /// Whether a child of `id` has a `filter` or a filtered descendant.
+    fn svg_children_filtered(&self, id: NodeId) -> bool {
+        self.nodes[id].children.iter().any(|&child| {
+            self.nodes[child]
+                .element_data()
+                .and_then(|el| el.svg_layout())
+                .is_some_and(|layout| layout.has_filter)
+        })
+    }
+
+    /// The union of the ink of the children of `id`, in its children's user
+    /// space.
+    fn svg_children_ink(&self, id: NodeId) -> Option<Rect> {
+        self.nodes[id]
+            .children
+            .iter()
+            .filter_map(|&child| {
+                self.nodes[child]
+                    .element_data()?
+                    .svg_layout()?
+                    .ink_in_parent()
+            })
+            .reduce(|a, b| a.union(b))
     }
 
     /// Lay out the `<clipPath>` and `<mask>` elements inside `id`, a
@@ -546,7 +670,12 @@ impl BaseDocument {
 }
 
 /// Lay out an element itself (not its children).
-fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewport) -> SvgLayout {
+fn layout_own(
+    element: &ElementData,
+    style: &ComputedValues,
+    viewport: SvgViewport,
+    image: Option<&ImageData>,
+) -> SvgLayout {
     let viewport = viewport.for_element(style);
     let tag = &element.name.local;
     if style.clone_display().is_none() {
@@ -568,6 +697,10 @@ fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewpo
         SvgLayoutKind::Text(Box::default())
     } else if *tag == local_name!("svg") {
         nested_viewport(element, style, viewport)
+    } else if *tag == local_name!("image") {
+        image.map_or(SvgLayoutKind::NotRendered, |image| {
+            image_layout(element, style, viewport, image)
+        })
     } else if let Some(path) = geometry::shape_path(tag, element, style, viewport) {
         let stroke = geometry::stroke(element, style, viewport, &path);
         SvgLayoutKind::Shape { path, stroke }
@@ -577,13 +710,16 @@ fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewpo
 
     let bbox = match &kind {
         SvgLayoutKind::Shape { path, .. } => Some(kurbo::Shape::bounding_box(path)),
+        SvgLayoutKind::Image { viewport, .. } => Some(*viewport),
         _ => None,
     };
     SvgLayout {
         transform,
         bbox,
+        ink: None,
         kind,
         has_blending: false,
+        has_filter: false,
         undisplayed_style: None,
     }
 }
@@ -638,5 +774,97 @@ fn nested_viewport(
         content_transform,
         viewport: inner,
         clip: (clip_x || clip_y).then(|| Rect::new(x0, y0, x1, y1)),
+    }
+}
+
+/// Size and place an `<image>`: `width`/`height` default (`auto`) to the
+/// image's intrinsic size, keeping its aspect ratio when only one is given,
+/// and `preserveAspectRatio` fits the image into that viewport.
+/// <https://svgwg.org/svg2-draft/embedded.html#ImageElement>
+fn image_layout(
+    element: &ElementData,
+    style: &ComputedValues,
+    viewport: SvgViewport,
+    image: &ImageData,
+) -> SvgLayoutKind {
+    use style::values::computed::Size;
+    // The intrinsic size, and the size of the content the image draws.
+    let ((iw, ih), (cw, ch)) = match image {
+        ImageData::Raster(raster) => {
+            let size = (raster.width as f64, raster.height as f64);
+            (size, size)
+        }
+        #[cfg(feature = "svg-usvg")]
+        ImageData::Svg(svg) => {
+            let (w, h) = svg.intrinsic_size();
+            let content = svg.tree.size();
+            (
+                (w as f64, h as f64),
+                (content.width() as f64, content.height() as f64),
+            )
+        }
+        ImageData::None => return SvgLayoutKind::NotRendered,
+    };
+    if cw <= 0.0 || ch <= 0.0 {
+        return SvgLayoutKind::NotRendered;
+    }
+    if iw <= 0.0 || ih <= 0.0 {
+        return SvgLayoutKind::NotRendered;
+    }
+    let size = |size: &Size, basis: f64| match size {
+        Size::LengthPercentage(lp) => Some(viewport.resolve(&lp.0, basis)),
+        _ => None,
+    };
+    let position = style.get_position();
+    let (width, height) = match (
+        size(&position.width, viewport.width),
+        size(&position.height, viewport.height),
+    ) {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => (w, w * ih / iw),
+        (None, Some(h)) => (h * iw / ih, h),
+        (None, None) => (iw, ih),
+    };
+    if width <= 0.0 || height <= 0.0 {
+        return SvgLayoutKind::NotRendered;
+    }
+    let x = viewport.x(&style.get_svg().x);
+    let y = viewport.y(&style.get_svg().y);
+    let dims = SvgIntrinsicDimensions {
+        view_box: Some(crate::node::SvgViewBox {
+            x: 0.0,
+            y: 0.0,
+            width: cw as f32,
+            height: ch as f32,
+        }),
+        ..SvgIntrinsicDimensions::from_attrs(|name| {
+            (name == "preserveAspectRatio")
+                .then(|| attr(element, name))
+                .flatten()
+        })
+    };
+    // An SVG image's own `preserveAspectRatio` is ignored in favour of the
+    // `<image>`'s.
+    let image_transform = Affine::translate((x, y))
+        * svg_to_affine(dims.viewport_transform(width as f32, height as f32));
+    let viewport = Rect::new(x, y, x + width, y + height);
+    let content = image_transform.transform_rect_bbox(Rect::new(0.0, 0.0, cw, ch));
+    let box_style = style.get_box();
+    let overflow_clips =
+        box_style.overflow_x != Overflow::Visible || box_style.overflow_y != Overflow::Visible;
+    // A raster image draws nothing outside its own rectangle.
+    let content_clips = !matches!(image, ImageData::Raster(_));
+    let overflows = !viewport.inflate(1e-3, 1e-3).contains_rect(content);
+    let clip = match (overflow_clips && overflows, content_clips) {
+        (true, true) => Some(viewport.intersect(content)),
+        (true, false) => Some(viewport),
+        (false, true) => Some(content),
+        (false, false) => None,
+    };
+    SvgLayoutKind::Image {
+        image: image.clone(),
+        image_transform,
+        viewport,
+        clip,
     }
 }
