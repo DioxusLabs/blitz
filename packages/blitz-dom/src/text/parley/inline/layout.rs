@@ -19,11 +19,9 @@ use super::super::TextBrush;
 use super::super::{TextContext, stylo_to_parley};
 use super::{TextLayout, build};
 use crate::text::{
-    BoxMeasure, ContentWidths, FloatClear, FloatSide, InlineLayoutEngine, LineExclusions,
-    LinesExtent, Placement,
+    BoxMeasure, ContentWidths, FloatClear, FloatRequest, FloatSide, InlineLayoutEngine,
+    LineExclusions, LineSlot, LinesExtent, PlacedFloat, Placement, SlotSearch,
 };
-#[cfg(feature = "floats")]
-use crate::text::{FloatRequest, LineSlot, SlotSearch};
 
 // FIXME: static thread_local FontCtx isn't necessarily correct in multi-document context.
 // Should use thread_local crate with ThreadLocal value store in the Document.
@@ -138,9 +136,14 @@ impl InlineLayoutEngine for TextLayout {
         self.prepare_lines(sizes, style);
     }
 
-    #[inline]
     fn content_widths(&mut self) -> ContentWidths {
-        self.widths()
+        let scale = self.layout.scale();
+        let widths = self.widths();
+        ContentWidths {
+            min: widths.min / scale,
+            max: widths.max / scale,
+            float_min: widths.float_min / scale,
+        }
     }
 
     fn break_lines(
@@ -150,16 +153,74 @@ impl InlineLayoutEngine for TextLayout {
         style: Option<&::style::properties::ComputedValues>,
         exclusions: &mut impl LineExclusions,
     ) {
-        self.break_into_lines(width, padding_border, style, exclusions);
+        let scale = self.layout.scale();
+        self.break_into_lines(
+            width * scale,
+            padding_border * scale,
+            style,
+            &mut DeviceExclusions { exclusions, scale },
+        );
     }
 
-    #[inline]
     fn extent(&self) -> LinesExtent {
-        self.lines_extent()
+        let scale = self.layout.scale();
+        let extent = self.lines_extent();
+        LinesExtent {
+            height: extent.height / scale,
+            width: extent.width / scale,
+            first_baseline: extent.first_baseline.map(|baseline| baseline / scale),
+            last_baseline: extent.last_baseline.map(|baseline| baseline / scale),
+        }
     }
 
     fn placements(&self) -> impl Iterator<Item = Placement> {
-        self.box_placements()
+        let scale = self.layout.scale();
+        self.box_placements().map(move |placement| Placement {
+            x: placement.x / scale,
+            top: placement.top / scale,
+            line_top: placement.line_top / scale,
+            line_bottom: placement.line_bottom / scale,
+            block_start: placement.block_start / scale,
+            ..placement
+        })
+    }
+}
+
+/// The floats the lines flow around, in the device pixels Parley breaks lines in: `exclusions`
+/// measures in CSS pixels, so every question and answer is scaled on the way through.
+struct DeviceExclusions<'a, E> {
+    exclusions: &'a mut E,
+    /// Device pixels a CSS pixel.
+    scale: f32,
+}
+
+impl<E: LineExclusions> LineExclusions for DeviceExclusions<'_, E> {
+    fn slot(&self, top: f32, height: f32, search: SlotSearch) -> LineSlot {
+        let scale = self.scale;
+        let slot = self.exclusions.slot(top / scale, height / scale, search);
+        LineSlot {
+            top: slot.top * scale,
+            left: slot.left * scale,
+            width: slot.width * scale,
+            height: slot.height * scale,
+            segment: slot.segment,
+        }
+    }
+
+    fn place(&mut self, float: FloatRequest) -> PlacedFloat {
+        let scale = self.scale;
+        let placed = self.exclusions.place(FloatRequest {
+            inline_size: float.inline_size / scale,
+            block_size: float.block_size / scale,
+            block_start: float.block_start / scale,
+            ..float
+        });
+        PlacedFloat {
+            left: placed.left * scale,
+            right: placed.left * scale + float.inline_size,
+            top: placed.top * scale,
+            bottom: placed.top * scale + float.block_size,
+        }
     }
 }
 

@@ -245,14 +245,14 @@ pub(crate) trait InlineLayoutEngine: InlineText {
     /// count as zero until the lines are broken, and are then of the width they are broken in.
     fn prepare(&mut self, sizes: &[BoxMeasure], style: Option<&style::properties::ComputedValues>);
 
-    /// Returns the content's min-content and max-content widths, in device pixels, with its
+    /// Returns the content's min-content and max-content widths, in CSS pixels, with its
     /// floats: the widest of them is as wide as the content gets at min-content, and at
     /// max-content each paragraph is as wide as its text and the floats anchored in it.
     fn content_widths(&mut self) -> ContentWidths;
 
-    /// Breaks the content into lines `width` device pixels wide, or as narrow as `exclusions`
+    /// Breaks the content into lines `width` CSS pixels wide, or as narrow as `exclusions`
     /// leaves them, placing each float into it as a line reaches it, and aligns them as `style`,
-    /// the inline root's computed style, says. `padding_border` is the device pixels of padding
+    /// the inline root's computed style, says. `padding_border` is the CSS pixels of padding
     /// and border beside the lines, which scales how far content sized to fit exactly may round
     /// past `width` without wrapping.
     fn break_lines(
@@ -263,7 +263,7 @@ pub(crate) trait InlineLayoutEngine: InlineText {
         exclusions: &mut impl LineExclusions,
     );
 
-    /// Returns how far the lines reach and where their baselines are, in device pixels from the
+    /// Returns how far the lines reach and where their baselines are, in CSS pixels from the
     /// content box's top.
     fn extent(&self) -> LinesExtent;
 
@@ -313,7 +313,7 @@ pub(crate) struct LinesExtent {
     pub(crate) last_baseline: Option<f32>,
 }
 
-/// Where the lines put an inline box, in device pixels from the content box's top left. Its style
+/// Where the lines put an inline box, in CSS pixels from the content box's top left. Its style
 /// says which of the positions apply.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Placement {
@@ -349,7 +349,7 @@ pub(crate) enum FloatClear {
     Both,
 }
 
-/// A float the lines reached, to be placed: its margin box's size and the line's top, in device
+/// A float the lines reached, to be placed: its margin box's size and the line's top, in CSS
 /// pixels.
 #[cfg_attr(not(feature = "floats"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -364,7 +364,7 @@ pub(crate) struct FloatRequest {
     pub(crate) block_start: f32,
 }
 
-/// Where a float was placed: its margin box, in device pixels from the content box's top left.
+/// Where a float was placed: its margin box, in CSS pixels from the content box's top left.
 #[cfg_attr(not(feature = "floats"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PlacedFloat {
@@ -375,7 +375,7 @@ pub(crate) struct PlacedFloat {
 }
 
 /// The floats an inline formatting context's lines flow around, which also places the floats its
-/// text reaches. Positions are in device pixels from the content box's top left.
+/// text reaches. Positions are in CSS pixels from the content box's top left.
 #[cfg_attr(not(feature = "floats"), allow(dead_code))]
 pub(crate) trait LineExclusions {
     /// Returns the room floats leave a line `height` tall whose top is at or below `top`, among the
@@ -424,7 +424,7 @@ impl LineExclusions for NoLineExclusions {
     }
 }
 
-/// The room a line has beside the floats, in device pixels from the content box's top left.
+/// The room a line has beside the floats, in CSS pixels from the content box's top left.
 #[cfg_attr(not(feature = "floats"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct LineSlot {

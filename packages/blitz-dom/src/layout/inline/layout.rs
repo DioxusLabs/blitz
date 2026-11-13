@@ -248,7 +248,6 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: &mut BlockContext<'_>,
     ) -> taffy::LayoutOutput {
-        let scale = self.viewport.scale();
         let LayoutInput {
             known_dimensions,
             parent_size,
@@ -407,7 +406,6 @@ impl LayoutPassState<'_> {
             collapses_through: has_styles_preventing_being_collapsed_through,
             suppresses_baseline,
             is_scroll_container,
-            scale,
         };
         self.lay_out_lines(node_id, inline_layout, frame, block_ctx)
     }
@@ -437,7 +435,6 @@ impl LayoutPassState<'_> {
             collapses_through,
             suppresses_baseline,
             is_scroll_container,
-            scale,
         } = frame;
         let known_dimensions = inputs.known_dimensions;
 
@@ -474,37 +471,29 @@ impl LayoutPassState<'_> {
                 .map(|s| &**s),
         );
 
-        let pbw = container_pb.horizontal_components().sum() * scale;
-        let width = known_dimensions
-            .width
-            .map(|w| (w * scale) - pbw)
-            .unwrap_or_else(|| {
-                let widths = inline_layout.backend.content_widths();
-                let computed_width = match available_space.width {
-                    AvailableSpace::MinContent => widths.min.max(widths.float_min),
-                    AvailableSpace::MaxContent => widths.max,
-                    AvailableSpace::Definite(limit) => {
-                        (limit * scale).min(widths.max).max(widths.min)
-                    }
-                };
+        let pbw = container_pb.horizontal_components().sum();
+        let width = known_dimensions.width.map(|w| w - pbw).unwrap_or_else(|| {
+            let widths = inline_layout.backend.content_widths();
+            let computed_width = match available_space.width {
+                AvailableSpace::MinContent => widths.min.max(widths.float_min),
+                AvailableSpace::MaxContent => widths.max,
+                AvailableSpace::Definite(limit) => limit.min(widths.max).max(widths.min),
+            };
 
-                let style_width = node_size.width.map(|w| w * scale);
-                let min_width = node_min_size.width.map(|w| w * scale);
-                let max_width = node_max_size.width.map(|w| w * scale);
-
-                (style_width)
-                    .unwrap_or(computed_width + pbw)
-                    .max(computed_width)
-                    .maybe_clamp(min_width, max_width)
-                    - pbw
-            });
+            node_size
+                .width
+                .unwrap_or(computed_width + pbw)
+                .max(computed_width)
+                .maybe_clamp(node_min_size.width, node_max_size.width)
+                - pbw
+        });
 
         // Set block context width if this is a block context root
         #[cfg(feature = "floats")]
         let is_bfc_root = block_ctx.is_bfc_root();
         #[cfg(feature = "floats")]
         if is_bfc_root {
-            block_ctx.set_width((width + pbw) / scale);
+            block_ctx.set_width(width + pbw);
         }
 
         // Create sub-context to account for the inline layout's padding/border
@@ -524,7 +513,7 @@ impl LayoutPassState<'_> {
             self.put_inline_layout(node_id, inline_layout);
 
             let measured_size = inputs.known_dimensions.unwrap_or(taffy::Size {
-                width: width / scale,
+                width,
                 // Height is ignored if RequestedAxis if Horizontal
                 height: 0.0,
             });
@@ -554,7 +543,6 @@ impl LayoutPassState<'_> {
             style.as_deref(),
             &mut TaffyFloats {
                 ctx: &mut block_ctx,
-                scale,
             },
         );
         #[cfg(not(feature = "floats"))]
@@ -572,22 +560,19 @@ impl LayoutPassState<'_> {
         // A block formatting context's root holds its floats.
         #[cfg(feature = "floats")]
         if is_bfc_root {
-            height = height.max(float_height_contribution * scale);
+            height = height.max(float_height_contribution);
         }
 
         // Note: `width` and `height` are content-box measurements of the inline content.
         // `known_dimensions` must not be substituted in here: those are border-box sizes, and
         // using them for the scrollable overflow rect (which adds padding below) would
         // double-count padding, incorrectly making the container's content overflow it.
-        let measured_size = taffy::Size {
-            width: width / scale,
-            height: height / scale,
-        };
+        let measured_size = taffy::Size { width, height };
 
         // Unbreakable content (e.g. `white-space: pre` text) may overflow the max advance the
         // lines were broken at. `width` is the advance the lines were broken at, so the actual
         // extent of the line boxes must be taken from the laid-out lines for `content_size`.
-        let content_width = width.max(extent.width) / scale;
+        let content_width = width.max(extent.width);
 
         let clamped_size = inputs
             .known_dimensions
@@ -695,10 +680,10 @@ impl LayoutPassState<'_> {
                 //   within the line and spans the line box in the block axis.
                 // - A block-level box's rectangle spans the containing block's content
                 //   box in the inline axis and is zero-height where the lines say it starts.
-                let line_top = (placed.line_top / scale) + line_box_top;
-                let line_bottom = (placed.line_bottom / scale) + line_box_top;
+                let line_top = placed.line_top + line_box_top;
+                let line_bottom = placed.line_bottom + line_box_top;
                 let (inline_area, block_area) = if is_inline_level {
-                    let x = (placed.x / scale) + container_pb.left;
+                    let x = placed.x + container_pb.left;
                     (
                         taffy::Line { start: x, end: x },
                         taffy::Line {
@@ -707,7 +692,7 @@ impl LayoutPassState<'_> {
                         },
                     )
                 } else {
-                    let block_start = (placed.block_start / scale) + line_box_top;
+                    let block_start = placed.block_start + line_box_top;
                     (
                         taffy::Line {
                             start: container_pb.left,
@@ -772,12 +757,10 @@ impl LayoutPassState<'_> {
                 let layout = self.nodes[placed.node].unrounded_layout_mut();
                 layout.size = size;
                 layout.scrollable_overflow_rect = output.scrollable_overflow_rect;
-                layout.location.x =
-                    (placed.x / scale) + margin.left + container_pb.left + inset_offset.x;
+                layout.location.x = placed.x + margin.left + container_pb.left + inset_offset.x;
                 // The lines place the margin box; offset to the border box even when a
                 // negative top margin makes it extend above the margin box.
-                layout.location.y =
-                    (placed.top / scale) + margin.top + line_box_top + inset_offset.y;
+                layout.location.y = placed.top + margin.top + line_box_top + inset_offset.y;
                 layout.padding = padding;
                 layout.border = border;
                 layout.margin = margin;
@@ -813,7 +796,7 @@ impl LayoutPassState<'_> {
             container_pb.top + float_height_contribution,
         );
 
-        let line_baseline = |baseline: f32| (baseline / scale) + line_box_top;
+        let line_baseline = |baseline: f32| baseline + line_box_top;
         let first_baseline = extent
             .first_baseline
             .filter(|_| !suppresses_baseline)
@@ -1115,45 +1098,38 @@ pub(super) enum Measure {
 }
 
 /// Taffy's block formatting context, as an inline formatting context's lines read and place
-/// floats in it. The lines measure in device pixels and Taffy in CSS pixels, so every answer is
-/// scaled on the way through.
+/// floats in it.
 #[cfg(feature = "floats")]
 pub(crate) struct TaffyFloats<'c, 'bfc> {
     pub(crate) ctx: &'c mut taffy::BlockContext<'bfc>,
-    /// Device pixels a CSS pixel.
-    pub(crate) scale: f32,
 }
 
 #[cfg(feature = "floats")]
 impl LineExclusions for TaffyFloats<'_, '_> {
     fn slot(&self, top: f32, height: f32, search: SlotSearch) -> LineSlot {
-        let scale = self.scale;
         let (clear, after) = match search {
             SlotSearch::Any => (taffy::Clear::None, None),
             SlotSearch::After(segment) => (taffy::Clear::None, Some(segment)),
             SlotSearch::BelowFloats => (taffy::Clear::Both, None),
         };
-        let slot = self
-            .ctx
-            .find_content_slot(top / scale, height / scale, clear, after);
+        let slot = self.ctx.find_content_slot(top, height, clear, after);
         LineSlot {
-            top: slot.y * scale,
-            left: slot.x * scale,
-            width: slot.width * scale,
-            height: slot.height * scale,
+            top: slot.y,
+            left: slot.x,
+            width: slot.width,
+            height: slot.height,
             segment: slot.segment_id,
         }
     }
 
     fn place(&mut self, float: FloatRequest) -> PlacedFloat {
-        let scale = self.scale;
         let pos = self.ctx.place_floated_box(
             float.key,
             taffy::Size {
-                width: float.inline_size / scale,
-                height: float.block_size / scale,
+                width: float.inline_size,
+                height: float.block_size,
             },
-            float.block_start / scale,
+            float.block_start,
             match float.side {
                 FloatSide::Left => taffy::FloatDirection::Left,
                 FloatSide::Right => taffy::FloatDirection::Right,
@@ -1166,7 +1142,7 @@ impl LineExclusions for TaffyFloats<'_, '_> {
             },
             false,
         );
-        let (left, top) = (pos.x * scale, pos.y * scale);
+        let (left, top) = (pos.x, pos.y);
         PlacedFloat {
             left,
             right: left + float.inline_size,
