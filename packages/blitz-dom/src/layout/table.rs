@@ -246,8 +246,10 @@ pub(crate) fn build_table_context(
     for child_id in children.iter().copied() {
         collect_columns(doc, child_id, wm, &mut columns, &mut column_sizes);
     }
-    // Percentage column widths only take effect in the fixed table layout algorithm
-    if !is_fixed {
+    // In the automatic table layout algorithm, percentage column widths need a table width
+    // to resolve against: the table's own. Without one they are ignored.
+    let resolves_percentages = is_fixed || !style.size.width.is_auto();
+    if !resolves_percentages {
         for column in column_sizes.iter_mut() {
             if column.max.into_raw().tag() == taffy::CompactLength::PERCENT_TAG {
                 *column = style_helpers::auto();
@@ -308,26 +310,25 @@ pub(crate) fn build_table_context(
     }
     let num_columns = cursor.num_columns.max(column_sizes.len() as u16);
     column_sizes.resize(num_columns as usize, remaining_column);
+    // Percentage column widths resolve against the table's content width minus the
+    // horizontal border-spacing between columns, whereas Taffy resolves percentage tracks
+    // against the container's inner width (from which only the outer border-spacing has
+    // been removed via padding). Fold the inner border-spacing into the percentage using
+    // `calc(N% - N * spacing)`.
+    let spacing_x = match border_collapse {
+        BorderCollapse::Separate => border_spacing.width.px(),
+        BorderCollapse::Collapse => 0.0,
+    };
+    let inner_spacing = spacing_x * num_columns.saturating_sub(1) as f32;
+    let mut percent_track = |percent: f32, extra: f32| -> TrackSizingFunction {
+        let extra = extra - percent * inner_spacing;
+        if extra == 0.0 {
+            style_helpers::percent(percent)
+        } else {
+            percent_plus_length(&mut calc_values, percent, extra)
+        }
+    };
     if is_fixed {
-        // In the fixed table layout algorithm, percentage column widths resolve against
-        // the table's content width minus the horizontal border-spacing between columns,
-        // whereas Taffy resolves percentage tracks against the container's inner width
-        // (from which only the outer border-spacing has been removed via padding). Fold
-        // the inner border-spacing into the percentage using `calc(N% - N * spacing)`.
-        let spacing_x = match border_collapse {
-            BorderCollapse::Separate => border_spacing.width.px(),
-            BorderCollapse::Collapse => 0.0,
-        };
-        let inner_spacing = spacing_x * num_columns.saturating_sub(1) as f32;
-        let mut percent_track = |percent: f32, extra: f32| -> TrackSizingFunction {
-            let extra = extra - percent * inner_spacing;
-            if extra == 0.0 {
-                style_helpers::percent(percent)
-            } else {
-                percent_plus_length(&mut calc_values, percent, extra)
-            }
-        };
-
         for column in column_sizes.iter_mut() {
             if column.max.is_auto() {
                 *column = remaining_column;
@@ -341,6 +342,25 @@ pub(crate) fn build_table_context(
         for (col_idx, percent, extra) in percent_columns {
             if let Some(column) = column_sizes.get_mut(col_idx as usize) {
                 *column = percent_track(percent, extra);
+            }
+        }
+    } else if resolves_percentages {
+        // In the automatic table layout algorithm, a percentage column gets its share of the
+        // table but no less than its content needs, and `auto` columns share out what's left.
+        // When the percentages leave nothing, `auto` columns keep their minimum. The track is
+        // `minmax(min-content, N%)`: with an `auto` minimum, grid layout would cap the content's
+        // minimum at the percentage.
+        let at_least_content = |track: TrackSizingFunction| -> TrackSizingFunction {
+            style_helpers::minmax(style_helpers::min_content(), track.max)
+        };
+        for column in column_sizes.iter_mut() {
+            if column.max.into_raw().tag() == taffy::CompactLength::PERCENT_TAG {
+                *column = at_least_content(percent_track(column.max.into_raw().value(), 0.0));
+            }
+        }
+        for (col_idx, percent, extra) in percent_columns {
+            if let Some(column) = column_sizes.get_mut(col_idx as usize) {
+                *column = at_least_content(percent_track(percent, extra));
             }
         }
     }
@@ -670,19 +690,20 @@ fn collect_table_cells(
                         }
                     }
                     taffy::CompactLength::PERCENT_TAG => {
+                        let extra = match style.box_sizing {
+                            taffy::BoxSizing::ContentBox => {
+                                let padding =
+                                    style.padding.resolve_or_zero(None, resolve_calc_value);
+                                let border = style.border.resolve_or_zero(None, resolve_calc_value);
+                                padding.left + padding.right + border.left + border.right
+                            }
+                            taffy::BoxSizing::BorderBox => 0.0,
+                        };
+                        // Resolved in `build_table_context` once the column count is known
+                        // (and, in the automatic layout algorithm, whether the table has a
+                        // width for it to resolve against)
+                        percent_columns.push((col, style.size.width.value(), extra));
                         if is_fixed {
-                            let extra = match style.box_sizing {
-                                taffy::BoxSizing::ContentBox => {
-                                    let padding =
-                                        style.padding.resolve_or_zero(None, resolve_calc_value);
-                                    let border =
-                                        style.border.resolve_or_zero(None, resolve_calc_value);
-                                    padding.left + padding.right + border.left + border.right
-                                }
-                                taffy::BoxSizing::BorderBox => 0.0,
-                            };
-                            // Resolved in `build_table_context` once the column count is known
-                            percent_columns.push((col, style.size.width.value(), extra));
                             style_helpers::percent(style.size.width.value())
                         } else {
                             style_helpers::auto()
