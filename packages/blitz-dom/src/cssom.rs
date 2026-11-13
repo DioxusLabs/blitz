@@ -512,18 +512,17 @@ impl BaseDocument {
         };
 
         let guard = lock.read();
-        if let CssRule::FontFace(_) = &new_rule {
-            crate::net::fetch_font_face_rules(
-                std::iter::once(&new_rule),
-                self.tx.clone(),
-                self.id(),
-                Some(node_id),
-                &self.net_provider,
-                &self.shell_provider,
-                &guard,
-                self.abort_signal.as_ref(),
-            );
-        }
+        crate::net::fetch_font_face_rules(
+            std::slice::from_ref(&new_rule),
+            self.tx.clone(),
+            self.id(),
+            Some(node_id),
+            &self.stylist,
+            &self.net_provider,
+            &self.shell_provider,
+            &guard,
+            self.abort_signal.as_ref(),
+        );
         let (change_kind, ancestors) = match &list {
             RuleList::Css(_) => (RuleChangeKind::Insertion, ancestors.as_slice()),
             // The keyframes rule itself changed; its ancestors exclude it
