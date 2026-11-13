@@ -20,7 +20,7 @@
 //! Painting is the renderer's part: blitz-paint paints each backend's types in a module of its own,
 //! which [`cfg_text_backend!`](crate::cfg_text_backend) selects.
 
-#[cfg(not(any(feature = "parley", text_winkin)))]
+#[cfg(not(any(feature = "parley", feature = "winkin")))]
 compile_error!("Enable one of the `parley` or `winkin` features");
 
 mod document;
@@ -48,12 +48,12 @@ pub use inline::{InlineText, MarkerLayout, TextLayout};
 
 #[cfg(feature = "parley")]
 pub mod parley;
-#[cfg(text_winkin)]
+#[cfg(all(feature = "winkin", not(feature = "parley")))]
 pub mod winkin;
 
 #[cfg(feature = "parley")]
 use self::parley as backend;
-#[cfg(text_winkin)]
+#[cfg(all(feature = "winkin", not(feature = "parley")))]
 use self::winkin as backend;
 
 /// The text backends Blitz can be built with.
@@ -69,7 +69,7 @@ pub enum TextBackend {
 #[cfg(feature = "parley")]
 pub const BACKEND: TextBackend = TextBackend::Parley;
 /// The text backend this build of Blitz lays out text with.
-#[cfg(text_winkin)]
+#[cfg(all(feature = "winkin", not(feature = "parley")))]
 pub const BACKEND: TextBackend = TextBackend::Winkin;
 
 /// Expands the arm for the text backend in use, and drops the others, so that a crate which
@@ -108,7 +108,7 @@ macro_rules! __text_backend_arms {
 }
 
 /// Expands the arm of [`cfg_text_backend!`] named for the text backend in use.
-#[cfg(text_winkin)]
+#[cfg(all(feature = "winkin", not(feature = "parley")))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __text_backend_arms {
