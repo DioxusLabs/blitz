@@ -100,7 +100,7 @@ dioxus-cli-config = { version = "0.8.0-alpha.3" }
 dioxus-core-macro = { version = "0.8.0-alpha.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4aca4f4933aa9cb7a3266050c788aad4c90288d2", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "a3997d55bacd1fb6cd12fe31db0be15b20f91528", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
@@ -116,15 +116,15 @@ skrifa = { version = "0.49", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
-anyrender_tiny_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "a8b1b9a0c8c14a6040e9383c7f2c0f29489498ec" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
+anyrender_tiny_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "8d9f238b514a858d7fb0603242eb155b3cb3a989" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -331,4 +331,3 @@ wgpu_context = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
-
