@@ -9,7 +9,7 @@ use crate::node::NodeData;
 use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name};
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
-    Element, OpaqueElement,
+    OpaqueElement,
     attr::{AttrSelectorOperation, NamespaceConstraint},
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
@@ -39,13 +39,27 @@ use style_dom::ElementState;
 ///
 /// Since BlitzNodes are not persistent (IE we don't keep the pointers around between frames), we choose to just implement
 /// the tree structure in the nodes themselves, and temporarily give out pointers during the layout phase.
-pub(crate) type BlitzNode<'a> = &'a Node;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BlitzNode<'a>(pub(crate) &'a Node);
+
+impl std::ops::Deref for BlitzNode<'_> {
+    type Target = Node;
+    fn deref(&self) -> &Node {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for BlitzNode<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl<'a> TDocument for BlitzNode<'a> {
     type ConcreteNode = BlitzNode<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self
+        *self
     }
 
     fn is_html_document(&self) -> bool {
@@ -75,7 +89,7 @@ impl<'a> TShadowRoot for BlitzNode<'a> {
     type ConcreteNode = BlitzNode<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self
+        *self
     }
 
     fn host(&self) -> <Self::ConcreteNode as TNode>::ConcreteElement {
@@ -97,32 +111,27 @@ impl<'a> TNode for BlitzNode<'a> {
     type ConcreteShadowRoot = BlitzNode<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        self.parent.map(|id| self.with(id))
+        self.0.parent_node().map(BlitzNode)
     }
 
     fn first_child(&self) -> Option<Self> {
-        self.children.first().map(|id| self.with(*id))
+        self.children.first().map(|id| BlitzNode(self.0.with(*id)))
     }
 
     fn last_child(&self) -> Option<Self> {
-        self.children.last().map(|id| self.with(*id))
+        self.children.last().map(|id| BlitzNode(self.0.with(*id)))
     }
 
     fn prev_sibling(&self) -> Option<Self> {
-        self.backward(1)
+        self.0.backward(1).map(BlitzNode)
     }
 
     fn next_sibling(&self) -> Option<Self> {
-        self.forward(1)
+        self.0.forward(1).map(BlitzNode)
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        // Walk up the (layout-)parent chain to the root Document node.
-        let mut node = *self;
-        while let Some(parent_id) = node.parent {
-            node = node.with(parent_id);
-        }
-        node
+        BlitzNode(self.0.owner_doc())
     }
 
     fn is_in_document(&self) -> bool {
@@ -138,7 +147,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn opaque(&self) -> OpaqueNode {
-        OpaqueNode(self.id.as_u64() as usize)
+        Node::opaque(self)
     }
 
     fn debug_id(self) -> usize {
@@ -147,14 +156,14 @@ impl<'a> TNode for BlitzNode<'a> {
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
         match self.data {
-            NodeData::Element { .. } => Some(self),
+            NodeData::Element { .. } => Some(*self),
             _ => None,
         }
     }
 
     fn as_document(&self) -> Option<Self::ConcreteDocument> {
         match self.data {
-            NodeData::Document(_) => Some(self),
+            NodeData::Document(_) => Some(*self),
             _ => None,
         }
     }
@@ -201,9 +210,9 @@ impl selectors::Element for BlitzNode<'_> {
     // we should try and use `find` instead of this foward/backward stuff since its ugly and slow
     fn prev_sibling_element(&self) -> Option<Self> {
         let mut n = 1;
-        while let Some(node) = self.backward(n) {
+        while let Some(node) = self.0.backward(n) {
             if node.is_element() {
-                return Some(node);
+                return Some(BlitzNode(node));
             }
             n += 1;
         }
@@ -213,9 +222,9 @@ impl selectors::Element for BlitzNode<'_> {
 
     fn next_sibling_element(&self) -> Option<Self> {
         let mut n = 1;
-        while let Some(node) = self.forward(n) {
+        while let Some(node) = self.0.forward(n) {
             if node.is_element() {
-                return Some(node);
+                return Some(BlitzNode(node));
             }
             n += 1;
         }
@@ -224,8 +233,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn first_element_child(&self) -> Option<Self> {
-        let mut children = self.dom_children();
-        children.find(|child| child.is_element())
+        self.0.first_element_child().map(BlitzNode)
     }
 
     fn is_html_element_in_html_document(&self) -> bool {
@@ -426,7 +434,7 @@ impl<'a> TElement for BlitzNode<'a> {
     type TraversalChildrenIterator = Traverser<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self
+        *self
     }
 
     fn implicit_scope_for_sheet_in_shadow_root(
@@ -443,7 +451,7 @@ impl<'a> TElement for BlitzNode<'a> {
     fn traversal_children(&self) -> style::dom::LayoutIterator<Self::TraversalChildrenIterator> {
         LayoutIterator(Traverser {
             // dom: self.tree(),
-            parent: self,
+            parent: *self,
             child_index: 0,
         })
     }
@@ -684,10 +692,7 @@ impl<'a> TElement for BlitzNode<'a> {
         }
 
         // If it is then check if it is a child of the root (<html>) element
-        let root_node = TNode::owner_doc(self);
-        let root_element = TDocument::as_node(&root_node)
-            .first_element_child()
-            .unwrap();
+        let root_element = self.0.owner_doc().first_element_child().unwrap();
         root_element.children.contains(&self.id)
     }
 
@@ -699,7 +704,7 @@ impl<'a> TElement for BlitzNode<'a> {
         V: Push<ApplicableDeclarationBlock<'h>>,
         Self: 'h,
     {
-        super::presentational_hints::synthesize(self, hints);
+        super::presentational_hints::synthesize(self.0, hints);
     }
 
     fn local_name(&self) -> &LocalName {
@@ -770,7 +775,7 @@ impl<'a> TElement for BlitzNode<'a> {
     // }
 }
 
-pub struct Traverser<'a> {
+pub(crate) struct Traverser<'a> {
     // dom: &'a Slab<Node>,
     parent: BlitzNode<'a>,
     child_index: usize,
@@ -781,11 +786,11 @@ impl<'a> Iterator for Traverser<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let node_id = self.parent.children.get(self.child_index)?;
-        let node = self.parent.with(*node_id);
+        let node = self.parent.0.with(*node_id);
 
         self.child_index += 1;
 
-        Some(node)
+        Some(BlitzNode(node))
     }
 }
 

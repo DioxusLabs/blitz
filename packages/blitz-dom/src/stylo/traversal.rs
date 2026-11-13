@@ -6,7 +6,6 @@ use std::sync::atomic::Ordering;
 
 use crate::StyleThreading;
 use crate::node::Node;
-use selectors::Element;
 use style::animation::AnimationState;
 use style::global_style_data::STYLE_THREAD_POOL;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -18,7 +17,7 @@ use style::{
         RegisteredSpeculativePainter, RegisteredSpeculativePainters, SharedStyleContext,
         StyleContext, ThreadLocalStyleContext,
     },
-    dom::{TDocument, TElement, TNode},
+    dom::{TElement, TNode},
     global_style_data::GLOBAL_STYLE_DATA,
     servo_arc::Arc,
     shared_lock::StylesheetGuards,
@@ -47,11 +46,7 @@ impl crate::document::BaseDocument {
             ua_or_user: &guard.read(),
         };
 
-        let root = TDocument::as_node(&&self.nodes[self.root_node_id])
-            .first_element_child()
-            .unwrap()
-            .as_element()
-            .unwrap();
+        let root = BlitzNode(self.nodes[self.root_node_id].first_element_child().unwrap());
 
         self.stylist
             .flush(&guards)
@@ -116,7 +111,7 @@ impl crate::document::BaseDocument {
         };
 
         // components/layout_2020/lib.rs:983
-        let root = self.root_element();
+        let root = BlitzNode(self.root_element());
         // dbg!(root);
         let token = RecalcStyle::pre_traverse(root, &context);
 
@@ -224,7 +219,13 @@ impl crate::document::BaseDocument {
                 shared: &shared,
                 thread_local: &mut thread_local,
             };
-            resolve_style(&mut context, node, RuleInclusion::All, None, None)
+            resolve_style(
+                &mut context,
+                BlitzNode(node),
+                RuleInclusion::All,
+                None,
+                None,
+            )
         };
 
         style::thread_state::exit(ThreadState::LAYOUT);
@@ -273,7 +274,7 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
             let mut data = unsafe { el.ensure_data() };
             recalc_style_at(self, context, el, &mut data, note_child);
 
-            sync_pseudo_element_styles(el, &data, &self.nodes_needing_style_image_flush);
+            sync_pseudo_element_styles(el.0, &data, &self.nodes_needing_style_image_flush);
             if let Some(style) = data.styles.get_primary() {
                 el.record_out_of_flow(style);
             }
@@ -286,7 +287,7 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
                 if data
                     .styles
                     .get_primary()
-                    .is_some_and(|style| needs_style_image_flush(el, style))
+                    .is_some_and(|style| needs_style_image_flush(el.0, style))
                 {
                     self.nodes_needing_style_image_flush
                         .lock()
@@ -296,7 +297,7 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
             }
 
             // Gets set later on
-            el.unset_dirty_descendants();
+            el.0.unset_dirty_descendants();
         }
     }
 
@@ -379,7 +380,7 @@ fn sync_pseudo_element_styles(
             continue;
         }
 
-        let diff = RestyleDamage::compute_style_difference::<&Node>(&old_style, &pe_style);
+        let diff = RestyleDamage::compute_style_difference::<BlitzNode>(&old_style, &pe_style);
         if !diff.damage.is_empty() {
             pe_data.damage.insert(diff.damage);
             pe_node.mark_damaged();

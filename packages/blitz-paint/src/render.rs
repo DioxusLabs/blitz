@@ -30,7 +30,6 @@ use blitz_traits::devtools::DevtoolSettings;
 
 use style::values::computed::{BorderCornerRadius, ColorOrAuto};
 use style::{
-    dom::TElement,
     properties::{
         ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::Font,
@@ -426,7 +425,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
-        if node.local_name() == "input" && node.attr(local_name!("type")) == Some("hidden") {
+        if node.data.is_element_with_tag_name(&local_name!("input"))
+            && node.attr(local_name!("type")) == Some("hidden")
+        {
             return;
         }
 
