@@ -2379,6 +2379,16 @@ impl BaseDocument {
         (pos, *self.nodes[node_id].unrounded_layout())
     }
 
+    /// The page scroll to take off a node's position to get client coordinates. Zero for a
+    /// box anchored to the viewport (see [`Node::is_viewport_anchored`]), which does not move
+    /// with the page.
+    fn client_scroll_offset(&self, node: &Node) -> crate::Point<f64> {
+        match node.is_viewport_anchored() {
+            true => crate::Point::ZERO,
+            false => self.viewport_scroll(),
+        }
+    }
+
     /// Computes the size and position of the `Node` relative to the viewport
     pub fn get_client_bounding_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         // Non-atomic inline elements have no layout box of their own: return
@@ -2387,13 +2397,14 @@ impl BaseDocument {
             return rects.reduce(BoundingRect::union);
         }
 
-        self.get_node(node_id)?;
+        let node = self.get_node(node_id)?;
         let (pos, layout) = self.physical_unrounded_geometry(node_id);
         let size = layout.size;
+        let scroll = self.client_scroll_offset(node);
 
         Some(BoundingRect {
-            x: snap_to_layout_unit(pos.x as f64 - self.viewport_scroll().x),
-            y: snap_to_layout_unit(pos.y as f64 - self.viewport_scroll().y),
+            x: snap_to_layout_unit(pos.x as f64 - scroll.x),
+            y: snap_to_layout_unit(pos.y as f64 - scroll.y),
             width: snap_to_layout_unit(size.width as f64),
             height: snap_to_layout_unit(size.height as f64),
         })
@@ -2432,13 +2443,13 @@ impl BaseDocument {
         // Union the per-line-box fragments into a single bounding box
         let bounds = rects.reduce(BoundingRect::union)?;
 
-        // Fragment rects are viewport-relative; convert to document-relative
-        let scroll = self.viewport_scroll();
-        let mut x = bounds.x + scroll.x;
-        let mut y = bounds.y + scroll.y;
-
         // Resolve the offsetParent from the inline root (the root itself if it is positioned)
         let inline_root = node.inline_root_ancestor()?;
+
+        // Fragment rects are viewport-relative; convert to document-relative
+        let scroll = self.client_scroll_offset(inline_root);
+        let mut x = bounds.x + scroll.x;
+        let mut y = bounds.y + scroll.y;
         let offset_parent = if inline_root.is_offset_parent() {
             Some(inline_root)
         } else {
@@ -2487,8 +2498,9 @@ impl BaseDocument {
 
         // Fragment boxes are relative to the inline root's border box.
         let (root_pos, _) = self.physical_unrounded_geometry(inline_root.id);
-        let origin_x = root_pos.x as f64 - self.viewport_scroll().x;
-        let origin_y = root_pos.y as f64 - self.viewport_scroll().y;
+        let scroll = self.client_scroll_offset(inline_root);
+        let origin_x = root_pos.x as f64 - scroll.x;
+        let origin_y = root_pos.y as f64 - scroll.y;
 
         Some(fragments.map(move |rect| BoundingRect {
             x: snap_to_layout_unit(origin_x + rect.left as f64),

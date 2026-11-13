@@ -1091,6 +1091,26 @@ impl Node {
         matches!(self.data, NodeData::Element { .. })
     }
 
+    /// Whether this is the document's root element (`<html>`). Its containing block is the
+    /// document node, so `containing_block().is_none()` does not tell it apart.
+    pub fn is_root_element(&self) -> bool {
+        self.is_element()
+            && self
+                .parent
+                .is_some_and(|parent| matches!(self.with(parent).data, NodeData::Document(_)))
+    }
+
+    /// Whether the viewport positions this box rather than the page: a fixed box whose
+    /// containing block is the root element, or a box inside one. Such a box does not move
+    /// when the page scrolls.
+    pub fn is_viewport_anchored(&self) -> bool {
+        let Some(containing_block) = self.containing_block().map(|id| self.with(id)) else {
+            return false;
+        };
+        (self.taffy_position() == taffy::Position::Fixed && containing_block.is_root_element())
+            || containing_block.is_viewport_anchored()
+    }
+
     pub fn is_anonymous(&self) -> bool {
         matches!(self.data, NodeData::AnonymousBlock { .. })
     }
@@ -1609,7 +1629,7 @@ impl Node {
                 // against the viewport and do not scroll with it. (A fixed box
                 // whose containing block is a transformed ancestor scrolls with
                 // that ancestor like any other out-of-flow box.)
-                if child_position == taffy::Position::Fixed && self.containing_block().is_none() {
+                if child_position == taffy::Position::Fixed && self.is_root_element() {
                     child_x -= self.scroll_offset().x as f32;
                     child_y -= self.scroll_offset().y as f32;
                     let viewport_scroll = self.tree().viewport_scroll();
