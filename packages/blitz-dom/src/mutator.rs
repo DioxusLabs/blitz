@@ -1678,7 +1678,10 @@ mod test {
                 attr(qual_name!("href"), "style.css"),
             ],
         );
-        mutator.append_children(html, &[img, link]);
+        let style = mutator.create_element(qual_name!("style"), vec![]);
+        let css = mutator.create_text_node(r#"@import "imported.css";"#);
+        mutator.append_children(style, &[css]);
+        mutator.append_children(html, &[img, link, style]);
         mutator.append_children(root_id, &[html]);
         mutator.set_attribute(img, qual_name!("src"), "other.png");
         drop(mutator);
