@@ -1135,18 +1135,24 @@ impl<'doc> DocumentMutator<'doc> {
             self.doc.has_canvas = self.doc.compute_has_canvas();
         }
 
-        if let Some(id) = self.title_node {
-            let title = self.doc.nodes[id].text_content();
+        // Nodes queued below may have been removed again in the same batch of mutations (a
+        // form control inserted and dropped before the flush): skip those, as autofocus does.
+        if let Some(node) = self.title_node.and_then(|id| self.doc.get_node(id)) {
+            let title = node.text_content();
             self.doc.shell_provider.set_window_title(title);
         }
 
         // Add/Update inline stylesheets (<style> elements)
         for id in self.style_nodes.drain() {
-            self.doc.process_style_element(id);
+            if self.doc.get_node(id).is_some() {
+                self.doc.process_style_element(id);
+            }
         }
 
         for id in self.form_nodes.drain() {
-            self.doc.reset_form_owner(id);
+            if self.doc.get_node(id).is_some() {
+                self.doc.reset_form_owner(id);
+            }
         }
 
         #[cfg(feature = "autofocus")]
@@ -2297,6 +2303,54 @@ mod test {
         }
         // Nothing is laid out yet, so nothing is hit; what matters is that it doesn't panic.
         assert!(document.hit(10.0, 10.0).is_none());
+    }
+
+    /// A form control (or `<style>`, or `<title>`) inserted and dropped again before the
+    /// mutator flushes is skipped by the flush rather than looked up after it is gone.
+    #[test]
+    fn flush_skips_nodes_removed_in_the_same_batch() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+        {
+            let mut mutator = document.mutate();
+            let names = [
+                qual_name!("input"),
+                qual_name!("textarea"),
+                qual_name!("style"),
+                qual_name!("title"),
+            ];
+            for name in names {
+                let id = mutator.create_element(name, vec![]);
+                mutator.append_children(root_id, &[id]);
+                // As dioxus-native-dom removes nodes: dropped, so their id is gone.
+                mutator.remove_and_drop_node(id);
+            }
+            // Flushed on drop.
+        }
+        assert!(document.root_node().children.is_empty());
+    }
+
+    /// A `<style>` already flushed is queued again when its text child is removed. If it is
+    /// then dropped in the same batch, the flush skips it rather than parsing a dropped node.
+    #[test]
+    fn flush_skips_a_style_queued_by_its_text_then_dropped() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+        let (style, text) = {
+            let mut mutator = document.mutate();
+            let style = mutator.create_element(qual_name!("style"), vec![]);
+            let text = mutator.create_text_node(".a { color: #fff; }");
+            mutator.append_children(style, &[text]);
+            mutator.append_children(root_id, &[style]);
+            (style, text)
+        };
+        {
+            let mut mutator = document.mutate();
+            // Removing the text queues its <style> to be parsed again at the flush.
+            mutator.remove_and_drop_node(text);
+            mutator.remove_and_drop_node(style);
+        }
+        assert!(document.get_node(style).is_none());
     }
 
     #[test]
