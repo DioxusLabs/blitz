@@ -507,7 +507,9 @@ impl BaseDocument {
             };
             let tag = &element.name.local;
             if element.name.ns == ns!(svg)
-                && (*tag == local_name!("clipPath") || *tag == local_name!("mask"))
+                && (*tag == local_name!("clipPath")
+                    || *tag == local_name!("mask")
+                    || *tag == local_name!("filter"))
             {
                 self.resolve_undisplayed_svg_styles(child);
                 self.layout_svg_node(child, viewport, true);

@@ -1,10 +1,10 @@
 //! `filter` references to `<filter>` elements.
 //!
 //! Like clip paths and masks these are paint-only references, resolved by
-//! the painter for each element it paints. Only a single `url(#id)` is
-//! supported, with the `feFlood`, `feGaussianBlur`, `feOffset`,
-//! `feDropShadow` and `feBlend` primitives. A filter with any other
-//! primitive is ignored and the element painted unfiltered.
+//! the painter for each `url(#id)` in an element's `filter` list. The
+//! `feFlood`, `feGaussianBlur`, `feOffset`, `feDropShadow` and `feBlend`
+//! primitives are supported. A filter with any other primitive is ignored
+//! and the element painted unfiltered.
 //! <https://drafts.fxtf.org/filter-effects-1/>
 
 use std::collections::HashMap;
@@ -13,7 +13,6 @@ use kurbo::Rect;
 use markup5ever::{local_name, ns};
 use style::color::AbsoluteColor;
 use style::computed_values::mix_blend_mode::T as MixBlendMode;
-use style::properties::ComputedValues;
 use style::values::computed::Filter as StyloFilter;
 
 use super::clip_mask::{SvgReference, bbox_transform, resource_region};
@@ -101,8 +100,8 @@ fn parse_std_deviation(value: Option<&str>, default: f64) -> Option<(f64, f64)> 
     Some((x, y))
 }
 
-fn parse_blend_mode(value: Option<&str>) -> Option<MixBlendMode> {
-    Some(match value.map(str::trim).unwrap_or("normal") {
+fn parse_blend_mode(value: Option<&str>) -> MixBlendMode {
+    match value.map(str::trim).unwrap_or("normal") {
         "normal" => MixBlendMode::Normal,
         "multiply" => MixBlendMode::Multiply,
         "screen" => MixBlendMode::Screen,
@@ -121,7 +120,7 @@ fn parse_blend_mode(value: Option<&str>) -> Option<MixBlendMode> {
         "luminosity" => MixBlendMode::Luminosity,
         // An invalid mode is the initial value.
         _ => MixBlendMode::Normal,
-    })
+    }
 }
 
 /// `flood-color` with `flood-opacity` applied, from the primitive's style.
@@ -155,11 +154,11 @@ impl BaseDocument {
     /// rendering of the element.
     pub fn resolve_svg_filter(
         &self,
-        style: &ComputedValues,
+        filter: &StyloFilter,
         bbox: Option<Rect>,
         viewport: SvgViewport,
     ) -> SvgReference<SvgFilter> {
-        let [StyloFilter::Url(url)] = &style.get_effects().filter.0[..] else {
+        let StyloFilter::Url(url) = filter else {
             return SvgReference::None;
         };
         let Some(node) = url
@@ -286,10 +285,7 @@ impl BaseDocument {
                         color: flood_color(child),
                     }
                 }
-                "feBlend" => match parse_blend_mode(get("mode")) {
-                    Some(mode) => SvgFilterKind::Blend(mode),
-                    None => return SvgReference::None,
-                },
+                "feBlend" => SvgFilterKind::Blend(parse_blend_mode(get("mode"))),
                 _ => return SvgReference::None,
             };
             let input2 = match kind {

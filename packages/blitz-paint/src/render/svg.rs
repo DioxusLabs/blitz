@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use anyrender::filters::color_transformation::ColorMatrix;
 use anyrender::filters::{Filter, FilterEffect, FilterId, FilterInput, FilterInputs, FilterSource};
 use anyrender::{MaskMode, PaintScene};
 use blitz_dom::node::Node;
@@ -31,6 +32,7 @@ use style::values::generics::svg::SVGPaintFallback;
 use super::{ALMOST_OPAQUE, ElementCx};
 use crate::blend::convert_blend_mode;
 use crate::color::{Color, ToColorColor};
+use crate::filters::{StyloFilter, convert_single_filter};
 
 impl ElementCx<'_, '_> {
     /// Paint a natively rendered inline `<svg>` root into its content box.
@@ -58,6 +60,22 @@ impl ElementCx<'_, '_> {
         let SvgLayoutKind::Viewport { viewport, .. } = layout.kind else {
             return;
         };
+        // A filter on the `<svg>` itself; the CSS painter applies filter
+        // functions to its box.
+        let filter = match self.resolve_svg_filters(&self.style, layout.bbox, viewport, false) {
+            SvgReference::None => None,
+            SvgReference::Invalid => return,
+            SvgReference::Valid(filter) => Some(filter),
+        };
+        if let Some((rect, graph)) = &filter {
+            let bounds = self
+                .viewport_rect()
+                .intersect(transform.transform_rect_bbox(*rect));
+            if bounds.area() <= 0.0 {
+                return;
+            }
+            push_svg_filter(scene, transform, rect, graph);
+        }
         // The outermost `<svg>` is an isolated group, so blending inside it
         // does not reach content behind it.
         // https://drafts.fxtf.org/compositing/#csscompositingrules_SVG
@@ -77,6 +95,54 @@ impl ElementCx<'_, '_> {
         if layout.has_blending {
             scene.pop_layer();
         }
+        if filter.is_some() {
+            scene.pop_layer();
+        }
+    }
+
+    /// The filter region and graph for `style`'s `filter` list, in the
+    /// element's user space. The graph is `None` when the filter only clips
+    /// to its region. CSS filter functions are skipped unless `functions`.
+    fn resolve_svg_filters(
+        &self,
+        style: &ComputedValues,
+        bbox: Option<Rect>,
+        viewport: SvgViewport,
+        functions: bool,
+    ) -> SvgReference<(Rect, Option<Arc<Filter>>)> {
+        let mut region: Option<Rect> = None;
+        let mut graph = Filter::empty();
+        let mut source = FilterInput::Source(FilterSource::SourceGraphic);
+        for item in style.get_effects().filter.0.iter() {
+            if let StyloFilter::Url(_) = item {
+                let filter = match self.context.dom.resolve_svg_filter(item, bbox, viewport) {
+                    SvgReference::Valid(filter) => filter,
+                    SvgReference::None => return SvgReference::None,
+                    SvgReference::Invalid => return SvgReference::Invalid,
+                };
+                region = Some(region.map_or(filter.rect, |r| r.union(filter.rect)));
+                source = append_svg_filter(&mut graph, &filter, source);
+            } else if functions && let Some(effect) = convert_single_filter(item) {
+                // A filter function covers the default filter region, grown by
+                // how far the function reaches.
+                let Some(base) = region.or_else(|| bbox.map(default_filter_region)) else {
+                    return SvgReference::None;
+                };
+                let reach = effect.expansion_rect();
+                region = Some(base.union(Rect::new(
+                    base.x0 + reach.x0,
+                    base.y0 + reach.y0,
+                    base.x1 + reach.x1,
+                    base.y1 + reach.y1,
+                )));
+                source = FilterInput::Result(graph.add(effect, FilterInputs::single(source)));
+            }
+        }
+        let Some(region) = region else {
+            return SvgReference::None;
+        };
+        let graph = graph.without_noops();
+        SvgReference::Valid((region, (!graph.nodes().is_empty()).then(|| Arc::new(graph))))
     }
 
     /// The whole painted area in device pixels, for layers that must not clip.
@@ -170,10 +236,10 @@ impl ElementCx<'_, '_> {
         };
         // The filter region and its graph, or `None` when the filter only
         // clips to the region.
-        let filter = match dom.resolve_svg_filter(&style, bbox, effect_viewport) {
+        let filter = match self.resolve_svg_filters(&style, bbox, effect_viewport, true) {
             SvgReference::None => None,
             SvgReference::Invalid => return,
-            SvgReference::Valid(filter) => Some((filter.rect, convert_svg_filter(&filter))),
+            SvgReference::Valid(filter) => Some(filter),
         };
         let simple_clip = clip
             .as_ref()
@@ -229,18 +295,7 @@ impl ElementCx<'_, '_> {
         }
         // The filter applies before clipping, masking and opacity.
         if let Some((rect, graph)) = &filter {
-            match graph {
-                Some(graph) => scene.push_layer(
-                    Fill::NonZero,
-                    BlendMode::default(),
-                    1.0,
-                    effect_transform,
-                    rect,
-                    Some(graph.clone()),
-                    None,
-                ),
-                None => scene.push_clip_layer(Fill::NonZero, effect_transform, rect),
-            }
+            push_svg_filter(scene, effect_transform, rect, graph);
         }
 
         match &layout.kind {
@@ -860,13 +915,23 @@ fn gradient_paint(gradient: &SvgGradient, alpha: f32) -> ShapePaint {
 /// The AnyRender filter graph of a `<filter>`, with no-op primitives folded
 /// away, or `None` when nothing is left (the filter only clips to its
 /// region).
-fn convert_svg_filter(filter: &SvgFilter) -> Option<Arc<Filter>> {
-    let mut graph = Filter::empty();
+fn append_svg_filter(graph: &mut Filter, filter: &SvgFilter, source: FilterInput) -> FilterInput {
+    // `SourceAlpha` of an earlier filter's result in the list.
+    let uses_alpha = filter.primitives.iter().any(|primitive| {
+        [primitive.input, primitive.input2].contains(&SvgFilterInput::SourceAlpha)
+    });
+    let alpha = match &source {
+        FilterInput::Result(_) if uses_alpha => FilterInput::Result(graph.add(
+            FilterEffect::ColorMatrix(ColorMatrix::SOURCE_ALPHA),
+            FilterInputs::single(source.clone()),
+        )),
+        _ => FilterInput::Source(FilterSource::SourceAlpha),
+    };
     let mut ids: Vec<FilterId> = Vec::with_capacity(filter.primitives.len());
     for primitive in &filter.primitives {
         let input = |input| match input {
-            SvgFilterInput::SourceGraphic => FilterInput::Source(FilterSource::SourceGraphic),
-            SvgFilterInput::SourceAlpha => FilterInput::Source(FilterSource::SourceAlpha),
+            SvgFilterInput::SourceGraphic => source.clone(),
+            SvgFilterInput::SourceAlpha => alpha.clone(),
             SvgFilterInput::Result(index) => FilterInput::Result(ids[index]),
         };
         let single = FilterInputs::single(input(primitive.input));
@@ -900,6 +965,31 @@ fn convert_svg_filter(filter: &SvgFilter) -> Option<Arc<Filter>> {
         };
         ids.push(graph.add(effect, inputs));
     }
-    let graph = graph.without_noops();
-    (!graph.nodes().is_empty()).then(|| Arc::new(graph))
+    ids.last().map_or(source, |&id| FilterInput::Result(id))
+}
+
+fn push_svg_filter(
+    scene: &mut impl PaintScene,
+    transform: Affine,
+    rect: &Rect,
+    graph: &Option<Arc<Filter>>,
+) {
+    match graph {
+        Some(graph) => scene.push_layer(
+            Fill::NonZero,
+            BlendMode::default(),
+            1.0,
+            transform,
+            rect,
+            Some(graph.clone()),
+            None,
+        ),
+        None => scene.push_clip_layer(Fill::NonZero, transform, rect),
+    }
+}
+
+/// The default `<filter>` region, `-10% -10% 120% 120%` of `bbox`.
+fn default_filter_region(bbox: Rect) -> Rect {
+    let (dx, dy) = (bbox.width() * 0.1, bbox.height() * 0.1);
+    Rect::new(bbox.x0 - dx, bbox.y0 - dy, bbox.x1 + dx, bbox.y1 + dy)
 }
