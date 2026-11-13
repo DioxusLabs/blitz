@@ -99,9 +99,20 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
         let up = "../".repeat(rel.matches('/').count() + 1);
         let img_svg = format!(r#"<img src="{up}tests/{rel}.svg">"#);
         let img_png = format!(r#"<img src="{up}tests/{rel}.png">"#);
+        let png_fuzzy = std::env::var("RESVG_PNG_FUZZY").unwrap_or_else(|_| PNG_FUZZY.to_string());
         let modes = [
-            ("img", img_svg.as_str(), img_png.as_str(), PNG_FUZZY),
-            ("inline", svg_source.as_str(), img_png.as_str(), PNG_FUZZY),
+            (
+                "img",
+                img_svg.as_str(),
+                img_png.as_str(),
+                png_fuzzy.as_str(),
+            ),
+            (
+                "inline",
+                svg_source.as_str(),
+                img_png.as_str(),
+                png_fuzzy.as_str(),
+            ),
             (
                 "parity",
                 svg_source.as_str(),

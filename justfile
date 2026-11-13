@@ -29,6 +29,12 @@ wpt-resvg *ARGS="resvg":
   WPT_DIR=wpt/resvg/out WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt {{ARGS}}
   WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" cargo run --release --package wpt -- resvg-summary
 
+# Run the resvg suite rendering through tiny-skia (the rasterizer resvg's references come from)
+wpt-resvg-tiny-skia *ARGS="resvg":
+  cargo run --release --package wpt -- resvg-generate wpt/resvg/checkout wpt/resvg/out
+  WPT_DIR=wpt/resvg/out WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt --no-default-features --features tiny-skia {{ARGS}}
+  WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" cargo run --release --package wpt -- resvg-summary
+
 browser *ARGS:
   cargo run --release --package browser --features log-frame-times,log-phase-times {{ARGS}}
 

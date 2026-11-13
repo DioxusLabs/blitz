@@ -2,9 +2,11 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use anyrender::ImageRenderer as _;
+#[cfg(feature = "tiny-skia")]
+use anyrender_tiny_skia::TinySkiaImageRenderer as VelloImageRenderer;
 #[cfg(feature = "gpu")]
 use anyrender_vello::VelloImageRenderer;
-#[cfg(feature = "cpu")]
+#[cfg(all(feature = "cpu", not(feature = "tiny-skia")))]
 use anyrender_vello_cpu::VelloCpuImageRenderer as VelloImageRenderer;
 use atomic_float::AtomicF64;
 use blitz_dom::net::Resource;
