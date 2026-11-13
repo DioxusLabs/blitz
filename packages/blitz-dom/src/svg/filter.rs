@@ -231,10 +231,6 @@ impl BaseDocument {
             }
             let element = child.element_data().unwrap();
             let get = |name: &str| attr(element, name).map(str::trim);
-            // AnyRender filter graphs have no per-primitive subregions yet.
-            if ["x", "y", "width", "height"].iter().any(|n| get(n).is_some()) {
-                return SvgReference::None;
-            }
             let default_input = match primitives.len() {
                 0 => SvgFilterInput::SourceGraphic,
                 n => SvgFilterInput::Result(n - 1),
