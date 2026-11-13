@@ -652,6 +652,120 @@ impl BaseDocument {
         self.scroll_to(root_id, x, y, behavior);
     }
 
+    /// Scroll ancestor scroll containers and the viewport just enough (`Nearest`) to make
+    /// `node_id` visible on focus, without requesting an extra redraw.
+    pub(crate) fn scroll_into_view_for_focus(&mut self, node_id: NodeId) -> bool {
+        let Some(node) = self.nodes.get(node_id) else {
+            return false;
+        };
+        if node
+            .element_data()
+            .is_none_or(|el| el.layout_data.is_none())
+        {
+            return false;
+        }
+
+        let target_size = node.final_layout().size;
+        let target_width = target_size.width as f64;
+        let target_height = target_size.height as f64;
+        let root_id = self.try_root_element().map(|root| root.id);
+
+        let mut rect_x = 0.0_f32;
+        let mut rect_y = 0.0_f32;
+        let mut current_id = node_id;
+        let mut changed = false;
+
+        while let Some(parent_id) = self
+            .nodes
+            .get(current_id)
+            .and_then(|n| n.containing_block())
+        {
+            let loc = self.nodes[current_id].final_layout().location;
+            rect_x += loc.x;
+            rect_y += loc.y;
+
+            if Some(parent_id) != root_id {
+                let (cur, min, max) = self.scroll_state(ScrollTarget::Node(parent_id), false);
+                if max.x > min.x || max.y > min.y {
+                    let parent = &self.nodes[parent_id];
+                    let border = parent.final_layout().border;
+                    let client_w = parent.client_width() as f64;
+                    let client_h = parent.client_height() as f64;
+                    let target_in_pad_x = (rect_x - border.left) as f64;
+                    let target_in_pad_y = (rect_y - border.top) as f64;
+                    let next = Point {
+                        x: Self::aligned_scroll_offset(
+                            cur.x,
+                            client_w,
+                            target_in_pad_x,
+                            target_width,
+                            ScrollLogicalPosition::Nearest,
+                        )
+                        .clamp(min.x, max.x),
+                        y: Self::aligned_scroll_offset(
+                            cur.y,
+                            client_h,
+                            target_in_pad_y,
+                            target_height,
+                            ScrollLogicalPosition::Nearest,
+                        )
+                        .clamp(min.y, max.y),
+                    };
+                    if next != cur {
+                        *self.nodes[parent_id].scroll_offset_mut() = next;
+                        self.nodes.bump_geometry_generation();
+                        self.show_scrollbars(parent_id);
+                        changed = true;
+                    }
+                }
+            }
+
+            let parent_scroll = *self.nodes[parent_id].scroll_offset();
+            rect_x -= parent_scroll.x as f32;
+            rect_y -= parent_scroll.y as f32;
+            current_id = parent_id;
+        }
+
+        if let Some(node) = self.nodes.get(current_id) {
+            let loc = node.final_layout().location;
+            rect_x += loc.x;
+            rect_y += loc.y;
+        }
+
+        if self.viewport.window_size.0 > 0 && self.viewport.window_size.1 > 0 {
+            let (cur, min, max) = self.scroll_state(ScrollTarget::Viewport, false);
+            if max.x > min.x || max.y > min.y {
+                let scale = self.viewport.scale() as f64;
+                let vp_w = self.viewport.window_size.0 as f64 / scale;
+                let vp_h = self.viewport.window_size.1 as f64 / scale;
+                let next = Point {
+                    x: Self::aligned_scroll_offset(
+                        cur.x,
+                        vp_w,
+                        rect_x as f64,
+                        target_width,
+                        ScrollLogicalPosition::Nearest,
+                    )
+                    .clamp(min.x, max.x),
+                    y: Self::aligned_scroll_offset(
+                        cur.y,
+                        vp_h,
+                        rect_y as f64,
+                        target_height,
+                        ScrollLogicalPosition::Nearest,
+                    )
+                    .clamp(min.y, max.y),
+                };
+                if next != cur {
+                    self.set_viewport_scroll(next);
+                    changed = true;
+                }
+            }
+        }
+
+        changed
+    }
+
     /// Resolve a URL fragment (the `#...` part of a URL) to a scroll target.
     ///
     /// Returns `None` if the fragment matches no element and is not a top-of-document

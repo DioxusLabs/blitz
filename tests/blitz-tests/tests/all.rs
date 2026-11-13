@@ -25,6 +25,7 @@ mod dir_attribute;
 mod display_contents;
 mod flex_grid_order;
 mod focus_redraw;
+mod focus_visible;
 mod focus_within;
 mod focusability_updates;
 mod font_element_attributes;

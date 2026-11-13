@@ -13,7 +13,7 @@ use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
 pub(crate) use pointer::DragMode;
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 
-use crate::{BaseDocument, events::pointer::handle_wheel};
+use crate::{BaseDocument, FocusSource, events::pointer::handle_wheel};
 
 fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
@@ -139,7 +139,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             generate_focus_events(
                 doc,
                 &mut |doc| {
-                    doc.set_focus_to(target_node_id);
+                    doc.set_focus_to_with_source(target_node_id, FocusSource::Pointer);
                 },
                 &mut dispatch_event,
             );
@@ -169,7 +169,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             generate_focus_events(
                 doc,
                 &mut |doc| {
-                    doc.set_focus_to(target_node_id);
+                    doc.set_focus_to_with_source(target_node_id, FocusSource::Pointer);
                 },
                 &mut dispatch_event,
             );
@@ -189,15 +189,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (handled in PointerMove)
         }
         DomEventData::PointerDown(event) => {
-            handle_pointerdown(
-                doc,
-                target_node_id,
-                event.page_x(),
-                event.page_y(),
-                event.button,
-                event.mods,
-                &mut dispatch_event,
-            );
+            handle_pointerdown(doc, target_node_id, event, &mut dispatch_event);
         }
         DomEventData::MouseDown(_) => {
             // Do nothing (handled in PointerDown)
