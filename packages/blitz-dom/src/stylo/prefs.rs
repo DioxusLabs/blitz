@@ -17,7 +17,10 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
         // The `writing-mode` feature lays out vertical boxes and winkin
         // vertical lines; without either the property stays unparsed.
-        #[cfg(any(feature = "writing-mode", text_winkin))]
+        #[cfg(any(
+            feature = "writing-mode",
+            all(feature = "winkin", not(feature = "parley"))
+        ))]
         {
             style_config::set_pref!("layout.css.writing-mode.enabled", true);
             style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
@@ -66,7 +69,7 @@ pub(crate) fn init_stylo_prefs() {
         // `::first-line`, which winkin lays out; Parley ignores its styles.
         style_config::set_pref!("layout.css.first-line.enabled", true);
         // The text properties only winkin lays out.
-        #[cfg(text_winkin)]
+        #[cfg(all(feature = "winkin", not(feature = "parley")))]
         {
             style_config::set_pref!("layout.css.line-clamp.enabled", true);
             style_config::set_pref!("layout.css.text-autospace.enabled", true);
