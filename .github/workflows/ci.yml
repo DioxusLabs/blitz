@@ -18,6 +18,13 @@ env:
 
 jobs:
 
+  wpt-scripts:
+    name: WPT helper tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover .github/scripts
+
   licenses:
     name: Dependency licenses
     runs-on: ubuntu-latest
