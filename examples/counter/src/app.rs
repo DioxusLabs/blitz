@@ -5,6 +5,7 @@ pub fn app() -> Element {
     let mut count = use_signal(|| 0);
 
     rsx! {
+        document::Title { "Counter" }
         div { class: "container",
             style { {CSS} }
             h1 { class: "header", "Count: {count}" }
