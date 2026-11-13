@@ -54,7 +54,7 @@ pub fn process_crash_test(
 fn render_to_buffer(ctx: &mut ThreadCtx, document: &mut BaseDocument) {
     let buf = ctx.buffers.get_mut(BufferKind::Test);
     render_to_vec!(
-        ctx.renderer,
+        ctx.renderers[ctx.active_renderer],
         |scene| {
             scene.reset();
 

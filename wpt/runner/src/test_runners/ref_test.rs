@@ -311,7 +311,7 @@ fn render_document_to_buffer(
     // Render document to RGBA buffer
     let buf = ctx.buffers.get_mut(buffer_kind);
     render_to_vec!(
-        ctx.renderer,
+        ctx.renderers[ctx.active_renderer],
         |scene| {
             scene.reset();
 
