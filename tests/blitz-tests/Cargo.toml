@@ -20,7 +20,8 @@ blitz-traits = { workspace = true }
 blitz-paint = { workspace = true, features = ["scrollbars", "svg", "svg-native"] }
 dioxus-native-dom = { workspace = true }
 anyrender = { workspace = true }
-anyrender_vello_cpu = { workspace = true }
+anyrender_vello_cpu = { workspace = true, features = ["filters"] }
+kurbo = { workspace = true }
 
 # DioxusLabs dependencies
 dioxus = { workspace = true }
@@ -35,7 +36,6 @@ keyboard-types = { workspace = true }
 taffy = { workspace = true }
 test-that = { workspace = true }
 usvg = { workspace = true }
-kurbo = { workspace = true }
 
 [lib]
 path = "lib.rs"

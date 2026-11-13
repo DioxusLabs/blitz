@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use anyrender::render_to_buffer;
+use anyrender::{ImageRenderer, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::{CopyStyleGetters, DocumentConfig, LocalName, QualName, ns};
 use blitz_html::{HtmlDocument, HtmlProvider};
@@ -1649,6 +1649,273 @@ fn circular_mask_references_are_ignored_everywhere() {
     let buf = render(&mut doc);
     assert_near(pixel(&buf, 25, 50), [128, 0, 128]);
     assert_near(pixel(&buf, 75, 50), [128, 0, 128]);
+}
+
+/// The commands painting `doc` records.
+fn record(doc: &mut HtmlDocument) -> Vec<anyrender::recording::RenderCommand> {
+    let mut scene = anyrender::Scene::new();
+    paint_scene(&mut scene, doc.as_mut(), 1.0, W, H, 0, 0);
+    scene.commands
+}
+
+/// The filter layers in `commands`, as their clip bounds and filter graphs.
+fn filter_layers(
+    commands: &[anyrender::recording::RenderCommand],
+) -> Vec<(kurbo::Rect, Arc<anyrender::Filter>)> {
+    use kurbo::Shape as _;
+    commands
+        .iter()
+        .filter_map(|cmd| match cmd {
+            anyrender::recording::RenderCommand::PushLayer(layer) => {
+                let filter = layer.filter.clone()?;
+                Some((
+                    layer
+                        .transform
+                        .transform_rect_bbox(layer.clip.bounding_box())
+                        .round(),
+                    filter,
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn filtered_rect(filter: &str) -> String {
+    format!(
+        r#"<svg width="100" height="100"><defs>{filter}</defs>
+        <rect x="20" y="20" width="40" height="40" fill="red" filter="url(#f)"/></svg>"#
+    )
+}
+
+#[test]
+fn filter_layer_is_bounded_by_the_filter_region() {
+    use anyrender::filters::FilterEffect;
+    // The default region is the bounding box grown by 10% on each side.
+    let mut doc = load(
+        &filtered_rect(r#"<filter id="f"><feGaussianBlur stdDeviation="2"/></filter>"#),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    let (bounds, filter) = &layers[0];
+    assert_eq!(*bounds, kurbo::Rect::new(16.0, 16.0, 64.0, 64.0));
+    assert_eq!(filter.nodes().len(), 1);
+    assert!(matches!(
+        &filter.nodes()[0].effect,
+        FilterEffect::GaussianBlur(blur) if blur.std_deviation == 2.0
+    ));
+
+    let mut doc = load(
+        &filtered_rect(
+            r#"<filter id="f" filterUnits="userSpaceOnUse" x="10" y="5" width="50" height="60">
+            <feOffset dx="3" dy="4"/></filter>"#,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers[0].0, kurbo::Rect::new(10.0, 5.0, 60.0, 65.0));
+}
+
+#[test]
+fn figma_layer_blur_folds_to_one_blur() {
+    use anyrender::filters::FilterEffect;
+    let mut doc = load(
+        &filtered_rect(
+            r#"<filter id="f" color-interpolation-filters="sRGB">
+            <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+            <feGaussianBlur stdDeviation="10.5" result="effect1_foregroundBlur"/></filter>"#,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    let nodes = layers[0].1.nodes();
+    assert_eq!(nodes.len(), 1);
+    assert!(matches!(&nodes[0].effect, FilterEffect::GaussianBlur(_)));
+}
+
+#[test]
+fn filter_href_inherits_primitives_and_attributes() {
+    let mut doc = load(
+        &filtered_rect(
+            r##"<filter id="base" filterUnits="userSpaceOnUse" x="0" y="0" width="80" height="80">
+            <feGaussianBlur stdDeviation="1"/></filter>
+            <filter id="f" href="#base"/>"##,
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    assert_eq!(layers[0].0, kurbo::Rect::new(0.0, 0.0, 80.0, 80.0));
+}
+
+#[test]
+fn flood_color_comes_from_computed_style() {
+    use anyrender::filters::FilterEffect;
+    let mut doc = load(
+        &format!(
+            "<style>feFlood {{ flood-color: lime; flood-opacity: 0.5 }}</style>{}",
+            filtered_rect(r#"<filter id="f"><feFlood/></filter>"#)
+        ),
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    let FilterEffect::Flood(color) = &layers[0].1.nodes()[0].effect else {
+        panic!("expected a flood");
+    };
+    assert_eq!(color.components, [0.0, 1.0, 0.0, 0.5]);
+}
+
+#[test]
+fn invalid_filter_reference_disables_rendering() {
+    // A filter with an empty region or no primitives makes the element not
+    // render.
+    for svg in [
+        filtered_rect(r#"<filter id="f" width="0"><feGaussianBlur stdDeviation="1"/></filter>"#),
+        filtered_rect(r#"<filter id="f"/>"#),
+    ] {
+        let mut doc = load(&svg, true);
+        let buffer = render(&mut doc);
+        assert_eq!(pixel(&buffer, 40, 40), BLUE, "{svg}");
+    }
+}
+
+#[test]
+fn unsupported_filter_primitives_paint_unfiltered() {
+    // So does a reference to a missing element.
+    let mut doc = load(&filtered_rect(""), true);
+    assert_eq!(pixel(&render(&mut doc), 40, 40), RED);
+
+    let mut doc = load(
+        &filtered_rect(r#"<filter id="f"><feTurbulence baseFrequency="0.1"/></filter>"#),
+        true,
+    );
+    assert!(filter_layers(&record(&mut doc)).is_empty());
+    assert_eq!(pixel(&render(&mut doc), 40, 40), RED);
+}
+
+/// Renders `doc` with a single-threaded `vello_cpu`, which applies filters.
+fn render_filtered(doc: &mut HtmlDocument) -> Vec<u8> {
+    let mut renderer = VelloCpuImageRenderer::new_single_threaded(W, H);
+    let mut buffer = Vec::new();
+    renderer.render_to_vec(
+        |scene| paint_scene(scene, doc.as_mut(), 1.0, W, H, 0, 0),
+        &mut buffer,
+    );
+    buffer
+}
+
+/// Whether `color` is a blend of red and blue, as at a blurred edge.
+fn is_soft(color: [u8; 3]) -> bool {
+    (16..240).contains(&color[0]) && color[1] == 0
+}
+
+#[test]
+fn blur_crossing_the_svg_clip_stays_soft() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><defs><filter id="f">
+        <feGaussianBlur stdDeviation="3"/></filter></defs>
+        <rect x="4" y="4" width="40" height="40" fill="red" filter="url(#f)"/></svg>"#,
+        true,
+    );
+    let buf = render_filtered(&mut doc);
+    assert!(is_soft(pixel(&buf, 2, 24)), "{:?}", pixel(&buf, 2, 24));
+    assert!(is_soft(pixel(&buf, 4, 24)), "{:?}", pixel(&buf, 4, 24));
+    assert_eq!(pixel(&buf, 24, 24), RED);
+}
+
+#[test]
+fn css_filter_functions_apply_to_svg_shapes() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <rect x="20" y="20" width="40" height="40" fill="red" style="filter: blur(3px)"/></svg>"#,
+        true,
+    );
+    let buf = render_filtered(&mut doc);
+    assert!(is_soft(pixel(&buf, 19, 40)), "{:?}", pixel(&buf, 19, 40));
+    assert_eq!(pixel(&buf, 40, 40), RED);
+}
+
+#[test]
+fn filter_lists_chain_urls_and_functions() {
+    use anyrender::filters::{FilterEffect, FilterInput, FilterSource};
+    let mut doc = load(
+        r#"<svg width="100" height="100"><defs>
+        <filter id="a" filterUnits="userSpaceOnUse" x="0" y="0" width="80" height="80">
+        <feOffset dx="10" dy="10"/></filter>
+        <filter id="b"><feGaussianBlur in="SourceAlpha" stdDeviation="2"/></filter></defs>
+        <rect x="20" y="20" width="40" height="40" fill="red"
+        style="filter: url(#a) url(#b) opacity(0.5)"/></svg>"#,
+        true,
+    );
+    let layers = filter_layers(&record(&mut doc));
+    assert_eq!(layers.len(), 1);
+    let (bounds, filter) = &layers[0];
+    assert_eq!(*bounds, kurbo::Rect::new(0.0, 0.0, 80.0, 80.0));
+    let nodes = filter.nodes();
+    assert!(matches!(nodes[0].effect, FilterEffect::Offset { .. }));
+    // `SourceAlpha` in the second filter is the alpha of the first's result.
+    assert!(matches!(nodes[1].effect, FilterEffect::ColorMatrix(_)));
+    assert!(matches!(nodes[2].effect, FilterEffect::GaussianBlur(_)));
+    assert!(!matches!(
+        nodes[2].inputs.primary,
+        Some(FilterInput::Source(FilterSource::SourceAlpha))
+    ));
+    assert_eq!(nodes.len(), 4);
+}
+
+#[test]
+fn filter_on_the_outer_svg_applies() {
+    let mut doc = load(
+        r#"<svg width="100" height="100" style="filter: url(#f)"><defs>
+        <filter id="f" filterUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+        <feOffset dx="30" dy="30"/></filter></defs>
+        <rect width="50" height="50" fill="red"/></svg>"#,
+        true,
+    );
+    let buf = render_filtered(&mut doc);
+    assert_eq!(pixel(&buf, 10, 10), BLUE);
+    assert_eq!(pixel(&buf, 70, 70), RED);
+}
+
+#[test]
+fn flood_fills_the_filter_region() {
+    let mut doc = load(
+        &filtered_rect(r#"<filter id="f"><feFlood flood-color="lime"/></filter>"#),
+        true,
+    );
+    let buf = render_filtered(&mut doc);
+    assert_eq!(pixel(&buf, 10, 10), BLUE);
+    assert_eq!(pixel(&buf, 17, 17), LIME);
+    assert_eq!(pixel(&buf, 62, 62), LIME);
+    assert_eq!(pixel(&buf, 66, 66), BLUE);
+}
+
+#[test]
+fn flood_color_resolves_in_a_display_none_subtree() {
+    let mut doc = load(
+        r#"<svg width="100" height="100"><g style="display: none">
+        <filter id="f"><feFlood flood-color="lime"/></filter></g>
+        <rect x="20" y="20" width="40" height="40" fill="red" filter="url(#f)"/></svg>"#,
+        true,
+    );
+    assert_eq!(pixel(&render_filtered(&mut doc), 40, 40), LIME);
+}
+
+#[test]
+fn filter_graphs_vello_cpu_cannot_run_paint_unfiltered() {
+    // A blur then an offset, and a blur of `SourceAlpha`.
+    for filter in [
+        r#"<filter id="f"><feGaussianBlur stdDeviation="2"/><feOffset dx="30"/></filter>"#,
+        r#"<filter id="f"><feOffset in="SourceAlpha" dx="1"/></filter>"#,
+    ] {
+        let mut doc = load(&filtered_rect(filter), true);
+        let buf = render_filtered(&mut doc);
+        assert_eq!(pixel(&buf, 40, 40), RED, "{filter}");
+        assert_eq!(pixel(&buf, 21, 21), RED, "{filter}");
+    }
 }
 
 /// A 2x1 opaque lime PNG.

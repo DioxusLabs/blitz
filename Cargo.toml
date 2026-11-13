@@ -116,14 +116,14 @@ skrifa = { version = "0.49", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -305,17 +305,17 @@ wgpu_context = { workspace = true }
 # behind the `layout.css.svg-properties.enabled` pref.
 # Remove once that change lands upstream in servo/stylo and is released.
 [patch.crates-io]
-stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
-to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "c9967c68c95f98979fd4d17feee447201c63abec" }
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "0be88b480f58144879bb51478fb9e298f1d92a07" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
