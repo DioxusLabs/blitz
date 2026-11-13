@@ -87,7 +87,7 @@ impl InlineLayoutEngine for TextLayout {
         cx: &mut TextContext,
         nodes: &crate::NodeTree,
         scale: f32,
-        layouts: &mut [(NodeId, Box<Self>)],
+        layouts: &mut [(NodeId, &mut Self)],
     ) {
         #[cfg(feature = "parallel-construct")]
         {
@@ -156,11 +156,6 @@ impl InlineLayoutEngine for TextLayout {
     #[inline]
     fn extent(&self) -> LinesExtent {
         self.lines_extent()
-    }
-
-    #[inline]
-    fn set_block_offset(&mut self, offset: f32) {
-        self.block_offset = offset;
     }
 
     fn placements(&self) -> impl Iterator<Item = Placement> {

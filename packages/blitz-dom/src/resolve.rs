@@ -16,7 +16,6 @@ use crate::{
         damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     },
     node::TextLayout,
-    text::InlineLayoutEngine as _,
 };
 
 impl BaseDocument {
