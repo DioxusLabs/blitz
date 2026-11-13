@@ -334,7 +334,7 @@ pub(crate) trait InlineLayoutEngine: InlineText {
     /// Returns which way the lines run, as the content was last built.
     fn line_flow(&self) -> LineFlow;
 
-    #[cfg_attr(any(not(text_winkin), not(feature = "floats")), allow(dead_code))]
+    #[cfg_attr(any(feature = "parley", not(feature = "floats")), allow(dead_code))]
     /// Returns where a box that reaches `along` the lines from `along[0]` to `along[1]` and across
     /// them from `across[0]` to `across[1]` has its top left on the page, in CSS pixels.
     fn place_on_page(&self, along: [f32; 2], across: [f32; 2]) -> (f32, f32);
@@ -376,14 +376,14 @@ pub(crate) struct LinesInputs<'a> {
     /// The atomic inlines and floats as Taffy measured them, in content order.
     pub(crate) sizes: &'a [BoxMeasure],
     /// What the pass measured them for.
-    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    #[cfg_attr(feature = "parley", allow(dead_code))]
     pub(crate) pass: Measure,
     /// The containing block's inline size in CSS pixels, which percentages are of.
-    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    #[cfg_attr(feature = "parley", allow(dead_code))]
     pub(crate) basis: f32,
     /// Whether the lines run down the page, so that what Taffy measured across the page reaches
     /// along them.
-    #[cfg_attr(not(text_winkin), allow(dead_code))]
+    #[cfg_attr(feature = "parley", allow(dead_code))]
     pub(crate) vertical: bool,
 }
 
@@ -404,7 +404,7 @@ pub(crate) struct LineArea {
 }
 
 /// Which way an inline formatting context's lines run, and the way they stack.
-#[cfg_attr(not(text_winkin), allow(dead_code))]
+#[cfg_attr(feature = "parley", allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LineFlow {
     /// Across the page, stacking down it.
