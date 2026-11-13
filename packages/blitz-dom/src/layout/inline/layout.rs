@@ -947,8 +947,8 @@ impl LayoutPassState<'_> {
     ///
     /// A float is sized in the room beside nothing, less its margins.
     ///
-    /// `pass` says how far each box is laid out: where its baseline is not read or the pass needs
-    /// no baseline, it is only measured, along the line alone in an inline-size pass.
+    /// `pass` says how far each box is laid out: a pass that places nothing only measures it,
+    /// along the line alone in an inline-size pass.
     /// `child_inputs` are the inputs of a full layout.
     ///
     /// `baseline-source: auto` is the last baseline for an inline-block and the first otherwise.
@@ -1054,13 +1054,8 @@ impl LayoutPassState<'_> {
             let exports_baseline = !(baseline_source == BaselineSource::Auto
                 && is_block_axis_scroll_container)
                 && !contain_layout;
-            let reads_baseline = exports_baseline
-                && held
-                    .primary_styles()
-                    .is_none_or(|computed| reads_own_baseline(&computed));
             let pass_inputs = match pass {
                 Measure::Layout => child_inputs,
-                Measure::Sizes if reads_baseline => child_inputs,
                 Measure::Sizes => taffy::LayoutInput {
                     run_mode: RunMode::ComputeSize,
                     ..child_inputs
@@ -1111,39 +1106,10 @@ impl LayoutPassState<'_> {
 pub(super) enum Measure {
     /// How far each reaches along the line: an intrinsic inline-size pass.
     InlineSizes,
-    /// Each one's size, and the baselines the lines read: a pass that sets the lines to size the
-    /// block but places nothing.
+    /// Each one's size: a pass that sets the lines to size the block but places nothing.
     Sizes,
     /// Each one laid out, as the pass that places them lays them out.
     Layout,
-}
-
-/// Whether the lines read the own baseline of an atomic inline set in `style` to set it on its
-/// line. A pass that sets the lines lays such a box out to measure it, since Taffy gives a
-/// baseline only with a layout.
-///
-/// A box aligned by its edges, `top`, `bottom`, `text-top` or `text-bottom`, is not: its margin
-/// box's edge goes where the alignment says, wherever its baseline is.
-fn reads_own_baseline(style: &style::properties::ComputedValues) -> bool {
-    use style::values::computed::AlignmentBaseline;
-    use style::values::computed::length_percentage::Unpacked;
-    use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
-    let box_style = style.get_box();
-    match box_style.get_baseline_shift() {
-        GenericBaselineShift::Keyword(BaselineShiftKeyword::Top | BaselineShiftKeyword::Bottom) => {
-            return false;
-        }
-        GenericBaselineShift::Keyword(_) => return true,
-        GenericBaselineShift::Length(shift) => match shift.unpack() {
-            Unpacked::Length(length) if length.px() != 0.0 => return true,
-            Unpacked::Percentage(percentage) if percentage.0 != 0.0 => return true,
-            _ => {}
-        },
-    }
-    !matches!(
-        box_style.slow_clone_alignment_baseline(),
-        AlignmentBaseline::TextTop | AlignmentBaseline::TextBottom
-    )
 }
 
 /// Taffy's block formatting context, as an inline formatting context's lines read and place
