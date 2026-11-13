@@ -639,6 +639,45 @@ impl Node {
         self.element_data()
             .is_some_and(|element_data| element_data.name.local == name)
     }
+
+    /// Whether the element's `role` attribute names `none` or `presentation` and none of the
+    /// exceptions of the presentational roles conflict resolution applies to it: the element is not
+    /// focusable or interactive, and it has no global ARIA state or property.
+    ///
+    /// <https://www.w3.org/TR/wai-aria-1.2/#conflict_resolution_presentation_none>
+    pub(super) fn is_explicitly_presentational(&self) -> bool {
+        let Some(element_data) = self.element_data() else {
+            return false;
+        };
+        if !explicit_role_token(element_data).is_some_and(role_token_is_presentational) {
+            return false;
+        }
+        !self.is_focussable() && !has_global_aria_attribute(element_data)
+    }
+
+    /// Returns whether `child` is a required owned element, or a required child in the host
+    /// language, of this instance, so that a presentational role on this node is inherited by the
+    /// child.
+    ///
+    /// <https://www.w3.org/TR/wai-aria-1.2/#conflict_resolution_presentation_none>
+    pub(super) fn is_required_owned(&self, child: &Node) -> bool {
+        let (Some(parent_data), Some(child_data)) = (self.element_data(), child.element_data())
+        else {
+            return false;
+        };
+        match &*parent_data.name.local {
+            "table" => matches!(
+                &*child_data.name.local,
+                "caption" | "thead" | "tbody" | "tfoot" | "tr"
+            ),
+            "thead" | "tbody" | "tfoot" => &*child_data.name.local == "tr",
+            "tr" => matches!(&*child_data.name.local, "td" | "th"),
+            "ul" | "ol" | "menu" => &*child_data.name.local == "li",
+            "select" => matches!(&*child_data.name.local, "option" | "optgroup"),
+            "dl" => matches!(&*child_data.name.local, "dt" | "dd"),
+            _ => false,
+        }
+    }
 }
 
 /// How the text alternative of a subtree is written.
@@ -730,6 +769,54 @@ fn role_from_name(name: &str) -> Option<Role> {
         "search" => Some(Role::Search),
         _ => None,
     }
+}
+
+/// The first token of the `role` attribute which names a role Blitz recognizes. The
+/// presentational role counts as recognized under either of its names.
+pub(super) fn explicit_role_token(element_data: &ElementData) -> Option<&str> {
+    element_data.attr(local_name!("role")).and_then(|role| {
+        role.split_ascii_whitespace()
+            .find(|token| role_token_is_presentational(token) || role_from_name(token).is_some())
+    })
+}
+
+/// Whether the token names the presentational role, as `none` or `presentation`.
+pub(super) fn role_token_is_presentational(token: &str) -> bool {
+    token.eq_ignore_ascii_case("none") || token.eq_ignore_ascii_case("presentation")
+}
+
+/// The global ARIA states and properties. Any one of them on an element stops a presentational
+/// role from applying to it.
+///
+/// <https://www.w3.org/TR/wai-aria-1.2/#global_states>
+fn has_global_aria_attribute(element_data: &ElementData) -> bool {
+    const GLOBAL_ARIA_ATTRIBUTES: [LocalName; 22] = [
+        local_name!("aria-atomic"),
+        local_name!("aria-busy"),
+        local_name!("aria-controls"),
+        local_name!("aria-current"),
+        local_name!("aria-describedby"),
+        local_name!("aria-description"),
+        local_name!("aria-details"),
+        local_name!("aria-disabled"),
+        local_name!("aria-dropeffect"),
+        local_name!("aria-errormessage"),
+        local_name!("aria-flowto"),
+        local_name!("aria-grabbed"),
+        local_name!("aria-haspopup"),
+        local_name!("aria-hidden"),
+        local_name!("aria-invalid"),
+        local_name!("aria-keyshortcuts"),
+        local_name!("aria-label"),
+        local_name!("aria-labelledby"),
+        local_name!("aria-live"),
+        local_name!("aria-owns"),
+        local_name!("aria-relevant"),
+        local_name!("aria-roledescription"),
+    ];
+    GLOBAL_ARIA_ATTRIBUTES
+        .iter()
+        .any(|name| element_data.attr(name.clone()).is_some())
 }
 
 /// The native role of an element as given by HTML-AAM, or `None` if there is no mapping.

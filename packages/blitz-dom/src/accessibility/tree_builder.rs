@@ -1,6 +1,10 @@
 use crate::{
     BaseDocument, Node,
-    accessibility::{FlatText, to_accesskit_node_id, to_accesskit_node_id_vec},
+    accessibility::{
+        FlatText,
+        node::{explicit_role_token, role_token_is_presentational},
+        to_accesskit_node_id, to_accesskit_node_id_vec,
+    },
 };
 use accesskit::{Role, TreeId, TreeInfo, TreeUpdate};
 use blitz_traits::NodeId;
@@ -116,11 +120,19 @@ impl<'doc> TreeBuilder<'doc> {
         let mut window = accesskit::Node::new(Role::Window);
         window.push_child(to_accesskit_node_id(self.document.root_node_id));
         let mut nodes = Vec::new();
+        let mut presentational_nodes = FxHashSet::default();
         self.document.visit(|node_id, node| {
             if self.excluded_nodes.contains(&node_id) {
                 return;
             }
             let mut accesskit_node = node.build_accesskit_node();
+            // A required owned element of a presentational element inherits the role, unless it
+            // has an explicit role of its own.
+            // <https://www.w3.org/TR/wai-aria-1.2/#conflict_resolution_presentation_none>
+            if self.is_node_presentational(node, &presentational_nodes) {
+                presentational_nodes.insert(node_id);
+                accesskit_node.set_role(Role::GenericContainer);
+            }
             if accesskit_node.role() == Role::Label {
                 self.set_value_of_label(node, &mut accesskit_node);
             }
@@ -140,6 +152,23 @@ impl<'doc> TreeBuilder<'doc> {
             .into_iter()
             .chain([(DEFAULT_ACCESSKIT_NODE_ID, window)])
             .collect()
+    }
+
+    fn is_node_presentational(
+        &self,
+        node: &Node,
+        presentational_nodes: &FxHashSet<NodeId>,
+    ) -> bool {
+        node.is_explicitly_presentational()
+            || (!presentational_nodes.is_empty()
+                && node.parent.is_some_and(|parent_id| {
+                    presentational_nodes.contains(&parent_id)
+                        && self.document.nodes[parent_id].is_required_owned(node)
+                        && node
+                            .element_data()
+                            .and_then(explicit_role_token)
+                            .is_none_or(role_token_is_presentational)
+                }))
     }
 
     /// Sets the value of a node with the role [accesskit::Role::Label] to its text. AccessKit

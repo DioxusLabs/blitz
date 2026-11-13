@@ -5,6 +5,7 @@ mod accessibility_description;
 mod accessibility_hidden;
 mod accessibility_label;
 mod accessibility_placeholder;
+mod accessibility_presentational;
 mod accessibility_roles;
 mod accessibility_tree;
 mod animations;
