@@ -50,8 +50,10 @@ pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: Nod
         position.y += scroll_offset.y as f32 + viewport_scroll.y as f32;
     }
 
+    let mut reached_sc_root = false;
     while let Some(id) = current {
         if id == sc_root_id {
+            reached_sc_root = true;
             break;
         }
         let Some(node) = tree.get(id) else {
@@ -62,6 +64,21 @@ pub fn hoisted_child_position(tree: &NodeTree, sc_root_id: NodeId, child_id: Nod
         position.x += location.x - scroll_offset.x as f32;
         position.y += location.y - scroll_offset.y as f32;
         current = node.containing_block();
+    }
+
+    // A z-indexed box whose containing block is an ancestor of its stacking
+    // context root (e.g. a viewport-fixed box in a `position: relative;
+    // z-index: 2` ancestor) does not pass through the root on its positioning
+    // chain: measure both from the top of the tree instead.
+    if !reached_sc_root {
+        let mut current = Some(sc_root_id);
+        while let Some(node) = current.and_then(|id| tree.get(id)) {
+            let location = node.final_layout().location;
+            let scroll_offset = *node.scroll_offset();
+            position.x -= location.x - scroll_offset.x as f32;
+            position.y -= location.y - scroll_offset.y as f32;
+            current = node.containing_block();
+        }
     }
     position
 }
@@ -283,12 +300,21 @@ impl BaseDocument {
             // containing block, as recorded by Taffy's out-of-flow pass in the
             // containing block's `hoisted_children`. A box whose containing
             // block is not its layout parent is owned by the containing block;
-            // its layout parent neither visits nor lists it.
+            // its layout parent neither visits nor lists it, unless it is
+            // z-indexed (see `stacks_in_tree`).
             let owned_here = |doc: &Self, child_id: NodeId| -> bool {
                 doc.nodes[child_id]
                     .oof_containing_block
                     .get()
                     .is_none_or(|cb| cb == node_id)
+            };
+            // Stacking follows the tree, not the containing block: z-indexed
+            // boxes hoisted past their layout parent still join the stacking
+            // context enclosing that parent, which may lie below their
+            // containing block. Their layout parent visits and lists them.
+            let stacks_in_tree = |doc: &Self, child_id: NodeId| -> bool {
+                let child = &doc.nodes[child_id];
+                child.is_stacking_context_root(false) && child.z_index() != 0
             };
             // Boxes hoisted to this node from further down the tree, keyed by
             // the index of the layout child they descend from: they are visited
@@ -304,6 +330,7 @@ impl BaseDocument {
                     self.nodes
                         .get(id)
                         .is_some_and(|n| n.layout_parent.get() != Some(node_id))
+                        && !stacks_in_tree(self, id)
                 })
                 .map(|id| {
                     let anchor = self
@@ -315,6 +342,7 @@ impl BaseDocument {
                 .collect();
             hoisted_past_parent.sort_by_key(|&(anchor, _)| anchor);
             let mut next_hoisted = 0;
+            let mut escaped_stacked_cbs = ThinVec::new();
 
             let is_layer_root =
                 stacking_context.is_none() || self.nodes[node_id].is_paint_layer_root();
@@ -331,6 +359,8 @@ impl BaseDocument {
                             false => Some(&mut entries),
                         },
                     );
+                    escaped_stacked_cbs
+                        .extend_from_slice(&self.nodes[child_id].escaped_stacked_cbs.borrow());
 
                     // Only stacking contexts with a non-zero z-index are lifted
                     // out of tree order into the enclosing stacking context's
@@ -364,18 +394,32 @@ impl BaseDocument {
                             }
                         }
                     }
+                } else if stacks_in_tree(self, child_id) {
+                    self.build_paint_tree_impl(child_id, None);
+                    let child = &self.nodes[child_id];
+                    entries.push(HoistedPaintChild::new(child_id, child.z_index()));
+                    escaped_stacked_cbs.extend_from_slice(&child.escaped_stacked_cbs.borrow());
+                    escaped_stacked_cbs.extend(child.oof_containing_block.get());
                 }
 
                 while let Some(&(anchor, hoisted_id)) = hoisted_past_parent.get(next_hoisted)
                     && anchor == index
                 {
                     self.attach_hoisted_past_parent(hoisted_id, is_flex_or_grid, &mut entries);
+                    escaped_stacked_cbs
+                        .extend_from_slice(&self.nodes[hoisted_id].escaped_stacked_cbs.borrow());
                     next_hoisted += 1;
                 }
             }
             for &(_, hoisted_id) in &hoisted_past_parent[next_hoisted..] {
                 self.attach_hoisted_past_parent(hoisted_id, is_flex_or_grid, &mut entries);
+                escaped_stacked_cbs
+                    .extend_from_slice(&self.nodes[hoisted_id].escaped_stacked_cbs.borrow());
             }
+
+            escaped_stacked_cbs.retain(|&cb| cb != node_id);
+            escaped_stacked_cbs.sort_unstable();
+            escaped_stacked_cbs.dedup();
 
             self.scratch.keyed_children[keyed_base..].sort_by_key(|&(paint_order, _)| paint_order);
 
@@ -395,6 +439,9 @@ impl BaseDocument {
             let node = &self.nodes[node_id];
             *node.paint_children.borrow_mut() = Some(paint_children);
             *node.layout_children.borrow_mut() = Some(children);
+            *node.escaped_stacked_cbs.borrow_mut() = escaped_stacked_cbs;
+        } else {
+            self.nodes[node_id].escaped_stacked_cbs.borrow_mut().clear();
         }
 
         let node = &mut self.nodes[node_id];
