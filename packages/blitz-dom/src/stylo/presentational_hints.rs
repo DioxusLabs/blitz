@@ -112,6 +112,19 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         None
     }
 
+    /// The HTML "rules for parsing a legacy colour value", as Stylo implements
+    /// them. Stylo's version panics on a value of only whitespace (it indexes
+    /// the first byte of the stripped, empty value), so that case is handled
+    /// here: the spec pads it to "000", which is black.
+    /// https://html.spec.whatwg.org/multipage/infrastructure.html#rules-for-parsing-a-legacy-colour-value
+    fn parse_legacy_color_attr(value: &str) -> Option<AbsoluteColor> {
+        use style::str::HTML_SPACE_CHARACTERS;
+        if !value.is_empty() && value.trim_matches(HTML_SPACE_CHARACTERS).is_empty() {
+            return Some(AbsoluteColor::srgb_legacy(0, 0, 0, 1.0));
+        }
+        style::servo::attr::parse_legacy_color(value).ok()
+    }
+
     /// The HTML "rules for parsing dimension values" -- Stylo's
     /// implementation of them -- packaged as a specified
     /// `<length-percentage>`. `ignoring_zero` selects the spec's separate
@@ -509,6 +522,21 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
                 push_style(PropertyDeclaration::BackgroundColor(
                     Color::from_absolute_color(AbsoluteColor::srgb_legacy(r, g, b, a)),
                 ));
+            }
+        }
+
+        // A table's `bordercolor` attribute, parsed as a legacy colour value,
+        // maps to its four border colours.
+        // Matched as a string: it is not in the static atom set.
+        // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+        if *tag == local_name!("table") && elem.name.ns == ns!(html) && &**name == "bordercolor" {
+            use style::values::specified::Color;
+            if let Some(color) = parse_legacy_color_attr(value) {
+                let color = Color::from_absolute_color(color);
+                push_style(PropertyDeclaration::BorderTopColor(color.clone()));
+                push_style(PropertyDeclaration::BorderRightColor(color.clone()));
+                push_style(PropertyDeclaration::BorderBottomColor(color.clone()));
+                push_style(PropertyDeclaration::BorderLeftColor(color));
             }
         }
 
