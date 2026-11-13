@@ -3,7 +3,14 @@
 #[cfg(not(any(feature = "cpu", feature = "tiny-skia", feature = "gpu")))]
 compile_error!("enable at least one of the `cpu`, `tiny-skia` and `gpu` features");
 
-use anyrender::ImageRenderer;
+use anyrender::{ImageRenderer, PaintScene};
+use blitz_dom::BaseDocument;
+use blitz_dom::util::Color;
+use blitz_paint::paint_scene;
+use peniko::Fill;
+use peniko::kurbo::Rect;
+
+use crate::{HEIGHT, SCALE, WIDTH};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RendererKind {
@@ -105,26 +112,32 @@ impl Renderer {
             RendererKind::Vello => Self::Vello(ImageRenderer::new(width, height)),
         }
     }
-}
 
-/// `ImageRenderer::render_to_vec` on whichever renderer a [`Renderer`] holds. A macro rather than
-/// a method so that the drawing closure is instantiated for each renderer's scene painter.
-macro_rules! render_to_vec {
-    ($renderer:expr, $draw:expr, $buffer:expr $(,)?) => {
-        match &mut $renderer {
+    /// Renders `document` on a white background into `buffer`.
+    pub fn render_to_vec(&mut self, document: &mut BaseDocument, buffer: &mut Vec<u8>) {
+        match self {
             #[cfg(feature = "cpu")]
-            $crate::renderer::Renderer::VelloCpu(renderer) => {
-                anyrender::ImageRenderer::render_to_vec(renderer, $draw, $buffer)
+            Self::VelloCpu(renderer) => {
+                renderer.render_to_vec(|scene| draw(scene, document), buffer)
             }
             #[cfg(feature = "tiny-skia")]
-            $crate::renderer::Renderer::TinySkia(renderer) => {
-                anyrender::ImageRenderer::render_to_vec(renderer, $draw, $buffer)
+            Self::TinySkia(renderer) => {
+                renderer.render_to_vec(|scene| draw(scene, document), buffer)
             }
             #[cfg(feature = "gpu")]
-            $crate::renderer::Renderer::Vello(renderer) => {
-                anyrender::ImageRenderer::render_to_vec(renderer, $draw, $buffer)
-            }
+            Self::Vello(renderer) => renderer.render_to_vec(|scene| draw(scene, document), buffer),
         }
-    };
+    }
 }
-pub(crate) use render_to_vec;
+
+fn draw(scene: &mut impl PaintScene, document: &mut BaseDocument) {
+    scene.reset();
+    scene.fill(
+        Fill::NonZero,
+        Default::default(),
+        Color::WHITE,
+        Default::default(),
+        &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
+    );
+    paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
+}
