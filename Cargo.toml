@@ -9,11 +9,13 @@ members = [
     "packages/blitz-paint",
     "packages/blitz-vibey-script",
     "packages/blitz-shell",
+    "packages/blitz-vibey-cdp-server",
     "packages/blitz",
     "packages/stylo_taffy",
     "packages/dioxus-native",
     "packages/dioxus-native-dom",
     "packages/blitz-test-harness",
+    "packages/parley_code_editor",
     "apps/browser",
     "apps/browser/persistence",
     "apps/readme",
@@ -47,6 +49,7 @@ blitz-net = { version = "=0.3.0-beta.4", path = "./packages/blitz-net", default-
 blitz-paint = { version = "=0.3.0-beta.4", path = "./packages/blitz-paint", default-features = false }
 blitz-vibey-script = { version = "=0.3.0-beta.4", path = "./packages/blitz-vibey-script", default-features = false }
 blitz-shell = { version = "=0.3.0-beta.4", path = "./packages/blitz-shell", default-features = false }
+blitz-vibey-cdp-server = { version = "=0.3.0-beta.4", path = "./packages/blitz-vibey-cdp-server", default-features = false }
 blitz-traits = { version = "=0.3.0-beta.4", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "=0.3.0-beta.4", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
@@ -57,13 +60,12 @@ browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
 
 # Servo dependencies
-# nicoburns/stylo: -webkit-text-fill-color (servo/stylo#504)
-style = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo" }
-style_traits = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo_traits" }
-style_atoms = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo_atoms" }
-style_config = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo_static_prefs" }
-style_dom = { version = "0.22.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "stylo_dom" }
-selectors = { version = "0.41.0", git = "https://github.com/nicoburns/stylo", rev = "78734bf554bb40af9dc11c0eedbe724f6055697c", package = "selectors" }
+style = { version = "0.24.0", package = "stylo" }
+style_traits = { version = "0.24.0", package = "stylo_traits" }
+style_atoms = { version = "0.24.0", package = "stylo_atoms" }
+style_config = { version = "0.24.0", package = "stylo_static_prefs" }
+style_dom = { version = "0.24.0", package = "stylo_dom" }
+selectors = { version = "0.43.0", package = "selectors" }
 cssparser = { version = "0.38.0" }
 
 # HTML5ever dependencies
@@ -98,7 +100,7 @@ dioxus-cli-config = { version = "0.8.0-alpha.3" }
 dioxus-core-macro = { version = "0.8.0-alpha.3" }
 
 # Taffy + Parley + Fontations
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "c25605620351786eb6a742b74ea4d289f59ebd84", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4aca4f4933aa9cb7a3266050c788aad4c90288d2", default-features = false, features = [
     "std",
     "flexbox",
     "flexbox_balance",
@@ -108,20 +110,20 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "c25605620351786eb6
     "calc",
     "detailed_layout_info",
 ] }
-parley = { version = "0.12", default-features = false, features = ["std"] }
-skrifa = { version = "0.44", default-features = false, features = [
+parley = { version = "0.13", default-features = false, features = ["std"] }
+skrifa = { version = "0.49", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { version = "0.14.0" }
-anyrender_serialize = { version = "0.8.0" }
-anyrender_skia = { version = "0.12.0" }
-anyrender_vello = { version = "0.15.0" }
-anyrender_vello_cpu = { version = "0.18.0" }
-anyrender_vello_hybrid = { version = "0.11.0" }
-anyrender_svg = { version = "0.15.0" }
-wgpu_context = { version = "0.10.0" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "abec906ca8c036e87eee493c99c52e75a893ca72" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -129,8 +131,8 @@ linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13.1"
 wgpu = "30"
-usvg = "0.48.1"
-svgtypes = "0.16.1" # Should match usvg's version
+usvg = "0.50.0"
+svgtypes = "0.16.2" # Should match usvg's version
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
@@ -157,6 +159,9 @@ html-escape = "0.2.13"
 percent-encoding = "2.3.1"
 png = "0.18"
 serde = "1"
+serde_json = "1"
+tungstenite = "0.30"
+blitz-chrome-devtools-frontend = "0.1"
 
 # Dioxus Native
 webbrowser = "1.0"
@@ -277,6 +282,7 @@ dioxus-native = { workspace = true, features = [
     "floats",
     "svg",
     "prelude",
+    "data-uri",
 ] }
 euclid = { workspace = true }
 url = { workspace = true }
@@ -284,17 +290,16 @@ reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 image = { workspace = true }
 png = { workspace = true }
+rand = "0.9"
 peniko = { workspace = true }
 color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
-vello = "0.11"
-vello_cpu = "0.3"
-vello_gpu = "0.3"
-vello_common = "0.3"
+vello = "0.12"
+vello_cpu = "0.4"
+vello_gpu = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
-rustc-hash = { workspace = true }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }

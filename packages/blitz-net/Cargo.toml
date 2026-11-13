@@ -13,7 +13,7 @@ rust-version.workspace = true
 [features]
 http2 = ["reqwest/http2"]
 cookies = ["reqwest/cookies"]
-multipart = ["reqwest/multipart", "reqwest/stream"]
+multipart = ["reqwest/multipart", "reqwest/stream", "reqwest-middleware?/multipart"]
 cache = ["dep:reqwest-middleware", "dep:http-cache-reqwest", "dep:directories", "dep:http-cache"]
 tracing = ["dep:tracing"]
 
@@ -23,7 +23,7 @@ blitz-traits = { workspace = true }
 
 # Networking dependencies
 tokio = { workspace = true, features = ["sync", "time"] }
-reqwest = { workspace = true, features = ["charset", "native-tls", "form"] }
+reqwest = { workspace = true, features = ["charset", "form"] }
 data-url = { workspace = true }
 
 # Caching
@@ -33,6 +33,9 @@ http-cache = { workspace = true, optional = true, features = ["url-standard"] }
 directories = { workspace = true, optional = true }
 
 tracing = { workspace = true, optional = true }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+reqwest = { workspace = true, features = ["rustls"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { workspace = true, features = ["native-tls-vendored"] }

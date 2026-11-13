@@ -65,10 +65,10 @@ pub fn launch_url(url: &str) {
     let (url, bytes) = rt
         .block_on(net_provider.fetch_async(blitz_traits::net::Request::get(url)))
         .unwrap();
-    let html = std::str::from_utf8(bytes.as_ref()).unwrap();
+    let html = String::from_utf8_lossy(bytes.as_ref());
 
     launch_internal(
-        html,
+        &html,
         Config {
             stylesheets: Vec::new(),
             base_url: Some(url),

@@ -5,11 +5,10 @@ use blitz_dom::CopyStyleGetters;
 use blitz_dom::local_name;
 use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, RoundedRect, Stroke, Vec2};
 use peniko::Fill;
-use style::dom::TElement as _;
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_input(&self, scene: &mut impl PaintScene) {
-        if self.node.local_name() != "input" {
+        if self.element.name.local != local_name!("input") {
             return;
         }
         let Some(checked) = self.element.checkbox_input_checked() else {

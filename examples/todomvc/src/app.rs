@@ -59,6 +59,7 @@ pub fn app() -> Element {
     };
 
     rsx!(
+        document::Title { "TodoMVC" }
         body {
             style { {include_str!("./todomvc.css")} }
             section { class: "todoapp",

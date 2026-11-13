@@ -44,6 +44,16 @@ pub enum BlitzShellEvent {
         data: Arc<AccessKitEvent>,
     },
 
+    /// Devtools protocol messages are waiting to be processed
+    #[cfg(feature = "devtools")]
+    DevtoolsPoll,
+
+    /// Open devtools inspecting the document with the given id
+    #[cfg(feature = "devtools")]
+    OpenDevtools {
+        doc_id: usize,
+    },
+
     /// An arbitary event from the Blitz embedder
     Embedder(Arc<dyn Any + Send + Sync>),
 

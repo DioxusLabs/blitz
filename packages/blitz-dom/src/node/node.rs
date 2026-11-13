@@ -19,7 +19,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use style::computed_values::flex_direction::T as FlexDirection;
 use style::computed_values::isolation::T as Isolation;
+use style::computed_values::overflow_x::T as Overflow;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
+use style::dom::OpaqueNode;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
@@ -1007,6 +1009,34 @@ impl Node {
         self.tree().get(id).unwrap()
     }
 
+    /// The node's DOM parent.
+    pub fn parent_node(&self) -> Option<&Node> {
+        self.parent.map(|id| self.with(id))
+    }
+
+    /// The node's first DOM child that is an element.
+    pub fn first_element_child(&self) -> Option<&Node> {
+        self.children
+            .iter()
+            .map(|id| self.with(*id))
+            .find(|child| child.is_element())
+    }
+
+    /// The root of the tree containing the node: the document node, for a node in the document.
+    pub fn owner_doc(&self) -> &Node {
+        // Walk up the (layout-)parent chain to the root Document node.
+        let mut node = self;
+        while let Some(parent) = node.parent_node() {
+            node = parent;
+        }
+        node
+    }
+
+    /// The node's identity in Stylo (the key of its snapshot).
+    pub(crate) fn opaque(&self) -> OpaqueNode {
+        OpaqueNode(self.id.as_u64() as usize)
+    }
+
     pub fn print_tree(&self, level: usize) {
         println!(
             "{} {} {:?} {} {:?}",
@@ -1534,14 +1564,20 @@ impl Node {
             *scrollbar = Some(sb);
         }
 
-        let content_box_offset = taffy::Point {
-            x: self.final_layout().padding.left + self.final_layout().border.left,
-            y: self.final_layout().padding.top + self.final_layout().border.top,
+        // Text clusters and callers of the returned coordinates work in the
+        // inline root's content box, but embedded boxes store border-box
+        // relative locations like every other child; apply the offset only
+        // where content-box coordinates are wanted, or atomic inlines in a
+        // padded inline root are hit one padding down and right of where
+        // they are painted.
+        let content_box_offset = if self.flags.is_inline_root() {
+            taffy::Point {
+                x: self.final_layout().padding.left + self.final_layout().border.left,
+                y: self.final_layout().padding.top + self.final_layout().border.top,
+            }
+        } else {
+            taffy::Point { x: 0.0, y: 0.0 }
         };
-        if self.flags.is_inline_root() {
-            x -= content_box_offset.x;
-            y -= content_box_offset.y;
-        }
 
         // Positive z_index hoisted children
         if matches_hoisted_content {
@@ -1569,12 +1605,6 @@ impl Node {
             let mut child_x = x;
             let mut child_y = y;
             if child_position.is_out_of_flow() {
-                // Out-of-flow children's layout location is relative to this node's
-                // border box, so undo the inline-root content-box offset applied above
-                if self.flags.is_inline_root() {
-                    child_x += content_box_offset.x;
-                    child_y += content_box_offset.y;
-                }
                 // Fixed-position children of the root element are positioned
                 // against the viewport and do not scroll with it. (A fixed box
                 // whose containing block is a transformed ancestor scrolls with
@@ -1586,6 +1616,9 @@ impl Node {
                     child_x -= viewport_scroll.x as f32;
                     child_y -= viewport_scroll.y as f32;
                 }
+            } else if let Some(offset) = child.lifted_paint_offset(self.id) {
+                child_x -= offset.x;
+                child_y -= offset.y;
             }
             if let Some(hit) = child.hit_inner(child_x, child_y, scale, scrollbar) {
                 return Some(hit);
@@ -1609,16 +1642,29 @@ impl Node {
             }
         }
 
+        // Line boxes are clipped to the padding box on axes where overflow is not visible.
+        let clips_point = self.primary_styles().is_some_and(|style| {
+            let x = x - self.scroll_offset().x as f32;
+            let y = y - self.scroll_offset().y as f32;
+            (style.clone_overflow_x() != Overflow::Visible
+                && (x < layout.border.left || x > size.width - layout.border.right))
+                || (style.clone_overflow_y() != Overflow::Visible
+                    && (y < layout.border.top || y > size.height - layout.border.bottom))
+        });
+
         // Inline children
         if self.flags.is_inline_root() {
+            let x = x - content_box_offset.x;
+            let y = y - content_box_offset.y;
             let element_data = &self.element_data().unwrap();
             if let Some(ild) = element_data.inline_layout_data.as_ref() {
                 let layout = &ild.layout;
                 let scale = layout.scale();
                 let y = y - ild.block_offset;
 
-                if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
+                if !clips_point
+                    && let Some((cluster, _side)) =
+                        Cluster::from_point_exact(layout, x * scale, y * scale)
                 {
                     let node_id = cluster.style().brush.id;
                     if let Some(text_node) = self.tree().get(node_id)
@@ -1641,8 +1687,8 @@ impl Node {
         if matches_self && !pointer_events_none {
             return Some(HitResult {
                 node_id: self.id,
-                x,
-                y,
+                x: x - content_box_offset.x,
+                y: y - content_box_offset.y,
                 is_text: false,
             });
         }
