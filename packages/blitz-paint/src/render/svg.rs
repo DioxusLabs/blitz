@@ -72,10 +72,11 @@ impl ElementCx<'_, '_> {
         let Some((content_transform, ..)) = self.native_svg_root(transform) else {
             return false;
         };
-        self.node.children.iter().all(|&child| {
-            self.svg_ink_bounds(self.node.with(child), content_transform)
-                .is_none_or(|ink| clip.contains_rect(ink))
-        })
+        let ink = self
+            .element
+            .svg_root_data()
+            .and_then(|root| root.layout.as_ref()?.ink);
+        ink.is_none_or(|ink| clip.contains_rect(content_transform.transform_rect_bbox(ink)))
     }
 
     /// Paint a natively rendered inline `<svg>` root into its content box.
@@ -303,55 +304,10 @@ impl ElementCx<'_, '_> {
 
     /// A conservative bound, in device pixels, of what `node` paints when its
     /// parent's user space maps to device pixels by `parent_transform`, or
-    /// `None` when it paints nothing. Clip paths and masks of descendants
-    /// are ignored, as they only take away from it.
+    /// `None` when it paints nothing.
     fn svg_ink_bounds(&self, node: &Node, parent_transform: Affine) -> Option<Rect> {
-        let layout = node.element_data()?.svg_layout()?;
-        let transform = parent_transform * layout.transform;
-        let children = |transform: Affine| {
-            node.children
-                .iter()
-                .filter_map(|&child| self.svg_ink_bounds(node.with(child), transform))
-                .reduce(|a, b| a.union(b))
-        };
-        match &layout.kind {
-            SvgLayoutKind::NotRendered | SvgLayoutKind::Resource => None,
-            SvgLayoutKind::Group => children(transform),
-            SvgLayoutKind::Switch { child } => self.svg_ink_bounds(node.with((*child)?), transform),
-            SvgLayoutKind::Viewport {
-                content_transform,
-                clip,
-                ..
-            } => {
-                let ink = children(transform * *content_transform)?;
-                Some(match clip {
-                    Some(clip) => ink.intersect(transform.transform_rect_bbox(*clip)),
-                    None => ink,
-                })
-            }
-            SvgLayoutKind::Shape { path, stroke } => {
-                let stroked = node.svg_style().is_some_and(|style| {
-                    style.get_inherited_svg().stroke.kind != SVGPaintKind::None
-                });
-                let outset = stroke
-                    .as_ref()
-                    .filter(|_| stroked)
-                    .map_or(0.0, stroke_outset);
-                Some(transform.transform_rect_bbox(path.bounding_box().inflate(outset, outset)))
-            }
-            SvgLayoutKind::Text(text) => {
-                // Glyphs can overhang their cells and are rotated about their
-                // origin, so allow a cell height on each side.
-                let bbox = text.bbox?;
-                let strokes = text.runs.iter().filter_map(|run| run.stroke.as_ref());
-                let decoration_strokes = text.decorations.iter().filter_map(|d| d.stroke.as_ref());
-                let outset = strokes
-                    .chain(decoration_strokes)
-                    .map(stroke_outset)
-                    .fold(bbox.height(), f64::max);
-                Some(transform.transform_rect_bbox(bbox.inflate(outset, outset)))
-            }
-        }
+        let ink = node.element_data()?.svg_layout()?.ink_in_parent()?;
+        Some(parent_transform.transform_rect_bbox(ink))
     }
 
     /// A clip path that one outline with one fill rule can express, as a
@@ -572,18 +528,20 @@ impl ElementCx<'_, '_> {
                 current = span.parent;
             }
             if alpha < 1.0 {
-                let painter = self.context;
+                let Some(ink) = run.ink else {
+                    continue;
+                };
+                let bounds = self
+                    .viewport_rect()
+                    .intersect(transform.transform_rect_bbox(ink))
+                    .inflate(1.0, 1.0)
+                    .expand();
                 scene.push_layer(
                     Fill::NonZero,
                     BlendMode::default(),
                     alpha,
                     Affine::IDENTITY,
-                    &Rect::new(
-                        painter.initial_x,
-                        painter.initial_y,
-                        painter.initial_x + painter.width as f64,
-                        painter.initial_y + painter.height as f64,
-                    ),
+                    &bounds,
                     None,
                     None,
                 );
@@ -603,21 +561,6 @@ impl ElementCx<'_, '_> {
         }
         paint_decorations(scene, true);
     }
-}
-
-/// How far a stroke can extend beyond its path's bounding box: half its width,
-/// scaled by the miter limit for miter joins and by √2 for square caps.
-fn stroke_outset(stroke: &Stroke) -> f64 {
-    let mut scale = 1.0_f64;
-    if matches!(stroke.join, kurbo::Join::Miter) {
-        scale = scale.max(stroke.miter_limit);
-    }
-    if matches!(stroke.start_cap, kurbo::Cap::Square)
-        || matches!(stroke.end_cap, kurbo::Cap::Square)
-    {
-        scale = scale.max(std::f64::consts::SQRT_2);
-    }
-    stroke.width * 0.5 * scale
 }
 
 /// Draw a run's glyphs, batching consecutive glyphs that share a rotation
