@@ -1,6 +1,8 @@
 use crate::Document;
+use crate::document::{ActivePointerRecord, CaptureTarget};
+use crate::events::DragMode;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, Point, PointerCoords,
+    BlitzPointerEvent, DomEvent, DomEventData, EventState, MouseEventButtons, Point, PointerCoords,
     UiEvent,
 };
 use blitz_traits::node_id::NodeId;
@@ -45,32 +47,272 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     }
 
     pub fn handle_pointer_move(&mut self, event: &BlitzPointerEvent) -> Option<NodeId> {
-        let mut doc = self.doc.inner_mut();
-
-        let prev_hover_node_id = doc.hover_node_id;
-        let changed = doc.set_hover_to(event.page_x(), event.page_y());
-        let hover_node_id = doc.hover_node_id;
-
-        drop(doc);
-
-        if !changed {
-            return prev_hover_node_id;
+        let pointer_id = self.upsert_active_pointer(event, event.buttons);
+        if event.is_mouse() && event.buttons.is_empty() {
+            self.doc
+                .inner_mut()
+                .pending_pointer_capture_targets
+                .remove(&pointer_id);
         }
-
-        self.dispatch_hover_change(prev_hover_node_id, hover_node_id, event);
-
-        hover_node_id
+        self.update_pointer_target_and_hover(pointer_id, event)
     }
 
     /// End hover when the pointer leaves the document, dispatching out/leave
     /// events to the previously hovered chain
     pub fn handle_pointer_leave(&mut self, event: &BlitzPointerEvent) {
-        let mut doc = self.doc.inner_mut();
-        let prev_hover_node_id = doc.hover_node_id;
-        doc.clear_hover();
-        drop(doc);
+        let pointer_id = self.upsert_active_pointer(event, event.buttons);
+        if event.buttons.is_empty() {
+            self.doc
+                .inner_mut()
+                .pending_pointer_capture_targets
+                .remove(&pointer_id);
+            self.process_pending_pointer_capture(pointer_id, event);
+        }
 
-        self.dispatch_hover_change(prev_hover_node_id, None, event);
+        if self
+            .doc
+            .inner()
+            .active_capture_node_by_dom_id(pointer_id)
+            .is_some()
+        {
+            return;
+        }
+
+        let prev_hover_node_id = {
+            let mut doc = self.doc.inner_mut();
+            let prev = doc
+                .hover_node_id
+                .and_then(|id| doc.nearest_connected_element(id));
+            doc.clear_hover();
+            prev
+        };
+
+        let prev_under_pointer = {
+            let mut doc = self.doc.inner_mut();
+            doc.active_pointers
+                .get_mut(&pointer_id)
+                .and_then(|record| record.element_under_pointer.take())
+                .or(prev_hover_node_id)
+        };
+
+        self.dispatch_hover_change(prev_under_pointer, None, event);
+
+        if !event.is_mouse() {
+            self.remove_active_pointer(pointer_id);
+        }
+    }
+
+    fn upsert_active_pointer(
+        &mut self,
+        event: &BlitzPointerEvent,
+        active_buttons: MouseEventButtons,
+    ) -> i32 {
+        let pointer_id = event.id.to_dom_pointer_id();
+        let mut stored_event = event.clone();
+        stored_event.buttons = active_buttons;
+        stored_event.active_pointers = Default::default();
+
+        let mut doc = self.doc.inner_mut();
+        let initial_under_pointer = if event.is_mouse() {
+            doc.hover_node_id
+                .and_then(|id| doc.nearest_connected_element(id))
+        } else {
+            None
+        };
+        doc.active_pointers
+            .entry(pointer_id)
+            .and_modify(|record| {
+                record.id = event.id;
+                record.is_primary = event.is_primary;
+                record.buttons = active_buttons;
+                record.last_event = stored_event.clone();
+            })
+            .or_insert(ActivePointerRecord {
+                id: event.id,
+                is_primary: event.is_primary,
+                buttons: active_buttons,
+                last_event: stored_event,
+                element_under_pointer: initial_under_pointer,
+            });
+        pointer_id
+    }
+
+    fn remove_active_pointer(&mut self, pointer_id: i32) {
+        let mut doc = self.doc.inner_mut();
+        doc.active_pointers.remove(&pointer_id);
+        doc.pending_pointer_capture_targets.remove(&pointer_id);
+        doc.pointer_capture_targets.remove(&pointer_id);
+    }
+
+    fn resolve_target_or_root(&self, target: Option<NodeId>) -> Option<NodeId> {
+        target.or_else(|| self.doc.inner().try_root_element().map(|el| el.id))
+    }
+
+    fn set_element_under_pointer(
+        &mut self,
+        pointer_id: i32,
+        next_target: Option<NodeId>,
+        event: &BlitzPointerEvent,
+    ) {
+        let (prev_target, next_target) = {
+            let mut doc = self.doc.inner_mut();
+            let next_target = next_target.and_then(|id| doc.nearest_connected_element(id));
+            let Some(record) = doc.active_pointers.get_mut(&pointer_id) else {
+                return;
+            };
+            let prev = record.element_under_pointer;
+            if prev == next_target {
+                return;
+            }
+            record.element_under_pointer = next_target;
+            (prev, next_target)
+        };
+
+        self.dispatch_hover_change(prev_target, next_target, event);
+    }
+
+    fn process_pending_pointer_capture(&mut self, pointer_id: i32, event: &BlitzPointerEvent) {
+        let (old_capture, initial_pending) = {
+            let mut doc = self.doc.inner_mut();
+            let old = doc.pointer_capture_targets.get(&pointer_id).copied();
+            let pending = doc
+                .pending_pointer_capture_targets
+                .get(&pointer_id)
+                .copied();
+
+            match (old, pending) {
+                (None, None) => return,
+                (
+                    Some(CaptureTarget::Connected {
+                        target: old_target,
+                        explicit: old_explicit,
+                    }),
+                    Some(pending_capture),
+                ) if old_target == pending_capture.target => {
+                    if old_explicit != pending_capture.explicit {
+                        doc.pointer_capture_targets.insert(
+                            pointer_id,
+                            CaptureTarget::Connected {
+                                target: old_target,
+                                explicit: pending_capture.explicit,
+                            },
+                        );
+                    }
+                    return;
+                }
+                _ => (old, pending),
+            }
+        };
+
+        if let Some(old) = old_capture {
+            let lost_target = {
+                let mut doc = self.doc.inner_mut();
+                doc.pointer_capture_targets.remove(&pointer_id);
+                match old {
+                    CaptureTarget::Connected { target, .. } if doc.is_connected_element(target) => {
+                        target
+                    }
+                    _ => doc.root_node_id,
+                }
+            };
+            self.handle_dom_event(DomEvent::new(
+                lost_target,
+                DomEventData::LostPointerCapture(event.clone()),
+            ));
+        }
+
+        if initial_pending.is_none() {
+            return;
+        }
+
+        let current_pending = {
+            let doc = self.doc.inner();
+            doc.pending_pointer_capture_targets
+                .get(&pointer_id)
+                .copied()
+                .filter(|pending| doc.is_connected_element(pending.target))
+        };
+
+        let Some(captured) = current_pending else {
+            return;
+        };
+
+        if event.is_primary || event.is_mouse() {
+            self.doc.inner_mut().set_hover_to_captured_node(
+                captured.target,
+                event.page_x(),
+                event.page_y(),
+            );
+        }
+        self.set_element_under_pointer(pointer_id, Some(captured.target), event);
+
+        self.doc.inner_mut().pointer_capture_targets.insert(
+            pointer_id,
+            CaptureTarget::Connected {
+                target: captured.target,
+                explicit: captured.explicit,
+            },
+        );
+
+        self.handle_dom_event(DomEvent::new(
+            captured.target,
+            DomEventData::GotPointerCapture(event.clone()),
+        ));
+
+        let disconnected_during_got = {
+            let mut doc = self.doc.inner_mut();
+            let disconnected = matches!(
+                doc.pointer_capture_targets.get(&pointer_id),
+                Some(CaptureTarget::DisconnectedPendingLostCapture)
+            ) || !doc.is_connected_element(captured.target);
+            if disconnected {
+                doc.pointer_capture_targets.remove(&pointer_id);
+                Some(doc.root_node_id)
+            } else {
+                None
+            }
+        };
+
+        if let Some(root_node_id) = disconnected_during_got {
+            self.handle_dom_event(DomEvent::new(
+                root_node_id,
+                DomEventData::LostPointerCapture(event.clone()),
+            ));
+        }
+    }
+
+    fn update_pointer_target_and_hover(
+        &mut self,
+        pointer_id: i32,
+        event: &BlitzPointerEvent,
+    ) -> Option<NodeId> {
+        self.process_pending_pointer_capture(pointer_id, event);
+
+        let captured_id = self.doc.inner().active_capture_node_by_dom_id(pointer_id);
+        if let Some(captured_id) = captured_id {
+            if event.is_primary || event.is_mouse() {
+                self.doc.inner_mut().set_hover_to_captured_node(
+                    captured_id,
+                    event.page_x(),
+                    event.page_y(),
+                );
+            }
+            self.set_element_under_pointer(pointer_id, Some(captured_id), event);
+            return Some(captured_id);
+        }
+
+        let hit_target = if event.is_primary || event.is_mouse() {
+            let mut doc = self.doc.inner_mut();
+            doc.set_hover_to(event.page_x(), event.page_y());
+            doc.hover_node_id
+        } else {
+            let doc = self.doc.inner();
+            doc.hit(event.page_x(), event.page_y())
+                .and_then(|hit| doc.nearest_non_anonymous_ancestor(hit.node_id))
+        };
+
+        self.set_element_under_pointer(pointer_id, hit_target, event);
+        hit_target
     }
 
     fn dispatch_hover_change(
@@ -79,7 +321,13 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         hover_node_id: Option<NodeId>,
         event: &BlitzPointerEvent,
     ) {
+        if prev_hover_node_id == hover_node_id {
+            return;
+        }
+
         let doc = self.doc.inner();
+        let prev_hover_node_id = prev_hover_node_id.filter(|&id| doc.nodes.contains_key(id));
+        let hover_node_id = hover_node_id.filter(|&id| doc.nodes.contains_key(id));
         let mut old_chain = prev_hover_node_id
             .map(|id| doc.node_chain(id))
             .unwrap_or_default();
@@ -118,6 +366,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 .unwrap_or(&[])
                 .iter()
             {
+                if !self.doc.inner().nodes.contains_key(*node_id) {
+                    continue;
+                }
                 self.handle_dom_event(DomEvent::new(
                     *node_id,
                     DomEventData::PointerLeave(event.clone()),
@@ -131,7 +382,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             }
         }
 
-        if let Some(target) = hover_node_id {
+        if let Some(target) = hover_node_id
+            && self.doc.inner().nodes.contains_key(target)
+        {
             self.handle_dom_event(DomEvent::new(
                 target,
                 DomEventData::PointerOver(event.clone()),
@@ -150,6 +403,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 .unwrap_or(&[])
                 .iter()
             {
+                if !self.doc.inner().nodes.contains_key(*node_id) {
+                    continue;
+                }
                 self.handle_dom_event(DomEvent::new(
                     *node_id,
                     DomEventData::PointerEnter(event.clone()),
@@ -166,146 +422,261 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     }
 
     pub fn handle_ui_event(&mut self, event: UiEvent) {
-        let doc = self.doc.inner();
-
-        // A non-hovering pointer (finger) ends hover once it is lifted or cancelled
-        let mut hover_end_event = None;
-        let mut hover_node_id = doc.hover_node_id;
-        let focussed_node_id = doc.focus_node_id;
-        let prev_hover = doc.hover_state();
-        drop(doc);
+        let (hover_node_id, focussed_node_id, prev_hover) = {
+            let doc = self.doc.inner();
+            (doc.hover_node_id, doc.focus_node_id, doc.hover_state())
+        };
 
         // A document the pointer has left has no say over the cursor
         let is_leave = matches!(event, UiEvent::PointerLeave(_));
 
-        // Update document input state (hover, focus, active, etc)
-        match &event {
-            UiEvent::PointerMove(event) => {
-                hover_node_id = self.handle_pointer_move(event);
-            }
-            UiEvent::PointerDown(event) => {
-                hover_node_id = self.handle_pointer_move(event);
-                let mut doc = self.doc.inner_mut();
-                doc.active_node();
-                doc.set_mousedown_node_id(hover_node_id);
-            }
-            UiEvent::PointerUp(event) => {
-                hover_node_id = self.handle_pointer_move(event);
-                let mut doc = self.doc.inner_mut();
-                doc.unactive_node();
-
-                if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
-                    hover_end_event = Some(event.clone());
-                }
-            }
-            UiEvent::PointerCancel(event) => {
-                hover_node_id = self.handle_pointer_move(event);
-                let mut doc = self.doc.inner_mut();
-                doc.unactive_node();
-
-                if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
-                    hover_end_event = Some(event.clone());
-                }
-            }
-            UiEvent::PointerLeave(event) => {
-                self.handle_pointer_leave(event);
-                hover_node_id = None;
-            }
-            _ => {}
-        };
-
-        let target = match event {
-            UiEvent::PointerMove(_) => hover_node_id,
-            UiEvent::PointerUp(_) => hover_node_id,
-            UiEvent::PointerDown(_) => hover_node_id,
-            UiEvent::PointerCancel(_) => hover_node_id,
-            UiEvent::PointerLeave(_) => hover_node_id,
-            UiEvent::Wheel(_) => hover_node_id,
-            UiEvent::KeyUp(_) => focussed_node_id,
-            UiEvent::KeyDown(_) => focussed_node_id,
-            UiEvent::Ime(_) => focussed_node_id,
-            UiEvent::Paste(_) => focussed_node_id,
-            UiEvent::AppleStandardKeybinding(_) => focussed_node_id,
-        };
-        // Fall back to the root element. A document without a root element (e.g. an
-        // empty iframe sub-document) has no event target, so there is nothing to do.
-        let Some(target) = target.or_else(|| self.doc.inner().try_root_element().map(|el| el.id))
-        else {
-            return;
-        };
-
         match event {
             UiEvent::PointerMove(data) => {
-                self.handle_pointer_event(
-                    target,
-                    data,
-                    DomEventData::PointerMove,
-                    Some(DomEventData::MouseMove),
-                    DomEventData::TouchMove,
-                );
+                let effective_target = self.handle_pointer_move(&data);
+                if let Some(target) = self.resolve_target_or_root(effective_target) {
+                    self.handle_pointer_event(
+                        target,
+                        data,
+                        DomEventData::PointerMove,
+                        Some(DomEventData::MouseMove),
+                        DomEventData::TouchMove,
+                    );
+                }
             }
-            UiEvent::PointerUp(data) => {
-                self.handle_pointer_event(
-                    target,
-                    data,
-                    DomEventData::PointerUp,
-                    Some(DomEventData::MouseUp),
-                    DomEventData::TouchEnd,
-                );
+            UiEvent::PointerDown(mut data) => {
+                let trigger_mask = MouseEventButtons::from(data.button);
+                let other_held = if data.is_finger() {
+                    MouseEventButtons::None
+                } else {
+                    data.buttons.difference(trigger_mask)
+                };
+                let is_chorded = !other_held.is_empty();
+                let active_buttons = if data.buttons.is_empty() {
+                    trigger_mask
+                } else {
+                    data.buttons | trigger_mask
+                };
+                data.buttons = active_buttons;
+
+                let pointer_id = self.upsert_active_pointer(&data, active_buttons);
+                let effective_target = self.update_pointer_target_and_hover(pointer_id, &data);
+                let resolved_target = self.resolve_target_or_root(effective_target);
+
+                if !is_chorded {
+                    let mut doc = self.doc.inner_mut();
+                    doc.active_node();
+                    doc.set_mousedown_node_id(resolved_target);
+                    if data.is_finger()
+                        && let Some(target_id) = effective_target
+                    {
+                        doc.set_implicit_pointer_capture(target_id, pointer_id);
+                    }
+                }
+
+                if let Some(target) = resolved_target {
+                    if is_chorded {
+                        self.handle_pointer_event(
+                            target,
+                            data,
+                            DomEventData::PointerMove,
+                            Some(DomEventData::MouseDown),
+                            DomEventData::TouchMove,
+                        );
+                    } else {
+                        self.handle_pointer_event(
+                            target,
+                            data,
+                            DomEventData::PointerDown,
+                            Some(DomEventData::MouseDown),
+                            DomEventData::TouchStart,
+                        );
+                    }
+                }
             }
-            UiEvent::PointerDown(data) => {
-                self.handle_pointer_event(
-                    target,
-                    data,
-                    DomEventData::PointerDown,
-                    Some(DomEventData::MouseDown),
-                    DomEventData::TouchStart,
-                );
+            UiEvent::PointerUp(mut data) => {
+                let trigger_mask = MouseEventButtons::from(data.button);
+                let other_held = if data.is_finger() {
+                    MouseEventButtons::None
+                } else {
+                    data.buttons.difference(trigger_mask)
+                };
+                let is_chorded = !other_held.is_empty();
+                data.buttons = other_held;
+
+                let pointer_id = self.upsert_active_pointer(&data, other_held);
+                let effective_target = self.update_pointer_target_and_hover(pointer_id, &data);
+
+                if is_chorded {
+                    if let Some(target) = self.resolve_target_or_root(effective_target) {
+                        self.handle_pointer_event(
+                            target,
+                            data,
+                            DomEventData::PointerMove,
+                            Some(DomEventData::MouseUp),
+                            DomEventData::TouchMove,
+                        );
+                    }
+                } else {
+                    self.doc.inner_mut().unactive_node();
+
+                    if let Some(target) = self.resolve_target_or_root(effective_target) {
+                        let mut ptr_event =
+                            DomEvent::new(target, DomEventData::PointerUp(data.clone()));
+                        let mut event_state =
+                            self.run_handler_event(&mut ptr_event, EventState::default());
+
+                        if !event_state.is_cancelled() {
+                            if data.is_mouse() {
+                                let mut mouse_event =
+                                    DomEvent::new(target, DomEventData::MouseUp(data.clone()));
+                                event_state = self.run_handler_event(&mut mouse_event, event_state);
+                            } else if data.is_finger() || data.is_pen() {
+                                let mut touch_event =
+                                    DomEvent::new(target, DomEventData::TouchEnd(data.clone()));
+                                event_state = self.run_handler_event(&mut touch_event, event_state);
+                            }
+                        }
+
+                        let captured_click_target =
+                            self.doc.inner().active_capture_node_by_dom_id(pointer_id);
+                        self.doc
+                            .inner_mut()
+                            .pending_pointer_capture_targets
+                            .remove(&pointer_id);
+                        self.process_pending_pointer_capture(pointer_id, &data);
+
+                        {
+                            let mut doc = self.doc.inner_mut();
+                            let mousedown_node_id = doc.mousedown_node_id.take();
+                            let click_target = if let Some(captured_id) = captured_click_target {
+                                mousedown_node_id
+                                    .is_some()
+                                    .then_some(captured_id)
+                                    .filter(|&id| doc.is_connected_element(id))
+                            } else if let Some(down_id) = mousedown_node_id {
+                                let release_id = doc
+                                    .active_pointers
+                                    .get(&pointer_id)
+                                    .and_then(|record| record.element_under_pointer)
+                                    .or(effective_target)
+                                    .or(Some(target));
+                                release_id
+                                    .and_then(|up_id| doc.common_element_ancestor(down_id, up_id))
+                            } else {
+                                None
+                            };
+                            doc.pending_click_target = Some(click_target);
+                        }
+
+                        if !event_state.is_cancelled() {
+                            self.run_default_action(&mut ptr_event);
+                        } else {
+                            let mut doc = self.doc.inner_mut();
+                            doc.pending_click_target = None;
+                            doc.drag_mode.take();
+                        }
+                        self.process_queue();
+                    } else {
+                        self.doc
+                            .inner_mut()
+                            .pending_pointer_capture_targets
+                            .remove(&pointer_id);
+                        self.process_pending_pointer_capture(pointer_id, &data);
+                        let mut doc = self.doc.inner_mut();
+                        doc.mousedown_node_id = None;
+                        doc.drag_mode.take();
+                    }
+
+                    if data.is_finger() {
+                        if data.is_primary {
+                            self.doc.inner_mut().clear_hover();
+                        }
+                        self.set_element_under_pointer(pointer_id, None, &data);
+                        self.remove_active_pointer(pointer_id);
+                    } else {
+                        self.update_pointer_target_and_hover(pointer_id, &data);
+                    }
+                }
             }
-            UiEvent::PointerCancel(data) => {
-                // `pointercancel` has no mouse-compatibility event, but does
-                // generate a `touchcancel` for touch-like inputs.
-                self.handle_pointer_event(
-                    target,
-                    data,
-                    DomEventData::PointerCancel,
-                    None::<fn(BlitzPointerEvent) -> DomEventData>,
-                    DomEventData::TouchCancel,
-                );
+            UiEvent::PointerCancel(mut data) => {
+                data.buttons = MouseEventButtons::None;
+                let pointer_id = self.upsert_active_pointer(&data, MouseEventButtons::None);
+                let effective_target = self.update_pointer_target_and_hover(pointer_id, &data);
+
+                {
+                    let mut doc = self.doc.inner_mut();
+                    doc.unactive_node();
+                    doc.drag_mode = DragMode::None;
+                    doc.mousedown_node_id = None;
+                }
+
+                if let Some(target) = self.resolve_target_or_root(effective_target) {
+                    // `pointercancel` has no mouse-compatibility event, but does
+                    // generate a `touchcancel` for touch-like inputs.
+                    self.handle_pointer_event(
+                        target,
+                        data.clone(),
+                        DomEventData::PointerCancel,
+                        None::<fn(BlitzPointerEvent) -> DomEventData>,
+                        DomEventData::TouchCancel,
+                    );
+                }
+
+                self.doc
+                    .inner_mut()
+                    .pending_pointer_capture_targets
+                    .remove(&pointer_id);
+                self.process_pending_pointer_capture(pointer_id, &data);
+
+                if data.is_finger() {
+                    if data.is_primary {
+                        self.doc.inner_mut().clear_hover();
+                    }
+                    self.set_element_under_pointer(pointer_id, None, &data);
+                    self.remove_active_pointer(pointer_id);
+                }
             }
-            // Out/leave events were dispatched by `handle_pointer_leave`
-            UiEvent::PointerLeave(_) => {}
+            UiEvent::PointerLeave(data) => {
+                self.handle_pointer_leave(&data);
+            }
             UiEvent::Wheel(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
+                if let Some(target) = self.resolve_target_or_root(hover_node_id) {
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)));
+                }
             }
             UiEvent::KeyUp(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::KeyUp(data)))
+                if let Some(target) = self.resolve_target_or_root(focussed_node_id) {
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::KeyUp(data)));
+                }
             }
             UiEvent::KeyDown(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::KeyDown(data)))
+                if let Some(target) = self.resolve_target_or_root(focussed_node_id) {
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::KeyDown(data)));
+                }
             }
             UiEvent::Ime(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
+                if let Some(target) = self.resolve_target_or_root(focussed_node_id) {
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)));
+                }
             }
             UiEvent::Paste(text) => {
-                super::ime::handle_ime_event(
-                    &mut self.doc.inner_mut(),
-                    blitz_traits::events::BlitzImeEvent::Commit(text),
-                    |event| self.queue.push_back(event),
-                );
-                self.process_queue();
+                if self.resolve_target_or_root(focussed_node_id).is_some() {
+                    super::ime::handle_ime_event(
+                        &mut self.doc.inner_mut(),
+                        blitz_traits::events::BlitzImeEvent::Commit(text),
+                        |event| self.queue.push_back(event),
+                    );
+                    self.process_queue();
+                }
             }
             UiEvent::AppleStandardKeybinding(data) => {
-                let mut dom_event =
-                    DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
-                self.run_default_action(&mut dom_event);
-                self.process_queue();
+                if let Some(target) = self.resolve_target_or_root(focussed_node_id) {
+                    let mut dom_event =
+                        DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
+                    self.run_default_action(&mut dom_event);
+                    self.process_queue();
+                }
             }
-        };
-
-        // Update document input state (hover, focus, active, etc)
-        if let Some(event) = hover_end_event {
-            self.handle_pointer_leave(&event);
         }
 
         // Update the cursor once the event (including any forwarding to a
@@ -384,11 +755,16 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         event: &mut DomEvent,
         initial_event_state: EventState,
     ) -> EventState {
-        let chain = if event.bubbles {
+        let chain = {
             let doc = self.doc.inner();
-            doc.node_chain(event.target)
-        } else {
-            vec![event.target]
+            if !doc.nodes.contains_key(event.target) {
+                return initial_event_state;
+            }
+            if event.bubbles {
+                doc.node_chain(event.target)
+            } else {
+                vec![event.target]
+            }
         };
 
         match &mut event.data {
@@ -400,6 +776,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             | DomEventData::PointerLeave(data)
             | DomEventData::PointerOver(data)
             | DomEventData::PointerOut(data)
+            | DomEventData::GotPointerCapture(data)
+            | DomEventData::LostPointerCapture(data)
             | DomEventData::MouseMove(data)
             | DomEventData::MouseDown(data)
             | DomEventData::MouseUp(data)

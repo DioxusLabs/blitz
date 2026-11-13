@@ -20,7 +20,10 @@ use std::mem;
 use std::pin::pin;
 use std::sync::LazyLock;
 use std::task::{Context as TaskContext, Waker};
-use std::{any::Any, rc::Rc};
+use std::{
+    any::Any,
+    rc::{Rc, Weak},
+};
 
 fn wrap_event_data<T: Any>(value: T) -> Rc<dyn Any> {
     Rc::new(PlatformEventData::new(Box::new(value)))
@@ -255,6 +258,7 @@ impl Document for DioxusDocument {
         let handler = DioxusEventHandler {
             vdom: &mut self.vdom,
             vdom_state: &mut self.vdom_state,
+            doc_handle: Rc::downgrade(&self.inner),
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
@@ -264,6 +268,7 @@ impl Document for DioxusDocument {
 pub struct DioxusEventHandler<'v> {
     vdom: &'v mut VirtualDom,
     vdom_state: &'v mut DioxusState,
+    doc_handle: Weak<RefCell<BaseDocument>>,
 }
 
 impl EventHandler for DioxusEventHandler<'_> {
@@ -291,6 +296,8 @@ impl EventHandler for DioxusEventHandler<'_> {
             | DomEventData::PointerEnter(mevent)
             | DomEventData::PointerOver(mevent)
             | DomEventData::PointerOut(mevent)
+            | DomEventData::GotPointerCapture(mevent)
+            | DomEventData::LostPointerCapture(mevent)
             | DomEventData::MouseMove(mevent)
             | DomEventData::MouseDown(mevent)
             | DomEventData::MouseUp(mevent)
@@ -301,7 +308,11 @@ impl EventHandler for DioxusEventHandler<'_> {
             | DomEventData::Click(mevent)
             | DomEventData::ContextMenu(mevent)
             | DomEventData::DoubleClick(mevent) => {
-                Some(wrap_event_data(NativePointerData(mevent.clone())))
+                Some(wrap_event_data(NativePointerData::with_target(
+                    mevent.clone(),
+                    self.doc_handle.clone(),
+                    event.target,
+                )))
             }
 
             DomEventData::TouchStart(tevent)
@@ -845,5 +856,156 @@ mod tests {
         assert!(is_err(
             mounted.scroll(Default::default(), ScrollBehavior::Instant)
         ));
+    }
+
+    #[test]
+    fn pointer_capture_routes_events_and_lifecycle_to_dioxus_handlers() {
+        use crate::{NativePointerData, NodeHandle};
+        use blitz_traits::events::{
+            BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
+            PointerCoords, PointerDetails, UiEvent,
+        };
+        use blitz_traits::shell::{ColorScheme, Viewport};
+        use keyboard_types::Modifiers;
+
+        #[derive(Default)]
+        struct State {
+            log: RefCell<Vec<String>>,
+            slider_handle: RefCell<Option<NodeHandle>>,
+        }
+
+        fn pointer_evt(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEvent {
+            BlitzPointerEvent {
+                id: BlitzPointerId::Mouse,
+                is_primary: true,
+                coords: PointerCoords {
+                    page_x: x,
+                    page_y: y,
+                    screen_x: x,
+                    screen_y: y,
+                    client_x: x,
+                    client_y: y,
+                },
+                button: MouseEventButton::Main,
+                buttons,
+                mods: Modifiers::default(),
+                details: PointerDetails::default(),
+                element: Point::default(),
+                active_pointers: Default::default(),
+            }
+        }
+
+        fn app() -> Element {
+            let state = consume_context::<Rc<State>>();
+            let state_mount = Rc::clone(&state);
+            let state_down = Rc::clone(&state);
+            let state_got = Rc::clone(&state);
+            let state_move = Rc::clone(&state);
+            let state_up = Rc::clone(&state);
+            let state_lost = Rc::clone(&state);
+            let state_other_move = Rc::clone(&state);
+
+            rsx! {
+                div {
+                    style: "margin: 0; width: 300px; height: 200px;",
+                    div {
+                        style: "width: 80px; height: 40px;",
+                        onmounted: move |evt| {
+                            let handle = evt
+                                .data()
+                                .downcast::<NodeHandle>()
+                                .cloned()
+                                .unwrap();
+                            *state_mount.slider_handle.borrow_mut() = Some(handle);
+                        },
+                        onpointerdown: move |evt| {
+                            let data = evt.data();
+                            let pointer_id = data.pointer_id();
+                            let native = data.downcast::<NativePointerData>().unwrap();
+                            let target = native.target_node_handle().unwrap();
+                            target.set_pointer_capture(pointer_id).unwrap();
+                            assert!(target.has_pointer_capture(pointer_id));
+                            state_down
+                                .log
+                                .borrow_mut()
+                                .push(format!("down:{pointer_id}"));
+                        },
+                        ongotpointercapture: move |evt| {
+                            state_got
+                                .log
+                                .borrow_mut()
+                                .push(format!("got:{}", evt.data().pointer_id()));
+                        },
+                        onpointermove: move |evt| {
+                            let coords = evt.data().client_coordinates();
+                            state_move
+                                .log
+                                .borrow_mut()
+                                .push(format!("slider_move:{},{}", coords.x as i32, coords.y as i32));
+                        },
+                        onpointerup: move |evt| {
+                            state_up
+                                .log
+                                .borrow_mut()
+                                .push(format!("up:{}", evt.data().pointer_id()));
+                        },
+                        onlostpointercapture: move |evt| {
+                            state_lost
+                                .log
+                                .borrow_mut()
+                                .push(format!("lost:{}", evt.data().pointer_id()));
+                        },
+                    }
+                    div {
+                        style: "width: 200px; height: 100px;",
+                        onpointermove: move |_| {
+                            state_other_move.log.borrow_mut().push("other_move".into());
+                        },
+                    }
+                }
+            }
+        }
+
+        let state = Rc::new(State::default());
+        let vdom = VirtualDom::new(app).with_root_context(Rc::clone(&state));
+        let config = DocumentConfig {
+            viewport: Some(Viewport::new(300, 200, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        };
+        let mut doc = DioxusDocument::new(vdom, config);
+        doc.initial_build();
+        poll_until_idle(&mut doc);
+        doc.inner.borrow_mut().resolve(0.0);
+
+        let primary = MouseEventButtons::Primary;
+        doc.handle_ui_event(UiEvent::PointerDown(pointer_evt(20.0, 20.0, primary)));
+        // Drag well outside the 80x40 slider into the second div at (150, 80)
+        doc.handle_ui_event(UiEvent::PointerMove(pointer_evt(150.0, 80.0, primary)));
+        doc.handle_ui_event(UiEvent::PointerUp(pointer_evt(
+            150.0,
+            80.0,
+            MouseEventButtons::None,
+        )));
+        // Subsequent uncaptured move over the second div routes to `other_move`
+        doc.handle_ui_event(UiEvent::PointerMove(pointer_evt(
+            150.0,
+            80.0,
+            MouseEventButtons::None,
+        )));
+
+        let handle = state.slider_handle.borrow().clone().unwrap();
+        assert!(!handle.has_pointer_capture(1));
+
+        assert_eq!(
+            *state.log.borrow(),
+            vec![
+                "down:1",
+                "got:1",
+                "slider_move:150,80",
+                "up:1",
+                "lost:1",
+                "other_move",
+            ]
+        );
     }
 }
