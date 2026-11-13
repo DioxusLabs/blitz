@@ -33,6 +33,7 @@ pub(crate) use document::{DocumentText, TextContext};
 pub use document::{FaceDescriptors, FontContext, TextFonts, build_single_font_ctx};
 pub(crate) use editing::EditEngine;
 pub use editing::{Edit, EditableText, EditorMetrics, Motion, TextEditor, TextInputDriver};
+pub(crate) use inline::DeviceExclusions;
 #[cfg_attr(feature = "floats", allow(unused_imports))]
 pub(crate) use inline::NoLineExclusions;
 pub(crate) use inline::{

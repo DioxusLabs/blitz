@@ -19,9 +19,11 @@ use super::super::TextBrush;
 use super::super::{TextContext, stylo_to_parley};
 use super::{TextLayout, build};
 use crate::text::{
-    BoxMeasure, ContentWidths, FloatClear, FloatRequest, FloatSide, InlineLayoutEngine,
-    LineExclusions, LineSlot, LinesExtent, PlacedFloat, Placement, SlotSearch,
+    BoxMeasure, ContentWidths, DeviceExclusions, FloatClear, FloatSide, InlineLayoutEngine,
+    LineExclusions, LinesExtent, Placement,
 };
+#[cfg(feature = "floats")]
+use crate::text::{FloatRequest, LineSlot, SlotSearch};
 
 // FIXME: static thread_local FontCtx isn't necessarily correct in multi-document context.
 // Should use thread_local crate with ThreadLocal value store in the Document.
@@ -183,44 +185,6 @@ impl InlineLayoutEngine for TextLayout {
             block_start: placement.block_start / scale,
             ..placement
         })
-    }
-}
-
-/// The floats the lines flow around, in the device pixels Parley breaks lines in: `exclusions`
-/// measures in CSS pixels, so every question and answer is scaled on the way through.
-struct DeviceExclusions<'a, E> {
-    exclusions: &'a mut E,
-    /// Device pixels a CSS pixel.
-    scale: f32,
-}
-
-impl<E: LineExclusions> LineExclusions for DeviceExclusions<'_, E> {
-    fn slot(&self, top: f32, height: f32, search: SlotSearch) -> LineSlot {
-        let scale = self.scale;
-        let slot = self.exclusions.slot(top / scale, height / scale, search);
-        LineSlot {
-            top: slot.top * scale,
-            left: slot.left * scale,
-            width: slot.width * scale,
-            height: slot.height * scale,
-            segment: slot.segment,
-        }
-    }
-
-    fn place(&mut self, float: FloatRequest) -> PlacedFloat {
-        let scale = self.scale;
-        let placed = self.exclusions.place(FloatRequest {
-            inline_size: float.inline_size / scale,
-            block_size: float.block_size / scale,
-            block_start: float.block_start / scale,
-            ..float
-        });
-        PlacedFloat {
-            left: placed.left * scale,
-            right: placed.left * scale + float.inline_size,
-            top: placed.top * scale,
-            bottom: placed.top * scale + float.block_size,
-        }
     }
 }
 
