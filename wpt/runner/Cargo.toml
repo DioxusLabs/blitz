@@ -9,7 +9,7 @@ publish = false
 [features]
 default = ["cpu"]
 gpu = ["dep:anyrender_vello"]
-cpu = ["dep:anyrender_vello_cpu"]
+cpu = ["dep:anyrender_vello_cpu", "anyrender_vello_cpu/filters"]
 
 [dependencies]
 mimalloc = "0.1.48"
