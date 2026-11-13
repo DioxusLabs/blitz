@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use anyrender::{ImageRenderer as _, PaintScene as _};
+use crate::renderer::render_to_vec;
+use anyrender::PaintScene as _;
 use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
 use blitz_paint::paint_scene;
@@ -52,7 +53,8 @@ pub fn process_crash_test(
 
 fn render_to_buffer(ctx: &mut ThreadCtx, document: &mut BaseDocument) {
     let buf = ctx.buffers.get_mut(BufferKind::Test);
-    ctx.renderer.render_to_vec(
+    render_to_vec!(
+        ctx.renderers[ctx.active_renderer],
         |scene| {
             scene.reset();
 

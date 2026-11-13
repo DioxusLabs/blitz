@@ -16,7 +16,7 @@ small:
 ## WPT test runner
 
 wpt *ARGS:
-  cargo run --release --package wpt {{ARGS}}
+  cargo run --release --package wpt -- {{ARGS}}
 
 # resvg's test suite at wpt/RESVG_COMMIT, wrapped as reftests (see wpt/runner/src/resvg.rs).
 # Prefix with BLITZ_NATIVE_SVG=1 to render inline SVG with the native backend.
@@ -26,14 +26,13 @@ wpt-resvg *ARGS="resvg":
     git -C wpt/resvg/checkout fetch -q --depth 1 https://github.com/linebender/resvg "$(cat wpt/RESVG_COMMIT)" && \
     git -C wpt/resvg/checkout checkout -q FETCH_HEAD )
   cargo run --release --package wpt -- resvg-generate wpt/resvg/checkout wpt/resvg/out
-  WPT_DIR=wpt/resvg/out WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt {{ARGS}}
+  WPT_DIR=wpt/resvg/out WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt -- {{ARGS}}
   WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" cargo run --release --package wpt -- resvg-summary
 
-# Run the resvg suite rendering through tiny-skia (the rasterizer resvg's references come from)
-wpt-resvg-tiny-skia *ARGS="resvg":
-  cargo run --release --package wpt -- resvg-generate wpt/resvg/checkout wpt/resvg/out
-  WPT_DIR=wpt/resvg/out WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt --no-default-features --features tiny-skia {{ARGS}}
-  WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" cargo run --release --package wpt -- resvg-summary
+# Run the resvg suite through both vello_cpu and tiny-skia (the rasterizer resvg's references come
+# from) in one pass, with the results side by side
+wpt-resvg-compare *ARGS="resvg":
+  just wpt-resvg --renderer vello-cpu,tiny-skia {{ARGS}}
 
 browser *ARGS:
   cargo run --release --package browser --features log-frame-times,log-phase-times {{ARGS}}

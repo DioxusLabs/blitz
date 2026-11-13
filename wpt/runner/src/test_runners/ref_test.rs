@@ -1,4 +1,5 @@
-use anyrender::{ImageRenderer as _, PaintScene as _};
+use crate::renderer::render_to_vec;
+use anyrender::PaintScene as _;
 use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
 use blitz_paint::paint_scene;
@@ -315,7 +316,8 @@ fn render_document_to_buffer(
 
     // Render document to RGBA buffer
     let buf = ctx.buffers.get_mut(buffer_kind);
-    ctx.renderer.render_to_vec(
+    render_to_vec!(
+        ctx.renderers[ctx.active_renderer],
         |scene| {
             scene.reset();
 

@@ -1,14 +1,6 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use anyrender::ImageRenderer as _;
-#[cfg(feature = "tiny-skia")]
-use anyrender_tiny_skia::TinySkiaImageRenderer as VelloImageRenderer;
-#[cfg(feature = "gpu")]
-use anyrender_vello::VelloImageRenderer;
-#[cfg(all(feature = "cpu", not(feature = "tiny-skia")))]
-use anyrender_vello_cpu::VelloCpuImageRenderer as VelloImageRenderer;
-use atomic_float::AtomicF64;
 use blitz_dom::net::Resource;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -45,6 +37,7 @@ mod test_runners;
 mod manifest;
 mod net_provider;
 mod panic_backtrace;
+mod renderer;
 mod report;
 mod resvg;
 
@@ -52,6 +45,7 @@ mod resvg;
 use manifest::TestType;
 use manifest::{Test, split_test_url};
 use net_provider::WptNetProvider;
+use renderer::{Renderer, RendererKind};
 
 /// Create a unix timestamp of the current time using the standard library
 fn unix_timestamp() -> u64 {
@@ -111,7 +105,7 @@ impl Display for TestKind {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 enum TestStatus {
     Pass,
     Fail,
@@ -222,7 +216,9 @@ struct ThreadCtx {
     viewport: Viewport,
     net_provider: Arc<WptNetProvider<Resource>>,
     navigation_provider: Arc<dyn NavigationProvider>,
-    renderer: VelloImageRenderer,
+    renderers: Vec<Renderer>,
+    /// Index into `renderers` of the one the current test renders with
+    active_renderer: usize,
     font_ctx: FontContext,
     buffers: Buffers,
 
@@ -374,8 +370,12 @@ fn main() {
             return resvg::generate(Path::new(&args[2]), Path::new(&args[3]));
         }
         Some("resvg-summary") => {
-            let default = output_dir().join("wpt_expectations.txt");
-            return resvg::summarize(args.get(2).map_or(&default, Path::new));
+            let paths = if args.len() > 2 {
+                args[2..].iter().map(PathBuf::from).collect()
+            } else {
+                resvg::default_expectations(&output_dir())
+            };
+            return resvg::summarize(&paths);
         }
         Some("resvg-generate") => {
             eprintln!("usage: wpt resvg-generate <resvg checkout> <out dir>");
@@ -393,10 +393,7 @@ fn main() {
             "WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt."
         );
     }
-    let suites = env::args()
-        .skip(1)
-        .filter(|arg| !arg.starts_with('-'))
-        .collect();
+    let (renderer_kinds, suites) = renderer::parse_args(env::args().skip(1));
     let test_paths = collect_tests(&wpt_dir, suites);
     let count = test_paths.len();
 
@@ -414,27 +411,16 @@ fn main() {
     }
     fs::create_dir_all(&out_dir).unwrap();
 
-    let pass_count = AtomicU32::new(0);
-    let fail_count = AtomicU32::new(0);
-    let timeout_count = AtomicU32::new(0);
-    let skip_count = AtomicU32::new(0);
-    let crash_count = AtomicU32::new(0);
+    // With several renderers, each one's report and PNGs go in a subdirectory named after it.
+    let renderer_dirs: Vec<PathBuf> = if renderer_kinds.len() > 1 {
+        renderer_kinds
+            .iter()
+            .map(|kind| out_dir.join(kind.name()))
+            .collect()
+    } else {
+        vec![out_dir.clone()]
+    };
 
-    let subtest_count = AtomicU32::new(0);
-    let subtest_pass_count = AtomicU32::new(0);
-    let subtest_fail_count = AtomicU32::new(0);
-
-    let fractional_pass_count = AtomicF64::new(0.0);
-
-    let grid_lanes_fail_count = AtomicU32::new(0);
-    let subgrid_fail_count = AtomicU32::new(0);
-    let writing_mode_fail_count = AtomicU32::new(0);
-    let direction_fail_count = AtomicU32::new(0);
-    let float_fail_count = AtomicU32::new(0);
-    let calc_fail_count = AtomicU32::new(0);
-    let intrinsic_size_fail_count = AtomicU32::new(0);
-    let script_fail_count = AtomicU32::new(0);
-    let other_fail_count = AtomicU32::new(0);
     let start = Instant::now();
     let start_timestamp = unix_timestamp();
 
@@ -455,13 +441,12 @@ fn main() {
         out.flush().unwrap();
     }
 
-    let mut results: Vec<TestResult> = test_paths
+    let results: Vec<Vec<TestResult>> = test_paths
         .into_par_iter()
         .map(|test| {
             let mut ctx = thread_state
                 .get_or(|| {
                     let worker_index = worker_counter.fetch_add(1, Ordering::Relaxed);
-                    let renderer = VelloImageRenderer::new(WIDTH, HEIGHT);
                     let font_ctx = base_font_context.clone();
                     let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
                     let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
@@ -495,7 +480,11 @@ fn main() {
                         run_quarantined,
                         viewport,
                         net_provider,
-                        renderer,
+                        renderers: renderer_kinds
+                            .iter()
+                            .map(|&kind| Renderer::new(kind, WIDTH, HEIGHT))
+                            .collect(),
+                        active_renderer: 0,
                         font_ctx,
                         buffers: Buffers {
                             test_buffer,
@@ -510,16 +499,13 @@ fn main() {
                         subgrid_re,
                         grid_lanes_re,
                         script_re,
-                        out_dir: out_dir.clone(),
+                        out_dir: renderer_dirs[0].clone(),
                         wpt_dir: wpt_dir.clone(),
                         dummy_base_url,
                         navigation_provider,
                     })
                 })
                 .borrow_mut();
-
-            // Clear any pending requests to avoid failed requests from a previous test interfering with subsequent tests
-            ctx.net_provider.reset();
 
             let num = num.fetch_add(1, Ordering::Relaxed) + 1;
 
@@ -529,97 +515,71 @@ fn main() {
                 .to_string_lossy()
                 .replace("\\", "/");
 
-            let start = Instant::now();
+            let mut test_results = Vec::with_capacity(renderer_kinds.len());
+            for (index, out_dir) in renderer_dirs.iter().enumerate() {
+                ctx.active_renderer = index;
+                ctx.out_dir.clone_from(out_dir);
 
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path, &test.url, &test.test_type))
-            }));
-            let (kind, flags, status, subtest_counts, panic_info, subtest_results) = match result {
-                Ok((kind, flags, status, subtest_counts, subtest_results)) => {
-                    (kind, flags, status, subtest_counts, None, subtest_results)
-                }
-                Err(_) => {
-                    let panic_info = panic_backtrace::take_stashed_panic_info();
-                    (
-                        TestKind::Unknown,
-                        TestFlags::empty(),
-                        TestStatus::Crash,
-                        SubtestCounts::ZERO_OF_ZERO,
-                        panic_info,
-                        Vec::new(),
-                    )
-                }
-            };
+                // Clear any pending requests to avoid failed requests from a previous test interfering with subsequent tests
+                ctx.net_provider.reset();
 
-            // Bump counts
-            match status {
-                TestStatus::Pass => pass_count.fetch_add(1, Ordering::Relaxed),
-                TestStatus::Fail => {
-                    if flags.contains(TestFlags::USES_GRID_LANES) {
-                        grid_lanes_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_SUBGRID) {
-                        subgrid_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_WRITING_MODE) {
-                        writing_mode_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_DIRECTION) {
-                        direction_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_INTRINSIC_SIZE) {
-                        intrinsic_size_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_CALC) {
-                        calc_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_FLOAT) {
-                        float_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if kind == TestKind::Ref && flags.contains(TestFlags::USES_SCRIPT) {
-                        script_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else {
-                        other_fail_count.fetch_add(1, Ordering::Relaxed);
+                let start = Instant::now();
+
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path, &test.url, &test.test_type))
+                }));
+                let (kind, flags, status, subtest_counts, panic_info, subtest_results) = match result {
+                    Ok((kind, flags, status, subtest_counts, subtest_results)) => {
+                        (kind, flags, status, subtest_counts, None, subtest_results)
                     }
-                    fail_count.fetch_add(1, Ordering::Relaxed)
-                }
-                TestStatus::Timeout => timeout_count.fetch_add(1, Ordering::Relaxed),
-                TestStatus::Skip => skip_count.fetch_add(1, Ordering::Relaxed),
-                TestStatus::Crash => crash_count.fetch_add(1, Ordering::Relaxed),
-            };
+                    Err(_) => {
+                        let panic_info = panic_backtrace::take_stashed_panic_info();
+                        (
+                            TestKind::Unknown,
+                            TestFlags::empty(),
+                            TestStatus::Crash,
+                            SubtestCounts::ZERO_OF_ZERO,
+                            panic_info,
+                            Vec::new(),
+                        )
+                    }
+                };
 
-            // Bump fractional count
-            fractional_pass_count.fetch_add(subtest_counts.pass_fraction(), Ordering::Relaxed);
-
-            // Bump subtest counts
-            subtest_count.fetch_add(subtest_counts.total, Ordering::Relaxed);
-            subtest_pass_count.fetch_add(subtest_counts.pass, Ordering::Relaxed);
-            subtest_fail_count.fetch_add(
-                subtest_counts.total - subtest_counts.pass,
-                Ordering::Relaxed,
-            );
-
-            let result = TestResult {
-                name: test.url,
-                kind,
-                flags,
-                status,
-                subtest_counts,
-                subtest_results,
-                duration: start.elapsed(),
-                panic_info,
-            };
+                test_results.push(TestResult {
+                    name: test.url.clone(),
+                    kind,
+                    flags,
+                    status,
+                    subtest_counts,
+                    subtest_results,
+                    duration: start.elapsed(),
+                    panic_info,
+                });
+            }
 
             if verbose {
                 // Print status line
                 let mut out = stdout().lock();
-                write!(out, "[{num}/{count}] ").unwrap();
-                result.print_to(out);
+                for (kind, result) in renderer_kinds.iter().zip(&test_results) {
+                    write!(out, "[{num}/{count}] ").unwrap();
+                    if renderer_kinds.len() > 1 {
+                        write!(out, "{} ", kind.name()).unwrap();
+                    }
+                    result.print_to(&mut out);
+                }
             } else {
                 let completed_num = completed_num.fetch_add(1, Ordering::Relaxed) + 1;
                 if stdout_is_terminal {
                     let worker_index = ctx.worker_index;
                     let worker_count = rayon::current_num_threads();
                     let up = worker_count - worker_index;
+                    let statuses: Vec<_> = test_results.iter().map(|result| result.status.as_str()).collect();
                     let mut out = stdout().lock();
                     write!(
                         out,
                         "\x1b[?7l\x1b[{up}A\x1b[2K\r[{completed_num}/{count}] thread {worker_index:>2}: {} {}\x1b[{up}B\r\x1b[?7h",
-                        result.status.as_str(),
-                        result.name
+                        statuses.join("/"),
+                        test.url
                     )
                     .unwrap();
                     out.flush().unwrap();
@@ -628,17 +588,53 @@ fn main() {
                 }
             }
 
-            result
+            test_results
         })
         .collect();
 
     let end_timestamp = unix_timestamp();
+    let duration = start.elapsed();
 
-    // Sort results alphabetically
-    results.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+    let mut results_by_renderer: Vec<Vec<TestResult>> = renderer_kinds
+        .iter()
+        .map(|_| Vec::with_capacity(count))
+        .collect();
+    for test_results in results {
+        for (results, result) in results_by_renderer.iter_mut().zip(test_results) {
+            results.push(result);
+        }
+    }
+
+    let mut statuses = Vec::new();
+    for ((kind, mut results), dir) in renderer_kinds
+        .iter()
+        .zip(results_by_renderer)
+        .zip(&renderer_dirs)
+    {
+        // Sort results alphabetically
+        results.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+        if renderer_kinds.len() > 1 {
+            println!("\n\n{}\n{}", kind.name(), "=".repeat(kind.name().len()));
+        }
+        print_results(&results, duration);
+        statuses.push(
+            results
+                .iter()
+                .map(|result| (result.name.clone(), result.status))
+                .collect::<Vec<_>>(),
+        );
+        write_outputs(dir, &wpt_dir, results, start_timestamp, end_timestamp);
+    }
+
+    if renderer_kinds.len() > 1 {
+        print_renderer_differences(&renderer_kinds, &statuses, &out_dir);
+    }
+}
+
+fn print_results(results: &[TestResult], duration: Duration) {
+    let count = results.len() as u32;
 
     println!("\n\n\n\n\nOrdered Results\n===============\n");
-
     let mut out = stdout().lock();
     for (num, test) in results.iter().enumerate() {
         write!(out, "[{num:0>4}/{count}] ").unwrap();
@@ -646,28 +642,52 @@ fn main() {
     }
     drop(out);
 
-    let pass_count = pass_count.load(Ordering::SeqCst);
-    let fail_count = fail_count.load(Ordering::SeqCst);
-    let timeout_count = timeout_count.load(Ordering::SeqCst);
-    let crash_count = crash_count.load(Ordering::SeqCst);
-    let skip_count = skip_count.load(Ordering::SeqCst);
-
+    let count_status = |status| results.iter().filter(|r| r.status == status).count() as u32;
+    let pass_count = count_status(TestStatus::Pass);
+    let fail_count = count_status(TestStatus::Fail);
+    let timeout_count = count_status(TestStatus::Timeout);
+    let crash_count = count_status(TestStatus::Crash);
+    let skip_count = count_status(TestStatus::Skip);
     let run_count = pass_count + fail_count + timeout_count + crash_count;
-    let count = count as u32;
 
-    let fractional_pass_count = fractional_pass_count.load(Ordering::SeqCst);
-    let subtest_count = subtest_count.load(Ordering::SeqCst);
-    let subtest_pass_count = subtest_pass_count.load(Ordering::SeqCst);
+    let fractional_pass_count: f64 = results
+        .iter()
+        .map(|r| r.subtest_counts.pass_fraction())
+        .sum();
+    let subtest_count: u32 = results.iter().map(|r| r.subtest_counts.total).sum();
+    let subtest_pass_count: u32 = results.iter().map(|r| r.subtest_counts.pass).sum();
 
-    let subgrid_fail_count = subgrid_fail_count.load(Ordering::SeqCst);
-    let grid_lanes_fail_count = grid_lanes_fail_count.load(Ordering::SeqCst);
-    let writing_mode_fail_count = writing_mode_fail_count.load(Ordering::SeqCst);
-    let direction_fail_count = direction_fail_count.load(Ordering::SeqCst);
-    let float_fail_count = float_fail_count.load(Ordering::SeqCst);
-    let calc_fail_count = calc_fail_count.load(Ordering::SeqCst);
-    let intrinsic_size_fail_count = intrinsic_size_fail_count.load(Ordering::SeqCst);
-    let script_fail_count = script_fail_count.load(Ordering::SeqCst);
-    let other_fail_count = other_fail_count.load(Ordering::SeqCst);
+    let mut grid_lanes_fail_count = 0;
+    let mut subgrid_fail_count = 0;
+    let mut writing_mode_fail_count = 0;
+    let mut direction_fail_count = 0;
+    let mut float_fail_count = 0;
+    let mut calc_fail_count = 0;
+    let mut intrinsic_size_fail_count = 0;
+    let mut script_fail_count = 0;
+    let mut other_fail_count = 0;
+    for result in results.iter().filter(|r| r.status == TestStatus::Fail) {
+        let flags = result.flags;
+        if flags.contains(TestFlags::USES_GRID_LANES) {
+            grid_lanes_fail_count += 1;
+        } else if flags.contains(TestFlags::USES_SUBGRID) {
+            subgrid_fail_count += 1;
+        } else if flags.contains(TestFlags::USES_WRITING_MODE) {
+            writing_mode_fail_count += 1;
+        } else if flags.contains(TestFlags::USES_DIRECTION) {
+            direction_fail_count += 1;
+        } else if flags.contains(TestFlags::USES_INTRINSIC_SIZE) {
+            intrinsic_size_fail_count += 1;
+        } else if flags.contains(TestFlags::USES_CALC) {
+            calc_fail_count += 1;
+        } else if flags.contains(TestFlags::USES_FLOAT) {
+            float_fail_count += 1;
+        } else if result.kind == TestKind::Ref && flags.contains(TestFlags::USES_SCRIPT) {
+            script_fail_count += 1;
+        } else {
+            other_fail_count += 1;
+        }
+    }
 
     fn as_percent(amount: u32, out_of: u32) -> f32 {
         (amount as f32 / out_of as f32) * 100.0
@@ -688,10 +708,7 @@ fn main() {
 
     let subtest_pass_percent = as_percent(subtest_pass_count, subtest_count);
 
-    println!(
-        "Done in {:.2}s",
-        (Instant::now() - start).as_millis() as f64 / 1000.0
-    );
+    println!("Done in {:.2}s", duration.as_millis() as f64 / 1000.0);
     println!("---\n");
 
     println!("{count:>4} tests FOUND");
@@ -735,6 +752,16 @@ fn main() {
     if grid_lanes_fail_count > 0 {
         println!("{grid_lanes_fail_count:>4} use grid-lanes (M)");
     }
+}
+
+fn write_outputs(
+    out_dir: &Path,
+    wpt_dir: &Path,
+    results: Vec<TestResult>,
+    start_timestamp: u64,
+    end_timestamp: u64,
+) {
+    fs::create_dir_all(out_dir).unwrap();
 
     // Generate wpt_expectations.txt
     let expectations = generate_expectations(&results);
@@ -743,7 +770,7 @@ fn main() {
 
     // Generate wptreport.json
     let report_start = Instant::now();
-    let report = generate_report(&wpt_dir, results, start_timestamp, end_timestamp);
+    let report = generate_report(wpt_dir, results, start_timestamp, end_timestamp);
     println!(
         "\nReport generated in {}ms",
         report_start.elapsed().as_millis()
@@ -756,6 +783,41 @@ fn main() {
         "Report written to {:?} in {}ms",
         report_path,
         write_report_start.elapsed().as_millis()
+    );
+}
+
+/// Prints each renderer's pass count and the tests whose status differs between renderers, and
+/// writes the latter to `renderer_differences.txt`.
+fn print_renderer_differences(
+    kinds: &[RendererKind],
+    statuses: &[Vec<(String, TestStatus)>],
+    out_dir: &Path,
+) {
+    println!("\n\nRenderers\n=========\n");
+    for (kind, statuses) in kinds.iter().zip(statuses) {
+        let passed = statuses
+            .iter()
+            .filter(|(_, status)| *status == TestStatus::Pass)
+            .count();
+        println!("{passed:>6} / {} PASS with {}", statuses.len(), kind.name());
+    }
+
+    let mut differences = String::new();
+    for (index, (name, status)) in statuses[0].iter().enumerate() {
+        if statuses[1..].iter().any(|other| other[index].1 != *status) {
+            differences.push_str(name);
+            for (kind, statuses) in kinds.iter().zip(statuses) {
+                differences.push_str(&format!(" {}:{}", kind.name(), statuses[index].1.as_str()));
+            }
+            differences.push('\n');
+        }
+    }
+    let path = out_dir.join("renderer_differences.txt");
+    fs::write(&path, &differences).unwrap();
+    println!(
+        "\n{} tests differ between renderers, listed in {}",
+        differences.lines().count(),
+        path.display()
     );
 }
 

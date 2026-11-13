@@ -139,64 +139,99 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
     println!("Generated {count} tests in {}", dst.display());
 }
 
-/// Prints per-mode, per-directory pass counts for the generated tests from a
-/// `wpt_expectations.txt`. "parity where img passes" counts native/usvg parity
-/// only for tests whose usvg rendering matches resvg's PNG, so both backends
-/// failing alike is not a pass.
-pub fn summarize(expectations_path: &Path) {
-    let expectations = fs::read_to_string(expectations_path).unwrap_or_else(|err| {
-        eprintln!("Can't read {}: {err}", expectations_path.display());
-        std::process::exit(1);
-    });
-    let mut results = HashMap::new();
-    for line in expectations.lines() {
-        let mut fields = line.split_whitespace();
-        let (Some(name), Some(status)) = (fields.next(), fields.next()) else {
-            continue;
-        };
-        let mut parts = name.splitn(3, '/');
-        if let (Some("resvg"), Some(mode), Some(test)) = (parts.next(), parts.next(), parts.next())
-        {
-            results.insert((mode, test), status == "PASS");
-        }
+/// The `wpt_expectations.txt` files of a run in `out_dir`: its own, or with several renderers,
+/// one per renderer subdirectory.
+pub fn default_expectations(out_dir: &Path) -> Vec<PathBuf> {
+    let own = out_dir.join("wpt_expectations.txt");
+    if own.exists() {
+        return vec![own];
     }
+    let mut paths: Vec<_> = fs::read_dir(out_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path().join("wpt_expectations.txt"))
+        .filter(|path| path.exists())
+        .collect();
+    paths.sort();
+    if paths.is_empty() { vec![own] } else { paths }
+}
 
-    let mut counts: BTreeMap<(&str, &str), (u32, u32)> = BTreeMap::new();
-    for (&(mode, test), &passed) in &results {
-        let mut modes = vec![mode];
-        if mode == "parity" && results.get(&("img", test)) == Some(&true) {
-            modes.push("parity where img passes");
+/// Prints per-mode, per-directory pass counts for the generated tests from one or more
+/// `wpt_expectations.txt` files. With several (one per renderer), each mode gets a column per
+/// file, labelled with the file's directory name. "parity where img passes" counts native/usvg
+/// parity only for tests whose usvg rendering matches resvg's PNG, so both backends failing
+/// alike is not a pass.
+pub fn summarize(expectations_paths: &[PathBuf]) {
+    let labelled = expectations_paths.len() > 1;
+    let mut counts: BTreeMap<(String, String), (u32, u32)> = BTreeMap::new();
+    for path in expectations_paths {
+        let expectations = fs::read_to_string(path).unwrap_or_else(|err| {
+            eprintln!("Can't read {}: {err}", path.display());
+            std::process::exit(1);
+        });
+        let label = path
+            .parent()
+            .and_then(Path::file_name)
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+
+        let mut results = HashMap::new();
+        for line in expectations.lines() {
+            let mut fields = line.split_whitespace();
+            let (Some(name), Some(status)) = (fields.next(), fields.next()) else {
+                continue;
+            };
+            let mut parts = name.splitn(3, '/');
+            if let (Some("resvg"), Some(mode), Some(test)) =
+                (parts.next(), parts.next(), parts.next())
+            {
+                results.insert((mode, test), status == "PASS");
+            }
         }
-        let dir = test.split('/').next().unwrap();
-        for mode in modes {
-            for dir in [dir, "Total"] {
-                let count = counts.entry((mode, dir)).or_default();
-                count.0 += passed as u32;
-                count.1 += 1;
+
+        for (&(mode, test), &passed) in &results {
+            let mut modes = vec![mode];
+            if mode == "parity" && results.get(&("img", test)) == Some(&true) {
+                modes.push("parity where img passes");
+            }
+            let dir = test.split('/').next().unwrap();
+            for mode in modes {
+                let column = if labelled {
+                    format!("{mode} ({label})")
+                } else {
+                    mode.to_string()
+                };
+                for dir in [dir, "Total"] {
+                    let count = counts.entry((column.clone(), dir.to_string())).or_default();
+                    count.0 += passed as u32;
+                    count.1 += 1;
+                }
             }
         }
     }
 
-    let modes: BTreeSet<_> = counts.keys().map(|(mode, _)| *mode).collect();
+    let columns: BTreeSet<_> = counts.keys().map(|(column, _)| column.as_str()).collect();
     let mut dirs: Vec<_> = counts
         .keys()
-        .map(|(_, dir)| *dir)
+        .map(|(_, dir)| dir.as_str())
         .filter(|dir| *dir != "Total")
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
     dirs.push("Total");
 
-    let header: Vec<_> = modes.iter().copied().collect();
+    let header: Vec<_> = columns.iter().copied().collect();
     println!("| Directory | {} |", header.join(" | "));
-    println!("|---|{}", "---:|".repeat(modes.len()));
+    println!("|---|{}", "---:|".repeat(columns.len()));
     for dir in dirs {
-        let cells: Vec<_> = modes
+        let cells: Vec<_> = columns
             .iter()
-            .map(|mode| match counts.get(&(mode, dir)) {
-                Some((pass, total)) => format!("{pass} / {total}"),
-                None => String::new(),
-            })
+            .map(
+                |column| match counts.get(&(column.to_string(), dir.to_string())) {
+                    Some((pass, total)) => format!("{pass} / {total}"),
+                    None => String::new(),
+                },
+            )
             .collect();
         println!("| {dir} | {} |", cells.join(" | "));
     }

@@ -7,7 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["cpu"]
+default = ["cpu", "tiny-skia"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 tiny-skia = ["dep:anyrender_tiny_skia"]
