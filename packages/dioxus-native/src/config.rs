@@ -14,6 +14,7 @@ pub struct Config {
     pub(crate) base_color: Option<Color>,
     #[cfg_attr(not(feature = "devtools"), allow(dead_code))]
     pub(crate) devtools_shortcuts: Vec<KeyboardShortcut>,
+    pub(crate) native_svg: Option<bool>,
 }
 
 impl LaunchConfig for Config {}
@@ -47,6 +48,7 @@ impl Default for Config {
             } else {
                 Vec::new()
             },
+            native_svg: None,
         }
     }
 }
@@ -85,6 +87,15 @@ impl Config {
     /// Set the base (background) color used to clear each frame.
     pub fn with_base_color(mut self, base_color: Color) -> Self {
         self.base_color = Some(base_color);
+        self
+    }
+
+    /// Render inline `<svg>` natively from the live DOM instead of with usvg
+    /// (see [`DocumentConfig::native_svg`](blitz_dom::DocumentConfig::native_svg)).
+    /// Only has an effect when both the `svg-native` and `svg-usvg` features
+    /// are enabled.
+    pub fn with_native_svg(mut self, native_svg: bool) -> Self {
+        self.native_svg = Some(native_svg);
         self
     }
 

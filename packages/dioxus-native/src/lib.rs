@@ -222,6 +222,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             navigation_provider,
             font_ctx: config.font_ctx,
             style_threading: StyleThreading::Parallel,
+            native_svg: config.native_svg,
             ..Default::default()
         },
     );
