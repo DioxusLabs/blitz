@@ -3,6 +3,7 @@
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
+use super::presentational_hints::table_border_width;
 use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
@@ -301,7 +302,17 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::PlaceholderShown => false,
             NonTSPseudoClass::ReadWrite => false,
             NonTSPseudoClass::ReadOnly => false,
-            NonTSPseudoClass::ServoNonZeroBorder => false,
+            // A table whose `border` attribute is not "equivalent to zero":
+            // present, and either non-zero or unparseable.
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+            NonTSPseudoClass::ServoNonZeroBorder => {
+                self.data.downcast_element().is_some_and(|elem| {
+                    elem.name.local == local_name!("table")
+                        && elem
+                            .attr(local_name!("border"))
+                            .is_some_and(|value| table_border_width(value) != 0)
+                })
+            }
             NonTSPseudoClass::Target => false,
             NonTSPseudoClass::Visited => false,
             NonTSPseudoClass::Autofill => false,
