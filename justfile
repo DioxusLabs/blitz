@@ -16,17 +16,18 @@ small:
 ## WPT test runner
 
 wpt *ARGS:
-  cargo run --release --package wpt {{ARGS}}
+  cargo run --release --package wpt -- {{ARGS}}
 
 # resvg's test suite at wpt/RESVG_COMMIT, wrapped as reftests (see wpt/runner/src/resvg.rs).
-# Prefix with BLITZ_NATIVE_SVG=1 to render inline SVG with the native backend.
+# Prefix with BLITZ_NATIVE_SVG=1 to render inline SVG with the native backend, and with
+# RESVG_PNG_FUZZY=<threshold>;<pixels> to compare against resvg's PNGs at another tolerance.
 wpt-resvg *ARGS="resvg":
   [ "$(git -C wpt/resvg/checkout rev-parse HEAD 2>/dev/null)" = "$(cat wpt/RESVG_COMMIT)" ] || ( \
     git init -q wpt/resvg/checkout && \
     git -C wpt/resvg/checkout fetch -q --depth 1 https://github.com/linebender/resvg "$(cat wpt/RESVG_COMMIT)" && \
     git -C wpt/resvg/checkout checkout -q FETCH_HEAD )
   cargo run --release --package wpt -- resvg-generate wpt/resvg/checkout wpt/resvg/out
-  WPT_DIR=wpt/resvg/out WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt {{ARGS}}
+  WPT_DIR=wpt/resvg/out WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" FONTCONFIG_FILE="$PWD/wpt/resvg/out/resvg/fonts.conf" cargo run --release --package wpt -- {{ARGS}}
   WPT_OUTPUT_DIR="$PWD/wpt/resvg/output" cargo run --release --package wpt -- resvg-summary
 
 browser *ARGS:

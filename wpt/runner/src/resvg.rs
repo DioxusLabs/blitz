@@ -30,6 +30,7 @@ pub const REVISION_FILE: &str = "REVISION";
 /// everywhere: allow 100 pixels (0.25% of a 200x200 render) to differ by more
 /// than 64/255. That is about one edge's worth, so small features such as
 /// `shape-rendering="crispEdges"` or a misplaced dash still fail.
+/// `RESVG_PNG_FUZZY` overrides it, to measure the suite at other tolerances.
 const PNG_FUZZY: &str = "64;100";
 /// Native vs usvg runs through the same rasterizer.
 const PARITY_FUZZY: &str = "16;90";
@@ -61,6 +62,7 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
         fs::remove_dir_all(&dst).unwrap();
     }
     fs::create_dir_all(out_dir).unwrap();
+    let png_fuzzy = std::env::var("RESVG_PNG_FUZZY").unwrap_or_else(|_| PNG_FUZZY.to_string());
     // The run's report records this as the revision of the tests
     let revision = std::process::Command::new("git")
         .current_dir(resvg_dir)
@@ -100,8 +102,18 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
         let img_svg = format!(r#"<img src="{up}tests/{rel}.svg">"#);
         let img_png = format!(r#"<img src="{up}tests/{rel}.png">"#);
         let modes = [
-            ("img", img_svg.as_str(), img_png.as_str(), PNG_FUZZY),
-            ("inline", svg_source.as_str(), img_png.as_str(), PNG_FUZZY),
+            (
+                "img",
+                img_svg.as_str(),
+                img_png.as_str(),
+                png_fuzzy.as_str(),
+            ),
+            (
+                "inline",
+                svg_source.as_str(),
+                img_png.as_str(),
+                png_fuzzy.as_str(),
+            ),
             (
                 "parity",
                 svg_source.as_str(),
