@@ -116,14 +116,14 @@ skrifa = { version = "0.49", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "da59732f8207add363baa87ea155ffe8277cb77f" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "da59732f8207add363baa87ea155ffe8277cb77f" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "da59732f8207add363baa87ea155ffe8277cb77f" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "da59732f8207add363baa87ea155ffe8277cb77f" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "da59732f8207add363baa87ea155ffe8277cb77f" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "da59732f8207add363baa87ea155ffe8277cb77f" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "da59732f8207add363baa87ea155ffe8277cb77f" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "da59732f8207add363baa87ea155ffe8277cb77f" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "7fb69188dd02dfb42a19181e2697264bafb4a36e" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
