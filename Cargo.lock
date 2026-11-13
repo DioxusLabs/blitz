@@ -295,7 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "kurbo",
  "peniko",
@@ -307,7 +307,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "anyrender",
  "image",
@@ -325,7 +325,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "anyrender",
  "ash",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "anyrender",
  "image",
@@ -366,9 +366,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyrender_tiny_skia"
+version = "0.1.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
+dependencies = [
+ "anyrender",
+ "bytemuck",
+ "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kurbo",
+ "peniko",
+ "rgb",
+ "skrifa",
+ "tiny-skia",
+]
+
+[[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -386,7 +401,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -404,7 +419,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6407,7 +6422,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -7145,6 +7160,9 @@ name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "ring"
@@ -7929,7 +7947,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8576,6 +8594,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "log",
+ "png 0.18.1",
  "tiny-skia-path",
 ]
 
@@ -10043,7 +10062,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=0e5073000cd83f843a1a17d019d230b119ed4a4d#0e5073000cd83f843a1a17d019d230b119ed4a4d"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
@@ -10712,6 +10731,7 @@ name = "wpt"
 version = "0.1.0"
 dependencies = [
  "anyrender",
+ "anyrender_tiny_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
  "atomic_float",
