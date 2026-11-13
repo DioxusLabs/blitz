@@ -128,7 +128,8 @@ impl<'a> SourceMapRecorder<'a> {
         } else {
             None
         };
-        if collapsed.is_some() && rendered.len() == source.len() {
+        let space = collapsed_space(transform);
+        if collapsed == Some(rendered) {
             // Nothing was removed, so every byte is where it was.
             if !source.is_empty() {
                 self.map.units.push(Unit::new(0, start, false));
@@ -140,6 +141,7 @@ impl<'a> SourceMapRecorder<'a> {
                 rendered,
                 start,
                 collapse,
+                space,
                 was_pending,
             )
         }) {
@@ -191,15 +193,28 @@ impl<'a> SourceMapRecorder<'a> {
         let appended = &tree.text()[before..];
 
         // Collapsing text never starts with a space of its own, and other text is appended as
-        // it is.
-        let kept_pending = was_pending
-            && appended.starts_with(' ')
-            && (collapsing || appended.len() == text.len() + 1);
-        if kept_pending {
-            self.keep_pending();
-        }
+        // it is. The pending white space is kept as the collapsed space of the span it started
+        // in, which is U+3000 under `full-width`.
+        let kept = if was_pending {
+            [" ", IDEOGRAPHIC_SPACE]
+                .into_iter()
+                .find(|space| {
+                    appended.strip_prefix(space).is_some_and(|rest| {
+                        if collapsing {
+                            // U+3000 is not collapsible, so the text can start with its own.
+                            *space == " " || !text.starts_with(space) || rest.starts_with(space)
+                        } else {
+                            rest.len() == text.len()
+                        }
+                    })
+                })
+                .map_or(0, str::len)
+        } else {
+            0
+        };
+        self.keep_pending(kept);
         Appended {
-            start: before + usize::from(kept_pending),
+            start: before + kept,
             was_pending,
         }
     }
@@ -214,15 +229,20 @@ impl<'a> SourceMapRecorder<'a> {
         let before = tree.text().len();
         tree.push_inline_box(inline_box);
         // An in-flow box appends its U+FFFC, after the pending white space where it is kept.
-        if in_flow && tree.text().len() > before + super::INLINE_BOX_CHAR.len_utf8() {
-            self.keep_pending();
+        if in_flow {
+            let appended = tree.text().len() - before;
+            self.keep_pending(appended.saturating_sub(super::INLINE_BOX_CHAR.len_utf8()));
         }
     }
 
-    /// The pending white space was kept as a space, which the units after it follow.
-    fn keep_pending(&mut self) {
+    /// The pending white space was kept as a space of `len` bytes, which the units after it
+    /// follow.
+    fn keep_pending(&mut self, len: usize) {
+        if len == 0 {
+            return;
+        }
         for unit in &mut self.map.units[self.after_pending..] {
-            unit.layout += 1;
+            unit.layout += len as u32;
         }
     }
 }
@@ -234,6 +254,18 @@ struct Appended {
     was_pending: bool,
 }
 
+const IDEOGRAPHIC_SPACE: &str = "\u{3000}";
+
+/// What a text node's collapsed white space is kept as: U+3000 under `full-width`
+/// (css-text-3 §2.1), a space otherwise.
+fn collapsed_space(transform: TextTransform) -> &'static str {
+    if transform.contains(TextTransform::FULL_WIDTH) {
+        IDEOGRAPHIC_SPACE
+    } else {
+        " "
+    }
+}
+
 fn is_collapsing(collapse: WhiteSpaceCollapse) -> bool {
     matches!(
         collapse,
@@ -242,13 +274,15 @@ fn is_collapsing(collapse: WhiteSpaceCollapse) -> bool {
 }
 
 /// Records the units of `source`, which was appended as `rendered` at `start` with nothing but
-/// white space collapsing between them. Returns `false`, recording nothing, where there was more.
+/// white space collapsing, which keeps white space as `space`, between them. Returns `false`,
+/// recording nothing, where there was more.
 fn record_collapsed_units(
     units: &mut Vec<Unit>,
     source: &str,
     rendered: &str,
     start: usize,
     collapse: WhiteSpaceCollapse,
+    space: &str,
     mut in_white_space: bool,
 ) -> bool {
     let (source, rendered) = (source.as_bytes(), rendered.as_bytes());
@@ -262,6 +296,19 @@ fn record_collapsed_units(
     let (mut offset, mut cursor) = (0, 0);
     let mut in_kept_unit = false;
     while offset < source.len() {
+        if is_collapsible(&source[offset])
+            && !in_white_space
+            && rendered[cursor..].starts_with(space.as_bytes())
+            && space != " "
+        {
+            // The first of a white space sequence, kept as U+3000: replaced by it.
+            units.push(Unit::new(offset, start + cursor, true));
+            in_kept_unit = false;
+            in_white_space = true;
+            offset += 1;
+            cursor += space.len();
+            continue;
+        }
         let mut kept = source[offset..]
             .iter()
             .zip(&rendered[cursor..])
@@ -358,7 +405,12 @@ fn rendered_len(
     if collapsible {
         // Only the first of a white space sequence is kept, where any is.
         let first = !std::mem::replace(in_white_space, true);
-        return usize::from(first && rendered.starts_with(' '));
+        let space = collapsed_space(transform);
+        return if first && rendered.starts_with(space) {
+            space.len()
+        } else {
+            0
+        };
     }
     *in_white_space = false;
 
@@ -433,6 +485,8 @@ mod tests {
         Text(&'a str),
         /// A text node's content, and what `uppercase` made of it.
         Uppercase(&'a str, &'a str),
+        /// A text node's content, and what `full-width` made of it.
+        FullWidth(&'a str, &'a str),
         Pre(&'a str),
         Marker(&'a str),
         Box,
@@ -465,6 +519,9 @@ mod tests {
         let preserve = [StyleProperty::WhiteSpaceCollapse(
             parley::WhiteSpaceCollapse::Preserve,
         )];
+        let ideographic = [StyleProperty::CollapsedSpace(
+            parley::CollapsedSpace::IdeographicSpace,
+        )];
         let inline_box = |kind| InlineBox {
             id: 0,
             kind,
@@ -492,6 +549,18 @@ mod tests {
                     TextTransform::UPPERCASE,
                     WhiteSpaceCollapse::Collapse,
                 ),
+                FullWidth(source, pushed) => {
+                    tree.push_style_modification_span(&ideographic);
+                    text(
+                        &mut recorder,
+                        &mut tree,
+                        source,
+                        pushed,
+                        TextTransform::FULL_WIDTH,
+                        WhiteSpaceCollapse::Collapse,
+                    );
+                    tree.pop_style_span();
+                }
                 Pre(source) => {
                     tree.push_style_modification_span(&preserve);
                     text(
@@ -525,7 +594,8 @@ mod tests {
         let (text, map) = build(pushes);
         let mut nodes = Vec::new();
         for push in pushes {
-            let (Text(source) | Uppercase(source, _) | Pre(source)) = push else {
+            let (Text(source) | Uppercase(source, _) | FullWidth(source, _) | Pre(source)) = push
+            else {
                 continue;
             };
             let id = NodeId::from_u64(nodes.len() as u64);
@@ -559,15 +629,36 @@ mod tests {
         ] {
             let (mut fast, mut slow) = (Vec::new(), Vec::new());
             assert!(record_collapsed_units(
-                &mut fast, source, rendered, 7, collapse, pending
+                &mut fast, source, rendered, 7, collapse, " ", pending
             ));
             let none = TextTransform::NONE;
             record_units(&mut slow, source, rendered, 7, none, collapse, pending);
             assert_eq!(fast, slow, "{source:?}");
         }
+        for (source, rendered, pending) in [
+            (" \n ", "\u{3000}", false),
+            ("  ", "", true),
+            ("\t\u{3000} ", "\u{3000}\u{3000}", false),
+        ] {
+            let (mut fast, mut slow) = (Vec::new(), Vec::new());
+            assert!(record_collapsed_units(
+                &mut fast,
+                source,
+                rendered,
+                7,
+                Collapse,
+                IDEOGRAPHIC_SPACE,
+                pending
+            ));
+            let full_width = TextTransform::FULL_WIDTH;
+            record_units(
+                &mut slow, source, rendered, 7, full_width, Collapse, pending,
+            );
+            assert_eq!(fast, slow, "{source:?}");
+        }
         let mut units = Vec::new();
         assert!(!record_collapsed_units(
-            &mut units, "ab", "xb", 0, Collapse, false
+            &mut units, "ab", "xb", 0, Collapse, " ", false
         ));
         assert!(units.is_empty());
     }
@@ -675,6 +766,48 @@ mod tests {
             &[Uppercase("aß  b", "ASS  B"), Text("c")],
             "ASS Bc",
             &[&[0, 1, 3, 4, 4, 5], &[5, 6]],
+        );
+    }
+
+    #[test]
+    fn full_width_collapsed_space_is_replaced_by_u3000() {
+        check(
+            &[FullWidth("a b c", "ａ ｂ ｃ")],
+            "ａ\u{3000}ｂ\u{3000}ｃ",
+            &[&[0, 3, 6, 9, 12, 15]],
+        );
+        check(
+            &[FullWidth("a  b", "ａ  ｂ")],
+            "ａ\u{3000}ｂ",
+            &[&[0, 3, 6, 6, 9]],
+        );
+    }
+
+    #[test]
+    fn full_width_white_space_only_node_is_kept_as_u3000() {
+        check(
+            &[Text("a"), FullWidth(" ", " "), Text("b")],
+            "a\u{3000}b",
+            &[&[0, 1], &[1, 4], &[4, 5]],
+        );
+        check(
+            &[FullWidth("a ", "ａ "), Text("b")],
+            "ａ\u{3000}b",
+            &[&[0, 3, 6], &[6, 7]],
+        );
+        check(
+            &[FullWidth("a ", "ａ "), Box, Text("b")],
+            "ａ\u{3000}\u{FFFC}b",
+            &[&[0, 3, 6], &[9, 10]],
+        );
+    }
+
+    #[test]
+    fn full_width_text_can_start_with_its_own_u3000() {
+        check(
+            &[Text("a "), FullWidth("\u{3000}b", "\u{3000}ｂ")],
+            "a \u{3000}ｂ",
+            &[&[0, 1, 2], &[2, 5, 8]],
         );
     }
 }
