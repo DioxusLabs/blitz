@@ -8,11 +8,13 @@
 //! its object bounding box. The painter reads these results instead of
 //! recomputing geometry every frame.
 
+mod clip_mask;
 mod geometry;
 mod hit;
 mod paint_server;
 mod text;
 
+pub use clip_mask::{SvgClip, SvgClipChild, SvgMask, SvgReference, SvgReferenceState};
 pub use paint_server::{
     SvgGradient, SvgGradientShape, SvgGradientStop, SvgPaintServer, SvgSpreadMethod,
 };
@@ -26,9 +28,10 @@ use markup5ever::{local_name, ns};
 use style::computed_values::mix_blend_mode::T as MixBlendMode;
 use style::computed_values::overflow_x::T as Overflow;
 use style::properties::ComputedValues;
+use style::servo_arc::Arc as ServoArc;
 use style::values::computed::{Length, LengthPercentage};
 
-use crate::node::{ElementData, SpecialElementData, SvgIntrinsicDimensions};
+use crate::node::{ElementData, Node, SpecialElementData, SvgIntrinsicDimensions};
 use crate::{BaseDocument, CopyStyleGetters, resolve_2d_transform};
 
 /// The SVG viewport that percentages resolve against, in user units.
@@ -93,13 +96,21 @@ pub struct SvgLayout {
     /// Whether this element or a rendered descendant has a non-normal
     /// `mix-blend-mode`, so the outermost `<svg>` must isolate its content.
     pub has_blending: bool,
+    /// The computed style of an element inside a `display: none` subtree
+    /// (which Stylo does not style) that is laid out as part of a
+    /// `<clipPath>` or `<mask>`, as those can still be referenced.
+    undisplayed_style: Option<ServoArc<ComputedValues>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum SvgLayoutKind {
-    /// Not rendered: `display: none`, failing conditional processing
-    /// attributes, resource containers, empty shapes and unsupported elements.
+    /// Not rendered: `display: none`, empty shapes and unsupported elements.
     NotRendered,
+    /// Resource containers (`<defs>`, `<clipPath>`, `<mask>`, `<symbol>`,
+    /// ...) and elements whose conditional processing attributes fail:
+    /// never rendered directly, but their children are laid out so that
+    /// references to `<clipPath>` and `<mask>` elements inside can use it.
+    Resource,
     /// `<g>` and `<a>`: render all children.
     Group,
     /// `<switch>`: render only the first child whose conditions pass.
@@ -132,6 +143,7 @@ impl SvgLayout {
             bbox: None,
             kind: SvgLayoutKind::NotRendered,
             has_blending: false,
+            undisplayed_style: None,
         }
     }
 
@@ -148,6 +160,9 @@ impl SvgLayout {
 
     /// The bounding box in the parent's user space.
     fn bbox_in_parent(&self) -> Option<Rect> {
+        if matches!(self.kind, SvgLayoutKind::Resource) {
+            return None;
+        }
         if let SvgLayoutKind::Shape { path, .. } = &self.kind {
             if self.transform == Affine::IDENTITY {
                 return self.bbox;
@@ -173,6 +188,17 @@ pub struct SvgRootData {
 impl SvgRootData {
     pub fn new(dims: SvgIntrinsicDimensions) -> Self {
         Self { dims, layout: None }
+    }
+}
+
+impl Node {
+    /// The computed style of an SVG element: its primary style or, inside a
+    /// `display: none` subtree, the one resolved for SVG layout.
+    pub fn svg_style(&self) -> Option<ServoArc<ComputedValues>> {
+        if let Some(style) = self.primary_styles() {
+            return Some(style.clone());
+        }
+        self.element_data()?.svg_layout()?.undisplayed_style.clone()
     }
 }
 
@@ -249,15 +275,20 @@ impl BaseDocument {
                 .and_then(|node| node.element_data())
                 .is_some_and(|el| el.svg_root_data().is_some())
         });
+        let mut laid_out = false;
         for &root in &roots {
             if self.nodes[root].flags.is_in_document() {
-                self.layout_svg_root(root);
+                laid_out |= self.layout_svg_root(root);
             }
         }
         self.svg_roots = roots;
+        if laid_out {
+            self.find_svg_circular_references();
+        }
     }
 
-    fn layout_svg_root(&mut self, root_id: NodeId) {
+    /// Lay out a root's damaged descendants, returning whether there were any.
+    fn layout_svg_root(&mut self, root_id: NodeId) -> bool {
         let node = &self.nodes[root_id];
         let layout = node.final_layout();
         let width = (layout.size.width
@@ -273,7 +304,7 @@ impl BaseDocument {
             - layout.padding.bottom)
             .max(0.0);
         let Some(data) = node.element_data().and_then(|el| el.svg_root_data()) else {
-            return;
+            return false;
         };
         let dims = data.dims;
         // Without a viewBox, a user unit is a CSS px before zoom.
@@ -306,7 +337,7 @@ impl BaseDocument {
             }) if *old_transform == content_transform && *old_viewport == viewport
         );
         if !force && !node.has_damaged_descendants() {
-            return;
+            return false;
         }
         let (bbox, has_blending) = self.layout_svg_children(root_id, viewport, force);
 
@@ -319,6 +350,7 @@ impl BaseDocument {
                 clip: None,
             },
             has_blending,
+            undisplayed_style: None,
         };
         if let Some(SpecialElementData::SvgRoot(data)) = self.nodes[root_id]
             .element_data_mut()
@@ -326,6 +358,7 @@ impl BaseDocument {
         {
             data.layout = Some(root_layout);
         }
+        true
     }
 
     /// Lay out the children of `parent_id` and return the union of their
@@ -375,14 +408,20 @@ impl BaseDocument {
         }
 
         let was_rendered = existing.is_some_and(|l| !matches!(l.kind, SvgLayoutKind::NotRendered));
+        let style = node.svg_style();
         let mut layout = if dirty {
-            match node.primary_styles() {
-                Some(style) => layout_own(element, &style, viewport),
+            let mut layout = match &style {
+                Some(style) => layout_own(element, style, viewport),
                 None => SvgLayout::not_rendered(),
+            };
+            if node.primary_styles().is_none() {
+                layout.undisplayed_style = style.clone();
             }
+            layout
         } else {
             existing.cloned().unwrap()
         };
+        let undisplayed = dirty && style.is_some_and(|style| style.clone_display().is_none());
 
         // Children are laid out again from scratch when this element's
         // viewport may have changed, or when it was not rendered before (its
@@ -391,18 +430,25 @@ impl BaseDocument {
             || (dirty && (!was_rendered || matches!(layout.kind, SvgLayoutKind::Viewport { .. })));
         let mut children_blending = false;
         match &mut layout.kind {
+            SvgLayoutKind::NotRendered if undisplayed => {
+                self.layout_undisplayed_resources(id, viewport);
+            }
             SvgLayoutKind::NotRendered | SvgLayoutKind::Shape { .. } => {}
             // Text is laid out again whenever it or its content is damaged.
             SvgLayoutKind::Text(text) => {
-                let style = self.nodes[id].primary_styles().unwrap();
+                let style = self.nodes[id].svg_style().unwrap();
                 let viewport = viewport.for_element(&style);
-                drop(style);
                 **text = self.layout_svg_text(id, viewport);
                 layout.bbox = text.bbox;
             }
             SvgLayoutKind::Group => {
                 (layout.bbox, children_blending) =
                     self.layout_svg_children(id, viewport, force_children);
+            }
+            // Blending inside a resource is isolated by the clip or mask
+            // layer it is painted into.
+            SvgLayoutKind::Resource => {
+                (layout.bbox, _) = self.layout_svg_children(id, viewport, force_children);
             }
             SvgLayoutKind::Viewport { viewport, .. } => {
                 let viewport = *viewport;
@@ -428,11 +474,13 @@ impl BaseDocument {
                 layout.bbox = bbox;
             }
         }
-        layout.has_blending = !matches!(layout.kind, SvgLayoutKind::NotRendered)
-            && (children_blending
-                || self.nodes[id].primary_styles().is_some_and(|style| {
-                    style.get_effects().mix_blend_mode != MixBlendMode::Normal
-                }));
+        layout.has_blending = !matches!(
+            layout.kind,
+            SvgLayoutKind::NotRendered | SvgLayoutKind::Resource
+        ) && (children_blending
+            || self.nodes[id]
+                .svg_style()
+                .is_some_and(|style| style.get_effects().mix_blend_mode != MixBlendMode::Normal));
 
         let result = (layout.bbox_in_parent(), layout.has_blending);
         let element = self.nodes[id].element_data_mut().unwrap();
@@ -444,21 +492,71 @@ impl BaseDocument {
         }
         result
     }
+
+    /// Lay out the `<clipPath>` and `<mask>` elements inside `id`, a
+    /// `display: none` element, as they can still be referenced. Stylo does
+    /// not style their subtrees, so their styles are resolved here.
+    fn layout_undisplayed_resources(&mut self, id: NodeId, viewport: SvgViewport) {
+        let mut stack = self.nodes[id].children.clone();
+        while let Some(child) = stack.pop() {
+            let node = &self.nodes[child];
+            let Some(element) = node.element_data() else {
+                continue;
+            };
+            let tag = &element.name.local;
+            if element.name.ns == ns!(svg)
+                && (*tag == local_name!("clipPath") || *tag == local_name!("mask"))
+            {
+                self.resolve_undisplayed_svg_styles(child);
+                self.layout_svg_node(child, viewport, true);
+            } else {
+                stack.extend(node.children.iter().copied());
+            }
+        }
+    }
+
+    /// Store the computed styles of the SVG elements in the subtree of `id`,
+    /// which is inside a `display: none` subtree, for SVG layout and paint.
+    fn resolve_undisplayed_svg_styles(&mut self, id: NodeId) {
+        let mut stack = vec![id];
+        while let Some(id) = stack.pop() {
+            let node = &self.nodes[id];
+            stack.extend(node.children.iter().copied());
+            if node.element_data().is_none_or(|el| el.name.ns != ns!(svg)) {
+                continue;
+            }
+            let style = self.resolve_undisplayed_style(id);
+            let element = self.nodes[id].element_data_mut().unwrap();
+            match &mut element.special_data {
+                SpecialElementData::SvgNode(layout) => layout.undisplayed_style = style,
+                data @ SpecialElementData::None => {
+                    *data = SpecialElementData::SvgNode(Box::new(SvgLayout {
+                        undisplayed_style: style,
+                        ..SvgLayout::not_rendered()
+                    }));
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// Lay out an element itself (not its children).
 fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewport) -> SvgLayout {
     let viewport = viewport.for_element(style);
     let tag = &element.name.local;
-    if style.clone_display().is_none() || is_resource_container(tag) || !conditions_pass(element) {
+    if style.clone_display().is_none() {
         return SvgLayout::not_rendered();
     }
+    let resource = is_resource_container(tag) || !conditions_pass(element);
     // SVG content transforms about the user-space origin (the UA stylesheet
     // sets `transform-origin: 0 0`), so the reference box is empty.
     let transform =
         resolve_2d_transform(style.get_box(), euclid::default::Rect::zero()).unwrap_or_default();
 
-    let kind = if *tag == local_name!("g") || *tag == local_name!("a") {
+    let kind = if resource {
+        SvgLayoutKind::Resource
+    } else if *tag == local_name!("g") || *tag == local_name!("a") {
         SvgLayoutKind::Group
     } else if *tag == local_name!("switch") {
         SvgLayoutKind::Switch { child: None }
@@ -482,6 +580,7 @@ fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewpo
         bbox,
         kind,
         has_blending: false,
+        undisplayed_style: None,
     }
 }
 

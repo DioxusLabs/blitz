@@ -1250,3 +1250,403 @@ fn hit_testing_finds_content_overflowing_a_visible_svg() {
     assert_hits(&svg("visible"), &[(70.0, 70.0, "outside")]);
     assert_hits(&svg("hidden"), &[(70.0, 70.0, "div")]);
 }
+
+#[test]
+fn clip_path_clips_to_the_union_of_its_children() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="c"><rect width="30" height="30"/><rect x="70" y="70" width="30" height="30"/></clipPath>
+        <rect width="100" height="100" fill="red" clip-path="url(#c)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 10, 10), RED);
+    assert_eq!(pixel(&buf, 90, 90), RED);
+    assert_eq!(pixel(&buf, 50, 50), BLUE);
+    assert_eq!(pixel(&buf, 90, 10), BLUE);
+}
+
+#[test]
+fn clip_path_object_bounding_box_units_and_clip_rule() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="c" clipPathUnits="objectBoundingBox">
+          <path clip-rule="evenodd" d="M0 0H1V1H0Z M0.25 0.25H0.75V0.75H0.25Z"/>
+        </clipPath>
+        <rect x="20" y="20" width="80" height="80" fill="red" clip-path="url(#c)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED);
+    assert_eq!(pixel(&buf, 60, 60), BLUE, "the evenodd hole");
+    assert_eq!(pixel(&buf, 10, 10), BLUE, "outside the bounding box");
+}
+
+#[test]
+fn clip_path_on_a_clip_path_intersects() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="a"><rect width="50" height="100"/></clipPath>
+        <clipPath id="b" clip-path="url(#a)"><rect width="100" height="50"/></clipPath>
+        <rect width="100" height="100" fill="red" clip-path="url(#b)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED);
+    assert_eq!(pixel(&buf, 75, 25), BLUE);
+    assert_eq!(pixel(&buf, 25, 75), BLUE);
+}
+
+#[test]
+fn recursive_clip_paths_ignore_the_cycle() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="c" clip-path="url(#c)"><rect width="50" height="50" clip-path="url(#c)"/></clipPath>
+        <rect width="100" height="100" fill="red" clip-path="url(#c)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED);
+    assert_eq!(pixel(&buf, 75, 75), BLUE);
+}
+
+#[test]
+fn references_to_missing_or_other_elements_are_ignored() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <rect id="g" width="0" height="0"/>
+        <rect width="50" height="50" fill="red" clip-path="url(#missing)"/>
+        <rect x="50" width="50" height="50" fill="red" clip-path="url(#g)"/>
+        <rect y="50" width="50" height="50" fill="red" mask="url(#missing)"/>
+        <rect x="50" y="50" width="50" height="50" fill="red" mask="url(#g)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    for (x, y) in [(25, 25), (75, 25), (25, 75), (75, 75)] {
+        assert_eq!(pixel(&buf, x, y), RED, "({x}, {y})");
+    }
+}
+
+#[test]
+fn luminance_and_alpha_masks() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <mask id="lum" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+          <rect width="50" height="50" fill="white"/>
+        </mask>
+        <mask id="alpha" style="mask-type: alpha">
+          <rect y="50" width="50" height="50" fill="black"/>
+        </mask>
+        <rect width="100" height="50" fill="red" mask="url(#lum)"/>
+        <rect y="50" width="100" height="50" fill="red" mask="url(#alpha)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED, "white mask content");
+    assert_eq!(pixel(&buf, 75, 25), BLUE, "no mask content");
+    assert_eq!(pixel(&buf, 25, 75), RED, "opaque black alpha");
+    assert_eq!(pixel(&buf, 75, 75), BLUE, "transparent alpha");
+}
+
+#[test]
+fn mask_content_units_and_masks_on_masks() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <mask id="inner" maskContentUnits="objectBoundingBox">
+          <rect width="1" height="0.5" fill="white"/>
+        </mask>
+        <mask id="outer" maskContentUnits="objectBoundingBox" mask="url(#inner)">
+          <rect width="0.5" height="1" fill="white"/>
+        </mask>
+        <rect width="100" height="100" fill="red" mask="url(#outer)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 25), RED);
+    assert_eq!(pixel(&buf, 75, 25), BLUE);
+    assert_eq!(pixel(&buf, 25, 75), BLUE);
+}
+
+#[test]
+fn recursive_masks_ignore_the_cycle() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <mask id="m" mask="url(#m)" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+          <rect width="50" height="100" fill="white" mask="url(#m)"/>
+        </mask>
+        <rect width="100" height="100" fill="red" mask="url(#m)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 50), RED);
+    assert_eq!(pixel(&buf, 75, 50), BLUE);
+}
+
+#[test]
+fn clip_rule_comes_from_the_computed_style() {
+    let mut doc = load(
+        r#"<style>#c { clip-rule: evenodd }</style><svg width="100" height="100">
+        <clipPath id="c"><path d="M0 0H100V100H0Z M25 25H75V75H25Z"/></clipPath>
+        <rect width="100" height="100" fill="red" clip-path="url(#c)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 10, 10), RED);
+    assert_eq!(pixel(&buf, 50, 50), BLUE, "the evenodd hole");
+}
+
+const BENCH_W: u32 = 1600;
+const BENCH_H: u32 = 1200;
+
+/// 100 small rects at 1600x1200, each with `attrs` and the `defs` resources.
+fn clipped_rects_doc(defs: &str, attrs: &str, native_svg: bool) -> HtmlDocument {
+    let mut rects = String::new();
+    for i in 0..100 {
+        let (x, y) = ((i % 10) * 150 + 10, (i / 10) * 110 + 10);
+        rects.push_str(&format!(
+            r#"<rect x="{x}" y="{y}" width="40" height="40" fill="red" {attrs}/>"#
+        ));
+    }
+    let html = format!(
+        r#"<html><body style="margin:0"><svg width="{BENCH_W}" height="{BENCH_H}"><defs>{defs}</defs>{rects}</svg></body></html>"#
+    );
+    let mut doc = HtmlDocument::from_html(
+        &html,
+        DocumentConfig {
+            viewport: Some(Viewport::new(BENCH_W, BENCH_H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            native_svg: Some(native_svg),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    doc
+}
+
+const BENCH_CASES: [(&str, &str, &str); 5] = [
+    (
+        "single-rect clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.5" height="1"/></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "two-rect clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.5" height="0.5"/><rect x="0.5" y="0.5" width="0.5" height="0.5"/></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "overlapping-rect clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><rect width="0.6" height="0.6"/><rect x="0.4" y="0.4" width="0.6" height="0.6"/></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "text clipPath",
+        r#"<clipPath id="c" clipPathUnits="objectBoundingBox"><text y="0.8" font-size="1">A</text></clipPath>"#,
+        r#"clip-path="url(#c)""#,
+    ),
+    (
+        "mask",
+        r#"<mask id="m" maskContentUnits="objectBoundingBox"><rect width="0.5" height="1" fill="white"/></mask>"#,
+        r#"mask="url(#m)""#,
+    ),
+];
+
+/// Clip path and mask groups are bounded by what they let through, not the
+/// whole viewport, as vello_cpu composites a layer's whole area.
+#[test]
+fn clip_and_mask_layers_are_bounded() {
+    for (name, defs, attrs) in BENCH_CASES {
+        let mut doc = clipped_rects_doc(defs, attrs, true);
+        let mut scene = anyrender::recording::Scene::new();
+        paint_scene(&mut scene, doc.as_mut(), 1.0, BENCH_W, BENCH_H, 0, 0);
+        let mut layers = 0;
+        for command in &scene.commands {
+            let (transform, clip) = match command {
+                anyrender::recording::RenderCommand::PushLayer(l) => (l.transform, &l.clip),
+                anyrender::recording::RenderCommand::PushMaskLayer(l) => (l.transform, &l.clip),
+                _ => continue,
+            };
+            layers += 1;
+            // The clip's control points in device space (no kurbo dependency
+            // here, so read them back from its SVG path data).
+            let [a, b, c, d, e, f] = transform.as_coeffs();
+            let numbers: Vec<f64> = clip
+                .to_svg()
+                .split(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == 'e'))
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for p in numbers.chunks_exact(2) {
+                let (x, y) = (a * p[0] + c * p[1] + e, b * p[0] + d * p[1] + f);
+                (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+            }
+            let bounds = (x1 - x0, y1 - y0);
+            assert!(
+                bounds.0 <= 200.0 && bounds.1 <= 200.0,
+                "{name}: a layer covers {bounds:?}"
+            );
+        }
+        assert!(layers > 0 || name != "mask", "{name}");
+    }
+}
+
+/// Run with: `cargo test -p blitz-tests --release --test all native_svg::clip_and_mask_bench -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn clip_and_mask_bench() {
+    use anyrender::ImageRenderer;
+    for native_svg in [true, false] {
+        for (name, defs, attrs) in BENCH_CASES {
+            let mut doc = clipped_rects_doc(defs, attrs, native_svg);
+            let mut renderer = VelloCpuImageRenderer::new(BENCH_W, BENCH_H);
+            let mut buf = Vec::new();
+            let mut frame = |doc: &mut HtmlDocument| {
+                buf.clear();
+                renderer.reset();
+                renderer.render_to_vec(
+                    |scene| paint_scene(scene, doc.as_mut(), 1.0, BENCH_W, BENCH_H, 0, 0),
+                    &mut buf,
+                );
+            };
+            frame(&mut doc);
+            let frames = 10;
+            let start = std::time::Instant::now();
+            for _ in 0..frames {
+                frame(&mut doc);
+            }
+            let per_frame = start.elapsed() / frames;
+            let mode = if native_svg { "native" } else { "usvg" };
+            println!("{mode} {name}: {per_frame:?}/frame");
+        }
+    }
+}
+
+#[test]
+fn long_reference_chains_are_cut_off() {
+    for (tag, property, content) in [
+        ("clipPath", "clip-path", ""),
+        ("mask", "mask", r#" fill="white""#),
+    ] {
+        let mut svg = String::from(r#"<svg width="100" height="100">"#);
+        for i in 0..10_000 {
+            let next = i + 1;
+            svg += &format!(
+                r#"<{tag} id="c{i}" {property}="url(#c{next})"><rect width="100" height="100"{content}/></{tag}>"#
+            );
+        }
+        svg +=
+            &format!(r#"<rect width="100" height="100" fill="red" {property}="url(#c0)"/></svg>"#);
+        let mut doc = load(&svg, true);
+        let buf = render(&mut doc);
+        assert_eq!(pixel(&buf, 50, 50), RED, "{tag}");
+    }
+}
+
+#[test]
+fn branching_reference_graphs_are_bounded() {
+    let depth = 20;
+    let mut svg = String::from(r#"<svg width="100" height="100">"#);
+    for i in 0..depth {
+        let next = i + 1;
+        svg += &format!(
+            r#"<clipPath id="c{i}"><rect width="100" height="100" clip-path="url(#c{next})"/><rect width="100" height="100" clip-path="url(#c{next})"/></clipPath>"#
+        );
+    }
+    svg += &format!(r#"<clipPath id="c{depth}"><rect width="100" height="100"/></clipPath>"#);
+    svg += r#"<rect width="100" height="100" fill="red" clip-path="url(#c0)"/></svg>"#;
+    let mut doc = load(&svg, true);
+    let start = std::time::Instant::now();
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 50, 50), RED);
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+}
+
+/// `<clipPath>` and `<mask>` can be referenced wherever they are, even
+/// inside elements that are not rendered.
+#[test]
+fn resources_inside_unrendered_elements_apply() {
+    let containers = [
+        (r#"<g style="display:none">"#, "</g>"),
+        ("<symbol>", "</symbol>"),
+        ("<pattern>", "</pattern>"),
+        ("<marker>", "</marker>"),
+        (r#"<g systemLanguage="xx">"#, "</g>"),
+    ];
+    let mut svg = String::from(r#"<svg width="100" height="100">"#);
+    for (i, (open, close)) in containers.iter().enumerate() {
+        let y = i * 20;
+        svg += &format!(
+            r#"{open}<clipPath id="c{i}"><rect width="50" height="100"/></clipPath>{close}
+            <rect y="{y}" width="100" height="20" fill="red" clip-path="url(#c{i})"/>"#
+        );
+    }
+    svg += "</svg>";
+    let mut doc = load(&svg, true);
+    let buf = render(&mut doc);
+    for i in 0..containers.len() {
+        let y = i * 20 + 10;
+        assert_eq!(pixel(&buf, 25, y), RED, "{}", containers[i].0);
+        assert_eq!(pixel(&buf, 75, y), BLUE, "{}", containers[i].0);
+    }
+}
+
+#[test]
+fn masks_inside_display_none_apply() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <g style="display:none"><g><mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+          <rect width="50" height="100" fill="white"/>
+        </mask></g></g>
+        <rect width="100" height="100" fill="red" mask="url(#m)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 50), RED);
+    assert_eq!(pixel(&buf, 75, 50), BLUE);
+}
+
+/// `clip-path` and `mask` on a nested `<svg>` apply in the user space its
+/// `viewBox` establishes.
+#[test]
+fn clip_and_mask_on_nested_svg_use_its_user_space() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <clipPath id="c"><rect width="5" height="5"/></clipPath>
+        <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="5" height="10">
+          <rect width="10" height="10" fill="white"/>
+        </mask>
+        <svg width="100" height="50" viewBox="0 0 10 10" preserveAspectRatio="none" clip-path="url(#c)">
+          <rect width="10" height="10" fill="red"/>
+        </svg>
+        <svg y="50" width="100" height="50" viewBox="0 0 10 10" preserveAspectRatio="none" mask="url(#m)">
+          <rect width="10" height="10" fill="red"/>
+        </svg></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_eq!(pixel(&buf, 25, 12), RED, "inside the clip path");
+    assert_eq!(pixel(&buf, 75, 12), BLUE);
+    assert_eq!(pixel(&buf, 25, 37), BLUE);
+    assert_eq!(pixel(&buf, 25, 75), RED, "inside the mask region");
+    assert_eq!(pixel(&buf, 75, 75), BLUE);
+}
+
+/// A reference that closes a cycle is ignored for the whole document (as
+/// usvg does), not only where it re-enters a mask being applied: with
+/// `mask2`'s own `mask` ignored, each mask applies once.
+#[test]
+fn circular_mask_references_are_ignored_everywhere() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+        <mask id="self1" mask="url(#self2)" style="mask-type: alpha"><rect width="100" height="100" fill-opacity="0.5"/></mask>
+        <mask id="self2" mask="url(#self1)" style="mask-type: alpha"><rect width="100" height="100" fill-opacity="0.5"/></mask>
+        <mask id="child1" style="mask-type: alpha"><rect width="100" height="100" fill-opacity="0.5" mask="url(#child2)"/></mask>
+        <mask id="child2" style="mask-type: alpha"><rect width="100" height="100" fill-opacity="0.5" mask="url(#child1)"/></mask>
+        <rect width="50" height="100" fill="red" mask="url(#self2)"/>
+        <rect x="50" width="50" height="100" fill="red" mask="url(#child2)"/></svg>"#,
+        true,
+    );
+    let buf = render(&mut doc);
+    assert_near(pixel(&buf, 25, 50), [128, 0, 128]);
+    assert_near(pixel(&buf, 75, 50), [128, 0, 128]);
+}
