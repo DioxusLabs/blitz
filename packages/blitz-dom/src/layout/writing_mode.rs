@@ -63,7 +63,7 @@ impl LayoutPassState<'_> {
         if Some(node_id) == self.root_id {
             self.root_wm
         } else {
-            self.nodes[node_id].writing_mode()
+            self.nodes[node_id].layout_frame_wm()
         }
     }
 

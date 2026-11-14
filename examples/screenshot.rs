@@ -1,4 +1,7 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
+//!
+//! The second argument is the viewport's width in CSS pixels, and the third the
+//! path to write the PNG to.
 
 use anyrender::{PaintScene as _, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
@@ -102,7 +105,7 @@ async fn main() {
     // Determine height to render
     let computed_height = document.as_ref().root_element().final_layout().size.height;
     let render_width = (width as f64 * scale) as u32;
-    let render_height = ((computed_height as f64).max(height as f64).min(4000.0) * scale) as u32;
+    let render_height = ((computed_height as f64).max(1.0).min(4000.0) * scale) as u32;
 
     // Render document to RGBA buffer
     let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
@@ -133,8 +136,12 @@ async fn main() {
 
     timer.time("Rendered to buffer");
 
-    // Determine output path, and open a file at that path. TODO: make configurable.
-    let out_path = compute_filename(&url_string);
+    // Determine output path, and open a file at that path: the third
+    // argument where there is one.
+    let out_path = std::env::args()
+        .nth(3)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| compute_filename(&url_string));
     let mut file = File::create(&out_path).unwrap();
 
     // Encode buffer as PNG and write it to a file

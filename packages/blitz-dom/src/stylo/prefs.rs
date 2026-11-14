@@ -15,7 +15,12 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.font-variations.enabled", true);
         style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
         style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
-        #[cfg(feature = "writing-mode")]
+        // The `writing-mode` feature lays out vertical boxes and winkin
+        // vertical lines; without either the property stays unparsed.
+        #[cfg(any(
+            feature = "writing-mode",
+            all(feature = "winkin", not(feature = "parley"))
+        ))]
         {
             style_config::set_pref!("layout.css.writing-mode.enabled", true);
             style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
@@ -43,6 +48,32 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.view-transitions.enabled", true);
         style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
         style_config::set_pref!("layout.css.zoom.enabled", true);
+
+        // Text properties and values both text backends compute.
+        style_config::set_pref!("layout.css.dominant-baseline.enabled", true);
+        style_config::set_pref!("layout.css.font-synthesis.enabled", true);
+        style_config::set_pref!("layout.css.font-variant-caps.all-values.enabled", true);
+        style_config::set_pref!("layout.css.font-variant-emoji.enabled", true);
+        style_config::set_pref!("layout.css.hyphens.enabled", true);
+        style_config::set_pref!("layout.css.initial-letter.enabled", true);
+        style_config::set_pref!("layout.css.ruby.enabled", true);
+        style_config::set_pref!("layout.css.text-box.enabled", true);
+        style_config::set_pref!("layout.css.text-combine-upright.enabled", true);
+        style_config::set_pref!("layout.css.text-emphasis.enabled", true);
+        style_config::set_pref!("layout.css.text-wrap-style.balance.enabled", true);
+        style_config::set_pref!("layout.css.text-wrap-style.pretty.enabled", true);
+        style_config::set_pref!(
+            "layout.css.white-space-collapse.preserve-spaces.enabled",
+            true
+        );
+        // `::first-line`, which winkin lays out; Parley ignores its styles.
+        style_config::set_pref!("layout.css.first-line.enabled", true);
+        // The text properties only winkin lays out.
+        #[cfg(all(feature = "winkin", not(feature = "parley")))]
+        {
+            style_config::set_pref!("layout.css.line-clamp.enabled", true);
+            style_config::set_pref!("layout.css.text-autospace.enabled", true);
+        }
         style_config::set_pref!("layout.threads", -1);
     });
 }

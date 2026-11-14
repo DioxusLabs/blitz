@@ -4,21 +4,17 @@
 //! [`resolve`](crate::BaseDocument::resolve), no matter how many changes
 //! occurred since the last resolve.
 
-use std::sync::{Arc, Mutex};
-
 use bitflags::bitflags;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use parley::FontContext;
 use selectors::matching::QuirksMode;
 use style::device::Device;
+use style::device::servo::FontMetricsProvider;
 use style::device::servo::MediaData;
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::queries::values::PrefersColorScheme;
 use style::servo::media_features::PointerCapabilities;
-
-use crate::font_metrics::BlitzFontMetricsProvider;
 
 bitflags! {
     /// The set of changes to the [`Device`] that have accumulated since the
@@ -64,11 +60,11 @@ impl DeviceChanges {
 pub(crate) fn make_device(
     viewport: &Viewport,
     media_type: MediaType,
-    font_ctx: Arc<Mutex<FontContext>>,
+    font_metrics_provider: Box<dyn FontMetricsProvider>,
 ) -> Device {
     Device::new(
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
-        Box::new(BlitzFontMetricsProvider { font_ctx }),
+        font_metrics_provider,
         "Submit Query".into(),
         make_media_data(viewport, media_type),
     )

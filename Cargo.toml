@@ -57,15 +57,23 @@ dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", 
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 accesskit_xplat = { version = "0.2", path = "./packages/accesskit_xplat", default-features = false }
 browser-persistence = { path = "./apps/browser/persistence" }
-blitz-test-harness = { path = "./packages/blitz-test-harness" }
+blitz-test-harness = { path = "./packages/blitz-test-harness", default-features = false }
 
 # Servo dependencies
-style = { version = "0.24.0", package = "stylo" }
-style_traits = { version = "0.24.0", package = "stylo_traits" }
-style_atoms = { version = "0.24.0", package = "stylo_atoms" }
-style_config = { version = "0.24.0", package = "stylo_static_prefs" }
-style_dom = { version = "0.24.0", package = "stylo_dom" }
-selectors = { version = "0.43.0", package = "selectors" }
+# The stylo fork with the gates relaxed on properties its servo build
+# declines to compute. They are gated because servo's layout does not
+# implement them, not because they need gecko: the values are plain Rust.
+# Un-gating them is what lets winkin lay out, and the WPT suites reach,
+# writing modes, ruby, emphasis marks, line clamping and the rest of the
+# text properties winkin implements: dfrg/stylo's `style-more` commits
+# (b2a820db and the fixes after it) on stylo v0.24.0, plus the fix for
+# building on wasm32-unknown-unknown (disables rand's getrandom dependency).
+style = { version = "0.24.0", git = "https://github.com/DioxusLabs/stylo", rev = "ab5673257822b4358ebed84898711f06bbe69afc", package = "stylo" }
+style_traits = { version = "0.24.0", git = "https://github.com/DioxusLabs/stylo", rev = "ab5673257822b4358ebed84898711f06bbe69afc", package = "stylo_traits" }
+style_atoms = { version = "0.24.0", git = "https://github.com/DioxusLabs/stylo", rev = "ab5673257822b4358ebed84898711f06bbe69afc", package = "stylo_atoms" }
+style_config = { version = "0.24.0", git = "https://github.com/DioxusLabs/stylo", rev = "ab5673257822b4358ebed84898711f06bbe69afc", package = "stylo_static_prefs" }
+style_dom = { version = "0.24.0", git = "https://github.com/DioxusLabs/stylo", rev = "ab5673257822b4358ebed84898711f06bbe69afc", package = "stylo_dom" }
+selectors = { version = "0.43.0", git = "https://github.com/DioxusLabs/stylo", rev = "ab5673257822b4358ebed84898711f06bbe69afc", package = "selectors" }
 cssparser = { version = "0.38.0" }
 
 # HTML5ever dependencies
@@ -110,7 +118,15 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "a3997d55bacd1fb6cd
     "calc",
     "detailed_layout_info",
 ] }
+# The font value types shared by the text backends, from Parley's release
+parlance = { version = "0.1.1", default-features = false, features = ["std"] }
 parley = { version = "0.13", default-features = false, features = ["std"] }
+# Its `dictionaries` feature, cleft's word dictionaries of the scripts that
+# break by dictionary, is blitz-dom's `complex-scripts`.
+winkin = { version = "0.1.0", default-features = false, features = ["std"] }
+# The fonts winkin chooses from. Its `system` feature, the platform's font
+# APIs, is blitz-dom's `system-fonts`.
+fontwich = { version = "0.1.0", default-features = false, features = ["std"] }
 skrifa = { version = "0.49", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
@@ -261,13 +277,17 @@ publish = false
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = ["dioxus-native/log-frame-times"]
 log-phase-times = ["dioxus-native/log-phase-times"]
+# The text backend: Parley (the default) or winkin. With both, Parley is used.
+default = ["parley"]
+parley = ["dioxus-native/parley"]
+winkin = ["dioxus-native/winkin"]
 
 [dev-dependencies]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"] }
 anyrender_vello_hybrid = { workspace = true }
-blitz-dom = { workspace = true, features = ["default"] }
+blitz-dom = { workspace = true, features = ["svg", "woff", "accessibility", "system-fonts", "file-input", "custom-widget", "text-transform-icu"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }
 blitz-paint = { workspace = true }
