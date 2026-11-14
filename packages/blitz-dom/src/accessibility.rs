@@ -1,11 +1,34 @@
 use crate::{
     BaseDocument, ElementData, Node as BlitzDomNode, NodeData, NodeId as BlitzDomNodeId, local_name,
 };
-use accesskit::{Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate};
+use accesskit::{
+    Action, ActionRequest, Node as AccessKitNode, NodeId, Role, TreeId, TreeInfo, TreeUpdate,
+};
 use style::properties::longhands::visibility;
 use stylo_taffy::CopyStyleGetters;
 
 impl BaseDocument {
+    pub fn accessibility_click_target(&self, request: &ActionRequest) -> Option<BlitzDomNodeId> {
+        if request.action != Action::Click || request.target_tree != TreeId::ROOT {
+            return None;
+        }
+        let target = BlitzDomNodeId::from_u64(request.target_node.0);
+        let node = self.get_node(target)?;
+        if !node.supports_accessibility_click() {
+            return None;
+        }
+        let mut ancestors = std::iter::successors(Some(node), |node| {
+            node.parent.and_then(|parent| self.get_node(parent))
+        });
+        if ancestors.any(|node| {
+            node.is_hidden_from_accessibility_tree()
+                || node.attr(local_name!("aria-hidden")) == Some("true")
+        }) {
+            return None;
+        }
+        Some(target)
+    }
+
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
         let mut nodes = std::collections::HashMap::new();
         let mut window = AccessKitNode::new(Role::Window);
@@ -128,6 +151,10 @@ impl BaseDocument {
 
             builder.set_role(role);
 
+            if node.supports_accessibility_click() {
+                builder.add_action(Action::Click);
+            }
+
             // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
             if element_data.attr(local_name!("aria-hidden")) == Some("true") {
                 builder.set_hidden();
@@ -182,6 +209,16 @@ impl BaseDocument {
 }
 
 impl BlitzDomNode {
+    fn supports_accessibility_click(&self) -> bool {
+        self.element_data().is_some_and(|element| {
+            element.name.local == local_name!("button")
+                && !self
+                    .element_state()
+                    .contains(style_dom::ElementState::DISABLED)
+                && element.attr(local_name!("aria-disabled")) != Some("true")
+        })
+    }
+
     // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
     fn is_hidden_from_accessibility_tree(&self) -> bool {
         self.try_stylo_element_data()

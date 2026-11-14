@@ -226,6 +226,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::Ime(_) => focussed_node_id,
             UiEvent::Paste(_) => focussed_node_id,
             UiEvent::AppleStandardKeybinding(_) => focussed_node_id,
+            UiEvent::Activate(target) => Some(target),
         };
         // Fall back to the root element. A document without a root element (e.g. an
         // empty iframe sub-document) has no event target, so there is nothing to do.
@@ -235,6 +236,15 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         match event {
+            UiEvent::Activate(_) => {
+                let doc = self.doc.inner();
+                let Some(node) = doc.get_node(target) else {
+                    return;
+                };
+                let data = node.synthetic_click_event(Default::default());
+                drop(doc);
+                self.handle_dom_event(DomEvent::new(target, data));
+            }
             UiEvent::PointerMove(data) => {
                 self.handle_pointer_event(
                     target,
