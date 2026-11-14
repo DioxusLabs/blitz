@@ -40,24 +40,27 @@ impl BaseDocument {
             return;
         };
 
-        // First try explicit form attribute
-        let final_owner_id = element
-            .attr(local_name!("form"))
-            .and_then(|owner| self.get_element_by_id(owner))
-            .filter(|owner_id| {
+        // A connected control's explicit form attribute overrides its ancestor
+        // even when it does not identify a form.
+        let final_owner_id = if node.flags.is_in_document()
+            && let Some(owner) = element.attr(local_name!("form"))
+        {
+            self.get_element_by_id(owner).filter(|owner_id| {
                 self.get_node(*owner_id)
                     .is_some_and(|node| node.data.is_element_with_tag_name(&local_name!("form")))
             })
-            .or_else(|| {
-                AncestorTraverser::new(self, node_id).find(|ancestor_id| {
-                    self.nodes[*ancestor_id]
-                        .data
-                        .is_element_with_tag_name(&local_name!("form"))
-                })
-            });
+        } else {
+            AncestorTraverser::new(self, node_id).find(|ancestor_id| {
+                self.nodes[*ancestor_id]
+                    .data
+                    .is_element_with_tag_name(&local_name!("form"))
+            })
+        };
 
         if let Some(final_owner_id) = final_owner_id {
             self.controls_to_form.insert(node_id, final_owner_id);
+        } else {
+            self.controls_to_form.remove(&node_id);
         }
     }
 
@@ -462,4 +465,49 @@ fn encode_text_plain<T: AsRef<str>, U: AsRef<str>>(input: &[(T, U)]) -> String {
         out.push_str("\r\n");
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::construct_entry_list;
+    use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+
+    #[test]
+    fn submission_excludes_controls_without_a_form_owner() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let root = doc.root_node().id;
+        let attr = |name, value: &str| Attribute {
+            name,
+            value: value.to_owned(),
+        };
+        let mut edit = doc.mutate();
+        let html = edit.create_element(qual_name!("html"), vec![]);
+        let form = edit.create_element(qual_name!("form"), vec![attr(qual_name!("id"), "owner")]);
+        let mut hidden_input = |name: &str, form: Option<&str>| {
+            let mut attrs = vec![
+                attr(qual_name!("type"), "hidden"),
+                attr(qual_name!("name"), name),
+                attr(qual_name!("value"), name),
+            ];
+            attrs.extend(form.map(|id| attr(qual_name!("form"), id)));
+            edit.create_element(qual_name!("input"), attrs)
+        };
+        let invalid = hidden_input("invalid", Some("missing"));
+        let moved = hidden_input("moved", None);
+        let explicit = hidden_input("explicit", Some("owner"));
+        let nested = hidden_input("nested", None);
+        edit.append_children(form, &[invalid, moved, nested]);
+        edit.append_children(html, &[form, explicit]);
+        edit.append_children(root, &[html]);
+        drop(edit);
+
+        let mut edit = doc.mutate();
+        edit.remove_node(moved);
+        edit.append_children(html, &[moved]);
+        drop(edit);
+
+        let entries = construct_entry_list(&doc, form, form);
+        let names: Vec<_> = entries.0.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(names, ["nested", "explicit"]);
+    }
 }
