@@ -1436,8 +1436,9 @@ fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
     }
 }
 
-/// Convert Stylo and Taffy types into Kurbo types
-fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBox {
+/// The boxes of an element (border, padding, content, with corner radii) from its computed
+/// style and layout. `scale` is 1.0 for CSS pixels.
+pub fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBox {
     // Resolve and rescale
     // We have to scale since document pixels are not same same as rendered pixels
     let width: f64 = layout.size.width as f64;

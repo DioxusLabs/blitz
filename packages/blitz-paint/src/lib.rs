@@ -20,6 +20,9 @@ use anyrender::{PaintScene, Scene};
 use blitz_dom::{BaseDocument, NodeId, util::Color};
 use render::BlitzDomPainter;
 
+pub use kurbo_css::{CssBox, NonUniformRoundedRectRadii};
+pub use render::create_css_rect;
+
 const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
     feature = "font-embolden",
     all(feature = "apple-font-embolden", target_os = "macos"),
