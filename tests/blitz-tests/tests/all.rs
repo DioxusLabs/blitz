@@ -51,6 +51,7 @@ mod link_cursor;
 mod link_rel_attribute;
 mod oof_dynamic_cb;
 mod outset_box_shadow_shape;
+mod paint_hook;
 mod paint_order;
 mod paint_tree_bench;
 mod paint_tree_incremental;

@@ -412,6 +412,9 @@ pub struct BaseDocument {
     #[cfg(feature = "custom-widget")]
     pub(crate) pending_resource_deallocations: Vec<anyrender::ResourceId>,
 
+    /// App code that draws on elements while the document is painted
+    pub(crate) paint_hook: Option<Box<dyn crate::paint_hook::PaintHook>>,
+
     /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
     /// elements without re-fetching from the network.
     pub(crate) image_cache: HashMap<String, ImageData>,
@@ -586,6 +589,8 @@ impl BaseDocument {
             custom_widget_nodes: HashSet::new(),
             #[cfg(feature = "custom-widget")]
             pending_resource_deallocations: Vec::new(),
+
+            paint_hook: None,
 
             has_changes: false,
             deferred_construction_nodes: Vec::new(),

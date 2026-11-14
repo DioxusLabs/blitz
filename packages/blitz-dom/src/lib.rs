@@ -52,6 +52,7 @@ mod iframe;
 /// Integration of taffy and the DOM.
 mod layout;
 mod mutator;
+pub mod paint_hook;
 mod query_selector;
 mod resolve;
 /// Computation of resolved CSS property values (`getComputedStyle()`)
