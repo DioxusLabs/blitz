@@ -36,6 +36,11 @@
     unicode-bidi: isolate;
 }
 
+/* https://svgwg.org/svg2-draft/styling.html#UAStyleSheet */
+svg|svg:not(:root) {
+    overflow: hidden;
+}
+
 [popover]:not(:popover-open):not(dialog[open]) {
     display: none;
 }
@@ -1165,11 +1170,8 @@ slot {
 }
 
 /* SVG (https://svgwg.org/svg2-draft/styling.html#UAStyleSheet). The svg
-   namespace prefix is declared at the top of this file. The spec's
-   `svg:not(:root) { overflow: hidden }` lives in `NATIVE_SVG_CSS` (applied only
-   to documents that render inline SVG natively): usvg applies the outermost
-   <svg>'s `transform` to its content rather than its CSS box, so clipping that
-   box would cut the content off. */
+   namespace prefix and `svg:not(:root) { overflow: hidden }` are declared at
+   the top of this file. */
 svg|symbol,
 svg|image,
 svg|marker,

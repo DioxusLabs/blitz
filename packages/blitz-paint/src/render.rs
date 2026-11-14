@@ -303,6 +303,34 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         })
     }
 
+    /// Paint an SVG image as its own isolated group, so blend modes inside the image
+    /// composite with the image's own content rather than the page behind it.
+    #[cfg(feature = "svg-usvg")]
+    pub(crate) fn draw_svg_image(
+        &self,
+        scene: &mut impl PaintScene,
+        tree: &anyrender_svg::usvg::Tree,
+        transform: Affine,
+    ) {
+        // `1.0 - EPSILON` stops the layer from being demoted to a non-isolating clip layer.
+        self.layer_manager.maybe_with_layer(
+            scene,
+            true,
+            BlendMode::default(),
+            1.0 - f32::EPSILON,
+            Affine::IDENTITY,
+            &Rect::new(
+                self.initial_x,
+                self.initial_y,
+                self.initial_x + self.width as f64,
+                self.initial_y + self.height as f64,
+            ),
+            None,
+            None,
+            |scene| anyrender_svg::render_svg_tree(scene, tree, transform),
+        );
+    }
+
     fn should_clip_node(&self, node: &Node, styles: &ComputedValues) -> bool {
         let box_style = styles.get_box();
         let contain_paint = box_style.slow_clone_contain().contains(Contain::PAINT) && {
@@ -1285,7 +1313,7 @@ impl ElementCx<'_, '_> {
             x_offset.px(),
             y_offset.px(),
             |scene| {
-                anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
+                self.draw_svg_image(scene, &svg.tree, transform);
             },
         );
     }

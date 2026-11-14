@@ -16,7 +16,7 @@ small:
 ## WPT test runner
 
 wpt *ARGS:
-  cargo run --release --package wpt {{ARGS}}
+  cargo run --release --package wpt -- {{ARGS}}
 
 browser *ARGS:
   cargo run --release --package browser --features log-frame-times,log-phase-times {{ARGS}}

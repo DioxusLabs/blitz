@@ -399,14 +399,14 @@ fn nested_svg_clips_to_its_viewport() {
 
 #[test]
 fn usvg_mode_leaves_presentation_attributes_to_usvg() {
-    let body = r#"<svg id="s" width="50" height="50" transform="translate(10 0)"><rect width="50" height="50" fill="red"/></svg>"#;
-    for (native, expect_transform) in [(false, false), (true, true)] {
+    let body = r#"<svg width="50" height="50"><rect id="r" width="50" height="50" fill="red" opacity="0.5"/></svg>"#;
+    for (native, expected) in [(false, 1.0), (true, 0.5)] {
         let doc = load(body, native);
-        let id = doc.query_selector("#s").unwrap().unwrap();
+        let id = doc.query_selector("#r").unwrap().unwrap();
         let styles = doc.get_node(id).unwrap().primary_styles().unwrap();
         assert_eq!(
-            !styles.get_box().transform.0.is_empty(),
-            expect_transform,
+            styles.get_effects().opacity,
+            expected,
             "native_svg = {native}"
         );
     }
