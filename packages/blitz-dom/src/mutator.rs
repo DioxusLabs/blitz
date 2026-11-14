@@ -704,11 +704,25 @@ impl DocumentMutator<'_> {
         let is_style = *attr == local_name!("style");
         // Attributes that box construction or layout read directly. Any other attribute only
         // reaches layout through the cascade, so its damage comes from the computed-style diff.
-        // Inline SVG is rendered from its serialized source, so every SVG attribute counts.
+        // A usvg-rendered inline SVG is re-parsed from its serialized source, so every SVG
+        // attribute counts. A native one reads only the root's sizing attributes directly;
+        // everything else reaches it through the cascade (presentation attributes) or paint.
         let is_svg = node
             .element_data()
             .is_some_and(|element| element.name.ns == markup5ever::ns!(svg));
-        let read_by_layout = is_svg
+        let svg_read_by_layout = if self.doc.native_svg {
+            node.data.is_element_with_tag_name(&local_name!("svg"))
+                && matches!(
+                    attr.as_ref(),
+                    "width" | "height" | "viewBox" | "preserveAspectRatio"
+                )
+        } else {
+            true
+        };
+        // Geometry that is not CSS-backed (`points`, `x1`, `viewBox` of a nested `<svg>`, ...)
+        // is read at paint time, so the change needs a repaint but no relayout.
+        let svg_repaint = is_svg && self.doc.native_svg;
+        let read_by_layout = (is_svg && svg_read_by_layout)
             || matches!(
                 *attr,
                 local_name!("type")
@@ -740,9 +754,12 @@ impl DocumentMutator<'_> {
             }
             if read_by_layout {
                 data.damage.insert(ALL_DAMAGE);
+            } else if svg_repaint {
+                data.damage
+                    .insert(style::selector_parser::RestyleDamage::REPAINT);
             }
         }
-        if read_by_layout {
+        if read_by_layout || svg_repaint {
             node.mark_damaged();
         }
         // Mark ancestors dirty so the style traversal visits this subtree.
@@ -1308,6 +1325,8 @@ impl<'doc> DocumentMutator<'doc> {
                     .eager_op_queue
                     .push(SpecialOp::UnloadStylesheet(node_id)),
                 SpecialElementData::Image(_) => {}
+                #[cfg(feature = "svg-native")]
+                SpecialElementData::SvgRoot(_) => {}
                 SpecialElementData::Canvas(_) => {
                     self.recompute_is_animating = true;
                 }
@@ -1548,6 +1567,7 @@ impl<'doc> DocumentMutator<'doc> {
 
         // Add content of "value" attribute as a text node child if:
         //   - Tag name is
+        #[cfg_attr(not(feature = "file-input"), allow(clippy::needless_return))]
         if let ("input", Some("button" | "submit" | "reset"), Some(value)) =
             (tagname, type_attr, value)
         {

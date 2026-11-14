@@ -281,6 +281,7 @@ dioxus-native = { workspace = true, features = [
     "vello-hybrid",
     "floats",
     "svg",
+    "svg-native",
     "prelude",
     "data-uri",
 ] }

@@ -1168,3 +1168,34 @@ slot {
         background-color: transparent;
     }
 }
+
+/* SVG (https://svgwg.org/svg2-draft/styling.html#UAStyleSheet). The svg
+   namespace prefix and `svg:not(:root) { overflow: hidden }` are declared at
+   the top of this file. */
+svg|symbol,
+svg|image,
+svg|marker,
+svg|pattern,
+svg|foreignObject {
+    overflow: hidden;
+}
+
+/* Elements that are never rendered directly. Resource containers (defs,
+   clipPath, mask, marker, pattern, symbol, filter, gradients) are deliberately
+   not `display: none`: stylo does not style the children of a `display: none`
+   element, and their children need computed styles when they are referenced.
+   The painter skips them instead. */
+svg|title,
+svg|desc,
+svg|metadata,
+svg|script,
+svg|style {
+    display: none;
+}
+
+/* SVG content transforms about the user-space origin (`transform-box:
+   view-box` is not yet available), unlike the outermost <svg>, which is a
+   CSS box. */
+svg|svg svg|* {
+    transform-origin: 0 0;
+}

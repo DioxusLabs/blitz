@@ -22,7 +22,13 @@ default = [
 ]
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
-svg = ["dep:usvg", "dep:svgtypes"]
+# SVG backends. `svg-usvg` renders inline `<svg>` and SVG images (`<img>`, CSS
+# backgrounds) with usvg; `svg-native` renders inline `<svg>` from the live,
+# stylo-styled DOM. With both compiled, `DocumentConfig::native_svg` picks the
+# inline renderer per document. `svg` is an alias for `svg-usvg`.
+svg = ["svg-usvg"]
+svg-usvg = ["dep:usvg", "dep:svgtypes"]
+svg-native = ["dep:svgtypes"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
 woff = ["dep:wuff"]
 accessibility = ["accesskit"]

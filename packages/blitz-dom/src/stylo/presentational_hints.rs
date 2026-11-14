@@ -234,7 +234,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     /// An SVG `transform` attribute (SVG transform-list syntax, e.g. unitless
     /// `translate(20, 30)`) as a CSS `transform` declaration. Translations are
     /// written as `px` lengths so that `zoom` scales them as it would CSS ones.
-    #[cfg(feature = "svg")]
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
     fn parse_svg_transform_attr(value: &str) -> Option<PropertyDeclaration> {
         use std::fmt::Write;
         use svgtypes::{TransformListParser, TransformListToken as Token};
@@ -265,7 +265,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     // The outermost `<svg>` is a CSS box, so its `transform` attribute transforms
     // the box like the CSS `transform` property it maps to.
     // https://svgwg.org/svg2-draft/coords.html#TransformProperty
-    #[cfg(feature = "svg")]
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
     let is_outermost_svg = *tag == local_name!("svg")
         && elem.name.ns == ns!(svg)
         && node
@@ -285,6 +285,16 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     // https://html.spec.whatwg.org/multipage/#the-lang-and-xml:lang-attributes
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
+
+    // Only the native backend styles SVG content; usvg re-parses the
+    // attributes itself.
+    #[cfg(feature = "svg-native")]
+    let svg_url_data = (elem.name.ns == ns!(svg) && node.tree().native_svg())
+        .then(|| crate::url::DocumentUrl::default().url_extra_data());
+    // Stack buffer large enough for one declaration (or one expanded
+    // shorthand), reused for every presentation attribute on the element.
+    #[cfg(feature = "svg-native")]
+    let mut svg_hint = style::properties::SourcePropertyDeclaration::default();
 
     for attr in elem.attrs() {
         let name = &attr.name.local;
@@ -460,9 +470,9 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // presentation attributes that map to the CSS `width`/`height`
         // properties, so e.g. `width="1em"` must resolve against the
         // element's font-size like any other CSS length.
-        if *tag == local_name!("svg")
-            && (*name == local_name!("width") || *name == local_name!("height"))
-        {
+        let is_svg_root_size = *tag == local_name!("svg")
+            && (*name == local_name!("width") || *name == local_name!("height"));
+        if is_svg_root_size {
             if let Some(size) = parse_svg_size_attr(value) {
                 use style::values::generics::{NonNegative, length::Size};
                 let size = Size::LengthPercentage(NonNegative(size));
@@ -474,7 +484,20 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             }
         }
 
-        #[cfg(feature = "svg")]
+        // The outermost `<svg>`'s `transform` is mapped below for both backends.
+        #[cfg(feature = "svg-native")]
+        if let Some(url_data) = &svg_url_data
+            && attr.name.ns == ns!()
+            && !is_svg_root_size
+            && !(is_outermost_svg && *name == local_name!("transform"))
+        {
+            super::svg_attrs::svg_presentation_hint(tag, name, value, url_data, &mut svg_hint);
+            for decl in svg_hint.drain().declarations {
+                push_style(decl);
+            }
+        }
+
+        #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
         if is_outermost_svg
             && attr.name.ns == ns!()
             && *name == local_name!("transform")

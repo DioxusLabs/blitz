@@ -13,7 +13,10 @@ rust-version.workspace = true
 [features]
 default = ["svg"]
 tracing = ["dep:tracing"]
-svg = ["dep:anyrender_svg", "blitz-dom/svg"]
+# SVG backends, see blitz-dom. `svg` is an alias for `svg-usvg`.
+svg = ["svg-usvg"]
+svg-usvg = ["dep:anyrender_svg", "dep:usvg", "dep:svgtypes", "blitz-dom/svg-usvg"]
+svg-native = ["dep:svgtypes", "blitz-dom/svg-native"]
 custom-widget = ["blitz-dom/custom-widget"]
 font-embolden = []
 apple-font-embolden = []
@@ -26,11 +29,14 @@ scrollbars = ["blitz-dom/scrollbars"]
 # Blitz dependencies
 anyrender = { workspace = true }
 anyrender_svg = { workspace = true, optional = true }
+usvg = { workspace = true, optional = true }
+svgtypes = { workspace = true, optional = true }
 blitz-traits = { workspace = true }
 blitz-dom = { workspace = true }
 
 # Servo dependencies
 style = { workspace = true }
+markup5ever = { workspace = true }
 
 # DioxusLabs dependencies
 taffy = { workspace = true }
@@ -41,6 +47,7 @@ skrifa = { workspace = true }
 color = { workspace = true }
 peniko = { workspace = true }
 kurbo = { workspace = true }
+euclid = { workspace = true }
 
 # Other dependencies
 bytemuck = { workspace = true }

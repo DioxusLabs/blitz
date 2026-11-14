@@ -14,11 +14,11 @@ tiny-skia = ["dep:anyrender_tiny_skia"]
 
 [dependencies]
 mimalloc = "0.1.48"
-blitz-dom = { workspace = true, features = ["svg", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode"] }
+blitz-dom = { workspace = true, features = ["svg", "svg-native", "floats", "system-fonts", "woff", "complex-scripts", "text-transform-icu", "writing-mode"] }
 blitz-html = {workspace = true }
 blitz-vibey-script = { workspace = true }
 blitz-traits = { workspace = true }
-blitz-paint = { workspace = true, features = ["default"] }
+blitz-paint = { workspace = true, features = ["default", "svg-native"] }
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
