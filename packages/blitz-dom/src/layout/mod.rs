@@ -84,6 +84,8 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
 pub(crate) struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
+    #[cfg(feature = "floats")]
+    subtree_floats: std::collections::HashMap<crate::NodeId, bool>,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
@@ -130,6 +132,8 @@ impl<'doc> LayoutPassState<'doc> {
                 doc.root_layout_wm(id)
             }),
             doc,
+            #[cfg(feature = "floats")]
+            subtree_floats: std::collections::HashMap::new(),
             #[cfg(feature = "writing-mode")]
             root_id,
             #[cfg(feature = "writing-mode")]
@@ -156,6 +160,41 @@ impl DerefMut for LayoutPassState<'_> {
 }
 
 impl LayoutPassState<'_> {
+    #[cfg(feature = "floats")]
+    fn subtree_contains_floats(&mut self, node_id: crate::NodeId) -> bool {
+        if let Some(contains_floats) = self.subtree_floats.get(&node_id) {
+            return *contains_floats;
+        }
+        let node = &self.nodes[node_id];
+        let contains_floats = node
+            .primary_styles()
+            .is_some_and(|style| style.clone_float() != style::values::computed::Float::None);
+        if node.flags.is_inline_root()
+            && node.element_data().is_some_and(|element| {
+                element
+                    .inline_layout_data
+                    .as_ref()
+                    .is_some_and(|layout| layout.layout.inline_boxes().len() == 0)
+            })
+        {
+            return contains_floats;
+        }
+        let children: Vec<_> = node
+            .children
+            .iter()
+            .copied()
+            .chain(node.before())
+            .chain(node.after())
+            .chain(node.layout_children.borrow().iter().flatten().copied())
+            .collect();
+        let contains_floats = contains_floats
+            || children
+                .into_iter()
+                .any(|child| self.subtree_contains_floats(child));
+        self.subtree_floats.insert(node_id, contains_floats);
+        contains_floats
+    }
+
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
         &self.nodes[dom_node_id(node_id)]
     }
@@ -789,6 +828,20 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
         inputs: taffy::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
+        // Inline roots query float slots at nonnegative offsets. Block descendants
+        // can reach above their parent through negative margins.
+        #[cfg(feature = "floats")]
+        if block_ctx.as_ref().is_some_and(|ctx| {
+            let affected_by_floats = if self.node_from_id(node_id).flags.is_inline_root() {
+                ctx.has_active_floats(0.0)
+            } else {
+                ctx.has_floats()
+            };
+            affected_by_floats || self.subtree_contains_floats(dom_node_id(node_id))
+        }) {
+            self.node_from_id_mut(node_id).clear_layout_cache();
+            return self.compute_child_layout_internal(node_id, inputs, block_ctx);
+        }
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             tree.compute_child_layout_internal(node_id, inputs, block_ctx)
         })

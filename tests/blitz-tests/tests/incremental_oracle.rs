@@ -479,6 +479,86 @@ fn style_attribute_width_display_order() {
     });
 }
 
+#[test]
+fn cached_same_bfc_child_replays_floats() {
+    let mut oracle = Oracle::new(
+        r#"<!doctype html><html><head><style>
+        body { margin: 0; width: 400px; }
+        .float { float: right; width: 150px; height: 200px; }
+        #heading { overflow: hidden; }
+    </style></head><body>
+        <div><div class="float"></div></div>
+        <div id="heading">Heading</div>
+        <p>Some text after the heading. Some text after the heading.</p>
+    </body></html>"#,
+    );
+    oracle.step("widen following BFC", |doc| {
+        set_style(doc, "#heading", "width:251px");
+    });
+}
+
+#[test]
+fn cached_inline_root_moves_below_floats() {
+    let mut oracle = Oracle::new(
+        r#"<!doctype html><style>
+        body { margin:0; width:400px; }
+        #float { float:right; width:150px; height:100px; }
+        #spacer { height:150px; }
+        </style><div id=float></div><div id=spacer></div>
+        <p><span>Some text after the float. Some text after the float.
+        Some text after the float. Some text after the float.</span></p>"#,
+    );
+    oracle.step("move beside float", |doc| {
+        set_style(doc, "#spacer", "height:0px");
+    });
+    oracle.step("move below float", |doc| {
+        set_style(doc, "#spacer", "height:150px");
+    });
+}
+
+#[test]
+fn cached_atomic_inline_measurement_preserves_baselines() {
+    let html = r#"<!doctype html><style>
+        body { margin:0; font-size:16px; line-height:20px; }
+        #outer, #inner { display:inline-block; }
+        #inner { width:80px; height:30px; line-height:30px; }
+        table { width:300px; }
+        </style><table><tr><td><div id=outer>outer <div id=inner>Beauty and<br>Fashion</div></div></td>
+        <td>Some text that can wrap</td></tr></table>"#;
+    let mut oracle = Oracle::new(html);
+    oracle.step("resize containing block", |doc| {
+        set_style(doc, "body", "width:399px");
+    });
+    let fresh = make_doc(
+        &html.replace("</style>", "</style><body style=width:399px>"),
+        true,
+    );
+    compare_dom_tree(
+        &oracle.inc,
+        oracle.inc.root_node().id,
+        &fresh,
+        fresh.root_node().id,
+        "root",
+        "fresh parse",
+    );
+    let cell = oracle
+        .inc
+        .get_node(id(&oracle.inc, "td"))
+        .unwrap()
+        .final_layout();
+    let outer = oracle
+        .inc
+        .get_node(id(&oracle.inc, "#outer"))
+        .unwrap()
+        .final_layout();
+    assert!(
+        cell.size.height >= outer.location.y + outer.size.height,
+        "auto-height cell {:?} must contain its inline formatting context {:?}",
+        cell.size,
+        outer,
+    );
+}
+
 /// Build a subtree containing inline text and a block: `<div id=..>hello <b>x</b><div style=height:6px></div> world</div>`
 fn build_subtree(doc: &mut HtmlDocument, subtree_id: &str) -> NodeId {
     let mut m = doc.mutate();

@@ -483,6 +483,8 @@ impl LayoutPassState<'_> {
 
         // Compute size of inline boxes
         let child_inputs = taffy::tree::LayoutInput {
+            // Atomic inline measurements need baselines as well as sizes.
+            run_mode: RunMode::PerformLayout,
             known_dimensions: Size::NONE,
             available_space,
             sizing_mode: SizingMode::InherentSize,
@@ -1109,7 +1111,8 @@ impl LayoutPassState<'_> {
         let mut ibox_order: u32 = 0;
         let mut span_cb_flags = StyleFlags::empty();
         let has_inline_boxes = inline_layout.layout.inline_boxes().len() > 0;
-        let lines = has_inline_boxes.then(|| inline_layout.layout.lines());
+        let lines = (has_inline_boxes && inputs.run_mode == RunMode::PerformLayout)
+            .then(|| inline_layout.layout.lines());
         for line in lines.into_iter().flatten() {
             let mut line_has_in_flow_content = false;
             for item in line.items() {
