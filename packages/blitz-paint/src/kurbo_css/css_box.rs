@@ -266,6 +266,7 @@ impl CssBox {
     pub fn border_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
         self.shape(&mut path, CssBoxKind::BorderBox, Direction::Clockwise);
+        path.close_path();
         path
     }
 
@@ -273,6 +274,7 @@ impl CssBox {
     pub fn padding_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
         self.shape(&mut path, CssBoxKind::PaddingBox, Direction::Clockwise);
+        path.close_path();
         path
     }
 
@@ -280,6 +282,7 @@ impl CssBox {
     pub fn content_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
         self.shape(&mut path, CssBoxKind::ContentBox, Direction::Clockwise);
+        path.close_path();
         path
     }
 

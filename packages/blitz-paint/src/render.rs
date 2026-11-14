@@ -25,6 +25,7 @@ use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
 };
+use blitz_dom::paint_hook::{PaintEl, PaintHook, PaintPoint, Step};
 use blitz_dom::{BaseDocument, ElementData, Node, NodeId, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
@@ -586,10 +587,19 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let paints_own_box = !node.is_inline_with_only_block_children();
 
+        // The document's paint hook, if it wants this element. It is called at the points
+        // marked below, and draws in the element's unscrolled space.
+        let paint_hook = self.begin_paint_hook(node, transform);
+
+        paint_hook.run(scene, PaintPoint::Before(Step::Shadow));
         cx.draw_outline(scene);
-        if paints_own_box {
+        if paints_own_box && !paint_hook.replaces(Step::Shadow) {
             cx.draw_outset_box_shadow(scene);
         }
+        if paint_hook.replaces(Step::Shadow) {
+            paint_hook.run(scene, PaintPoint::At(Step::Shadow));
+        }
+        paint_hook.run(scene, PaintPoint::After(Step::Shadow));
 
         // clip-path clip ayer
         self.layer_manager.maybe_with_layer(
@@ -643,15 +653,28 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     filter,
                     backdrop_filter,
                     |scene| {
-                        if paints_own_box {
+                        paint_hook.run(scene, PaintPoint::Before(Step::Background));
+                        if paints_own_box && !paint_hook.replaces(Step::Background) {
                             cx.draw_background(scene);
+                        }
+                        if paint_hook.replaces(Step::Background) {
+                            paint_hook.run(scene, PaintPoint::At(Step::Background));
+                        }
+                        paint_hook.run(scene, PaintPoint::After(Step::Background));
+                        if paints_own_box && !paint_hook.replaces(Step::Shadow) {
                             cx.draw_inset_box_shadow(scene);
                         }
                         cx.draw_table_row_backgrounds(scene);
                         cx.draw_table_borders(scene);
-                        if paints_own_box {
+                        paint_hook.run(scene, PaintPoint::Before(Step::Border));
+                        if paints_own_box && !paint_hook.replaces(Step::Border) {
                             cx.draw_border(scene);
                         }
+                        if paint_hook.replaces(Step::Border) {
+                            paint_hook.run(scene, PaintPoint::At(Step::Border));
+                        }
+                        paint_hook.run(scene, PaintPoint::After(Step::Border));
+                        paint_hook.run(scene, PaintPoint::Before(Step::Content));
                         cx.stroke_devtools(scene);
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
@@ -664,7 +687,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         // Clip layer if box requires clipping. Opacity set to 1.0
                         self.layer_manager.maybe_with_layer(
                             scene,
-                            should_clip,
+                            should_clip && !paint_hook.replaces(Step::Content),
                             BlendMode::default(),
                             1.0, // opacity
                             cx.transform,
@@ -672,6 +695,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             None,
                             None,
                             |scene| {
+                                if paint_hook.replaces(Step::Content) {
+                                    paint_hook.run(scene, PaintPoint::At(Step::Content));
+                                    return;
+                                }
                                 // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
                                 let content_position = Point {
                                     x: content_position.x - node.scroll_offset().x,
@@ -693,6 +720,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             },
                         );
 
+                        paint_hook.run(scene, PaintPoint::After(Step::Content));
+
                         // Overlay scrollbars, drawn unscrolled above the
                         // clipped content.
                         #[cfg(feature = "scrollbars")]
@@ -713,6 +742,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             .maybe_pop_layer(scene, blend_layer_pushed);
         self.layer_manager
             .maybe_pop_layer(scene, css_clip_layer_pushed);
+
+        paint_hook.end();
     }
 
     fn render_node(
@@ -737,6 +768,19 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             // NodeData::Doctype => {}
             NodeData::Comment { .. } => {} // NodeData::ProcessingInstruction { .. } => {}
         }
+    }
+
+    /// Tell the document's paint hook that `node` is about to be painted. The result calls
+    /// the hook at each point, or does nothing if there is no hook or it declined the element.
+    fn begin_paint_hook(&self, node: &'dom Node, transform: Affine) -> ElementPaintHook<'dom> {
+        let Some(hook) = self.dom.paint_hook() else {
+            return ElementPaintHook(None);
+        };
+
+        let el = PaintEl::new(self.dom, node, transform, self.scale);
+        let active = hook.begin_element(&el);
+
+        ElementPaintHook(Some(ElementPaintHookInner { hook, el, active }))
     }
 
     fn element_cx(
@@ -816,6 +860,45 @@ fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> pe
             quality,
             alpha: 1.0,
         },
+    }
+}
+
+/// The document's paint hook, for the element being painted
+struct ElementPaintHook<'dom>(Option<ElementPaintHookInner<'dom>>);
+
+struct ElementPaintHookInner<'dom> {
+    hook: &'dom dyn PaintHook,
+    el: PaintEl<'dom>,
+    /// Whether the hook wants to be called at this element's points
+    active: bool,
+}
+
+impl ElementPaintHook<'_> {
+    /// Call the hook at `point`. It records into its own scene, which is then placed with the
+    /// element's transform.
+    fn run(&self, scene: &mut impl PaintScene, point: PaintPoint) {
+        let Some(inner) = self.0.as_ref().filter(|inner| inner.active) else {
+            return;
+        };
+        let mut fragment = Scene::new();
+        inner.hook.paint(point, &inner.el, &mut fragment);
+        if !fragment.commands.is_empty() {
+            scene.append_scene(fragment, inner.el.transform());
+        }
+    }
+
+    /// Whether the hook draws `step` of this element itself, so the painter leaves it out.
+    fn replaces(&self, step: Step) -> bool {
+        self.0
+            .as_ref()
+            .is_some_and(|inner| inner.active && inner.hook.replaces(step, &inner.el))
+    }
+
+    /// Tell the hook that the element is finished.
+    fn end(&self) {
+        if let Some(inner) = &self.0 {
+            inner.hook.end_element(&inner.el);
+        }
     }
 }
 
@@ -1439,8 +1522,9 @@ fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
     }
 }
 
-/// Convert Stylo and Taffy types into Kurbo types
-fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBox {
+/// The boxes of an element (border, padding, content, with corner radii) from its computed
+/// style and layout. `scale` is 1.0 for CSS pixels.
+pub fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBox {
     // Resolve and rescale
     // We have to scale since document pixels are not same same as rendered pixels
     let width: f64 = layout.size.width as f64;

@@ -20,7 +20,7 @@ default = [
     "custom-widget",
     "text-transform-icu"
 ]
-custom-widget = ["dep:anyrender", "accessibility"]
+custom-widget = ["accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg", "dep:svgtypes"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
@@ -67,7 +67,7 @@ thin-vec = { workspace = true }
 
 # DioxusLabs dependencies
 taffy = { workspace = true }
-anyrender = { workspace = true, optional = true }
+anyrender = { workspace = true }
 
 # Linebender/Fontations dependencies
 accesskit = { workspace = true, optional = true }
@@ -76,6 +76,7 @@ skrifa = { workspace = true }
 linebender_resource_handle = { workspace = true }
 color = { workspace = true }
 kurbo = { workspace = true }
+peniko = { workspace = true }
 
 # Unicode
 icu_casemap = { workspace = true, optional = true }
