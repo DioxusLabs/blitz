@@ -81,8 +81,7 @@ pub fn document_has_scripts(doc: &BaseDocument) -> bool {
         let Some(element) = as_js_script_element(node) else {
             return false;
         };
-        element.attr(blitz_dom::local_name!("src")).is_some()
-            || !node.text_content().trim().is_empty()
+        blitz_vibey_script::script_src(element).is_some() || !node.text_content().trim().is_empty()
     })
 }
 

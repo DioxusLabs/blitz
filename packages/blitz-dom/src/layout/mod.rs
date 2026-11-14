@@ -433,11 +433,11 @@ impl LayoutPassState<'_> {
                         },
                         // https://svgwg.org/svg2-draft/coords.html#SizingSVGInCSS
                         #[cfg(feature = "svg-native")]
-                        SpecialElementData::SvgRoot(dims) => (
+                        SpecialElementData::SvgRoot(data) => (
                             IntrinsicSizes {
-                                width: dims.absolute_width(),
-                                height: dims.absolute_height(),
-                                ratio: dims.intrinsic_aspect_ratio(),
+                                width: data.dims.absolute_width(),
+                                height: data.dims.absolute_height(),
+                                ratio: data.dims.intrinsic_aspect_ratio(),
                             },
                             DEFAULT_OBJECT_SIZE,
                         ),
