@@ -205,7 +205,14 @@ impl ServoStylesheetLoader for StylesheetLoader {
         supports: Option<ImportSupportsCondition>,
         layer: ImportLayer,
     ) -> ServoArc<Locked<ImportRule>> {
-        if self.import_depth >= MAX_IMPORT_DEPTH || !supports.as_ref().is_none_or(|s| s.enabled) {
+        // A URL that resolves against no base, such as a relative one in a document without a
+        // URL, names nothing to load, so the import is refused as one past the depth limit is.
+        let resolved = url
+            .url()
+            .filter(|_| self.import_depth < MAX_IMPORT_DEPTH)
+            .filter(|_| supports.as_ref().is_none_or(|s| s.enabled))
+            .cloned();
+        let Some(resolved) = resolved else {
             return ServoArc::new(lock.wrap(ImportRule {
                 url,
                 stylesheet: ImportSheet::new_refused(),
@@ -213,7 +220,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
                 layer,
                 source_location: location,
             }));
-        }
+        };
 
         let import = ImportRule {
             url,
@@ -223,18 +230,17 @@ impl ServoStylesheetLoader for StylesheetLoader {
             source_location: location,
         };
 
-        let url = import.url.url().unwrap().clone();
         let import = ServoArc::new(lock.wrap(import));
         self.net_provider.fetch(
             self.doc_id,
-            stamped_request(url.as_ref().clone(), self.abort_signal.as_ref()),
+            stamped_request(resolved.as_ref().clone(), self.abort_signal.as_ref()),
             ResourceHandler::boxed(
                 self.tx.clone(),
                 self.doc_id,
                 None, // node_id
                 self.shell_provider.clone(),
                 NestedStylesheetHandler {
-                    url: url.clone(),
+                    url: resolved.clone(),
                     loader: StylesheetLoader {
                         import_depth: self.import_depth + 1,
                         ..self.clone()
