@@ -614,11 +614,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let paints_own_box = !node.is_inline_with_only_block_children();
 
-        cx.draw_outline(scene);
-        if paints_own_box {
-            cx.draw_outset_box_shadow(scene);
-        }
-
         // clip-path clip ayer
         self.layer_manager.maybe_with_layer(
             scene,
@@ -653,25 +648,55 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .map(|f| f.expansion_rect())
                     .unwrap_or(Rect::ZERO);
 
-                let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+                let border_box_clip = cx.frame.border_box_path().bounding_box();
+                let mut effect_layer_clip = border_box_clip;
+                if paints_own_box && let Some(shadow_bounds) = cx.outset_box_shadow_bounds() {
+                    effect_layer_clip = effect_layer_clip.union(shadow_bounds);
+                }
+                if let Some(outline_bounds) = cx.outline_bounds() {
+                    effect_layer_clip = effect_layer_clip.union(outline_bounds);
+                }
                 effect_layer_clip.x0 += filter_expansion_area.x0;
                 effect_layer_clip.y0 += filter_expansion_area.y0;
                 effect_layer_clip.x1 += filter_expansion_area.x1;
                 effect_layer_clip.y1 += filter_expansion_area.y1;
 
+                let split_backdrop_layer =
+                    backdrop_filter.is_some() && effect_layer_clip != border_box_clip;
+                if split_backdrop_layer {
+                    self.layer_manager.maybe_with_layer(
+                        scene,
+                        true,
+                        BlendMode::default(),
+                        opacity,
+                        cx.transform,
+                        &border_box_clip,
+                        None,
+                        backdrop_filter.clone(),
+                        |_| {},
+                    );
+                }
+
                 // Opacity/Filter layer if box has opacity or a filter.
                 // Clipped to border-box as it needs to include the background and borders.
                 self.layer_manager.maybe_with_layer(
                     scene,
-                    has_opacity || filter.is_some() || backdrop_filter.is_some(),
+                    has_opacity
+                        || filter.is_some()
+                        || (!split_backdrop_layer && backdrop_filter.is_some()),
                     BlendMode::default(),
                     opacity,
                     cx.transform,
                     &effect_layer_clip,
                     filter,
-                    backdrop_filter,
+                    if split_backdrop_layer {
+                        None
+                    } else {
+                        backdrop_filter
+                    },
                     |scene| {
                         if paints_own_box {
+                            cx.draw_outset_box_shadow(scene);
                             cx.draw_background(scene);
                             cx.draw_inset_box_shadow(scene);
                         }
@@ -680,6 +705,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         if paints_own_box {
                             cx.draw_border(scene);
                         }
+                        cx.draw_outline(scene);
                         cx.stroke_devtools(scene);
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
