@@ -1055,14 +1055,18 @@ dependencies = [
  "blitz-traits",
  "bytemuck",
  "color",
+ "euclid",
  "kurbo",
+ "markup5ever",
  "parley",
  "peniko",
  "skrifa",
  "smallvec",
  "stylo",
+ "svgtypes",
  "taffy",
  "tracing",
+ "usvg",
 ]
 
 [[package]]

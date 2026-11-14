@@ -241,6 +241,17 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
 
+    // Only the native backend styles SVG content; usvg re-parses the
+    // attributes itself, and a CSS `transform` from the hint would double up
+    // with usvg's own on the outer `<svg>`.
+    #[cfg(feature = "svg-native")]
+    let svg_url_data = (elem.name.ns == ns!(svg) && node.tree().native_svg())
+        .then(|| crate::url::DocumentUrl::default().url_extra_data());
+    // Stack buffer large enough for one declaration (or one expanded
+    // shorthand), reused for every presentation attribute on the element.
+    #[cfg(feature = "svg-native")]
+    let mut svg_hint = style::properties::SourcePropertyDeclaration::default();
+
     for attr in elem.attrs() {
         let name = &attr.name.local;
         let value = attr.value.as_str();
@@ -415,9 +426,9 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // presentation attributes that map to the CSS `width`/`height`
         // properties, so e.g. `width="1em"` must resolve against the
         // element's font-size like any other CSS length.
-        if *tag == local_name!("svg")
-            && (*name == local_name!("width") || *name == local_name!("height"))
-        {
+        let is_svg_root_size = *tag == local_name!("svg")
+            && (*name == local_name!("width") || *name == local_name!("height"));
+        if is_svg_root_size {
             if let Some(size) = parse_svg_size_attr(value) {
                 use style::values::generics::{NonNegative, length::Size};
                 let size = Size::LengthPercentage(NonNegative(size));
@@ -426,6 +437,20 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
                 } else {
                     PropertyDeclaration::Height(size)
                 });
+            }
+        }
+
+        // https://svgwg.org/svg2-draft/styling.html#PresentationAttributes
+        // Every other attribute on an SVG element that names a CSS property is
+        // a presentation attribute for that property.
+        #[cfg(feature = "svg-native")]
+        if let Some(url_data) = &svg_url_data
+            && attr.name.ns == ns!()
+            && !is_svg_root_size
+        {
+            super::svg_attrs::svg_presentation_hint(tag, name, value, url_data, &mut svg_hint);
+            for decl in svg_hint.drain().declarations {
+                push_style(decl);
             }
         }
 

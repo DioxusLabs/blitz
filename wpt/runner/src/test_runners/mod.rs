@@ -313,6 +313,10 @@ fn parse_and_resolve_document(
         // Required for `innerHTML` support when the document is upgraded to
         // a `ScriptDocument` (harness tests and ref tests with scripts)
         html_parser_provider: Some(Arc::new(HtmlProvider)),
+        // Both SVG backends are compiled in; `BLITZ_NATIVE_SVG=1` runs inline
+        // SVG through the native one instead of usvg, so both can be compared
+        // with one binary.
+        native_svg: Some(std::env::var_os("BLITZ_NATIVE_SVG").is_some_and(|v| v != "0")),
         ..Default::default()
     };
 

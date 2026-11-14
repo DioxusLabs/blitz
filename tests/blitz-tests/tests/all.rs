@@ -50,6 +50,7 @@ mod lang_attribute;
 mod line_break;
 mod link_cursor;
 mod link_rel_attribute;
+mod native_svg;
 mod oof_dynamic_cb;
 mod outset_box_shadow_shape;
 mod paint_order;

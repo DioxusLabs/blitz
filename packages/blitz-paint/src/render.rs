@@ -4,6 +4,8 @@ mod box_shadow;
 mod clip_path;
 mod form_controls;
 mod mask;
+#[cfg(feature = "svg-native")]
+mod svg;
 
 use blitz_dom::CopyStyleGetters;
 use std::cell::RefCell;
@@ -680,8 +682,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
                                 cx.transform = self.scrolled_transform(node, cx.transform);
                                 cx.draw_image(scene);
-                                #[cfg(feature = "svg")]
+                                #[cfg(feature = "svg-usvg")]
                                 cx.draw_svg(scene);
+                                #[cfg(feature = "svg-native")]
+                                cx.draw_native_svg(scene);
                                 #[cfg(feature = "custom-widget")]
                                 cx.draw_custom_widget(scene);
                                 cx.draw_sub_document(scene);
@@ -772,7 +776,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             node,
             element,
             transform,
-            #[cfg(feature = "svg")]
+            #[cfg(feature = "svg-usvg")]
             svg: match element.image_data() {
                 Some(blitz_dom::node::ImageData::Svg(svg)) => Some(svg),
                 _ => None,
@@ -794,7 +798,7 @@ fn to_image_quality(image_rendering: ImageRendering) -> peniko::ImageQuality {
 }
 
 /// The transform from an SVG's rendered tree to a viewport of the given size.
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 fn svg_viewport_affine(svg: &blitz_dom::node::SvgImageData, width: f32, height: f32) -> Affine {
     let t = svg.viewport_transform(width, height);
     Affine::new([t.sx, t.ky, t.kx, t.sy, t.tx, t.ty].map(f64::from))
@@ -828,7 +832,7 @@ struct ElementCx<'dom, 'a> {
     node: &'dom Node,
     element: &'dom ElementData,
     transform: Affine,
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-usvg")]
     svg: Option<&'dom blitz_dom::node::SvgImageData>,
     text_input: Option<&'dom TextInputData>,
     list_item: Option<&'dom ListItemLayout>,
@@ -1223,7 +1227,7 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-usvg")]
     fn draw_svg(&self, scene: &mut impl PaintScene) {
         use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
 

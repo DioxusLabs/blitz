@@ -29,6 +29,17 @@
 //  - `tracing`: Enables tracing support.
 
 pub const DEFAULT_CSS: &str = include_str!("../assets/default.css");
+/// User-agent rules applied on top of [`DEFAULT_CSS`] when inline SVG is
+/// rendered natively (`DocumentConfig::native_svg`). The outermost `<svg>` is
+/// a CSS box that clips its content per the SVG UA stylesheet; the usvg
+/// backend paints its own clipping, so it does not get this rule. `clip`
+/// rather than the spec's `hidden`: a replaced element is not a scroll
+/// container (it would otherwise lose its automatic minimum size as a flex
+/// item), and it has no scrolling API that would tell the two apart.
+#[cfg(feature = "svg-native")]
+pub const NATIVE_SVG_CSS: &str = "@namespace svg url(http://www.w3.org/2000/svg);
+svg|svg:not(:root) { overflow: clip; }
+";
 pub const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.otf");
 
 /// The DOM implementation.

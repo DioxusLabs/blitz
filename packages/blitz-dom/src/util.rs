@@ -39,11 +39,11 @@ pub fn decode_font_bytes(bytes: &[u8]) -> Cow<'_, [u8]> {
     }
 }
 
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 use std::sync::{Arc, LazyLock};
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 use usvg::fontdb;
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -154,7 +154,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
 }
 
 /// Parse an SVG image.
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData, usvg::Error> {
     let options = usvg::Options {
         fontdb: Arc::clone(&*FONT_DB),
@@ -177,7 +177,7 @@ impl ToColorColor for AbsoluteColor {
     }
 }
 
-#[cfg(all(test, feature = "svg"))]
+#[cfg(all(test, feature = "svg-usvg"))]
 mod svg_tests {
     use super::parse_svg_image;
 

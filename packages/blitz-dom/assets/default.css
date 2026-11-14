@@ -5,6 +5,7 @@
 @namespace url(http://www.w3.org/1999/xhtml);
 /* set default namespace to HTML */
 @namespace xul url(http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul);
+@namespace svg url(http://www.w3.org/2000/svg);
 
 @font-face {
     font-family: -moz-bullet-font;
@@ -1161,4 +1162,38 @@ slot {
         pointer-events: none !important;
         background-color: transparent;
     }
+}
+
+/* SVG (https://svgwg.org/svg2-draft/styling.html#UAStyleSheet). The svg
+   namespace prefix is declared at the top of this file. The spec's
+   `svg:not(:root) { overflow: hidden }` lives in `NATIVE_SVG_CSS` (applied only
+   to documents that render inline SVG natively): usvg applies the outermost
+   <svg>'s `transform` to its content rather than its CSS box, so clipping that
+   box would cut the content off. */
+svg|symbol,
+svg|image,
+svg|marker,
+svg|pattern,
+svg|foreignObject {
+    overflow: hidden;
+}
+
+/* Elements that are never rendered directly. Resource containers (defs,
+   clipPath, mask, marker, pattern, symbol, filter, gradients) are deliberately
+   not `display: none`: stylo does not style the children of a `display: none`
+   element, and their children need computed styles when they are referenced.
+   The painter skips them instead. */
+svg|title,
+svg|desc,
+svg|metadata,
+svg|script,
+svg|style {
+    display: none;
+}
+
+/* SVG content transforms about the user-space origin (`transform-box:
+   view-box` is not yet available), unlike the outermost <svg>, which is a
+   CSS box. */
+svg|svg svg|* {
+    transform-origin: 0 0;
 }

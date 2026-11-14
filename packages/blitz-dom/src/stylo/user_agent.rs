@@ -3,6 +3,8 @@
 use std::sync::LazyLock;
 
 use crate::DEFAULT_CSS;
+#[cfg(feature = "svg-native")]
+use crate::NATIVE_SVG_CSS;
 use crate::url::DocumentUrl;
 use style::media_queries::MediaList;
 use style::servo_arc::Arc as ServoArc;
@@ -42,6 +44,15 @@ impl UserAgentStylesheet {
     pub fn default_sheet() -> Self {
         static SHEET: LazyLock<UserAgentStylesheet> =
             LazyLock::new(|| UserAgentStylesheet::parse(DEFAULT_CSS));
+        SHEET.clone()
+    }
+
+    /// The user-agent rules that only apply when inline SVG is rendered
+    /// natively ([`NATIVE_SVG_CSS`]), parsed once.
+    #[cfg(feature = "svg-native")]
+    pub fn native_svg_sheet() -> Self {
+        static SHEET: LazyLock<UserAgentStylesheet> =
+            LazyLock::new(|| UserAgentStylesheet::parse(NATIVE_SVG_CSS));
         SHEET.clone()
     }
 
