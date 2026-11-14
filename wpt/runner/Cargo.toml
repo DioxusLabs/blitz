@@ -48,7 +48,7 @@ supports-hyperlinks = "3.1.0"
 terminal-link = "0.1.0"
 wptreport = { version = "0.0.5", default-features = false }
 wpt_manifest = "0.2.1"
-wpt_serve = { git = "https://github.com/nicoburns/wpt-rs", rev = "072a04752e8e291a5db4a33a317872a823f71d49" }
+wpt_serve = { git = "https://github.com/nicoburns/wpt-rs", rev = "3f7bbb65f157d25d63b853e79912c6bcff1786cd" }
 os_info = "3.10.0"
 serde_json = "1.0.140"
 

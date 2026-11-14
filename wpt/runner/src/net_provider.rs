@@ -79,7 +79,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                         warn!("Error loading {relative_path}: {err}");
                         callback.queue.record_failure(request_id);
                     })?;
-                let file_content = response.body;
+                let file_content = response.content()?.into_owned();
                 catch_unwind(AssertUnwindSafe(|| {
                     handler.bytes(request.url.to_string(), Bytes::from(file_content))
                 }))

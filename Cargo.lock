@@ -10757,9 +10757,10 @@ dependencies = [
 [[package]]
 name = "wpt_serve"
 version = "0.2.0"
-source = "git+https://github.com/nicoburns/wpt-rs?rev=072a04752e8e291a5db4a33a317872a823f71d49#072a04752e8e291a5db4a33a317872a823f71d49"
+source = "git+https://github.com/nicoburns/wpt-rs?rev=3f7bbb65f157d25d63b853e79912c6bcff1786cd#3f7bbb65f157d25d63b853e79912c6bcff1786cd"
 dependencies = [
  "encoding_rs",
+ "flate2",
  "log",
  "url",
  "uuid",
