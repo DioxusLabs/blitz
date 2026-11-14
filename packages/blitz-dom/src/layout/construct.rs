@@ -430,13 +430,13 @@ fn collect_layout_children_with_wrap(
             let type_attr: Option<&str> = doc.nodes[container_node_id]
                 .data
                 .downcast_element()
-                .and_then(|el| el.attr(local_name!("type")));
+                .and_then(|el| el.input_type());
             if tag_name == "textarea" {
                 create_text_editor(doc, container_node_id, true);
                 return;
             } else if matches!(
                 type_attr,
-                None | Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
+                Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
             ) {
                 create_text_editor(doc, container_node_id, false);
                 return;
@@ -986,10 +986,8 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
                 // if the input type is hidden, hide it
-                if *element_data.name.local == *"input" {
-                    if let Some("hidden") = element_data.attr(local_name!("type")) {
-                        return;
-                    }
+                if element_data.input_type() == Some("hidden") {
+                    return;
                 }
 
                 let display = node.display_style().unwrap_or(Display::inline());

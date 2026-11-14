@@ -198,13 +198,7 @@ impl ScriptRuntime {
         let doc = self.ctx.doc.borrow();
         doc.get_node(node_id)
             .and_then(|node| node.element_data())
-            .is_some_and(|element| {
-                element.name.local == blitz_dom::local_name!("input")
-                    && matches!(
-                        element.attr(blitz_dom::local_name!("type")),
-                        Some("checkbox") | Some("radio")
-                    )
-            })
+            .is_some_and(|element| matches!(element.input_type(), Some("checkbox" | "radio")))
     }
 
     /// Dispatch an event named `name` along `chain`, using `make_event` to lazily

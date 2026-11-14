@@ -412,25 +412,22 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
         },
         "iframe" => Some(Role::Iframe),
 
-        "input" => {
-            let ty = element_data.attr(local_name!("type")).unwrap_or("text");
-            match ty {
-                "button" | "submit" | "reset" => Some(Role::Button),
-                "checkbox" => Some(Role::CheckBox),
-                "color" => Some(Role::ColorWell),
-                "date" => Some(Role::DateInput),
-                "datetime-local" => Some(Role::DateTimeInput),
-                "email" => Some(Role::EmailInput),
-                "number" => Some(Role::NumberInput),
-                "password" => Some(Role::PasswordInput),
-                "radio" => Some(Role::RadioButton),
-                "range" => Some(Role::Slider),
-                "search" => Some(Role::SearchInput),
-                "tel" => Some(Role::PhoneNumberInput),
-                "time" => Some(Role::TimeInput),
-                _ => Some(Role::TextInput),
-            }
-        }
+        "input" => match element_data.input_type()? {
+            "button" | "submit" | "reset" => Some(Role::Button),
+            "checkbox" => Some(Role::CheckBox),
+            "color" => Some(Role::ColorWell),
+            "date" => Some(Role::DateInput),
+            "datetime-local" => Some(Role::DateTimeInput),
+            "email" => Some(Role::EmailInput),
+            "number" => Some(Role::NumberInput),
+            "password" => Some(Role::PasswordInput),
+            "radio" => Some(Role::RadioButton),
+            "range" => Some(Role::Slider),
+            "search" => Some(Role::SearchInput),
+            "tel" => Some(Role::PhoneNumberInput),
+            "time" => Some(Role::TimeInput),
+            _ => Some(Role::TextInput),
+        },
         _ => None,
     }
 }
