@@ -162,6 +162,17 @@ impl LayoutPassState<'_> {
     fn node_from_id_mut(&mut self, node_id: taffy::prelude::NodeId) -> &mut Node {
         &mut self.nodes[dom_node_id(node_id)]
     }
+
+    /// A `display: none` subtree gets no out-of-flow pass, so the hoisted child lists in it
+    /// would keep the boxes from its last visible layout, which may since have lost their
+    /// styles or been removed. Clear them so that rounding does not visit those boxes.
+    fn clear_hidden_hoisted_children(&mut self, node_id: NodeId) {
+        self.clear_hoisted_children(node_id);
+        for index in 0..self.child_count(node_id) {
+            let child = self.get_child_id(node_id, index);
+            self.clear_hidden_hoisted_children(child);
+        }
+    }
 }
 
 impl LayoutPassState<'_> {
@@ -598,7 +609,10 @@ impl LayoutPassState<'_> {
                         compute_flexbox_layout(self, node_id, inputs)
                     }
                     Display::Grid => compute_grid_layout(self, node_id, inputs),
-                    Display::None => taffy::LayoutOutput::HIDDEN,
+                    Display::None => {
+                        self.clear_hidden_hoisted_children(node_id);
+                        taffy::LayoutOutput::HIDDEN
+                    }
                 }
             }
             NodeData::Document(_) => compute_block_layout(self, node_id, inputs, None),
