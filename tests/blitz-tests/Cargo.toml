@@ -34,6 +34,7 @@ cursor-icon = { workspace = true }
 keyboard-types = { workspace = true }
 taffy = { workspace = true }
 test-that = { workspace = true }
+rstest = { workspace = true }
 usvg = { workspace = true }
 
 [lib]

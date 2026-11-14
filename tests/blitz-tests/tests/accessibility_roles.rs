@@ -10,6 +10,7 @@ use accesskit::{NodeId, Role};
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use rstest::rstest;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -195,6 +196,94 @@ fn a_semantic_page_has_no_unknown_elements() {
     // <html> and <body> have no roles of their own. Everything else in
     // this document should map to something an assistive technology can use.
     assert_eq!(unknown_tags(html), vec!["body", "html"]);
+}
+
+/// The `role` attribute is a list of tokens, of which the first recognized one applies.
+///
+/// <https://www.w3.org/TR/wai-aria-1.2/#host_general_role>
+#[rstest]
+#[case::second_token("arbitrary-unknown-role button", Role::Button)]
+#[case::third_token("arbitrary-unknown-role other-unknown-role button", Role::Button)]
+#[case::first_of_two_recognized_tokens("button link", Role::Button)]
+#[case::second_of_two_recognized_tokens("link button", Role::Link)]
+#[case::separated_by_tab("arbitrary-unknown-role&#9;button", Role::Button)]
+#[case::separated_by_line_feed("arbitrary-unknown-role&#10;button", Role::Button)]
+#[case::separated_by_several_spaces("arbitrary-unknown-role   button", Role::Button)]
+#[case::surrounding_whitespace("  button  ", Role::Button)]
+fn role_attribute_resolves_to_first_recognized_role(#[case] role: &str, #[case] expected: Role) {
+    let html = format!(r#"<html><body><div id="element" role="{role}"></div></body></html>"#);
+
+    assert_role(&html, "element", expected);
+}
+
+/// Without any recognized token, the native role of the element applies.
+#[rstest]
+#[case::unknown_role("arbitrary-unknown-role")]
+#[case::several_unknown_roles("arbitrary-unknown-role other-unknown-role")]
+#[case::empty("")]
+#[case::whitespace_only("   ")]
+fn role_attribute_without_recognized_role_falls_back_to_native_role(#[case] role: &str) {
+    let html = format!(
+        r#"<html><body><div id="div" role="{role}"></div><button id="button" role="{role}"></button></body></html>"#
+    );
+
+    assert_role(&html, "div", Role::GenericContainer);
+    assert_role(&html, "button", Role::Button);
+}
+
+/// Neither ARIA nor HTML requires this, but browsers compare role tokens ASCII
+/// case-insensitively.
+///
+/// <https://www.w3.org/TR/html-aria/#case-requirements-for-aria-role-state-and-property-attributes>
+#[rstest]
+#[case::upper_case("BUTTON", Role::Button)]
+#[case::mixed_case("Button", Role::Button)]
+#[case::textbox("TextBox", Role::TextInput)]
+#[case::searchbox("SEARCHBOX", Role::SearchInput)]
+#[case::case_in_list("Arbitrary-Unknown-Role LINK", Role::Link)]
+fn role_attribute_ignores_case(#[case] role: &str, #[case] expected: Role) {
+    let html = format!(r#"<html><body><div id="element" role="{role}"></div></body></html>"#);
+
+    assert_role(&html, "element", expected);
+}
+
+/// The keywords of the `type` attribute are ASCII case-insensitive.
+///
+/// <https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#keywords-and-enumerated-attributes>
+#[rstest]
+#[case::checkbox("CHECKBOX", Role::CheckBox)]
+#[case::radio("Radio", Role::RadioButton)]
+#[case::range("RANGE", Role::Slider)]
+#[case::color("Color", Role::ColorWell)]
+#[case::date("DATE", Role::DateInput)]
+#[case::datetime_local("DateTime-Local", Role::DateTimeInput)]
+#[case::time("TIME", Role::TimeInput)]
+#[case::email("EMAIL", Role::EmailInput)]
+#[case::number("Number", Role::NumberInput)]
+#[case::password("PASSWORD", Role::PasswordInput)]
+#[case::search("Search", Role::SearchInput)]
+#[case::tel("TEL", Role::PhoneNumberInput)]
+#[case::text("TEXT", Role::TextInput)]
+#[case::button("BUTTON", Role::Button)]
+#[case::submit("Submit", Role::Button)]
+#[case::reset("RESET", Role::Button)]
+fn input_type_ignores_case(#[case] input_type: &str, #[case] expected: Role) {
+    let html = format!(r#"<html><body><input id="input" type="{input_type}"></body></html>"#);
+
+    assert_role(&html, "input", expected);
+}
+
+/// Chromium gives `file` and `image` inputs the role `button`, and `month` and `week` inputs a
+/// date and time role, so they must not fall back to a text box.
+#[rstest]
+#[case::file("file", Role::Button)]
+#[case::image("image", Role::Button)]
+#[case::month("month", Role::MonthInput)]
+#[case::week("week", Role::WeekInput)]
+fn input_type_without_text_box_role(#[case] input_type: &str, #[case] expected: Role) {
+    let html = format!(r#"<html><body><input id="input" type="{input_type}"></body></html>"#);
+
+    assert_role(&html, "input", expected);
 }
 
 #[test]
