@@ -3,6 +3,7 @@ mod focus;
 mod ime;
 mod keyboard;
 mod pointer;
+mod velocity;
 
 use crate::util::Point;
 use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
