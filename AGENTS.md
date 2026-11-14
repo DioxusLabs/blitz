@@ -8,16 +8,18 @@ Linux needs `build-essential pkg-config python3 libssl-dev libfontconfig-dev` (s
 Before pushing, run what CI runs:
 - `cargo fmt --all --check`
 - `cargo clippy --workspace -- -D warnings`
-- `cargo clippy -p blitz-dom --no-default-features --features svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings`
+- `cargo clippy -p blitz-dom --no-default-features --features parley,svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings`
 - `cargo test --workspace`
 - `cargo doc` and, if you touched `Cargo.toml`, `cargo deny --workspace --all-features --locked check licenses`
 - If you touched `.github/scripts`: `python3 -m unittest discover -s .github/scripts`
 
 Don't use `--all-features` for clippy/test: `rdme/avif` needs system dav1d >= 1.3 and `accesskit_xplat/tokio` conflicts with accesskit_unix. Pass an explicit feature list instead.
 
+The text backend is the `parley` Cargo feature, on by default. With `--no-default-features`, add `parley` to the feature list, or blitz-dom fails to compile asking for a text backend.
+
 Run `apps/browser` with `cargo run -p browser` (not the built binary directly), or its `asset!` stylesheet doesn't load.
 
-Headless machines: the default GPU renderer has no adapter. Prefer rendering to an image (`cargo run --release --example screenshot <file-or-url>`); for a window use the CPU renderer (`--no-default-features --features cpu-softbuffer` or the `cpu` just recipes).
+Headless machines: the default GPU renderer has no adapter. Prefer rendering to an image (`cargo run --release --example screenshot <file-or-url>`); for a window use the CPU renderer (`--no-default-features --features parley,cpu-softbuffer` or the `cpu` just recipes).
 
 ## Web Platform Tests
 WPT is the main correctness signal; results are deterministic.
