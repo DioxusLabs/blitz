@@ -113,6 +113,8 @@ impl BaseDocument {
         let resolve_all = self.flags.contains(DocumentFlags::RESOLVE_ALL_TRANSFORMS);
         self.flags.remove(DocumentFlags::RESOLVE_ALL_TRANSFORMS);
         self.resolve_transforms(root_node_id, resolve_all);
+        #[cfg(feature = "svg-native")]
+        self.resolve_svg_layout();
         timer.record_time("transform");
 
         // Build paint children / stacking contexts for damaged subtrees. Runs

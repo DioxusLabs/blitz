@@ -219,6 +219,9 @@ pub struct BaseDocument {
     /// (`true`, `svg-native` feature) or serialized and re-parsed with usvg
     /// (`false`, `svg-usvg` feature).
     pub(crate) native_svg: bool,
+    /// The natively rendered inline `<svg>` roots, for SVG layout.
+    #[cfg(feature = "svg-native")]
+    pub(crate) svg_roots: Vec<blitz_traits::node_id::NodeId>,
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub(crate) subdocument_depth: usize,
@@ -480,6 +483,8 @@ impl BaseDocument {
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
             native_svg,
+            #[cfg(feature = "svg-native")]
+            svg_roots: Vec::new(),
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
