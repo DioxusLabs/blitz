@@ -444,6 +444,19 @@ impl Node {
         }
     }
 
+    /// Whether this node is a list item with a `list-style-position: outside` marker.
+    pub fn has_outside_list_marker(&self) -> bool {
+        self.element_data().is_some_and(|el| {
+            matches!(
+                el.list_item_data.as_deref(),
+                Some(super::ListItemLayout {
+                    position: super::ListItemLayoutPosition::Outside(_),
+                    ..
+                })
+            )
+        })
+    }
+
     pub fn set_transform(&mut self, scale: f32) -> Option<Affine> {
         let transform = self.primary_styles().and_then(|s| {
             let size = self.final_layout().size;

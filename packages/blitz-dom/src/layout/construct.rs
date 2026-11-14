@@ -493,10 +493,15 @@ fn collect_layout_children_with_wrap(
         collect_list_item_children(doc, &mut index, reversed, container_node_id);
     }
 
-    // Skip further construction if the node has no children or psuedo-children
+    // Skip further construction if the node has no children or psuedo-children, unless it
+    // has an outside list marker (which needs a line box of its own, so an inline layout).
     {
         let node = &doc.nodes[container_node_id];
-        if node.children.is_empty() && node.before().is_none() && node.after().is_none() {
+        if node.children.is_empty()
+            && node.before().is_none()
+            && node.after().is_none()
+            && !node.has_outside_list_marker()
+        {
             return;
         }
     }
@@ -599,7 +604,10 @@ fn collect_layout_children_with_wrap(
                     .insert(NodeFlags::IS_INLINE_WITH_ONLY_BLOCK_CHILDREN);
             }
 
-            if classification.all_out_of_flow {
+            // An outside list marker needs a line box, so the list item gets an inline layout.
+            if classification.all_out_of_flow
+                && !doc.nodes[container_node_id].has_outside_list_marker()
+            {
                 // Contents-transparent: a display:contents child may be
                 // holding the out-of-flow elements (otherwise the contents
                 // node itself would be pushed as a layout box).
