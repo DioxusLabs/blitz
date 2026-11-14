@@ -9,13 +9,16 @@
 //! recomputing geometry every frame.
 
 mod geometry;
+mod hit;
 mod paint_server;
 mod text;
 
 pub use paint_server::{
     SvgGradient, SvgGradientShape, SvgGradientStop, SvgPaintServer, SvgSpreadMethod,
 };
-pub use text::{SvgGlyph, SvgGlyphRun, SvgText, SvgTextDecoration, SvgTextDecorationKind};
+pub use text::{
+    SvgGlyph, SvgGlyphRun, SvgText, SvgTextCell, SvgTextDecoration, SvgTextDecorationKind,
+};
 
 use blitz_traits::node_id::NodeId;
 use kurbo::{Affine, BezPath, Rect, Stroke};

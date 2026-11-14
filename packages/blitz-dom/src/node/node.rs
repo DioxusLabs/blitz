@@ -1476,14 +1476,26 @@ impl Node {
         use style::computed_values::pointer_events::T as PointerEvents;
         use style::computed_values::visibility::T as Visibility;
 
-        // Don't hit on visbility:hidden elements
-        if let Some(style) = self.primary_styles() {
-            if matches!(
+        let hidden = self.primary_styles().is_some_and(|style| {
+            matches!(
                 style.clone_visibility(),
                 Visibility::Hidden | Visibility::Collapse
-            ) {
-                return None;
-            }
+            )
+        });
+
+        // The content of a natively rendered `<svg>` is hit by its own rules:
+        // a child can be visible inside a hidden root, and content in an
+        // `overflow: visible` root can be hit outside its box.
+        #[cfg(feature = "svg-native")]
+        let native_svg = self
+            .element_data()
+            .is_some_and(|element| element.svg_root_data().is_some());
+        #[cfg(not(feature = "svg-native"))]
+        let native_svg = false;
+
+        // Don't hit on visbility:hidden elements
+        if hidden && !native_svg {
+            return None;
         }
 
         // pointer-events:none makes this element transparent to hits, but its
@@ -1560,7 +1572,12 @@ impl Node {
             && y >= (overflow.y0 / scale) as f32
             && y <= (overflow.y1 / scale) as f32;
 
-        if !matches_self && !matches_content && !matches_hoisted_content && !matches_overflow {
+        if !matches_self
+            && !matches_content
+            && !matches_hoisted_content
+            && !matches_overflow
+            && !native_svg
+        {
             return None;
         }
 
@@ -1694,8 +1711,19 @@ impl Node {
             }
         }
 
+        // Content of a natively rendered `<svg>`
+        #[cfg(feature = "svg-native")]
+        if native_svg && let Some(node_id) = self.svg_hit(x, y) {
+            return Some(HitResult {
+                node_id,
+                x: x - content_box_offset.x,
+                y: y - content_box_offset.y,
+                is_text: false,
+            });
+        }
+
         // Self (this node)
-        if matches_self && !pointer_events_none {
+        if matches_self && !pointer_events_none && !hidden {
             return Some(HitResult {
                 node_id: self.id,
                 x: x - content_box_offset.x,

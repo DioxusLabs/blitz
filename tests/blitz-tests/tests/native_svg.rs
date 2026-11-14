@@ -1028,3 +1028,225 @@ fn text_length_glyph_scaling_keeps_explicit_x() {
         r#"<svg width="100" height="100"><text x="0" y="80" font-size="40" textLength="30" lengthAdjust="spacingAndGlyphs">H</text><text x="50" y="80" font-size="40" textLength="30" lengthAdjust="spacingAndGlyphs">H</text></svg>"#,
     );
 }
+
+fn element_at(doc: &HtmlDocument, x: f32, y: f32) -> Option<String> {
+    let id = doc.element_from_point(x, y)?;
+    let node = doc.get_node(id).unwrap();
+    let element = node.element_data().unwrap();
+    Some(
+        element
+            .id
+            .as_ref()
+            .map_or_else(|| element.name.local.to_string(), |id| id.to_string()),
+    )
+}
+
+#[track_caller]
+fn assert_hits(doc: &HtmlDocument, points: &[(f32, f32, &str)]) {
+    for &(x, y, expected) in points {
+        assert_eq!(
+            element_at(doc, x, y).as_deref(),
+            Some(expected),
+            "element at ({x}, {y})"
+        );
+    }
+}
+
+#[test]
+fn hit_testing_targets_shapes_by_fill_and_stroke() {
+    let doc = load(
+        r#"<svg id="svg" width="100" height="100">
+        <rect id="rect" x="10" y="10" width="30" height="30" fill="red" stroke="blue" stroke-width="10"/>
+        <circle id="circle" cx="70" cy="70" r="20" fill="none" stroke="blue" stroke-width="4"/>
+        <path id="open" d="M 50 10 L 90 10 L 90 40" fill="red"/>
+        </svg>"#,
+        true,
+    );
+    assert_hits(
+        &doc,
+        &[
+            (25.0, 25.0, "rect"),
+            (40.0, 25.0, "rect"),
+            (7.0, 7.0, "rect"),
+            (2.0, 2.0, "svg"),
+            // A `fill: none` circle is hit on its stroke only.
+            (70.0, 70.0, "svg"),
+            (70.0, 51.0, "circle"),
+            // An open subpath is filled as if closed.
+            (85.0, 20.0, "open"),
+            (55.0, 30.0, "svg"),
+        ],
+    );
+}
+
+#[test]
+fn hit_testing_follows_pointer_events_and_visibility() {
+    let doc = load(
+        r#"<svg id="svg" width="100" height="100">
+        <rect id="fill-only" width="40" height="40" fill="none" pointer-events="visibleFill"/>
+        <rect id="under" x="50" width="40" height="40" fill="red"/>
+        <rect id="none" x="50" width="40" height="40" fill="red" pointer-events="none"/>
+        <rect id="hidden" y="50" width="40" height="40" fill="red" visibility="hidden"/>
+        <rect id="all" x="50" y="50" width="40" height="40" fill="none" visibility="hidden" pointer-events="all"/>
+        <rect id="stroke" x="50" y="50" width="20" height="20" fill="red" stroke-width="10" pointer-events="stroke"/>
+        </svg>"#,
+        true,
+    );
+    assert_hits(
+        &doc,
+        &[
+            (20.0, 20.0, "fill-only"),
+            (70.0, 20.0, "under"),
+            (20.0, 70.0, "svg"),
+            (60.0, 60.0, "all"),
+            (50.0, 60.0, "stroke"),
+            (85.0, 85.0, "all"),
+        ],
+    );
+}
+
+#[test]
+fn hit_testing_maps_points_through_transforms_and_viewports() {
+    let doc = load(
+        r#"<svg id="svg" width="100" height="100" viewBox="0 0 50 50">
+        <g transform="translate(25 0)"><rect id="rect" width="10" height="10"/></g>
+        <svg x="0" y="25" width="10" height="10" viewBox="0 0 1 1"><rect id="nested" x="-1" width="4" height="1"/></svg>
+        </svg>"#,
+        true,
+    );
+    assert_hits(
+        &doc,
+        &[
+            (60.0, 10.0, "rect"),
+            (40.0, 10.0, "svg"),
+            (10.0, 60.0, "nested"),
+            // The nested viewport clips its content.
+            (30.0, 60.0, "svg"),
+        ],
+    );
+}
+
+#[test]
+fn hit_testing_text_targets_the_topmost_tspan() {
+    let doc = load(
+        r#"<svg id="svg" width="100" height="100" font-size="40">
+        <text id="text" y="50">AA<tspan id="over" x="0">BB</tspan></text>
+        <text id="hidden" y="95" visibility="hidden">CC</text>
+        </svg>"#,
+        true,
+    );
+    assert_hits(&doc, &[(10.0, 40.0, "over"), (10.0, 85.0, "svg")]);
+}
+
+#[test]
+fn hovering_an_svg_shape_restyles_it() {
+    let mut doc = load(
+        r#"<style>rect:hover { fill: lime }</style>
+        <svg id="svg" width="100" height="100"><rect id="rect" width="50" height="50" fill="red"/></svg>"#,
+        true,
+    );
+    let rect = doc.query_selector("#rect").unwrap().unwrap();
+    let svg = doc.query_selector("#svg").unwrap().unwrap();
+    assert_eq!(pixel(&render(&mut doc), 25, 25), RED);
+
+    doc.set_hover_to(25.0, 25.0);
+    doc.resolve(0.0);
+    assert!(doc.get_node(rect).unwrap().is_hovered());
+    assert!(doc.get_node(svg).unwrap().is_hovered());
+    assert_eq!(pixel(&render(&mut doc), 25, 25), LIME);
+
+    doc.set_hover_to(75.0, 75.0);
+    doc.resolve(0.0);
+    assert!(!doc.get_node(rect).unwrap().is_hovered());
+    assert_eq!(pixel(&render(&mut doc), 25, 25), RED);
+}
+
+#[test]
+fn usvg_svg_is_one_hit_target() {
+    let doc = load(SQUARE, false);
+    assert_hits(&doc, &[(25.0, 25.0, "icon")]);
+}
+
+#[test]
+fn hit_testing_skips_nodes_removed_since_layout() {
+    let mut doc = load(
+        r#"<svg id="svg" width="100" height="100" font-size="20">
+        <switch id="switch"><rect id="rect" width="50" height="50"/></switch>
+        <text id="text" y="90">AA<tspan id="tspan">BB</tspan></text>
+        </svg>"#,
+        true,
+    );
+    let tspan_point = (0..100)
+        .map(|x| (x as f32, 85.0))
+        .find(|&(x, y)| element_at(&doc, x, y).as_deref() == Some("tspan"))
+        .expect("a point on the tspan");
+    assert_hits(&doc, &[(25.0, 25.0, "rect")]);
+
+    // Hit testing before the next resolve sees layout that names the removed nodes.
+    for id in ["#rect", "#tspan"] {
+        let node = doc.query_selector(id).unwrap().unwrap();
+        doc.mutate().remove_and_drop_node(node);
+    }
+    assert_hits(
+        &doc,
+        &[(25.0, 25.0, "svg"), (tspan_point.0, tspan_point.1, "svg")],
+    );
+}
+
+#[test]
+fn hit_testing_reaches_miter_joins_and_square_caps() {
+    let doc = load(
+        r#"<svg id="svg" width="100" height="100">
+        <path id="miter" d="M10 80 L50 20 L90 80" fill="none" stroke="red" stroke-width="10"/>
+        </svg>"#,
+        true,
+    );
+    // The miter tip is 9px above the corner, past half the stroke width.
+    assert_hits(&doc, &[(50.0, 13.0, "miter"), (50.0, 10.0, "svg")]);
+
+    let doc = load(
+        r#"<svg id="svg" width="100" height="100">
+        <path id="bevel" d="M10 80 L50 20 L90 80" fill="none" stroke="red" stroke-width="10" stroke-miterlimit="1.5"/>
+        </svg>"#,
+        true,
+    );
+    assert_hits(&doc, &[(50.0, 13.0, "svg"), (50.0, 18.0, "bevel")]);
+
+    let doc = load(
+        r#"<svg id="svg" width="100" height="100">
+        <path id="square" d="M30 30 L70 70" stroke="red" stroke-width="20" stroke-linecap="square"/>
+        </svg>"#,
+        true,
+    );
+    // A corner of the end cap, about 14px from the end point.
+    assert_hits(&doc, &[(83.0, 70.0, "square"), (86.0, 70.0, "svg")]);
+}
+
+#[test]
+fn hit_testing_finds_visible_children_of_a_hidden_svg() {
+    let doc = load(
+        r#"<svg id="svg" width="100" height="100" visibility="hidden">
+        <rect id="visible" width="50" height="50" visibility="visible"/>
+        <rect id="hidden" x="50" y="50" width="50" height="50"/>
+        </svg>"#,
+        true,
+    );
+    assert_hits(&doc, &[(25.0, 25.0, "visible"), (75.0, 75.0, "body")]);
+}
+
+#[test]
+fn hit_testing_finds_content_overflowing_a_visible_svg() {
+    let svg = |overflow: &str| {
+        load(
+            &format!(
+                r#"<div id="div" style="height: 100px">
+                <svg id="svg" width="50" height="50" style="display: block; overflow: {overflow}">
+                <rect id="outside" x="60" y="60" width="20" height="20"/>
+                </svg></div>"#
+            ),
+            true,
+        )
+    };
+    assert_hits(&svg("visible"), &[(70.0, 70.0, "outside")]);
+    assert_hits(&svg("hidden"), &[(70.0, 70.0, "div")]);
+}
