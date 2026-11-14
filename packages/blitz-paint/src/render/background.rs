@@ -84,6 +84,9 @@ pub(super) struct ImageLayerStyles<'a> {
     pub text_clip: bool,
     pub origin: BoxModelBox,
     pub attachment: StyloBackgroundAttachment,
+    /// The area that the layer is painted in, if that is not the `clip` box
+    /// (the canvas background covers the whole canvas)
+    pub painting_area: Option<Rect>,
 }
 
 impl<'a> ImageLayerStyles<'a> {
@@ -103,6 +106,7 @@ impl<'a> ImageLayerStyles<'a> {
             text_clip: *get_cyclic(&bg_styles.background_clip.0, idx) == StyloBackgroundClip::Text,
             origin: (*get_cyclic(&bg_styles.background_origin.0, idx)).into(),
             attachment: *get_cyclic(&bg_styles.background_attachment.0, idx),
+            painting_area: None,
         }
     }
 
@@ -123,42 +127,79 @@ impl<'a> ImageLayerStyles<'a> {
             origin: (*get_cyclic(&svg_styles.mask_origin.0, idx)).into(),
             // There is no `mask-attachment` property
             attachment: StyloBackgroundAttachment::Scroll,
+            painting_area: None,
         }
     }
 }
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_background(&self, scene: &mut impl PaintScene) {
+        if !self.background_is_painted_on_canvas() {
+            self.draw_background_layers(scene, None);
+        }
+    }
+
+    /// Paint this element's background over the whole canvas (`canvas_rect`, in this
+    /// element's coordinate space), positioned relative to this element's box
+    pub(super) fn draw_canvas_background(&self, scene: &mut impl PaintScene, canvas_rect: Rect) {
+        // The root element's opacity also applies to the canvas background
+        let opacity = self
+            .node
+            .primary_styles()
+            .map_or(1.0, |style| style.get_effects().opacity);
+        if opacity == 0.0 {
+            return;
+        }
+        self.context.layer_manager.maybe_with_layer(
+            scene,
+            opacity < 1.0,
+            peniko::BlendMode::default(),
+            opacity,
+            self.transform,
+            &canvas_rect,
+            None,
+            None,
+            |scene| self.draw_background_layers(scene, Some(canvas_rect)),
+        );
+    }
+
+    fn draw_background_layers(&self, scene: &mut impl PaintScene, painting_area: Option<Rect>) {
         let bg_styles = &self.style.get_background();
         let image_data = &self.element.background_images;
         let layer_count = bg_styles.background_image.0.len();
+        let clip_path = |clip: BoxModelBox| match painting_area {
+            Some(area) => NonUniformRoundedRect::from(area),
+            None => self.box_path(clip),
+        };
 
         // The background color is clipped by the clip of the last layer in the list
         let last_clip = *get_cyclic(&bg_styles.background_clip.0, layer_count - 1);
         let background_clip: BoxModelBox = last_clip.into();
-        let background_clip_path = self.box_path(background_clip);
+
+        // `background-clip: text` does not clip the canvas background
+        let text_clip = |clip: bool| clip && painting_area.is_none();
 
         // Draw background color (if any)
-        let mut text_run = last_clip == StyloBackgroundClip::Text;
+        let mut text_run = text_clip(last_clip == StyloBackgroundClip::Text);
         if text_run {
             self.begin_text_clip_group(scene);
         }
-        self.draw_solid_bg(scene, &background_clip_path);
+        self.draw_solid_bg(scene, &clip_path(background_clip));
 
         for idx in (0..layer_count).rev() {
-            let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
-            if layer.text_clip != text_run {
+            let mut layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
+            layer.painting_area = painting_area;
+            if text_clip(layer.text_clip) != text_run {
                 if text_run {
                     self.end_text_clip_group(scene);
                 } else {
                     self.begin_text_clip_group(scene);
                 }
-                text_run = layer.text_clip;
+                text_run = !text_run;
             }
             if layer_paints_nothing(&layer) {
                 continue;
             }
-            let background_clip_path = self.box_path(layer.clip);
 
             self.context.layer_manager.maybe_with_layer(
                 scene,
@@ -166,7 +207,7 @@ impl ElementCx<'_, '_> {
                 peniko::BlendMode::default(),
                 1.0,
                 self.transform,
-                &background_clip_path,
+                &clip_path(layer.clip),
                 None,
                 None,
                 |scene| {
@@ -533,10 +574,18 @@ impl ElementCx<'_, '_> {
 
         let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
 
+        // A fixed layer's positioning area (the viewport) already covers everything visible
+        let area_rect = layer
+            .painting_area
+            .filter(|_| !self.layer_is_fixed(layer))
+            .unwrap_or(origin_rect);
+
         let x = raster_axis_tiling(
             *repeat_x,
             origin_rect.x0,
             origin_rect.width(),
+            area_rect.x0,
+            area_rect.width(),
             bg_pos.x,
             bg_size.width,
             image_width,
@@ -546,6 +595,8 @@ impl ElementCx<'_, '_> {
             *repeat_y,
             origin_rect.y0,
             origin_rect.height(),
+            area_rect.y0,
+            area_rect.height(),
             bg_pos.y,
             bg_size.height,
             image_height,
@@ -594,7 +645,9 @@ impl ElementCx<'_, '_> {
             (
                 self.box_rect(layer.origin),
                 self.transform,
-                self.box_rect(layer.clip),
+                layer
+                    .painting_area
+                    .unwrap_or_else(|| self.box_rect(layer.clip)),
             )
         };
 
@@ -882,10 +935,13 @@ struct AxisTiling {
 ///
 /// The fill rect is in image pixel coordinates (the drawing transform is
 /// pre-scaled by `ratio`), while translations are in device pixels.
+#[allow(clippy::too_many_arguments)]
 fn raster_axis_tiling(
     repeat: BackgroundRepeatKeyword,
     origin_start: f64,
     origin_len: f64,
+    area_start: f64,
+    area_len: f64,
     bg_pos: f64,
     tile_len: f64,
     image_len: f64,
@@ -895,10 +951,10 @@ fn raster_axis_tiling(
 
     match repeat {
         Repeat | Round => {
-            let extend_len = extend(bg_pos, tile_len);
+            let extend_len = extend((origin_start - area_start) + bg_pos, tile_len);
             AxisTiling {
-                translate: origin_start - extend_len,
-                rect_len: (origin_len + extend_len) / ratio,
+                translate: area_start - extend_len,
+                rect_len: (area_len + extend_len) / ratio,
                 count: 1,
                 stride: 0.0,
             }
