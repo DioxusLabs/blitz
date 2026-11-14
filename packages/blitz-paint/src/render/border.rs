@@ -1,7 +1,7 @@
 use anyrender::PaintScene;
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::node::SpecialElementData;
-use kurbo::{BezPath, Cap, Circle, Insets, Join, PathEl, Point, Rect, Shape as _, Stroke, Vec2};
+use kurbo::{BezPath, Cap, Circle, Join, PathEl, Point, Rect, Shape as _, Stroke, Vec2};
 use peniko::{Color, Fill};
 use smallvec::SmallVec;
 use style::{
@@ -197,23 +197,26 @@ impl ElementCx<'_, '_> {
                     // draws a rounded outer edge against a sharp inner corner, which a
                     // stroke can't represent — leave those to the per-edge fill.
                     let is_exact = |r: Vec2| r.x == 0.0 || r.x >= width;
-                    let stroke_is_exact = is_exact(radii.top_left)
+                    // The border's center line: the padding box of the border's outer half,
+                    // with each corner's radius reduced by half the border width.
+                    let centerline = self.frame.border_slice(0.0, 0.5).padding_box_shape();
+                    // CSS only scales the outer radii to fit the box, so a large corner
+                    // next to a sharp one (e.g. `border-radius: 100% 0 0 0`) can give
+                    // center-line corners that overlap along a side; the per-edge fill
+                    // handles that.
+                    let (r, c) = (&centerline.radii, centerline.rect);
+                    let (w, h) = (c.width() + 0.01, c.height() + 0.01);
+                    let centerline_fits = r.top_left.x + r.top_right.x <= w
+                        && r.bottom_left.x + r.bottom_right.x <= w
+                        && r.top_left.y + r.bottom_left.y <= h
+                        && r.top_right.y + r.bottom_right.y <= h;
+                    let stroke_is_exact = centerline_fits
+                        && is_exact(radii.top_left)
                         && is_exact(radii.top_right)
                         && is_exact(radii.bottom_right)
                         && is_exact(radii.bottom_left);
                     if stroke_is_exact {
-                        let half_width = width / 2.0;
-                        // Center-line rect, and corner radii shrunk to match.
-                        let centerline_box = bb - Insets::uniform(half_width);
-                        let centerline_radius = |r: Vec2| (r.x - half_width).max(0.0);
-                        let radii = kurbo::RoundedRectRadii::new(
-                            centerline_radius(radii.top_left),
-                            centerline_radius(radii.top_right),
-                            centerline_radius(radii.bottom_right),
-                            centerline_radius(radii.bottom_left),
-                        );
-                        let rr = kurbo::RoundedRect::from_rect(centerline_box, radii);
-                        scene.stroke(&stroke, self.transform, color, None, &rr);
+                        scene.stroke(&stroke, self.transform, color, None, &centerline);
                         return;
                     }
                 } else if self.frame.is_elliptical_border() {
