@@ -105,7 +105,11 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     mut dispatch_event: F,
 ) {
     let target_node_id = event.target;
-    let node = &mut doc.nodes[target_node_id];
+    // An embedder's event callback can synchronously remove the target or its
+    // ancestor before the driver runs the default action.
+    let Some(node) = doc.nodes.get_mut(target_node_id) else {
+        return;
+    };
     let pos = node.absolute_position(0.0, 0.0);
 
     // Whether this event can move the caret/selection (or change the text) of a text input,
