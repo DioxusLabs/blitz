@@ -4,11 +4,11 @@
 //! its subtree as live DOM nodes styled by Stylo. SVG layout
 //! (`blitz_dom::svg`) has already resolved each element's transform, geometry
 //! and stroke; painting walks the subtree, reads those results and the paint
-//! properties from computed styles. Patterns, `<use>`,
-//! `<image>`, markers, clipping, masking and filters are not painted yet.
+//! properties from computed styles. Patterns, `<use>`, markers and filters
+//! are not painted yet.
 
 use anyrender::{MaskMode, PaintScene};
-use blitz_dom::node::Node;
+use blitz_dom::node::{ImageData, Node};
 use blitz_dom::svg::{
     SvgClip, SvgGlyphRun, SvgGradient, SvgGradientShape, SvgLayoutKind, SvgMask, SvgPaintServer,
     SvgReference, SvgReferenceState, SvgSpreadMethod, SvgText, SvgTextDecorationKind, SvgViewport,
@@ -285,6 +285,35 @@ impl ElementCx<'_, '_> {
             SvgLayoutKind::Text(text) => {
                 let bbox = layout.bbox;
                 self.paint_text(scene, node, text, transform, bbox, viewport);
+            }
+            SvgLayoutKind::Image {
+                image,
+                image_transform,
+                clip,
+                ..
+            } => {
+                if style.get_inherited_box().visibility == Visibility::Visible {
+                    if let Some(clip) = clip {
+                        scene.push_clip_layer(Fill::NonZero, transform, clip);
+                    }
+                    let image_transform = transform * *image_transform;
+                    match image {
+                        ImageData::Raster(image) => {
+                            let rendering = style.get_inherited_box().image_rendering;
+                            let quality = super::to_image_quality(rendering);
+                            let brush = super::to_peniko_image(image, quality);
+                            scene.draw_image(brush.as_ref(), image_transform);
+                        }
+                        #[cfg(feature = "svg-usvg")]
+                        ImageData::Svg(svg) => {
+                            anyrender_svg::render_svg_tree(scene, &svg.tree, image_transform);
+                        }
+                        ImageData::None => {}
+                    }
+                    if clip.is_some() {
+                        scene.pop_layer();
+                    }
+                }
             }
         }
 

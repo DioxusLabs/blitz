@@ -346,6 +346,10 @@ pub struct BaseDocument {
     /// Value is a list of (node_id, image_type) pairs waiting for the image.
     pub(crate) pending_images: HashMap<String, Vec<(NodeId, ImageType)>>,
 
+    /// The loaded image of each SVG `<image>` element whose `href` has loaded
+    /// (SVG elements keep their SVG layout in `special_data`).
+    pub(crate) svg_images: HashMap<NodeId, ImageData>,
+
     /// Nodes whose `background-image`/`mask-image` layers need flushing to
     /// dedicated storage on the node because their style changed (populated by
     /// the style traversal and by pseudo-element box construction).
@@ -523,6 +527,7 @@ impl BaseDocument {
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
+            svg_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
@@ -924,6 +929,7 @@ impl BaseDocument {
     /// it so that stale NodeIds are never dereferenced after the slot is freed.
     pub(crate) fn remove_node_from_tree(&mut self, node_id: NodeId) -> Option<Node> {
         self.clear_interaction_state_for_removed_node(node_id);
+        self.svg_images.remove(&node_id);
         self.nodes.remove(node_id)
     }
 
@@ -1446,6 +1452,43 @@ impl BaseDocument {
         }
     }
 
+    /// Give an `<img>` or SVG `<image>` its loaded image.
+    pub(crate) fn apply_image_to_node(&mut self, node_id: NodeId, image: ImageData) {
+        let Some(node) = self.get_node_mut(node_id) else {
+            return;
+        };
+        let Some(element) = node.element_data_mut() else {
+            return;
+        };
+        if element.name.ns == markup5ever::ns!(svg) {
+            node.insert_damage(style::selector_parser::RestyleDamage::REPAINT);
+            self.svg_images.insert(node_id, image);
+            return;
+        }
+        #[cfg(feature = "custom-widget")]
+        if element.custom_widget_data().is_some() {
+            return;
+        }
+        element.special_data = SpecialElementData::Image(Box::new(image));
+
+        // Clear layout cache
+        node.clear_layout_cache();
+        node.insert_damage(ALL_DAMAGE);
+    }
+
+    /// Whether `node_id` is an SVG `<image>` whose `href` no longer points to
+    /// `url`, which it started loading before the `href` changed.
+    fn svg_image_href_changed(&self, node_id: NodeId, url: &str) -> bool {
+        let Some(element) = self.get_node(node_id).and_then(|node| node.element_data()) else {
+            return false;
+        };
+        element.name.ns == markup5ever::ns!(svg)
+            && element
+                .svg_href()
+                .and_then(|href| self.resolve_url(href))
+                .is_none_or(|current| current.as_str() != url)
+    }
+
     /// Cache a loaded image and apply it to all nodes waiting on it
     /// (`<img>` elements, `background-image` layers and `mask-image` layers).
     fn apply_loaded_image(&mut self, url: &str, image: ImageData) {
@@ -1463,23 +1506,15 @@ impl BaseDocument {
 
         // Apply to all waiting nodes
         for (node_id, image_type) in waiting_nodes {
+            if matches!(image_type, ImageType::Image) && self.svg_image_href_changed(node_id, url) {
+                continue;
+            }
             let Some(node) = self.get_node_mut(node_id) else {
                 continue;
             };
 
             match image_type {
-                ImageType::Image => {
-                    let element = node.element_data_mut().unwrap();
-                    #[cfg(feature = "custom-widget")]
-                    if element.custom_widget_data().is_some() {
-                        continue;
-                    }
-                    element.special_data = SpecialElementData::Image(Box::new(image.clone()));
-
-                    // Clear layout cache
-                    node.clear_layout_cache();
-                    node.insert_damage(ALL_DAMAGE);
-                }
+                ImageType::Image => self.apply_image_to_node(node_id, image.clone()),
                 ImageType::Background(idx) | ImageType::Mask(idx) => {
                     let layer_image = node.element_data_mut().and_then(|el| {
                         let images = match image_type {
