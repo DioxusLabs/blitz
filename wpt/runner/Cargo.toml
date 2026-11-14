@@ -36,6 +36,7 @@ data-url = { workspace = true }
 png = { version = "0.17" }
 glob = { version = "0.3.1" }
 html-escape = { workspace = true }
+encoding_rs = "0.8"
 dify = { version = "0.7.4", default-features = false }
 env_logger = { version = "0.11.5" }
 owo-colors = "4.1.0"

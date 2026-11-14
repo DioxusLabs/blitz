@@ -40,6 +40,7 @@ mod net_provider;
 mod panic_backtrace;
 mod renderer;
 mod report;
+mod resvg;
 
 #[cfg(test)]
 use manifest::TestType;
@@ -345,9 +346,38 @@ impl TestResult {
     }
 }
 
+/// Where results go: `WPT_OUTPUT_DIR`, defaulting to `wpt/output`
+fn output_dir() -> PathBuf {
+    env::var_os("WPT_OUTPUT_DIR").map_or_else(
+        || {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("output")
+        },
+        PathBuf::from,
+    )
+}
+
 fn main() {
     env_logger::init();
     std::panic::set_hook(Box::new(panic_backtrace::stash_panic_handler));
+
+    let args: Vec<String> = env::args().collect();
+    match args.get(1).map(String::as_str) {
+        Some("resvg-generate") if args.len() == 4 => {
+            return resvg::generate(Path::new(&args[2]), Path::new(&args[3]));
+        }
+        Some("resvg-summary") => {
+            let default = output_dir().join("wpt_expectations.txt");
+            return resvg::summarize(args.get(2).map_or(&default, Path::new));
+        }
+        Some("resvg-generate") => {
+            eprintln!("usage: wpt resvg-generate <resvg checkout> <out dir>");
+            std::process::exit(1);
+        }
+        _ => {}
+    }
 
     let verbose = env::args().any(|arg| arg == "--verbose" || arg == "-v");
     let run_quarantined = env::args().any(|arg| arg == "--run-quarantined");
@@ -371,12 +401,11 @@ fn main() {
         return;
     }
 
-    let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = cargo_dir.parent().unwrap().join("output");
+    let out_dir = output_dir();
     if fs::exists(&out_dir).unwrap() {
         fs::remove_dir_all(&out_dir).unwrap();
     }
-    fs::create_dir(&out_dir).unwrap();
+    fs::create_dir_all(&out_dir).unwrap();
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);

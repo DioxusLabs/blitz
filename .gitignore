@@ -7,6 +7,9 @@
 /examples/output/**/*.jpeg
 /out
 /wpt/output
+/wpt/resvg/checkout
+/wpt/resvg/out
+/wpt/resvg/output
 /wpt/*.json
 /apps/wpt/output
 /sites

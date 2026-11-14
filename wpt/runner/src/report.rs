@@ -28,7 +28,10 @@ pub fn generate_run_info(wpt_dir: &Path) -> WptRunInfo {
 
     WptRunInfo {
         product: String::from("blitz"),
-        revision: get_git_hash(wpt_dir),
+        // Generated test directories (the resvg tests) record where they came from
+        revision: std::fs::read_to_string(wpt_dir.join(crate::resvg::REVISION_FILE))
+            .map(|revision| revision.trim().to_string())
+            .unwrap_or_else(|_| get_git_hash(wpt_dir)),
         browser_version: Some(get_git_hash(&std::env::current_dir().unwrap())),
         automation: true,
         debug: cfg!(debug_assertions),

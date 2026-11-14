@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 use url::Url;
 
-use super::fuzzy::fuzzy_buffer_diff;
+use super::fuzzy::{ThresholdTolerance, fuzzy_buffer_diff};
 use blitz_vibey_script::ScriptDocument;
 use wpt_manifest::{FuzzySpec, tolerance_for_reference};
 
@@ -46,6 +46,7 @@ pub fn process_ref_test(
 
     // A test passes if its rendering matches ANY of its `rel=match` references
     // and differs from ALL of its `rel=mismatch` references.
+    let threshold_tolerance = ThresholdTolerance::from_html(test_html);
     let mut ref_index = 0;
 
     let mut matches_pass = match_references.is_empty();
@@ -57,6 +58,7 @@ pub fn process_ref_test(
             ref_file,
             ref_index,
             fuzzy_specs,
+            threshold_tolerance,
             flags,
         ) {
             Some(true) => {
@@ -78,6 +80,7 @@ pub fn process_ref_test(
             ref_file,
             ref_index,
             fuzzy_specs,
+            threshold_tolerance,
             flags,
         ) {
             Some(true) => {
@@ -105,6 +108,7 @@ fn render_reference_and_compare(
     ref_file: &str,
     ref_index: usize,
     fuzzy_specs: &[FuzzySpec],
+    threshold_tolerance: Option<ThresholdTolerance>,
     flags: &mut TestFlags,
 ) -> Option<bool> {
     let test_url = ctx.dummy_base_url.join(test_relative_path).unwrap();
@@ -180,17 +184,19 @@ fn render_reference_and_compare(
         return Some(true);
     }
 
-    // If the test declares a `<meta name=fuzzy>` tolerance applicable to this reference,
-    // use it to decide whether the renderings match. Otherwise fall back to the fixed
-    // dify threshold.
-    let fuzzy_tolerance = tolerance_for_reference(fuzzy_specs, ref_file);
-    let is_match = if let Some(tolerance) = fuzzy_tolerance {
+    // If the test declares a `<meta name=fuzzy>` tolerance applicable to this reference
+    // (or a `blitz-fuzzy` one), use it to decide whether the renderings match. Otherwise
+    // fall back to the fixed dify threshold.
+    let tolerance_match = if let Some(tolerance) = tolerance_for_reference(fuzzy_specs, ref_file) {
         let (max_difference, differing_pixels) =
             fuzzy_buffer_diff(&ctx.buffers.test_buffer, &ctx.buffers.ref_buffer);
-        max_difference <= tolerance.max_difference.max
-            && differing_pixels <= tolerance.total_pixels.max
+        Some(
+            max_difference <= tolerance.max_difference.max
+                && differing_pixels <= tolerance.total_pixels.max,
+        )
     } else {
-        true
+        threshold_tolerance
+            .map(|tolerance| tolerance.matches(&ctx.buffers.test_buffer, &ctx.buffers.ref_buffer))
     };
 
     let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ctx.buffers.test_buffer.clone()).unwrap();
@@ -206,9 +212,9 @@ fn render_reference_and_compare(
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        Some(fuzzy_tolerance.is_some() && is_match)
+        Some(tolerance_match == Some(true))
     } else {
-        Some(is_match)
+        Some(tolerance_match.unwrap_or(true))
     }
 }
 
