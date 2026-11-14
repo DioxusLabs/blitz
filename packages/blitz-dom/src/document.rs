@@ -1326,7 +1326,12 @@ impl BaseDocument {
                         "Resource load failed"
                     );
                     #[cfg(not(feature = "tracing"))]
-                    let _ = (waiting_nodes, err);
+                    let _ = err;
+                    for (node_id, image_type) in waiting_nodes {
+                        if matches!(image_type, ImageType::Image) {
+                            self.set_image_broken(node_id, true);
+                        }
+                    }
                 } else {
                     #[cfg(feature = "tracing")]
                     tracing::warn!(error = err.as_str(), "Resource load failed (no url)");
@@ -1419,6 +1424,27 @@ impl BaseDocument {
             Resource::None => {
                 // Do nothing
             }
+        }
+    }
+
+    /// Record whether the `<img>` `node_id` is broken (its image can't be obtained),
+    /// dropping any image it was previously showing.
+    pub(crate) fn set_image_broken(&mut self, node_id: NodeId, broken: bool) {
+        let Some(node) = self.get_node_mut(node_id) else {
+            return;
+        };
+        let mut changed = node.flags.contains(NodeFlags::IS_BROKEN_IMAGE) != broken;
+        node.flags.set(NodeFlags::IS_BROKEN_IMAGE, broken);
+        if broken
+            && let Some(element) = node.element_data_mut()
+            && matches!(element.special_data, SpecialElementData::Image(_))
+        {
+            element.special_data = SpecialElementData::None;
+            changed = true;
+        }
+        if changed {
+            node.clear_layout_cache();
+            node.insert_damage(ALL_DAMAGE);
         }
     }
 

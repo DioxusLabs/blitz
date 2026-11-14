@@ -240,6 +240,8 @@ impl LayoutPassState<'_> {
         });
         let font_size = font_styles.map(|s| s.0);
         let resolved_line_height = font_styles.map(|s| s.1);
+        // A broken image lays its alt text out as an inline root rather than as a replaced box
+        let is_broken_image_with_alt = node.broken_image_alt_text().is_some();
 
         match &mut node.data {
             NodeData::Text(data) => {
@@ -375,7 +377,7 @@ impl LayoutPassState<'_> {
                     }
                 }
 
-                if is_replaced_element(&element_data.name.local) {
+                if is_replaced_element(&element_data.name.local) && !is_broken_image_with_alt {
                     // Width/height attributes are presentational hints mapped to the CSS
                     // width/height properties by
                     // `synthesize_presentational_hints_for_legacy_attributes`, so they

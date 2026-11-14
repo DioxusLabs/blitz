@@ -149,7 +149,10 @@ impl InnerTextCollector {
         };
         self.require_line_breaks(line_breaks);
 
-        let element_data = node.element_data();
+        // The alt text a broken image lays out isn't part of its inner text
+        let element_data = node
+            .element_data()
+            .filter(|el| !is_replaced_element(&el.name.local));
         if let Some(layout) = element_data.and_then(|el| el.inline_layout_data.as_deref()) {
             self.visit_inline_layout(node, layout, filter);
         } else if node.flags.is_table_root() || is_internal_table_part(display.inside()) {

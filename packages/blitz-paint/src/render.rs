@@ -315,6 +315,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             && (element.and_then(|e| e.raster_image_data()).is_some()
                 || element.and_then(|e| e.sub_doc_data()).is_some()
                 || element.and_then(|e| e.text_input_data()).is_some()
+                || node.broken_image_alt_text().is_some()
                 || contain_paint
                 || !matches!(box_style.overflow_x, Overflow::Visible)
                 || !matches!(box_style.overflow_y, Overflow::Visible))

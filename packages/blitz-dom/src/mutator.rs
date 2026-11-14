@@ -723,6 +723,7 @@ impl DocumentMutator<'_> {
                     | local_name!("start")
                     | local_name!("reversed")
                     | local_name!("src")
+                    | local_name!("alt")
                     | local_name!("srcdoc")
                     | local_name!("span")
             );
@@ -1426,6 +1427,12 @@ impl<'doc> DocumentMutator<'doc> {
     }
 
     fn load_image(&mut self, target_id: NodeId) {
+        let node = &self.doc.nodes[target_id];
+        let is_broken = !node
+            .attr(local_name!("src"))
+            .is_some_and(|raw_src| !raw_src.is_empty() && self.doc.resolve_url(raw_src).is_some());
+        self.doc.set_image_broken(target_id, is_broken);
+
         let node = &self.doc.nodes[target_id];
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty()

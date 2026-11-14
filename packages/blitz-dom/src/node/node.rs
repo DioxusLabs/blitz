@@ -62,6 +62,9 @@ bitflags! {
         const IS_IN_DOCUMENT = 0b00000100;
         /// Whether the node is an inline box whose in-flow content is block-level only
         const IS_INLINE_WITH_ONLY_BLOCK_CHILDREN = 0b00001000;
+        /// Whether the node is an `<img>` whose image can't be obtained (missing or
+        /// unresolvable `src`, or a failed fetch)
+        const IS_BROKEN_IMAGE = 0b00010000;
     }
 }
 
@@ -1110,6 +1113,21 @@ impl Node {
         matches!(self.data, NodeData::Text { .. })
     }
 
+    /// The alt text a broken `<img>` renders in its box in place of the image, if any
+    /// (https://html.spec.whatwg.org/multipage/rendering.html#images-3)
+    pub fn broken_image_alt_text(&self) -> Option<&str> {
+        if !self.flags.contains(NodeFlags::IS_BROKEN_IMAGE) {
+            return None;
+        }
+        let element = self.element_data()?;
+        if element.name.local != local_name!("img") {
+            return None;
+        }
+        element
+            .attr(local_name!("alt"))
+            .filter(|alt| !alt.is_empty())
+    }
+
     pub fn element_data(&self) -> Option<&ElementData> {
         match self.data {
             NodeData::Element(ref data) => Some(data),
@@ -1207,7 +1225,10 @@ impl Node {
 
         let mut flags = stylo_taffy::StyleFlags::empty();
         if let Some(el) = self.data.downcast_element() {
-            if crate::layout::replaced::is_replaced_element(&el.name.local) {
+            // A broken image laying out its alt text is a non-replaced box
+            if crate::layout::replaced::is_replaced_element(&el.name.local)
+                && self.broken_image_alt_text().is_none()
+            {
                 flags |= stylo_taffy::StyleFlags::IS_REPLACED;
             }
             if el.name.local == local_name!("button") {

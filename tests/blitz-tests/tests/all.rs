@@ -14,6 +14,7 @@ mod anonymous_block_transform;
 mod autofocus_attribute;
 mod background_size;
 mod br_trailing_line;
+mod broken_image_alt;
 mod button_alignment;
 mod checked_attribute;
 mod clipboard;

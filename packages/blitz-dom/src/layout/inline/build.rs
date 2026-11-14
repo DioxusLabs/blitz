@@ -87,6 +87,10 @@ pub(crate) fn build_inline_layout_into(
     let mut text_transformer = TextTransformer::default();
     text_transformer.word_break(&builder);
 
+    if let Some(alt) = root_node.broken_image_alt_text() {
+        let text = text_transformer.transform(alt, &text_transform, &builder);
+        builder.push_text(text);
+    }
     if let Some(before_id) = root_node.before() {
         build_inline_layout_recursive(
             &mut builder,

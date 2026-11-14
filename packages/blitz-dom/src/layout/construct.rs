@@ -446,6 +446,21 @@ fn collect_layout_children_with_wrap(
             }
         }
 
+        // A broken image with alt text lays out the alt text in its box
+        if doc.nodes[container_node_id]
+            .broken_image_alt_text()
+            .is_some()
+        {
+            doc.deferred_construction_nodes.push(ConstructionTask {
+                node_id: container_node_id,
+                data: ConstructionTaskData::InlineLayout(Box::new(TextLayout::new())),
+            });
+            doc.nodes[container_node_id]
+                .flags
+                .insert(NodeFlags::IS_INLINE_ROOT);
+            return;
+        }
+
         #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
             let outer_html = doc.get_node(container_node_id).unwrap().svg_source();
