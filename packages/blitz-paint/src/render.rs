@@ -715,7 +715,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 cx.draw_sub_document(scene);
                                 cx.draw_input(scene);
                                 cx.draw_text_input_text(scene, content_position);
-                                cx.draw_inline_layout(scene, content_position);
+                                cx.draw_inline_layout(scene, content_position, child_clip_rect);
                                 cx.draw_marker(scene, content_position);
                                 cx.draw_children(scene, cx.transform, child_clip_rect);
                             },
@@ -996,7 +996,7 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point) {
+    fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point, clip_rect: Rect) {
         if self.node.flags.is_inline_root() {
             let text_layout = self.element
                 .inline_layout_data
@@ -1037,9 +1037,24 @@ impl ElementCx<'_, '_> {
 
             // Render text
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
+            // Cull lines that fall entirely outside the clip rectangle (a long paragraph that
+            // runs off the viewport), with a line's height of slack on each side for glyphs
+            // that reach beyond their line box.
+            let screen = Affine::translate(Vec2 {
+                x: -self.context.initial_x,
+                y: -self.context.initial_y,
+            }) * transform;
+            let width = text_layout.layout.full_width() as f64;
+            let visible = |line: &parley::Line<'_, blitz_dom::node::TextBrush>| {
+                let m = line.metrics();
+                let (y0, y1) = (m.block_min_coord as f64, m.block_max_coord as f64);
+                let slack = y1 - y0;
+                let r = screen.transform_rect_bbox(Rect::new(0.0, y0 - slack, width, y1 + slack));
+                r.y1 >= clip_rect.y0 && r.y0 <= clip_rect.y1
+            };
             crate::text::stroke_text(
                 scene,
-                text_layout.layout.lines(),
+                text_layout.layout.lines().filter(visible),
                 self.context.dom,
                 transform,
                 TextPaintOptions {
