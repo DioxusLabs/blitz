@@ -681,3 +681,278 @@ fn unchanged_svg_skips_layout() {
     let after = ["#g", "#b"].map(|sel| svg_layout_addr(&doc, sel));
     assert_eq!(before, after, "the second <svg> is not laid out again");
 }
+
+fn assert_near(actual: [u8; 3], expected: [u8; 3]) {
+    let close = actual.iter().zip(expected).all(|(a, e)| a.abs_diff(e) <= 8);
+    assert!(close, "expected about {expected:?}, got {actual:?}");
+}
+
+#[test]
+fn linear_gradient_uses_computed_stop_styles() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <style>#s1 { stop-color: lime }</style>
+            <linearGradient id="g"><stop id="s0" offset="0" stop-color="red"/><stop id="s1" offset="1" stop-color="red"/></linearGradient>
+            <rect width="100" height="100" fill="url(#g)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_near(pixel(&buffer, 1, 50), RED);
+    assert_near(pixel(&buffer, 98, 50), LIME);
+    assert_near(pixel(&buffer, 50, 50), [128, 128, 0]);
+}
+
+#[test]
+fn stop_opacity_applies_to_the_stop_color() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="g"><stop offset="0" stop-color="red" stop-opacity="0"/><stop offset="1" stop-color="red" stop-opacity="0"/></linearGradient>
+            <rect width="100" height="100" fill="url(#g)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 50, 50), BLUE);
+}
+
+#[test]
+fn object_bounding_box_gradients_use_the_shape_bbox() {
+    // Pad spreads each end stop beyond the 50x100 rect's bbox.
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="g" x1="0.4" x2="0.6"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="lime"/></linearGradient>
+            <rect x="50" width="50" height="100" fill="url(#g)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 50), BLUE);
+    assert_eq!(pixel(&buffer, 60, 50), RED);
+    assert_eq!(pixel(&buffer, 90, 50), LIME);
+}
+
+#[test]
+fn user_space_gradients_ignore_the_bbox_and_apply_gradient_transform() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" x2="10" spreadMethod="repeat" gradientTransform="scale(5)">
+                <stop offset="0.5" stop-color="red"/><stop offset="0.5" stop-color="lime"/></linearGradient>
+            <rect x="10" width="90" height="100" fill="url(#g)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    // Bands of 25 user units, repeating every 50.
+    assert_eq!(pixel(&buffer, 15, 50), RED);
+    assert_eq!(pixel(&buffer, 35, 50), LIME);
+    assert_eq!(pixel(&buffer, 65, 50), RED);
+    assert_eq!(pixel(&buffer, 85, 50), LIME);
+}
+
+#[test]
+fn href_inherits_stops_and_attributes() {
+    let mut doc = load(
+        r##"<svg width="100" height="100">
+            <linearGradient id="base" x1="0.5" x2="0.5" y2="1" spreadMethod="pad"><stop offset="0.5" stop-color="red"/><stop offset="0.5" stop-color="lime"/></linearGradient>
+            <linearGradient id="mid" href="#base"/>
+            <linearGradient id="g" xlink:href="#mid"/>
+            <rect width="100" height="100" fill="url(#g)"/></svg>"##,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 20, 20), RED);
+    assert_eq!(pixel(&buffer, 20, 80), LIME);
+}
+
+#[test]
+fn radial_geometry_is_not_inherited_from_linear_gradients() {
+    let mut doc = load(
+        r##"<svg width="100" height="100">
+            <linearGradient id="base" x1="0.5" gradientUnits="userSpaceOnUse"><stop offset="0.5" stop-color="lime"/><stop offset="0.5" stop-color="red"/></linearGradient>
+            <radialGradient id="g" href="#base" cx="0" cy="0" r="100"/>
+            <rect width="100" height="100" fill="url(#g)"/></svg>"##,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 20, 20), LIME);
+    assert_eq!(pixel(&buffer, 90, 90), RED);
+}
+
+#[test]
+fn radial_gradient_with_focal_point() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <radialGradient id="g" fx="0.25" fy="0.5" r="0.5"><stop offset="0.1" stop-color="lime"/><stop offset="0.1" stop-color="red"/></radialGradient>
+            <rect width="100" height="100" fill="url(#g)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 50), LIME);
+    assert_eq!(pixel(&buffer, 50, 50), RED);
+}
+
+#[test]
+fn invalid_references_use_the_fallback() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <rect id="notgradient" width="1" height="1" fill="none"/>
+            <linearGradient id="g"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="red"/></linearGradient>
+            <rect width="50" height="50" fill="url(#missing) lime"/>
+            <rect x="50" width="50" height="50" fill="url(#notgradient) lime"/>
+            <path d="M 0 75 H 100" stroke="url(#g) lime" stroke-width="10"/>
+            <rect y="50" width="50" height="10" fill="url(#missing)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 25), LIME);
+    assert_eq!(pixel(&buffer, 75, 25), LIME);
+    // A horizontal line has an empty bbox height, so the objectBoundingBox
+    // gradient is invalid for it.
+    assert_eq!(pixel(&buffer, 50, 75), LIME);
+    // A missing reference without a fallback paints nothing.
+    assert_eq!(pixel(&buffer, 25, 55), BLUE);
+}
+
+#[test]
+fn single_stop_paints_solid_and_no_stops_paint_nothing() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="one"><stop stop-color="lime"/></linearGradient>
+            <linearGradient id="none"/>
+            <rect width="50" height="100" fill="url(#one) red"/>
+            <rect x="50" width="50" height="100" fill="url(#none) red"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 50), LIME);
+    assert_eq!(pixel(&buffer, 75, 50), BLUE);
+}
+
+#[test]
+fn stop_changes_repaint_the_gradient() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="g"><stop offset="0" stop-color="red"/><stop id="s" offset="1" stop-color="red"/></linearGradient>
+            <rect width="100" height="100" fill="url(#g)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_near(pixel(&buffer, 98, 50), RED);
+    let stop = doc.query_selector("#s").unwrap().unwrap();
+    doc.mutate().set_attribute(stop, attr("stop-color"), "lime");
+    doc.resolve(0.0);
+    let buffer = render(&mut doc);
+    assert_near(pixel(&buffer, 98, 50), LIME);
+    assert_near(pixel(&buffer, 50, 50), [128, 128, 0]);
+    doc.mutate().set_attribute(stop, attr("offset"), "0");
+    doc.resolve(0.0);
+    let buffer = render(&mut doc);
+    assert_near(pixel(&buffer, 50, 50), LIME);
+}
+
+#[test]
+fn stops_interpolate_unpremultiplied() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="g"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="lime" stop-opacity="0"/></linearGradient>
+            <rect width="100" height="100" fill="url(#g)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    // Half-transparent yellow over blue, not half-transparent red.
+    assert_near(pixel(&buffer, 50, 50), [64, 64, 128]);
+}
+
+#[test]
+fn undisplayed_gradients_use_the_fallback() {
+    let mut doc = load(
+        r##"<svg width="100" height="100">
+            <linearGradient id="hidden" style="display:none"><stop stop-color="red"/><stop offset="1" stop-color="red"/></linearGradient>
+            <g style="display:none"><linearGradient id="nested"><stop stop-color="red"/><stop offset="1" stop-color="red"/></linearGradient></g>
+            <g style="display:none"><linearGradient id="template"><stop stop-color="red"/><stop offset="1" stop-color="red"/></linearGradient></g>
+            <linearGradient id="g" href="#template"/>
+            <rect width="50" height="50" fill="url(#hidden) lime"/>
+            <rect x="50" width="50" height="50" fill="url(#nested) lime"/>
+            <rect y="50" width="50" height="50" fill="url(#g) lime"/></svg>"##,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 25), LIME);
+    assert_eq!(pixel(&buffer, 75, 25), LIME);
+    assert_eq!(pixel(&buffer, 25, 75), LIME);
+}
+
+#[test]
+fn references_to_other_documents_use_the_fallback() {
+    let mut doc = load(
+        r##"<svg width="100" height="100">
+            <linearGradient id="g"><stop stop-color="red"/><stop offset="1" stop-color="red"/></linearGradient>
+            <linearGradient id="remote" href="http://example.com/o.svg#g"/>
+            <rect width="50" height="100" fill="url(http://example.com/o.svg#g) lime"/>
+            <rect x="50" width="50" height="100" fill="url(#remote) lime"/></svg>"##,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 25, 50), LIME);
+    // The remote template is not followed, so `remote` has no stops.
+    assert_eq!(pixel(&buffer, 75, 50), BLUE);
+}
+
+#[test]
+fn transform_attribute_is_not_a_gradient_transform() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="a" transform="scale(0.1)"><stop offset="0.5" stop-color="red"/><stop offset="0.5" stop-color="lime"/></linearGradient>
+            <linearGradient id="b" gradientUnits="userSpaceOnUse" x2="50" gradientTransform="scale(2)" transform="scale(0.1)"><stop offset="0.5" stop-color="red"/><stop offset="0.5" stop-color="lime"/></linearGradient>
+            <rect width="100" height="50" fill="url(#a)"/>
+            <rect y="50" width="100" height="50" fill="url(#b)"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 40, 25), RED);
+    assert_eq!(pixel(&buffer, 60, 25), LIME);
+    assert_eq!(pixel(&buffer, 40, 75), RED);
+    assert_eq!(pixel(&buffer, 60, 75), LIME);
+}
+
+#[test]
+fn small_invertible_gradient_transforms_are_valid() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="g" gradientUnits="userSpaceOnUse" x2="1e9" gradientTransform="scale(1e-7)"><stop offset="0.5" stop-color="red"/><stop offset="0.5" stop-color="lime"/></linearGradient>
+            <rect width="100" height="100" fill="url(#g) blue"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 40, 50), RED);
+    assert_eq!(pixel(&buffer, 60, 50), LIME);
+}
+
+#[test]
+fn single_stop_gradients_are_invalid_for_an_empty_bbox() {
+    let mut doc = load(
+        r#"<svg width="100" height="100">
+            <linearGradient id="g"><stop stop-color="red"/></linearGradient>
+            <path d="M 0 50 H 100" stroke="url(#g) lime" stroke-width="10"/></svg>"#,
+        true,
+    );
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 50, 50), LIME);
+}
+
+#[test]
+fn references_resolve_against_the_document_url() {
+    let html = r##"<html><body style="margin:0; background:#00f"><svg width="100" height="100">
+        <linearGradient id="g"><stop stop-color="lime"/><stop offset="1" stop-color="lime"/></linearGradient>
+        <rect width="100" height="100" fill="url(#g) red"/></svg></body></html>"##;
+    let mut doc = HtmlDocument::from_html(
+        html,
+        DocumentConfig {
+            base_url: Some("http://example.com/dir/doc.html".to_string()),
+            viewport: Some(Viewport::new(W, H, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            native_svg: Some(true),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    let buffer = render(&mut doc);
+    assert_eq!(pixel(&buffer, 50, 50), LIME);
+}

@@ -302,6 +302,22 @@ vello_gpu = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 
+# Stylo with the remaining SVG properties (stop-color, marker-*, paint-order, ...) available to Servo builds
+# behind the `layout.css.svg-properties.enabled` pref.
+# Remove once that change lands upstream in servo/stylo and is released.
+[patch.crates-io]
+stylo = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+stylo_traits = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+stylo_atoms = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+stylo_static_prefs = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+stylo_dom = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+stylo_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+stylo_malloc_size_of = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+selectors = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+servo_arc = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+to_shmem = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+to_shmem_derive = { git = "https://github.com/DioxusLabs/stylo", rev = "908cc1230735d9e84d2acb82e4fb7b8dfe403fbd" }
+
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }

@@ -7475,8 +7475,7 @@ dependencies = [
 [[package]]
 name = "selectors"
 version = "0.43.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "474a2075f58859e8482495e1a2ae9634754ee383ad09a3c4093b8d9a51910fa3"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "bitflags 2.13.2",
  "cssparser",
@@ -7616,8 +7615,7 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f121f129345b5201873a0e253f630413d750b9d799613e2873fb768e592c2a7"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -8087,8 +8085,7 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcaf37ee278f57db8274561000dd859cb94d82871fbfde34bbf3045914855376"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -8146,8 +8143,7 @@ dependencies = [
 [[package]]
 name = "stylo_atoms"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bda4fa668ec6d629dbb031f7ea4adda29f4a2fc7183a89ae57f0b2dcd72b558"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "string_cache 0.11.0",
  "string_cache_codegen",
@@ -8156,8 +8152,7 @@ dependencies = [
 [[package]]
 name = "stylo_derive"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e9b573e308906d63eea0209657edb6579aec8ab9f0065f636264e653bd5c477"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -8169,8 +8164,7 @@ dependencies = [
 [[package]]
 name = "stylo_dom"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2314cdccd7c410b760eeaaaf1cb69b2077c8e3b35fb9d994f8396ee602ccaed4"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "bitflags 2.13.2",
  "stylo_malloc_size_of",
@@ -8179,8 +8173,7 @@ dependencies = [
 [[package]]
 name = "stylo_malloc_size_of"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d346459a462f869a5b0a80170b0f84e89011e5f60f1cdab42248979c6b229931"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "app_units",
  "cssparser",
@@ -8199,8 +8192,7 @@ dependencies = [
 [[package]]
 name = "stylo_static_prefs"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54e6457da825822c818512048e8adcbb80d12a4dc7bd4f848495d54cdcb5aed6"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "toml",
 ]
@@ -8218,8 +8210,7 @@ dependencies = [
 [[package]]
 name = "stylo_traits"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44414414caccb82c06ff460ab36d2de9d92ffa49f3bcfd6cd9e2e3d287f64bb3"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "app_units",
  "bitflags 2.13.2",
@@ -8659,8 +8650,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 [[package]]
 name = "to_shmem"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c542ebb3b1d82d6567b3bc827a826d415c5c9565dec5bc985b9879bf2572567c"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "cssparser",
  "hashbrown 0.17.1",
@@ -8674,8 +8664,7 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41fef02c6bedb48041c2d9c9883cfd677afb3bc026435bf6828b74e9db30068d"
+source = "git+https://github.com/DioxusLabs/stylo?rev=908cc1230735d9e84d2acb82e4fb7b8dfe403fbd#908cc1230735d9e84d2acb82e4fb7b8dfe403fbd"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",

@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use blitz_traits::node_id::NodeId;
 use slotmap::{Key as _, KeyData, SlotMap};
+use style::stylesheets::UrlExtraData;
 
 use crate::Node;
 
@@ -45,16 +46,29 @@ pub struct NodeTree {
     /// (see `DocumentConfig::native_svg`). Read during styling, which only has
     /// the node tree at hand.
     native_svg: bool,
+    /// The document URL, for resolving `url()`s in SVG presentation
+    /// attributes, which are styled with only the node tree at hand.
+    url_data: UrlExtraData,
 }
 
 impl NodeTree {
-    pub(crate) fn new(native_svg: bool) -> Self {
+    pub(crate) fn new(native_svg: bool, url_data: UrlExtraData) -> Self {
         Self {
             map: SlotMap::with_key(),
             geometry_generation: AtomicU64::new(1),
             viewport_scroll: crate::Point::ZERO,
             native_svg,
+            url_data,
         }
+    }
+
+    #[cfg_attr(not(feature = "svg-native"), allow(dead_code))]
+    pub(crate) fn url_data(&self) -> &UrlExtraData {
+        &self.url_data
+    }
+
+    pub(crate) fn set_url_data(&mut self, url_data: UrlExtraData) {
+        self.url_data = url_data;
     }
 
     /// Whether inline `<svg>` subtrees are rendered natively from the live DOM.
