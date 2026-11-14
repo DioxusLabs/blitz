@@ -459,7 +459,14 @@ impl BaseDocument {
         #[cfg(feature = "writing-mode")]
         state.physicalise_and_round_layout(root_element_id);
         #[cfg(not(feature = "writing-mode"))]
-        taffy::round_layout(&mut state, root_element_id);
+        {
+            let scale = state.viewport.scale();
+            let mut tree = crate::layout::DevicePixelRoundTree {
+                state: &mut state,
+                scale,
+            };
+            taffy::round_layout(&mut tree, root_element_id);
+        }
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)

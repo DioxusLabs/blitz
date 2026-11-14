@@ -260,18 +260,20 @@ impl LayoutPassState<'_> {
         let size = unrounded.size;
         // As in `taffy::round_layout`: the box's outer edges are rounded in absolute coordinates and
         // every inner edge is rounded relative to them, so adjacent boxes never overlap or gap.
+        let scale = self.doc.viewport.scale();
+        let round = |v: f32| (v * scale).round() / scale;
         let rounded_pos = Point {
-            x: pos.x.round(),
-            y: pos.y.round(),
+            x: round(pos.x),
+            y: round(pos.y),
         };
         let rounded_end = Point {
-            x: (pos.x + size.width).round(),
-            y: (pos.y + size.height).round(),
+            x: round(pos.x + size.width),
+            y: round(pos.y + size.height),
         };
-        let from_left = |v: f32| (pos.x + v).round() - rounded_pos.x;
-        let from_top = |v: f32| (pos.y + v).round() - rounded_pos.y;
-        let from_right = |v: f32| rounded_end.x - (pos.x + size.width - v).round();
-        let from_bottom = |v: f32| rounded_end.y - (pos.y + size.height - v).round();
+        let from_left = |v: f32| round(pos.x + v) - rounded_pos.x;
+        let from_top = |v: f32| round(pos.y + v) - rounded_pos.y;
+        let from_right = |v: f32| rounded_end.x - round(pos.x + size.width - v);
+        let from_bottom = |v: f32| rounded_end.y - round(pos.y + size.height - v);
 
         let mut layout = unrounded;
         layout.location = Point {
@@ -282,7 +284,7 @@ impl LayoutPassState<'_> {
             width: rounded_end.x - rounded_pos.x,
             height: rounded_end.y - rounded_pos.y,
         };
-        layout.scrollbar_size = unrounded.scrollbar_size.map(f32::round);
+        layout.scrollbar_size = unrounded.scrollbar_size.map(round);
         layout.border = taffy::Rect {
             left: from_left(unrounded.border.left),
             right: from_right(unrounded.border.right),

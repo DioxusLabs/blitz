@@ -870,6 +870,88 @@ impl RoundTree for LayoutPassState<'_> {
     }
 }
 
+/// Rounds layout to whole device pixels rather than whole CSS pixels, by handing
+/// [`taffy::round_layout`] layouts scaled to device pixels. Text is laid out on the device pixel
+/// grid, so rounding boxes to CSS pixels would misalign inline boxes with the surrounding text.
+#[cfg(not(feature = "writing-mode"))]
+pub(crate) struct DevicePixelRoundTree<'a, 'doc> {
+    pub(crate) state: &'a mut LayoutPassState<'doc>,
+    pub(crate) scale: f32,
+}
+
+#[cfg(not(feature = "writing-mode"))]
+fn scale_layout(layout: &Layout, factor: f32) -> Layout {
+    let scale_rect = |rect: taffy::Rect<f32>| taffy::Rect {
+        left: rect.left * factor,
+        right: rect.right * factor,
+        top: rect.top * factor,
+        bottom: rect.bottom * factor,
+    };
+    Layout {
+        location: taffy::Point {
+            x: layout.location.x * factor,
+            y: layout.location.y * factor,
+        },
+        size: layout.size.map(|v| v * factor),
+        scrollbar_size: layout.scrollbar_size.map(|v| v * factor),
+        scrollable_overflow_rect: taffy::ScrollableOverflow::new(
+            scale_rect(layout.scrollable_overflow_rect.rect()),
+            layout.scrollable_overflow_rect.is_reversed(),
+        ),
+        border: scale_rect(layout.border),
+        padding: scale_rect(layout.padding),
+        margin: scale_rect(layout.margin),
+        ..*layout
+    }
+}
+
+#[cfg(not(feature = "writing-mode"))]
+impl<'doc> TraversePartialTree for DevicePixelRoundTree<'_, 'doc> {
+    type ChildIter<'a>
+        = <LayoutPassState<'doc> as TraversePartialTree>::ChildIter<'a>
+    where
+        Self: 'a;
+
+    fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
+        self.state.child_ids(node_id)
+    }
+
+    fn child_count(&self, node_id: NodeId) -> usize {
+        self.state.child_count(node_id)
+    }
+
+    fn get_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
+        self.state.get_child_id(node_id, index)
+    }
+}
+
+#[cfg(not(feature = "writing-mode"))]
+impl TraverseTree for DevicePixelRoundTree<'_, '_> {}
+
+#[cfg(not(feature = "writing-mode"))]
+impl RoundTree for DevicePixelRoundTree<'_, '_> {
+    fn get_unrounded_layout(&self, node_id: NodeId) -> Layout {
+        scale_layout(&self.state.get_unrounded_layout(node_id), self.scale)
+    }
+
+    fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
+        let layout = scale_layout(layout, 1.0 / self.scale);
+        self.state.set_final_layout(node_id, &layout);
+    }
+
+    fn is_out_of_flow(&self, node_id: NodeId) -> bool {
+        self.state.is_out_of_flow(node_id)
+    }
+
+    fn hoisted_child_count(&self, node_id: NodeId) -> usize {
+        self.state.hoisted_child_count(node_id)
+    }
+
+    fn get_hoisted_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
+        self.state.get_hoisted_child_id(node_id, index)
+    }
+}
+
 pub(crate) struct TaffyDebugTree<'doc>(pub(crate) &'doc BaseDocument);
 
 impl TaffyDebugTree<'_> {
