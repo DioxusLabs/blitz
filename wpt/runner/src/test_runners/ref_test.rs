@@ -256,31 +256,47 @@ const REFTEST_TIMER_BUDGET: Duration = Duration::from_secs(1);
 const FRAME: Duration = Duration::from_millis(16);
 
 /// Run JS timers until the document is ready to be screenshotted, mirroring
-/// wptrunner's `test-wait.js`: wait two animation frames after load, and if the
-/// root element has the `reftest-wait` class, until that class is removed (and
-/// then another two frames). Styles are resolved between timer callbacks, as a
-/// browser would between frames.
+/// wptrunner's `test-wait.js`: wait two animation frames after load. If the
+/// root element then has the `reftest-wait` class, fire a `TestRendered` event
+/// at it (once) and wait until that class is removed (and then another two
+/// frames). Styles are resolved between timer callbacks, as a browser would
+/// between frames.
 fn wait_for_screenshot_ready(document: &mut ScriptDocument) {
     let mut settle_start = document.clock_now();
     let mut waiting = false;
+    let mut test_rendered_fired = false;
     pump_timers(document, REFTEST_TIMER_BUDGET, |doc| {
-        let now = doc.clock_now();
-        {
-            let mut inner = doc.inner_mut();
-            inner.resolve(0.0);
-            if has_reftest_wait(&inner) {
+        loop {
+            let now = doc.clock_now();
+            let reftest_wait = {
+                let mut inner = doc.inner_mut();
+                inner.resolve(0.0);
+                has_reftest_wait(&inner)
+            };
+            if reftest_wait {
                 waiting = true;
+            } else if waiting {
+                waiting = false;
+                settle_start = now;
+            }
+            let settle_deadline = settle_start + FRAME * 2;
+            let idle = doc
+                .next_timer_deadline()
+                .is_none_or(|deadline| deadline > settle_deadline);
+            if !reftest_wait {
+                return idle.then_some(());
+            }
+            if test_rendered_fired || !(idle || now >= settle_deadline) {
                 return None;
             }
+            // The listener may already remove `reftest-wait` synchronously,
+            // so check again straight away.
+            test_rendered_fired = true;
+            let root_element = doc.inner().try_root_element().map(|root| root.id);
+            if let Some(root_element) = root_element {
+                doc.dispatch_event(root_element, "TestRendered", true);
+            }
         }
-        if waiting {
-            waiting = false;
-            settle_start = now;
-        }
-        let settle_deadline = settle_start + FRAME * 2;
-        doc.next_timer_deadline()
-            .is_none_or(|deadline| deadline > settle_deadline)
-            .then_some(())
     });
 }
 
