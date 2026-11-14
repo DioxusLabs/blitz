@@ -4,14 +4,17 @@
 //! its subtree as live DOM nodes styled by Stylo. SVG layout
 //! (`blitz_dom::svg`) has already resolved each element's transform, geometry
 //! and stroke; painting walks the subtree, reads those results and the paint
-//! properties from computed styles. Paint servers, `<use>`, `<text>`,
+//! properties from computed styles. Patterns, `<use>`, `<text>`,
 //! `<image>`, markers, clipping, masking and filters are not painted yet.
 
 use anyrender::PaintScene;
 use blitz_dom::node::Node;
-use blitz_dom::svg::SvgLayoutKind;
+use blitz_dom::svg::{
+    SvgGradient, SvgGradientShape, SvgLayoutKind, SvgPaintServer, SvgSpreadMethod, SvgViewport,
+};
+use color::{ColorSpaceTag, DynamicColor};
 use kurbo::{Affine, BezPath, Rect, Stroke};
-use peniko::{BlendMode, Fill};
+use peniko::{BlendMode, ColorStop, Extend, Fill, Gradient, InterpolationAlphaSpace};
 use style::computed_values::fill_rule::T as FillRule;
 use style::computed_values::isolation::T as Isolation;
 use style::computed_values::visibility::T as Visibility;
@@ -46,6 +49,9 @@ impl ElementCx<'_, '_> {
             * Affine::translate(content_box.origin().to_vec2())
             * Affine::scale(self.scale)
             * layout.children_transform();
+        let SvgLayoutKind::Viewport { viewport, .. } = layout.kind else {
+            return;
+        };
         // The outermost `<svg>` is an isolated group, so blending inside it
         // does not reach content behind it.
         // https://drafts.fxtf.org/compositing/#csscompositingrules_SVG
@@ -60,7 +66,7 @@ impl ElementCx<'_, '_> {
                 None,
             );
         }
-        self.paint_svg_children(scene, self.node, transform);
+        self.paint_svg_children(scene, self.node, transform, viewport);
         if layout.has_blending {
             scene.pop_layer();
         }
@@ -77,13 +83,25 @@ impl ElementCx<'_, '_> {
         )
     }
 
-    fn paint_svg_children(&self, scene: &mut impl PaintScene, node: &Node, transform: Affine) {
+    fn paint_svg_children(
+        &self,
+        scene: &mut impl PaintScene,
+        node: &Node,
+        transform: Affine,
+        viewport: SvgViewport,
+    ) {
         for child in node.children.iter() {
-            self.paint_svg_node(scene, node.with(*child), transform);
+            self.paint_svg_node(scene, node.with(*child), transform, viewport);
         }
     }
 
-    fn paint_svg_node(&self, scene: &mut impl PaintScene, node: &Node, parent_transform: Affine) {
+    fn paint_svg_node(
+        &self,
+        scene: &mut impl PaintScene,
+        node: &Node,
+        parent_transform: Affine,
+        viewport: SvgViewport,
+    ) {
         let Some(layout) = node.element_data().and_then(|el| el.svg_layout()) else {
             return;
         };
@@ -116,28 +134,33 @@ impl ElementCx<'_, '_> {
 
         match &layout.kind {
             SvgLayoutKind::NotRendered => {}
-            SvgLayoutKind::Group => self.paint_svg_children(scene, node, transform),
+            SvgLayoutKind::Group => self.paint_svg_children(scene, node, transform, viewport),
             SvgLayoutKind::Switch { child } => {
                 if let Some(child) = child {
-                    self.paint_svg_node(scene, node.with(*child), transform);
+                    self.paint_svg_node(scene, node.with(*child), transform, viewport);
                 }
             }
             SvgLayoutKind::Viewport {
                 content_transform,
                 clip,
-                ..
+                viewport,
             } => {
                 if let Some(clip) = clip {
                     scene.push_clip_layer(Fill::NonZero, transform, clip);
                 }
-                self.paint_svg_children(scene, node, transform * *content_transform);
+                self.paint_svg_children(scene, node, transform * *content_transform, *viewport);
                 if clip.is_some() {
                     scene.pop_layer();
                 }
             }
             SvgLayoutKind::Shape { path, stroke } => {
                 if style.get_inherited_box().visibility == Visibility::Visible {
-                    paint_shape(scene, &style, transform, path, stroke.as_ref());
+                    let target = PaintTarget {
+                        style: &style,
+                        bbox: layout.bbox,
+                        viewport,
+                    };
+                    self.paint_shape(scene, &target, transform, path, stroke.as_ref());
                 }
             }
         }
@@ -148,45 +171,157 @@ impl ElementCx<'_, '_> {
     }
 }
 
-/// Resolve an SVG paint to a solid color, or `None` for `none`. Paint servers
-/// (`url(...)`) are not supported yet and use their fallback color, if any.
-fn solid_paint(style: &ComputedValues, paint: &SVGPaint, opacity: &SVGOpacity) -> Option<Color> {
-    let color = match &paint.kind {
-        SVGPaintKind::None | SVGPaintKind::ContextFill | SVGPaintKind::ContextStroke => {
-            return None;
-        }
-        SVGPaintKind::Color(color) => color,
-        SVGPaintKind::PaintServer(_) => match &paint.fallback {
-            SVGPaintFallback::Color(color) => color,
-            SVGPaintFallback::None | SVGPaintFallback::Unset => return None,
-        },
-    };
-    let alpha = match opacity {
-        SVGOpacity::Opacity(opacity) => *opacity,
-        SVGOpacity::ContextFillOpacity | SVGOpacity::ContextStrokeOpacity => 1.0,
-    };
-    let color = style.resolve_color(color).as_srgb_color();
-    Some(color.multiply_alpha(alpha))
+/// The element an SVG paint is resolved for.
+struct PaintTarget<'a> {
+    style: &'a ComputedValues,
+    bbox: Option<Rect>,
+    viewport: SvgViewport,
 }
 
-fn paint_shape(
-    scene: &mut impl PaintScene,
-    style: &ComputedValues,
-    transform: Affine,
-    path: &BezPath,
-    stroke: Option<&Stroke>,
-) {
-    let svg = style.get_inherited_svg();
-    if let Some(color) = solid_paint(style, &svg.fill, &svg.fill_opacity) {
-        let rule = match svg.fill_rule {
-            FillRule::Nonzero => Fill::NonZero,
-            FillRule::Evenodd => Fill::EvenOdd,
+/// A resolved fill or stroke paint: a brush and its transform relative to the
+/// shape's user space.
+enum ShapePaint {
+    Solid(Color),
+    Gradient(Gradient, Affine),
+}
+
+impl ElementCx<'_, '_> {
+    /// Resolve an SVG paint, or `None` when nothing is painted.
+    fn svg_paint(
+        &self,
+        target: &PaintTarget,
+        paint: &SVGPaint,
+        opacity: &SVGOpacity,
+    ) -> Option<ShapePaint> {
+        let style = target.style;
+        let alpha = match opacity {
+            SVGOpacity::Opacity(opacity) => *opacity,
+            SVGOpacity::ContextFillOpacity | SVGOpacity::ContextStrokeOpacity => 1.0,
         };
-        scene.fill(rule, transform, color, None, path);
+        let solid = |color| {
+            Some(ShapePaint::Solid(
+                style
+                    .resolve_color(color)
+                    .as_srgb_color()
+                    .multiply_alpha(alpha),
+            ))
+        };
+        match &paint.kind {
+            SVGPaintKind::None | SVGPaintKind::ContextFill | SVGPaintKind::ContextStroke => None,
+            SVGPaintKind::Color(color) => solid(color),
+            SVGPaintKind::PaintServer(url) => {
+                match self
+                    .context
+                    .dom
+                    .resolve_svg_paint_server(url, target.bbox, target.viewport)
+                {
+                    Some(SvgPaintServer::None) => None,
+                    Some(SvgPaintServer::Color(color)) => Some(ShapePaint::Solid(
+                        color.as_srgb_color().multiply_alpha(alpha),
+                    )),
+                    Some(SvgPaintServer::Gradient(gradient)) => {
+                        Some(gradient_paint(&gradient, alpha))
+                    }
+                    // An invalid reference uses the fallback, if any.
+                    None => match &paint.fallback {
+                        SVGPaintFallback::Color(color) => solid(color),
+                        SVGPaintFallback::None | SVGPaintFallback::Unset => None,
+                    },
+                }
+            }
+        }
     }
-    if let Some(stroke) = stroke
-        && let Some(color) = solid_paint(style, &svg.stroke, &svg.stroke_opacity)
-    {
-        scene.stroke(stroke, transform, color, None, path);
+
+    fn paint_shape(
+        &self,
+        scene: &mut impl PaintScene,
+        target: &PaintTarget,
+        transform: Affine,
+        path: &BezPath,
+        stroke: Option<&Stroke>,
+    ) {
+        let svg = target.style.get_inherited_svg();
+        if let Some(paint) = self.svg_paint(target, &svg.fill, &svg.fill_opacity) {
+            let rule = match svg.fill_rule {
+                FillRule::Nonzero => Fill::NonZero,
+                FillRule::Evenodd => Fill::EvenOdd,
+            };
+            match &paint {
+                ShapePaint::Solid(color) => scene.fill(rule, transform, *color, None, path),
+                ShapePaint::Gradient(gradient, brush_transform) => {
+                    scene.fill(rule, transform, gradient, Some(*brush_transform), path)
+                }
+            }
+        }
+        if let Some(stroke) = stroke
+            && let Some(paint) = self.svg_paint(target, &svg.stroke, &svg.stroke_opacity)
+        {
+            match &paint {
+                ShapePaint::Solid(color) => scene.stroke(stroke, transform, *color, None, path),
+                ShapePaint::Gradient(gradient, brush_transform) => {
+                    scene.stroke(stroke, transform, gradient, Some(*brush_transform), path)
+                }
+            }
+        }
     }
+}
+
+fn gradient_paint(gradient: &SvgGradient, alpha: f32) -> ShapePaint {
+    // A padded concentric gradient with a focal radius is a plain radial
+    // gradient whose stops start at `fr / r`.
+    let (shape, start_offset) = match gradient.shape {
+        SvgGradientShape::Radial {
+            focal,
+            focal_radius,
+            center,
+            radius,
+        } if focal == center
+            && focal_radius > 0.0
+            && focal_radius < radius
+            && gradient.spread == SvgSpreadMethod::Pad =>
+        {
+            let shape = SvgGradientShape::Radial {
+                focal,
+                focal_radius: 0.0,
+                center,
+                radius,
+            };
+            (shape, (focal_radius / radius) as f32)
+        }
+        shape => (shape, 0.0),
+    };
+    let stops: Vec<ColorStop> = gradient
+        .stops
+        .iter()
+        .map(|stop| ColorStop {
+            offset: start_offset + stop.offset * (1.0 - start_offset),
+            color: DynamicColor::from_alpha_color(stop.color.as_srgb_color().multiply_alpha(alpha)),
+        })
+        .collect();
+    let mut brush = match shape {
+        SvgGradientShape::Linear { start, end } => Gradient::new_linear(start, end),
+        SvgGradientShape::Radial {
+            focal,
+            focal_radius,
+            center,
+            radius,
+        } if focal == center && focal_radius == 0.0 => Gradient::new_radial(center, radius as f32),
+        SvgGradientShape::Radial {
+            focal,
+            focal_radius,
+            center,
+            radius,
+        } => Gradient::new_two_point_radial(focal, focal_radius as f32, center, radius as f32),
+    }
+    .with_stops(stops.as_slice())
+    .with_interpolation_alpha_space(InterpolationAlphaSpace::Unpremultiplied)
+    .with_extend(match gradient.spread {
+        SvgSpreadMethod::Pad => Extend::Pad,
+        SvgSpreadMethod::Reflect => Extend::Reflect,
+        SvgSpreadMethod::Repeat => Extend::Repeat,
+    });
+    if gradient.linear_rgb {
+        brush.interpolation_cs = ColorSpaceTag::LinearSrgb;
+    }
+    ShapePaint::Gradient(brush, gradient.transform)
 }

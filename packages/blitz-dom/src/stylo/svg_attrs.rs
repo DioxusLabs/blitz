@@ -45,9 +45,20 @@ pub(crate) fn svg_presentation_hint(
     if !is_presentation_attribute(tag, name) {
         return;
     }
+    // `gradientTransform` is the presentation attribute for `transform` on
+    // gradients. <https://svgwg.org/svg2-draft/pservers.html#LinearGradientElementGradientTransformAttribute>
+    let name = match name {
+        "gradientTransform" if matches!(tag, "linearGradient" | "radialGradient") => "transform",
+        _ => name,
+    };
     let translated;
     let value = match name {
         "transform" => {
+            // An empty list is an invalid value, not `none`, so it does not
+            // count as specified (a gradient then inherits its template's).
+            if value.trim().is_empty() {
+                return;
+            }
             let Some(css) = svg_transform_to_css(value) else {
                 return;
             };
@@ -145,7 +156,6 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
         | "text-decoration"
         | "text-overflow"
         | "text-rendering"
-        | "transform"
         | "transform-origin"
         | "unicode-bidi"
         | "vector-effect"
@@ -160,6 +170,9 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
             matches!(tag, "rect" | "image" | "foreignObject" | "svg")
         }
         "d" => tag == "path",
+        // `gradientTransform` replaces `transform` on gradients.
+        "transform" => !matches!(tag, "linearGradient" | "radialGradient"),
+        "gradientTransform" => matches!(tag, "linearGradient" | "radialGradient"),
         _ => false,
     }
 }

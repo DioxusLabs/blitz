@@ -440,14 +440,13 @@ impl BaseDocument {
         // With one SVG backend compiled the flag is ignored.
         let native_svg = cfg!(feature = "svg-native")
             && (!cfg!(feature = "svg-usvg") || config.native_svg.unwrap_or(false));
-        let nodes = Box::new(NodeTree::new(native_svg));
-        let guard = SharedRwLock::new();
-        let nodes_to_id = HashMap::new();
-
         let base_url = config
             .base_url
             .and_then(|url| DocumentUrl::from_str(&url).ok())
             .unwrap_or_default();
+        let nodes = Box::new(NodeTree::new(native_svg, base_url.url_extra_data()));
+        let guard = SharedRwLock::new();
+        let nodes_to_id = HashMap::new();
 
         let net_provider = config
             .net_provider
@@ -616,6 +615,7 @@ impl BaseDocument {
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub fn set_base_url(&mut self, url: &str) {
         self.url = DocumentUrl::from(Url::parse(url).unwrap());
+        self.nodes.set_url_data(self.url.url_extra_data());
     }
 
     /// The base url used for resolving linked resources (stylesheets, images, fonts, etc)
