@@ -1,11 +1,6 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use anyrender::ImageRenderer as _;
-#[cfg(feature = "gpu")]
-use anyrender_vello::VelloImageRenderer;
-#[cfg(feature = "cpu")]
-use anyrender_vello_cpu::VelloCpuImageRenderer as VelloImageRenderer;
 use atomic_float::AtomicF64;
 use blitz_dom::net::Resource;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -43,6 +38,7 @@ mod test_runners;
 mod manifest;
 mod net_provider;
 mod panic_backtrace;
+mod renderer;
 mod report;
 mod resvg;
 
@@ -50,6 +46,7 @@ mod resvg;
 use manifest::TestType;
 use manifest::{Test, split_test_url};
 use net_provider::WptNetProvider;
+use renderer::Renderer;
 
 /// Create a unix timestamp of the current time using the standard library
 fn unix_timestamp() -> u64 {
@@ -220,7 +217,7 @@ struct ThreadCtx {
     viewport: Viewport,
     net_provider: Arc<WptNetProvider<Resource>>,
     navigation_provider: Arc<dyn NavigationProvider>,
-    renderer: VelloImageRenderer,
+    renderer: Renderer,
     font_ctx: FontContext,
     buffers: Buffers,
 
@@ -391,10 +388,8 @@ fn main() {
             "WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt."
         );
     }
-    let suites = env::args()
-        .skip(1)
-        .filter(|arg| !arg.starts_with('-'))
-        .collect();
+    let (renderer_kind, suites) = renderer::parse_args(env::args().skip(1));
+    println!("Renderer: {}", renderer_kind.name());
     let test_paths = collect_tests(&wpt_dir, suites);
     let count = test_paths.len();
 
@@ -459,7 +454,7 @@ fn main() {
             let mut ctx = thread_state
                 .get_or(|| {
                     let worker_index = worker_counter.fetch_add(1, Ordering::Relaxed);
-                    let renderer = VelloImageRenderer::new(WIDTH, HEIGHT);
+                    let renderer = Renderer::new(renderer_kind, WIDTH, HEIGHT);
                     let font_ctx = base_font_context.clone();
                     let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
                     let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
