@@ -1,7 +1,17 @@
+use std::{
+    ops::Range,
+    sync::{
+        OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
+
 use blitz_traits::node_id::NodeId;
+use icu_properties::{CodePointMapData, props::LineBreak as IcuLineBreak};
 use markup5ever::local_name;
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, TreeBuilder, WhiteSpaceCollapse,
+    FontContext, InlineBox, InlineBoxKind, LayoutContext, LineBreakContext, TreeBuilder,
+    WhiteSpaceCollapse,
 };
 use style::{
     computed_values::position::T as PositionProperty,
@@ -20,6 +30,78 @@ use crate::{
     node::{ListItemLayout, ListItemLayoutPosition, Marker, TextBrush, TextLayout},
     stylo_to_parley,
 };
+
+#[inline]
+fn uses_unrestricted_line_break(style: &parley::TextStyle<'_, '_, TextBrush>) -> bool {
+    matches!(style.word_break, parley::WordBreak::BreakAll)
+        || matches!(style.line_break, parley::LineBreak::Anywhere)
+}
+
+#[derive(Default)]
+struct LineBreakModeTracker {
+    saw_chromium: bool,
+    saw_unrestricted: bool,
+    unrestricted_ranges: Vec<Range<usize>>,
+}
+
+impl LineBreakModeTracker {
+    fn push_text(&mut self, builder: &mut TreeBuilder<TextBrush>, text: &str, unrestricted: bool) {
+        let start = builder.text().len();
+        builder.push_text(text);
+        let end = builder.text().len();
+        if end > start {
+            if unrestricted {
+                self.saw_unrestricted = true;
+                if let Some(last) = self.unrestricted_ranges.last_mut()
+                    && last.end == start
+                {
+                    last.end = end;
+                } else {
+                    self.unrestricted_ranges.push(start..end);
+                }
+            } else {
+                self.saw_chromium = true;
+            }
+        }
+    }
+}
+
+fn build_pair_chromium_flags(text: &str, unrestricted_ranges: &[Range<usize>]) -> Vec<bool> {
+    let lb_map = CodePointMapData::<IcuLineBreak>::new();
+    let mut flags = Vec::new();
+    let mut prev_char: Option<char> = None;
+    let mut prev_is_mandatory = false;
+    let mut range_idx = 0;
+
+    for (byte_pos, ch) in text.char_indices() {
+        while unrestricted_ranges
+            .get(range_idx)
+            .is_some_and(|range| range.end <= byte_pos)
+        {
+            range_idx += 1;
+        }
+        let is_unrestricted = unrestricted_ranges
+            .get(range_idx)
+            .is_some_and(|range| range.contains(&byte_pos));
+
+        let is_mandatory = matches!(
+            lb_map.get(ch),
+            IcuLineBreak::MandatoryBreak
+                | IcuLineBreak::CarriageReturn
+                | IcuLineBreak::LineFeed
+                | IcuLineBreak::NextLine
+        );
+
+        if !is_mandatory && !prev_is_mandatory && prev_char.is_some() {
+            flags.push(!is_unrestricted);
+        }
+
+        prev_char = Some(ch);
+        prev_is_mandatory = is_mandatory;
+    }
+
+    flags
+}
 
 pub(crate) fn build_inline_layout_into(
     nodes: &crate::NodeTree,
@@ -44,6 +126,11 @@ pub(crate) fn build_inline_layout_into(
             white_space_collapse: WhiteSpaceCollapse::Collapse,
             ..Default::default()
         });
+    let root_unrestricted = uses_unrestricted_line_break(&parley_style);
+
+    // State only materialized when an inline formatting context mixes normal
+    // Chromium ASCII line breaking with `word-break: break-all` or `line-break: anywhere` spans.
+    let mixed_override_fn: OnceLock<Box<parley::LineBreakOverrideFn>> = OnceLock::new();
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
@@ -58,6 +145,7 @@ pub(crate) fn build_inline_layout_into(
         .as_deref()
         .map(|s| CaseTransform::from_style(s))
         .unwrap_or(CaseTransform::NONE);
+    let mut line_break_tracker = LineBreakModeTracker::default();
 
     // Render position-inside list items
     if let Some(ListItemLayout {
@@ -77,10 +165,12 @@ pub(crate) fn build_inline_layout_into(
                 let mut marker_style = parley_style.clone();
                 marker_style.font_family = BULLET_FONT_FAMILY.into();
                 builder.push_style_span(marker_style);
-                builder.push_text(&format!("{char} "));
+                line_break_tracker.push_text(&mut builder, &format!("{char} "), root_unrestricted);
                 builder.pop_style_span();
             }
-            Marker::String(str) => builder.push_text(str),
+            Marker::String(str) => {
+                line_break_tracker.push_text(&mut builder, str, root_unrestricted);
+            }
         }
     };
     // The marker is a separate box, so words in the content don't continue from it.
@@ -91,28 +181,56 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
+            &mut line_break_tracker,
             nodes,
             before_id,
             &text_transform,
+            root_unrestricted,
         );
     }
     for child_id in root_node.children.iter().copied() {
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
+            &mut line_break_tracker,
             nodes,
             child_id,
             &text_transform,
+            root_unrestricted,
         );
     }
     if let Some(after_id) = root_node.after() {
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
+            &mut line_break_tracker,
             nodes,
             after_id,
             &text_transform,
+            root_unrestricted,
         );
+    }
+
+    // Apply Blink/WebKit-compatible ASCII line-breaking overrides unless unrestricted
+    // character/letter breaking (`word-break: break-all` or `line-break: anywhere`) is active,
+    // since Parley's `line_break_override` takes precedence over `BreakAll` and `Anywhere`.
+    if !line_break_tracker.saw_unrestricted {
+        builder.set_line_break_override(Some(parley::CHROMIUM_LINE_BREAK_OVERRIDE));
+    } else if line_break_tracker.saw_chromium {
+        let flags =
+            build_pair_chromium_flags(builder.text(), &line_break_tracker.unrestricted_ranges);
+        let cursor = AtomicUsize::new(0);
+        let override_fn = mixed_override_fn.get_or_init(|| {
+            Box::new(move |cx: LineBreakContext| -> Option<bool> {
+                let idx = cursor.fetch_add(1, Ordering::Relaxed);
+                if flags.get(idx).copied().unwrap_or(true) {
+                    (parley::CHROMIUM_LINE_BREAK_OVERRIDE)(cx)
+                } else {
+                    None
+                }
+            })
+        });
+        builder.set_line_break_override(Some(&**override_fn));
     }
 
     text_layout.text = builder.build_into(&mut text_layout.layout);
@@ -121,9 +239,11 @@ pub(crate) fn build_inline_layout_into(
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
         text_transformer: &mut TextTransformer,
+        line_break_tracker: &mut LineBreakModeTracker,
         nodes: &crate::NodeTree,
         node_id: NodeId,
         parent_text_transform: &CaseTransform,
+        parent_unrestricted: bool,
     ) {
         let node = &nodes[node_id];
 
@@ -183,9 +303,11 @@ pub(crate) fn build_inline_layout_into(
                             build_inline_layout_recursive(
                                 builder,
                                 text_transformer,
+                                line_break_tracker,
                                 nodes,
                                 child_id,
                                 &text_transform,
+                                parent_unrestricted,
                             );
                         }
                         builder.pop_style_span();
@@ -231,6 +353,7 @@ pub(crate) fn build_inline_layout_into(
                                     white_space_collapse: WhiteSpaceCollapse::Collapse,
                                     ..Default::default()
                                 });
+                            let span_unrestricted = uses_unrestricted_line_break(&style);
 
                             builder.push_style_span(style);
 
@@ -238,9 +361,11 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
+                                    line_break_tracker,
                                     nodes,
                                     before_id,
                                     &text_transform,
+                                    span_unrestricted,
                                 );
                             }
 
@@ -248,18 +373,22 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
+                                    line_break_tracker,
                                     nodes,
                                     child_id,
                                     &text_transform,
+                                    span_unrestricted,
                                 );
                             }
                             if let Some(after_id) = node.after() {
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
+                                    line_break_tracker,
                                     nodes,
                                     after_id,
                                     &text_transform,
+                                    span_unrestricted,
                                 );
                             }
 
@@ -294,12 +423,232 @@ pub(crate) fn build_inline_layout_into(
 
                 let text =
                     text_transformer.transform(&data.content, parent_text_transform, builder);
-                builder.push_text(text);
+                line_break_tracker.push_text(builder, text, parent_unrestricted);
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
             NodeData::Document(_) => unreachable!(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    use crate::{Attribute, BaseDocument, DocumentConfig, NodeId, node::TextLayout, qual_name};
+
+    fn style_attr(value: &str) -> Attribute {
+        Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        }
+    }
+
+    fn make_inline_doc(container_style: &str, text_content: &str) -> (BaseDocument, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![style_attr("display:block")]);
+        let body = mutator.create_element(
+            qual_name!("body"),
+            vec![style_attr("display:block;margin:0")],
+        );
+        let container = mutator.create_element(
+            qual_name!("div"),
+            vec![style_attr(&format!("display:block;{container_style}"))],
+        );
+        let text = mutator.create_text_node(text_content);
+        mutator.append_children(container, &[text]);
+        mutator.append_children(body, &[container]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        (doc, container)
+    }
+
+    fn inline_layout(doc: &BaseDocument, container: NodeId) -> &TextLayout {
+        doc.nodes[container]
+            .element_data()
+            .unwrap()
+            .inline_layout_data
+            .as_deref()
+            .unwrap()
+    }
+
+    #[test]
+    fn default_overflow_wrap_does_not_break_ascii_slash_or_pipe_tokens() {
+        for token in [
+            "https://example.com/path/segment",
+            "10:playground|16:tooltip",
+        ] {
+            for width_px in [60, 184] {
+                let css = format!("width:{width_px}px;font-family:monospace;font-size:16px");
+                let (doc, container) = make_inline_doc(&css, token);
+                let text_layout = inline_layout(&doc, container);
+                let widths = text_layout.layout.calculate_content_widths();
+                if widths.max == 0.0 {
+                    eprintln!("skipping: no usable font (text measures 0x0)");
+                    return;
+                }
+
+                assert!(
+                    widths.max > width_px as f32,
+                    "expected {token:?} max-content width ({}) to exceed {width_px}px",
+                    widths.max
+                );
+                assert!(
+                    (widths.min - widths.max).abs() < 0.01,
+                    "expected min-content width ({}) to match max-content width ({}) for {token:?}",
+                    widths.min,
+                    widths.max
+                );
+                assert_eq!(
+                    text_layout.layout.len(),
+                    1,
+                    "expected {token:?} not to soft-wrap under default overflow-wrap: normal at {width_px}px"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn overflow_wrap_anywhere_and_word_break_break_all_wrap_ascii_slash_and_pipe_tokens() {
+        for token in [
+            "https://example.com/path/segment",
+            "10:playground|16:tooltip",
+        ] {
+            for rule in ["overflow-wrap:anywhere", "word-break:break-all"] {
+                let css = format!("width:184px;font-family:monospace;font-size:16px;{rule}");
+                let (doc, container) = make_inline_doc(&css, token);
+                let text_layout = inline_layout(&doc, container);
+                let widths = text_layout.layout.calculate_content_widths();
+                if widths.max == 0.0 {
+                    eprintln!("skipping: no usable font (text measures 0x0)");
+                    return;
+                }
+
+                assert!(
+                    widths.max > 184.0,
+                    "expected {token:?} max-content width ({}) to exceed 184px",
+                    widths.max
+                );
+                assert!(
+                    widths.min < 184.0,
+                    "expected {token:?} min-content width ({}) under {rule} to be < 184px",
+                    widths.min
+                );
+                assert!(
+                    text_layout.layout.len() >= 2,
+                    "expected {token:?} under {rule} to wrap across multiple lines inside 184px"
+                );
+                for line in text_layout.layout.lines() {
+                    let visible_advance = line.metrics().advance - line.metrics().hanging_advance;
+                    assert!(
+                        visible_advance <= 184.5,
+                        "expected wrapped line advance ({visible_advance}) <= 184px under {rule}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn space_delimited_words_soft_wrap_normally() {
+        let text = "alpha beta gamma delta epsilon";
+        let css = "width:184px;font-family:monospace;font-size:16px";
+        let (doc, container) = make_inline_doc(css, text);
+        let text_layout = inline_layout(&doc, container);
+        let widths = text_layout.layout.calculate_content_widths();
+        if widths.max == 0.0 {
+            eprintln!("skipping: no usable font (text measures 0x0)");
+            return;
+        }
+
+        assert!(
+            widths.max > 184.0,
+            "expected {text:?} max-content width ({}) to exceed 184px",
+            widths.max
+        );
+        assert!(
+            widths.min < 184.0,
+            "expected {text:?} min-content width ({}) to be < 184px",
+            widths.min
+        );
+        assert!(
+            text_layout.layout.len() >= 2,
+            "expected space-delimited words to soft-wrap inside 184px"
+        );
+        for line in text_layout.layout.lines() {
+            let visible_advance = line.metrics().advance - line.metrics().hanging_advance;
+            assert!(
+                visible_advance <= 184.5,
+                "expected wrapped line advance ({visible_advance}) <= 184px"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_normal_and_unrestricted_spans_preserve_per_span_breaking() {
+        for span_rule in ["word-break:break-all", "line-break:anywhere"] {
+            let mut doc = BaseDocument::new(DocumentConfig {
+                viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            });
+            let root_id = doc.root_node().id;
+
+            let mut mutator = doc.mutate();
+            let html =
+                mutator.create_element(qual_name!("html"), vec![style_attr("display:block")]);
+            let body = mutator.create_element(
+                qual_name!("body"),
+                vec![style_attr("display:block;margin:0")],
+            );
+            let container = mutator.create_element(
+                qual_name!("div"),
+                vec![style_attr(
+                    "display:block;width:80px;font-family:monospace;font-size:16px",
+                )],
+            );
+            let normal_slash = mutator.create_text_node("ab/cd ");
+            let span = mutator.create_element(qual_name!("span"), vec![style_attr(span_rule)]);
+            let span_text = mutator.create_text_node("10:playground|16:tooltip");
+            mutator.append_children(span, &[span_text]);
+            mutator.append_children(container, &[normal_slash, span]);
+            mutator.append_children(body, &[container]);
+            mutator.append_children(html, &[body]);
+            mutator.append_children(root_id, &[html]);
+            drop(mutator);
+
+            doc.resolve(0.0);
+
+            let text_layout = inline_layout(&doc, container);
+            let widths = text_layout.layout.calculate_content_widths();
+            if widths.max == 0.0 {
+                eprintln!("skipping: no usable font (text measures 0x0)");
+                return;
+            }
+
+            let lines: Vec<&str> = text_layout
+                .layout
+                .lines()
+                .map(|line| &text_layout.text[line.text_range()])
+                .collect();
+            assert!(
+                lines[0].starts_with("ab/cd"),
+                "expected normal prefix \"ab/cd\" to stay unbroken on first line, got {lines:?}"
+            );
+            assert!(
+                lines.len() >= 3,
+                "expected {span_rule} span to wrap across multiple lines in 80px, got {lines:?}"
+            );
         }
     }
 }
