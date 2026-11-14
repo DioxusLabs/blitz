@@ -1,11 +1,6 @@
-use anyrender::{ImageRenderer as _, PaintScene as _};
-use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
-use blitz_paint::paint_scene;
 use image::{ImageBuffer, ImageFormat};
 use log::warn;
-use peniko::Fill;
-use peniko::kurbo::Rect;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -22,7 +17,7 @@ use super::{
     run_document_scripts,
 };
 use crate::manifest::{artifact_name, is_xml};
-use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
+use crate::{BufferKind, HEIGHT, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 #[allow(clippy::too_many_arguments)]
 pub fn process_ref_test(
@@ -326,23 +321,7 @@ fn render_document_to_buffer(
 
     // Render document to RGBA buffer
     let buf = ctx.buffers.get_mut(buffer_kind);
-    ctx.renderer.render_to_vec(
-        |scene| {
-            scene.reset();
-
-            // Render white background
-            scene.fill(
-                Fill::NonZero,
-                Default::default(),
-                Color::WHITE,
-                Default::default(),
-                &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
-            );
-
-            paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
-        },
-        buf,
-    );
+    ctx.renderer.render_to_vec(document, buf);
 
     fs::create_dir_all(out_path.parent().unwrap()).unwrap();
     let mut file = File::create(out_path).unwrap();

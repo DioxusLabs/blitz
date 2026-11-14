@@ -1,13 +1,14 @@
 use blitz_traits::node_id::NodeId;
 use selectors::SelectorList;
 use smallvec::SmallVec;
-use style::dom::{TDocument, TNode};
+use style::dom::TDocument;
 use style::dom_apis::{
     MayUseInvalidation, QueryAll, QueryFirst, element_closest, element_matches, query_selector,
 };
 use style::selector_parser::{SelectorImpl, SelectorParser};
 use style_traits::ParseError;
 
+use crate::stylo::BlitzNode;
 use crate::{BaseDocument, Node};
 
 impl BaseDocument {
@@ -104,8 +105,8 @@ impl BaseDocument {
     ) -> Option<NodeId> {
         let root_node = &self.nodes[scope];
         let mut result = None;
-        query_selector::<&Node, QueryFirst>(
-            root_node,
+        query_selector::<BlitzNode, QueryFirst>(
+            BlitzNode(root_node),
             selector_list,
             &mut result,
             self.may_use_invalidation_for(scope),
@@ -165,8 +166,8 @@ impl BaseDocument {
     ) -> SmallVec<[NodeId; 32]> {
         let root_node = &self.nodes[scope];
         let mut results = SmallVec::new();
-        query_selector::<&Node, QueryAll>(
-            root_node,
+        query_selector::<BlitzNode, QueryAll>(
+            BlitzNode(root_node),
             selector_list,
             &mut results,
             self.may_use_invalidation_for(scope),
@@ -220,8 +221,8 @@ impl Node {
     /// Text and comment scope nodes return no matches.
     pub fn query_selector_raw(&self, selector_list: &SelectorList<SelectorImpl>) -> Option<NodeId> {
         let mut result = None;
-        query_selector::<&Node, QueryFirst>(
-            self,
+        query_selector::<BlitzNode, QueryFirst>(
+            BlitzNode(self),
             selector_list,
             &mut result,
             MayUseInvalidation::No,
@@ -241,8 +242,8 @@ impl Node {
         selector_list: &SelectorList<SelectorImpl>,
     ) -> SmallVec<[NodeId; 32]> {
         let mut results = SmallVec::new();
-        query_selector::<&Node, QueryAll>(
-            self,
+        query_selector::<BlitzNode, QueryAll>(
+            BlitzNode(self),
             selector_list,
             &mut results,
             MayUseInvalidation::No,
@@ -259,7 +260,8 @@ impl Node {
             return false;
         }
 
-        element_matches(&self, selector_list, self.owner_doc().quirks_mode())
+        let quirks_mode = BlitzNode(self.owner_doc()).quirks_mode();
+        element_matches(&BlitzNode(self), selector_list, quirks_mode)
     }
 
     /// Find the closest matching element at or above this element.
@@ -270,6 +272,7 @@ impl Node {
             return None;
         }
 
-        element_closest(self, selector_list, self.owner_doc().quirks_mode()).map(|node| node.id)
+        let quirks_mode = BlitzNode(self.owner_doc()).quirks_mode();
+        element_closest(BlitzNode(self), selector_list, quirks_mode).map(|node| node.id)
     }
 }

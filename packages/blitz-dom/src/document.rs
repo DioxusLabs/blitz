@@ -9,15 +9,15 @@ use crate::net::{
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::scrolling::ScrollAnimationState;
 use crate::selection::TextSelection;
-use crate::stylo_device::{DeviceChanges, make_device};
+use crate::stylo::{BlitzNode, UserAgentStylesheet, init_stylo_prefs};
+use crate::stylo::{DeviceChanges, make_device, make_media_data};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
 use crate::util::ImageType;
 use crate::{
-    DEFAULT_CSS, DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData,
-    EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading,
-    TextNodeData,
+    DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData, EventDriver,
+    HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading, TextNodeData,
 };
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
@@ -30,7 +30,7 @@ use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
 use parley::{FontContext, PlainEditorDriver};
-use selectors::{Element, matching::QuirksMode};
+use selectors::matching::QuirksMode;
 use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
@@ -40,9 +40,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{
-    Arc, LazyLock, Mutex, MutexGuard, Once, OnceLock, RwLockReadGuard, RwLockWriteGuard,
-};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
 use std::task::{Context as TaskContext, Waker};
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -60,7 +58,6 @@ use style::values::computed::UserSelect;
 use style::values::computed::ui::CursorKind;
 use style::{
     device::Device,
-    dom::{TDocument, TNode},
     media_queries::MediaList,
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
@@ -75,90 +72,6 @@ use web_time::Instant;
 
 #[cfg(feature = "parallel-construct")]
 use thread_local::ThreadLocal;
-
-/// A user-agent stylesheet, parsed with a read-only lock so that it can be shared between documents.
-///
-/// Documents with the same user-agent stylesheets (in the same order) also share Stylo's
-/// cached user-agent cascade data. `@import` rules are ignored.
-#[derive(Clone, Debug, PartialEq)]
-pub struct UserAgentStylesheet(DocumentStyleSheet);
-
-pub(crate) fn init_stylo_prefs() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        style_config::set_pref!("layout.css.flexbox-balance.enabled", true);
-        style_config::set_pref!("layout.css.background-clip.text.enabled", true);
-        style_config::set_pref!("layout.css.webkit-text-fill-color.enabled", true);
-        style_config::set_pref!("layout.css.columns.enabled", true);
-        style_config::set_pref!("layout.css.basic-shape-shape.enabled", true);
-        style_config::set_pref!("layout.css.tree-counting-functions.enabled", true);
-        style_config::set_pref!("layout.css.progress-function.enabled", true);
-        style_config::set_pref!("layout.css.font-variations.enabled", true);
-        style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
-        style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
-        #[cfg(feature = "writing-mode")]
-        {
-            style_config::set_pref!("layout.css.writing-mode.enabled", true);
-            style_config::set_pref!("layout.css.writing-mode.sideways.enabled", true);
-        }
-
-        // Properties that were previously enabled by the `layout.unimplemented` pref
-        style_config::set_pref!("layout.css.appearance.enabled", true);
-        style_config::set_pref!("layout.css.backdrop-filter.enabled", true);
-        style_config::set_pref!("layout.css.contain.enabled", true);
-        style_config::set_pref!("layout.css.content.alt-text.enabled", true);
-        style_config::set_pref!("layout.css.corner-shape.enabled", true);
-        style_config::set_pref!("layout.css.counters.enabled", true);
-        style_config::set_pref!("layout.css.font-size-adjust.enabled", true);
-        style_config::set_pref!("layout.css.forced-color-adjust.enabled", true);
-        style_config::set_pref!("layout.css.masking.enabled", true);
-        style_config::set_pref!("layout.css.math-properties.enabled", true);
-        style_config::set_pref!("layout.css.motion-path.enabled", true);
-        style_config::set_pref!("layout.css.overscroll-behavior.enabled", true);
-        style_config::set_pref!("layout.css.scroll-driven-animations.enabled", true);
-        style_config::set_pref!("layout.css.scroll-behavior.enabled", true);
-        style_config::set_pref!("layout.css.scrollbar-styling.enabled", true);
-        style_config::set_pref!("layout.css.text-decoration-inset.enabled", true);
-        style_config::set_pref!("layout.css.text-overflow.enabled", true);
-        style_config::set_pref!("layout.css.text-underline.enabled", true);
-        style_config::set_pref!("layout.css.view-transitions.enabled", true);
-        style_config::set_pref!("layout.css.writing-mode.text-orientation.enabled", true);
-        style_config::set_pref!("layout.css.zoom.enabled", true);
-        style_config::set_pref!("layout.threads", -1);
-    });
-}
-
-impl UserAgentStylesheet {
-    pub fn parse(css: &str) -> Self {
-        // Pref-gated UA declarations must be enabled before parsing.
-        init_stylo_prefs();
-
-        let lock = SharedRwLock::read_only();
-        let data = Stylesheet::from_str(
-            css,
-            DocumentUrl::default().url_extra_data(),
-            Origin::UserAgent,
-            ServoArc::new(lock.wrap(MediaList::empty())),
-            lock,
-            None,
-            None,
-            QuirksMode::NoQuirks,
-            AllowImportRules::No,
-        );
-        Self(DocumentStyleSheet(ServoArc::new(data)))
-    }
-
-    /// The default user-agent stylesheet ([`DEFAULT_CSS`]), parsed once.
-    pub fn default_sheet() -> Self {
-        static SHEET: LazyLock<UserAgentStylesheet> =
-            LazyLock::new(|| UserAgentStylesheet::parse(DEFAULT_CSS));
-        SHEET.clone()
-    }
-
-    pub fn sheet(&self) -> &DocumentStyleSheet {
-        &self.0
-    }
-}
 
 pub enum DocGuard<'a> {
     Ref(&'a BaseDocument),
@@ -963,15 +876,11 @@ impl BaseDocument {
     }
 
     pub fn try_root_element(&self) -> Option<&Node> {
-        TDocument::as_node(&self.root_node()).first_element_child()
+        self.root_node().first_element_child()
     }
 
     pub fn root_element(&self) -> &Node {
-        TDocument::as_node(&self.root_node())
-            .first_element_child()
-            .unwrap()
-            .as_element()
-            .unwrap()
+        self.try_root_element().unwrap()
     }
 
     pub fn create_node(&mut self, node_data: NodeData) -> NodeId {
@@ -1592,7 +1501,7 @@ impl BaseDocument {
             return;
         }
 
-        let opaque_node_id = TNode::opaque(&&*node);
+        let opaque_node_id = node.opaque();
         node.set_has_snapshot(true);
         node.snapshot_handled()
             .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -1995,10 +1904,7 @@ impl BaseDocument {
         x: f32,
         y: f32,
     ) -> (Option<HitResult>, Option<crate::node::ScrollbarRef>) {
-        if TDocument::as_node(&self.root_node())
-            .first_element_child()
-            .is_none()
-        {
+        if self.root_node().first_element_child().is_none() {
             #[cfg(feature = "tracing")]
             tracing::warn!("No DOM - not resolving hit test");
             return (None, None);
@@ -2256,19 +2162,21 @@ impl BaseDocument {
         self.shell_provider.request_redraw();
     }
 
-    /// Apply any pending device changes to the stylist, coalescing all changes
-    /// since the last flush into a single device rebuild.
+    /// Apply any pending device changes to the stylist's device, coalescing all
+    /// changes since the last flush into a single update of its [`MediaData`](style::device::servo::MediaData).
     pub(crate) fn flush_pending_device_changes(&mut self) {
         let changes = std::mem::take(&mut self.pending_device_changes);
         if changes.is_empty() {
             return;
         }
 
-        self.set_stylist_device(make_device(
-            &self.viewport,
-            self.media_type.clone(),
-            self.font_ctx.clone(),
-        ));
+        let media_data = make_media_data(&self.viewport, self.media_type.clone());
+        let device = self.stylist.device_mut();
+        let old_viewport_size = device.au_viewport_size();
+        device.set_media_data(media_data);
+        let viewport_units_changed =
+            old_viewport_size != device.au_viewport_size() && device.used_viewport_size();
+        self.restyle_for_device_change(viewport_units_changed);
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
         // Text is shaped at a specific scale factor, so cached inline layouts
@@ -2313,17 +2221,24 @@ impl BaseDocument {
         }
         drop(root_styles);
 
-        let old_device = self.stylist.device();
-        let viewport_size_changed = old_device.au_viewport_size() != device.au_viewport_size();
-        let styles_use_viewport_units = old_device.used_viewport_size();
+        let viewport_size_changed =
+            self.stylist.device().au_viewport_size() != device.au_viewport_size();
+        let styles_used_viewport_units = self.stylist.device().used_viewport_size();
+        *self.stylist.device_mut() = device;
+        self.restyle_for_device_change(viewport_size_changed && styles_used_viewport_units);
+    }
 
+    /// Invalidate the styles that a change to the stylist's device affects.
+    /// `viewport_units_changed` is whether styles that used viewport units need recomputing.
+    fn restyle_for_device_change(&mut self, viewport_units_changed: bool) {
         let origins = {
             let guard = &self.guard;
             let guards = StylesheetGuards {
                 author: &guard.read(),
                 ua_or_user: &guard.read(),
             };
-            self.stylist.set_device(device, &guards)
+            self.stylist
+                .media_features_change_changed_style(&guards, self.stylist.device())
         };
 
         // Only fully invalidate element styles when the media query results of
@@ -2338,7 +2253,7 @@ impl BaseDocument {
         // when the viewport size changes, even if no media query results
         // changed. Invalidate just the elements whose styles use viewport
         // units (tracked via per-element computed value flags).
-        if viewport_size_changed && styles_use_viewport_units {
+        if viewport_units_changed {
             if self
                 .stylist
                 .get_custom_property_initial_values_flags()
@@ -2347,7 +2262,7 @@ impl BaseDocument {
                 self.stylist.rebuild_initial_values_for_custom_properties();
             }
             if let Some(root) = self.try_root_element() {
-                style::invalidation::viewport_units::invalidate(root);
+                style::invalidation::viewport_units::invalidate(BlitzNode(root));
             }
         }
     }
@@ -2400,7 +2315,7 @@ impl BaseDocument {
         // (such as `<a>`) between them.
         let mut maybe_node = Some(node);
         while let Some(node) = maybe_node {
-            if node.is_link() {
+            if node.data.is_element_with_tag_name(&local_name!("a")) {
                 return Some(CursorIcon::Pointer);
             }
 
@@ -2664,11 +2579,7 @@ impl BaseDocument {
             let Some(element) = node.element_data() else {
                 return false;
             };
-            if element.name.local == local_name!("canvas") && element.has_attr(local_name!("src")) {
-                return true;
-            }
-
-            false
+            element.name.local == local_name!("canvas") && element.has_attr(local_name!("src"))
         })
     }
 
