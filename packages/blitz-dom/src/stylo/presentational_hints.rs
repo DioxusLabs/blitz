@@ -237,6 +237,11 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             attr.name.local == local_name!("type") && attr.value.eq_ignore_ascii_case("image")
         });
 
+    // An `hr` with `color` or `noshade` takes its `size` as border widths
+    // rather than as a height.
+    let is_solid_hr = *tag == local_name!("hr")
+        && (elem.has_attr(local_name!("color")) || elem.has_attr(local_name!("noshade")));
+
     // https://html.spec.whatwg.org/multipage/#the-lang-and-xml:lang-attributes
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
@@ -405,6 +410,46 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
                     } else {
                         push_style(PropertyDeclaration::MarginTop(margin.clone()));
                         push_style(PropertyDeclaration::MarginBottom(margin));
+                    }
+                }
+            }
+        }
+
+        // `hr`'s `color` maps to `color` as a legacy colour value, and its
+        // `size` to the border widths (with `color` or `noshade` present)
+        // or to the height. The solid border style that `color` and
+        // `noshade` also ask for is a UA rule in default.css.
+        // https://html.spec.whatwg.org/multipage/rendering.html#the-hr-element-2
+        if *tag == local_name!("hr") {
+            if *name == local_name!("color") {
+                use style::values::specified::{Color, ColorPropertyValue};
+                if let Ok(color) = style::servo::attr::parse_legacy_color(value) {
+                    push_style(PropertyDeclaration::Color(ColorPropertyValue(
+                        Color::from_absolute_color(color),
+                    )));
+                }
+            }
+            if *name == local_name!("size") {
+                if let Ok(size) = style::servo::attr::parse_unsigned_integer(value.chars()) {
+                    use style::values::specified::{BorderSideWidth, NoCalcLength};
+                    if is_solid_hr {
+                        let width = BorderSideWidth::from_px(size as f32 / 2.0);
+                        push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
+                        push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
+                        push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
+                        push_style(PropertyDeclaration::BorderLeftWidth(width));
+                    } else if size == 1 {
+                        push_style(PropertyDeclaration::BorderBottomWidth(
+                            BorderSideWidth::from_px(0.0),
+                        ));
+                    } else if size > 1 {
+                        use style::values::generics::{NonNegative, length::Size};
+                        use style::values::specified::LengthPercentage;
+                        let height =
+                            LengthPercentage::Length(NoCalcLength::from_px((size - 2) as f32));
+                        push_style(PropertyDeclaration::Height(Size::LengthPercentage(
+                            NonNegative(height),
+                        )));
                     }
                 }
             }

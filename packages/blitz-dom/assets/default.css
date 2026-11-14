@@ -789,8 +789,9 @@ li {
 
 /* leafs */
 
-/* <hr> noshade and color attributes are handled completely by
- * HTMLHRElement::MapAttributesIntoRule.
+/* <hr> color and size attributes are presentational hints, mapped in
+ * stylo/presentational_hints.rs; color and noshade also make the border
+ * solid, below.
  * https://html.spec.whatwg.org/#the-hr-element-2
  */
 hr {
@@ -807,8 +808,8 @@ hr {
     display: block;
 }
 
-hr[size="1"] {
-    border-style: solid none none none;
+hr[color], hr[noshade] {
+    border-style: solid;
 }
 
 /* Note that we only intend for the alt content to show up if the image is
