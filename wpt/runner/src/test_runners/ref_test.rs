@@ -304,7 +304,7 @@ fn render_document_to_buffer(
 
     // Render document to RGBA buffer
     let buf = ctx.buffers.get_mut(buffer_kind);
-    ctx.renderer.render_to_vec(document, buf);
+    ctx.renderers[ctx.active_renderer].render_to_vec(document, buf);
 
     fs::create_dir_all(out_path.parent().unwrap()).unwrap();
     let mut file = File::create(out_path).unwrap();

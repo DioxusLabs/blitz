@@ -1,4 +1,4 @@
-//! The renderers compiled into the runner, one chosen at runtime with `--renderer`.
+//! The renderers compiled into the runner, chosen at runtime with `--renderer`.
 
 #[cfg(not(any(feature = "cpu", feature = "tiny-skia", feature = "gpu")))]
 compile_error!("enable at least one of the `cpu`, `tiny-skia` and `gpu` features");
@@ -47,41 +47,47 @@ impl RendererKind {
     }
 }
 
-/// Splits `--renderer <name>` (or `--renderer=<name>`) out of the command line arguments.
+/// Splits `--renderer <names>` (or `--renderer=<names>`) out of the command line arguments.
 ///
-/// Returns the selected renderer (the first compiled-in one if there is no `--renderer`) and the
-/// remaining non-flag arguments.
-pub fn parse_args(args: impl IntoIterator<Item = String>) -> (RendererKind, Vec<String>) {
-    let mut name = None;
+/// `<names>` is a comma-separated list of renderers, or `all`. With more than one, each test is
+/// rendered by every one of them in turn. Returns the selected renderers (the default one if
+/// there is no `--renderer`) and the remaining non-flag arguments.
+pub fn parse_args(args: impl IntoIterator<Item = String>) -> (Vec<RendererKind>, Vec<String>) {
+    let mut names = None;
     let mut rest = Vec::new();
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         if arg == "--renderer" {
-            name = args.next();
+            names = args.next();
         } else if let Some(value) = arg.strip_prefix("--renderer=") {
-            name = Some(value.to_string());
+            names = Some(value.to_string());
         } else if !arg.starts_with('-') {
             rest.push(arg);
         }
     }
 
     let all = RendererKind::all();
-    let kind = match name {
-        None => all[0],
-        Some(name) => all
-            .iter()
-            .copied()
-            .find(|kind| kind.name() == name)
-            .unwrap_or_else(|| {
-                let available: Vec<_> = all.iter().map(|kind| kind.name()).collect();
-                eprintln!(
-                    "Unknown renderer {name:?}. Available: {}",
-                    available.join(", ")
-                );
-                std::process::exit(1);
-            }),
+    let kinds = match names.as_deref() {
+        None => vec![all[0]],
+        Some("all") => all,
+        Some(names) => names
+            .split(',')
+            .map(|name| {
+                all.iter()
+                    .copied()
+                    .find(|kind| kind.name() == name)
+                    .unwrap_or_else(|| {
+                        let available: Vec<_> = all.iter().map(|kind| kind.name()).collect();
+                        eprintln!(
+                            "Unknown renderer {name:?}. Available: {}, all",
+                            available.join(", ")
+                        );
+                        std::process::exit(1);
+                    })
+            })
+            .collect(),
     };
-    (kind, rest)
+    (kinds, rest)
 }
 
 // One per worker thread, so the size difference between variants doesn't matter.
