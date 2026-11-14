@@ -19,7 +19,7 @@ use html_escape::{encode_double_quoted_attribute, encode_text};
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::LazyLock;
 
 /// File in the generated `WPT_DIR` holding the resvg commit the tests came from
@@ -81,18 +81,12 @@ pub fn generate(resvg_dir: &Path, out_dir: &Path) {
     write_fonts_conf(&dst);
 
     let tests_dir = dst.join("tests");
-    let mut svgs = Vec::new();
-    collect_svgs(&tests_dir, &mut svgs);
-    svgs.sort();
-
+    let list = fs::read_to_string(src.join("integration/render.rs")).unwrap();
     let mut count = 0;
-    for svg in svgs {
-        let png = svg.with_extension("png");
-        if !png.exists() {
-            continue;
-        }
-        let rel = svg.strip_prefix(&tests_dir).unwrap().with_extension("");
-        let rel = rel.to_str().unwrap();
+    for rel in listed_tests(&list) {
+        let svg = tests_dir.join(format!("{rel}.svg"));
+        let png = tests_dir.join(format!("{rel}.png"));
+        let rel = rel.as_str();
         let (width, height) = image::image_dimensions(&png).unwrap();
         let svg_source = inlinable_svg(&decode_xml(&fs::read(&svg).unwrap()));
 
@@ -278,20 +272,36 @@ fn copy_dir(src: &Path, dst: &Path) {
     }
 }
 
-fn collect_svgs(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            collect_svgs(&path, out);
-        } else if path.extension().is_some_and(|ext| ext == "svg") {
-            out.push(path);
-        }
-    }
+/// The tests resvg runs, from its generated `integration/render.rs`. Some
+/// SVG/PNG pairs in `tests/` aren't listed there and their PNGs are stale.
+/// Names are relative to `tests/`, with `#` replaced as `copy_dir` does.
+fn listed_tests(render_rs: &str) -> Vec<String> {
+    static RENDER_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"\brender\("tests/([^"]+)"\)"#).unwrap());
+    let mut tests: Vec<String> = RENDER_RE
+        .captures_iter(render_rs)
+        .map(|caps| caps[1].replace('#', "_"))
+        .collect();
+    tests.sort();
+    tests
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_only_render_tests() {
+        let render_rs = r#"
+#[test] fn a() { assert_eq!(render("tests/painting/fill/#RGB-color"), 0); }
+#[test] fn b() { assert_eq!(render("tests/filters/feBlend/empty"), 0); }
+#[test] fn c() { assert_eq!(render_extra("extra/hidden-element"), 0); }
+"#;
+        assert_eq!(
+            listed_tests(render_rs),
+            ["filters/feBlend/empty", "painting/fill/_RGB-color"]
+        );
+    }
 
     #[test]
     fn decodes_declared_encoding() {
