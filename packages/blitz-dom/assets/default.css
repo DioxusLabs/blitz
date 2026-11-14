@@ -388,6 +388,19 @@ plaintext {
 
 /* tables */
 
+/* Anonymous table boxes generated during box-tree construction */
+*|*::-servo-anonymous-table {
+    display: table;
+}
+
+*|*::-servo-anonymous-table-row {
+    display: table-row;
+}
+
+*|*::-servo-anonymous-table-cell {
+    display: table-cell;
+}
+
 table {
     display: table;
     border-spacing: 2px;

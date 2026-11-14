@@ -55,62 +55,6 @@ use taffy::Layout;
 /// element's own content.
 pub(super) const ALMOST_OPAQUE: f32 = 1.0 - f32::EPSILON;
 
-/// A view of the track positions reported by taffy in physical (left-to-right /
-/// top-to-bottom) order. Taffy reports tracks in logical order, which for RTL grid
-/// containers is physically reversed.
-#[derive(Clone, Copy)]
-pub(crate) struct PhysicalTracks<'a> {
-    positions: &'a [taffy::Line<f32>],
-    reversed: bool,
-}
-
-impl<'a> PhysicalTracks<'a> {
-    pub(crate) fn from_tracks<S: taffy::CheapCloneStr>(
-        tracks: &'a taffy::DetailedGridTracksInfo<S>,
-    ) -> Self {
-        let positions = tracks.positions.as_slice();
-        let reversed = positions
-            .first()
-            .zip(positions.last())
-            .is_some_and(|(first, last)| first.start > last.start);
-        Self {
-            positions,
-            reversed,
-        }
-    }
-
-    fn get(self, index: usize) -> taffy::Line<f32> {
-        if self.reversed {
-            self.positions[self.positions.len() - 1 - index]
-        } else {
-            self.positions[index]
-        }
-    }
-
-    /// Iterate track positions in physical order
-    pub(crate) fn iter(self) -> impl ExactSizeIterator<Item = taffy::Line<f32>> + 'a {
-        (0..self.positions.len()).map(move |index| self.get(index))
-    }
-
-    /// The physical start position of the first track
-    pub(crate) fn origin(self) -> f32 {
-        if self.positions.is_empty() {
-            0.0
-        } else {
-            self.get(0).start
-        }
-    }
-
-    /// Total distance from the start of the first track to the end of the last track
-    pub(crate) fn span(self) -> f32 {
-        if self.positions.is_empty() {
-            0.0
-        } else {
-            self.get(self.positions.len() - 1).end - self.get(0).start
-        }
-    }
-}
-
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
 pub struct BlitzDomPainter<'dom, 'a> {
@@ -310,8 +254,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 && display.inside() != DisplayInside::TableCell;
             !display.is_inline_flow() && !is_internal_table_box_other_than_cell
         };
+        // `overflow` does not apply to internal table boxes other than cells (rows and row
+        // groups are not block containers), so they never clip their content
+        let is_internal_table_box_other_than_cell = {
+            let display = styles.clone_display();
+            display.outside() == DisplayOutside::InternalTable
+                && display.inside() != DisplayInside::TableCell
+        };
         let element = node.element_data();
         self.root_element_id != Some(node.id)
+            && !is_internal_table_box_other_than_cell
             && (element.and_then(|e| e.raster_image_data()).is_some()
                 || element.and_then(|e| e.sub_doc_data()).is_some()
                 || element.and_then(|e| e.text_input_data()).is_some()
@@ -584,7 +536,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             None,
         );
 
-        let paints_own_box = !node.is_inline_with_only_block_children();
+        // Internal table boxes other than cells (rows, row groups) have their backgrounds
+        // painted under their cells by the table, and no borders of their own.
+        let display = styles.clone_display();
+        let is_internal_table_box_other_than_cell = display.outside()
+            == DisplayOutside::InternalTable
+            && display.inside() != DisplayInside::TableCell;
+        let paints_own_box =
+            !node.is_inline_with_only_block_children() && !is_internal_table_box_other_than_cell;
 
         cx.draw_outline(scene);
         if paints_own_box {
@@ -757,12 +716,25 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let scale = self.scale;
 
+        let element = node.element_data().unwrap();
+
+        // A table's layout box holds its captions as well as the table box; the table's border,
+        // padding and background belong to the table box, below the top captions and above the
+        // bottom ones
+        let box_insets = match element.special_data {
+            blitz_dom::node::SpecialElementData::TableRoot(_) => {
+                blitz_dom::table_box_insets(self.dom, node.id)
+            }
+            _ => taffy::Line {
+                start: 0.0,
+                end: 0.0,
+            },
+        };
+
         // todo: maybe cache this so we don't need to constantly be figuring it out
         // It is quite a bit of math to calculate during render/traverse
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
-        let frame = create_css_rect(&style, &layout, scale);
-
-        let element = node.element_data().unwrap();
+        let frame = create_css_rect(&style, &layout, box_insets, scale);
 
         ElementCx {
             context: self,
@@ -1416,6 +1388,13 @@ impl ElementCx<'_, '_> {
                 }
                 taffy::Display::Flex => Color::new([0.0, 1.0, 0.0, 1.0]),
                 taffy::Display::Grid => Color::new([0.0, 0.0, 1.0, 1.0]),
+                taffy::Display::Table
+                | taffy::Display::TableRowGroup
+                | taffy::Display::TableRow
+                | taffy::Display::TableCell
+                | taffy::Display::TableColumnGroup
+                | taffy::Display::TableColumn
+                | taffy::Display::TableCaption => Color::new([1.0, 0.0, 1.0, 1.0]),
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 
@@ -1440,19 +1419,28 @@ fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
 }
 
 /// Convert Stylo and Taffy types into Kurbo types
-fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBox {
+/// The CSS boxes of an element, from its layout. `box_insets` moves the border box's top and
+/// bottom edges in from the layout box's (a table's captions lie outside its table box).
+fn create_css_rect(
+    style: &ComputedValues,
+    layout: &Layout,
+    box_insets: taffy::Line<f32>,
+    scale: f64,
+) -> CssBox {
     // Resolve and rescale
     // We have to scale since document pixels are not same same as rendered pixels
     let width: f64 = layout.size.width as f64;
     let height: f64 = layout.size.height as f64;
-    let border_box = Rect::new(0.0, 0.0, width * scale, height * scale);
+    let top = box_insets.start as f64;
+    let bottom = (height - box_insets.end as f64).max(top);
+    let border_box = Rect::new(0.0, top * scale, width * scale, bottom * scale);
     let border = insets_from_taffy_rect(layout.border.map(|p| p as f64 * scale));
     let padding = insets_from_taffy_rect(layout.padding.map(|p| p as f64 * scale));
     let outline_width = style.get_outline().outline_width.0.to_f64_px() * scale;
 
     // Resolve the radii to a length. need to downscale since the radii are in document pixels
     let resolve_w = CSSPixelLength::new(width as _);
-    let resolve_h = CSSPixelLength::new(height as _);
+    let resolve_h = CSSPixelLength::new((bottom - top) as _);
     let resolve_radii = |radius: &BorderCornerRadius| -> Vec2 {
         Vec2 {
             x: scale * radius.0.width.0.resolve(resolve_w).px() as f64,

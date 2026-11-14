@@ -8,12 +8,16 @@ use parley::StyleProperty;
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
+    properties::ComputedValues,
+    selector_parser::PseudoElement,
     shared_lock::StylesheetGuards,
+    stylist::Stylist,
     values::{
         computed::{Content, ContentItem, Display, Float},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
+use taffy::TableRole;
 use thin_vec::ThinVec;
 
 use crate::stylo::BlitzNode;
@@ -25,7 +29,7 @@ use crate::{
     },
     node::{NodeFlags, NodeKind, SpecialElementData, TextInputData, TextLayout},
     qual_name, stylo_to_parley,
-    traversal::{iter_children, iter_children_and_pseudos},
+    traversal::iter_children,
 };
 
 use super::{
@@ -64,6 +68,8 @@ pub(crate) enum ConstructionTaskResultData {
 pub(crate) struct LayoutChildren {
     pub(crate) children: ThinVec<NodeId>,
     pub(crate) anonymous_block_id: Option<NodeId>,
+    /// The pseudo-element the currently-open anonymous box is styled as.
+    pub(crate) anonymous_pseudo: Option<PseudoElement>,
     /// All anonymous blocks created while collecting these layout children.
     ///
     /// These are recorded on the container node so they can be deallocated the
@@ -79,11 +85,6 @@ impl LayoutChildren {
     }
 
     /// Append all layout children in `slice`.
-    fn extend(&mut self, slice: &[NodeId], doc: &mut BaseDocument) {
-        self.maybe_push_anon_block(doc);
-        self.children.extend_from_slice(slice);
-    }
-
     fn maybe_push_anon_block(&mut self, doc: &mut BaseDocument) {
         fn block_is_only_whitespace(doc: &BaseDocument, node_id: NodeId) -> bool {
             for child_id in doc.nodes[node_id].children.iter().copied() {
@@ -110,6 +111,7 @@ impl LayoutChildren {
         }
 
         self.anonymous_block_id = None;
+        self.anonymous_pseudo = None;
     }
 
     fn push_wrapped(
@@ -118,64 +120,114 @@ impl LayoutChildren {
         child_id: NodeId,
         doc: &mut BaseDocument,
     ) {
-        if self.anonymous_block_id.is_none() {
-            self.create_anonymous_block(container_node_id, doc);
-        }
-        doc.nodes[self.anonymous_block_id.unwrap()]
-            .children
-            .push(child_id);
+        self.push_wrapped_in(
+            container_node_id,
+            child_id,
+            doc,
+            PseudoElement::ServoAnonymousBox,
+        );
     }
 
-    fn create_anonymous_block(&mut self, container_node_id: NodeId, doc: &mut BaseDocument) {
-        use style::selector_parser::PseudoElement;
-
-        const NAME: QualName = QualName {
-            prefix: None,
-            ns: ns!(html),
-            local: local_name!("div"),
-        };
-        let node_id = doc.create_node(NodeData::AnonymousBlock(Box::new(ElementData::new(
-            NAME,
-            Vec::new(),
-        ))));
-
-        // Set style data
-        let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
-        let read_guard = doc.guard.read();
-        let guards = StylesheetGuards::same(&read_guard);
-        let style = doc.stylist.style_for_anonymous::<BlitzNode>(
-            &guards,
-            &PseudoElement::ServoAnonymousBox,
-            &parent_style,
-        );
-        let mut stylo_element_data = StyloElementData {
-            damage: ALL_DAMAGE,
-            ..Default::default()
-        };
-        drop(parent_style);
-
-        stylo_element_data.styles.primary = Some(style);
-        stylo_element_data.set_restyled();
-
-        *doc.nodes[node_id]
-            .stylo_element_data_mut()
-            .ensure_init_mut() = stylo_element_data;
-
-        if doc.nodes[container_node_id]
-            .flags
-            .contains(NodeFlags::IS_IN_DOCUMENT)
-        {
-            doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
+    /// Append `child_id` to the currently-open anonymous box, opening one styled as `pseudo`
+    /// (an anonymous block, table row or table cell) if there is none.
+    fn push_wrapped_in(
+        &mut self,
+        container_node_id: NodeId,
+        child_id: NodeId,
+        doc: &mut BaseDocument,
+        pseudo: PseudoElement,
+    ) {
+        if self.anonymous_pseudo != Some(pseudo) {
+            self.maybe_push_anon_block(doc);
+            self.create_anonymous_box(container_node_id, doc, pseudo);
         }
-        doc.nodes[node_id].parent = Some(container_node_id);
-        doc.nodes[node_id]
-            .layout_parent
-            .set(Some(container_node_id));
+        let anon_id = self.anonymous_block_id.unwrap();
+        doc.nodes[anon_id].children.push(child_id);
+        if pseudo == PseudoElement::ServoAnonymousTable {
+            doc.nodes[child_id].layout_parent.set(Some(anon_id));
+        }
+    }
 
+    fn create_anonymous_box(
+        &mut self,
+        container_node_id: NodeId,
+        doc: &mut BaseDocument,
+        pseudo: PseudoElement,
+    ) {
+        let node_id = new_anonymous_box(doc, container_node_id, pseudo, None);
         self.children.push(node_id);
         self.anonymous_block_id = Some(node_id);
+        self.anonymous_pseudo = Some(pseudo);
         self.anonymous_blocks.push(node_id);
     }
+}
+
+/// The style of an anonymous box styled as `pseudo` inheriting from `parent_style`, with its
+/// `display` replaced by `display` when given
+pub(crate) fn anonymous_box_style(
+    stylist: &Stylist,
+    guards: &StylesheetGuards,
+    pseudo: &PseudoElement,
+    parent_style: &ComputedValues,
+    display: Option<Display>,
+) -> style::servo_arc::Arc<ComputedValues> {
+    let style = stylist.style_for_anonymous::<BlitzNode>(guards, pseudo, parent_style);
+    let Some(display) = display else {
+        return style;
+    };
+    let mut overridden = (*style).clone();
+    overridden.mutate_box().set_display(display);
+    style::servo_arc::Arc::new(overridden)
+}
+
+/// Create an anonymous box styled as `pseudo` (inheriting from `container_node_id`), with its
+/// `display` replaced by `display` when given (the UA sheet only knows block-level anonymous
+/// tables, but one generated inside inline content is an inline-table)
+fn new_anonymous_box(
+    doc: &mut BaseDocument,
+    container_node_id: NodeId,
+    pseudo: PseudoElement,
+    display: Option<Display>,
+) -> NodeId {
+    const NAME: QualName = QualName {
+        prefix: None,
+        ns: ns!(html),
+        local: local_name!("div"),
+    };
+    let node_id = doc.create_node(NodeData::AnonymousBlock(Box::new(ElementData::new(
+        NAME,
+        Vec::new(),
+    ))));
+
+    // Set style data
+    let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
+    let read_guard = doc.guard.read();
+    let guards = StylesheetGuards::same(&read_guard);
+    let style = anonymous_box_style(&doc.stylist, &guards, &pseudo, &parent_style, display);
+    let mut stylo_element_data = StyloElementData {
+        damage: ALL_DAMAGE,
+        ..Default::default()
+    };
+    drop(parent_style);
+
+    stylo_element_data.styles.primary = Some(style);
+    stylo_element_data.set_restyled();
+
+    *doc.nodes[node_id]
+        .stylo_element_data_mut()
+        .ensure_init_mut() = stylo_element_data;
+
+    if doc.nodes[container_node_id]
+        .flags
+        .contains(NodeFlags::IS_IN_DOCUMENT)
+    {
+        doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
+    }
+    doc.nodes[node_id].parent = Some(container_node_id);
+    doc.nodes[node_id]
+        .layout_parent
+        .set(Some(container_node_id));
+    node_id
 }
 
 fn push_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node) {
@@ -292,6 +344,8 @@ struct FlowClassification {
     has_contents: bool,
     /// An in-flow inline-level child that is laid out in an anonymous block (text, or an inline box without block content).
     has_inline_level: bool,
+    /// An in-flow row group, row, column or cell, which is laid out in an anonymous table.
+    has_internal_table: bool,
 }
 
 impl Default for FlowClassification {
@@ -302,6 +356,7 @@ impl Default for FlowClassification {
             all_out_of_flow: true,
             has_contents: false,
             has_inline_level: false,
+            has_internal_table: false,
         }
     }
 }
@@ -375,9 +430,11 @@ fn classify_flow_children(
             classification.all_out_of_flow = false;
             match display.outside() {
                 DisplayOutside::None => {}
-                DisplayOutside::Block
-                | DisplayOutside::TableCaption
-                | DisplayOutside::InternalTable => classification.all_inline = false,
+                DisplayOutside::Block => classification.all_inline = false,
+                DisplayOutside::InternalTable | DisplayOutside::TableCaption => {
+                    classification.all_inline = false;
+                    classification.has_internal_table = true;
+                }
                 DisplayOutside::Inline => {
                     classification.all_block = false;
 
@@ -555,7 +612,7 @@ fn collect_layout_children_with_wrap(
         }
 
         DisplayInside::Table => {
-            let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
+            let table_context = build_table_context(doc, container_node_id);
             #[allow(clippy::arc_with_non_send_sync)]
             let data = SpecialElementData::TableRoot(Arc::new(table_context));
             doc.nodes[container_node_id]
@@ -566,13 +623,37 @@ fn collect_layout_children_with_wrap(
                 .downcast_element_mut()
                 .unwrap()
                 .special_data = data;
-            if let Some(before) = doc.nodes[container_node_id].before() {
-                out.push(before, doc);
-            }
-            out.extend(&tlayout_children, doc);
-            if let Some(after) = doc.nodes[container_node_id].after() {
-                out.push(after, doc);
-            }
+            collect_table_children(doc, container_node_id, out, TableRole::Other);
+        }
+
+        // Row groups and rows inside a table (possibly through display:contents) hold the
+        // table's rows and cells. Outside of a table they are laid out as flow containers
+        // below: Blitz does not yet generate anonymous table wrapper boxes.
+        DisplayInside::TableRowGroup
+        | DisplayInside::TableHeaderGroup
+        | DisplayInside::TableFooterGroup
+            if matches!(
+                table_parent_role(doc, container_node_id),
+                Some(TableRole::Other)
+            ) =>
+        {
+            collect_table_children(doc, container_node_id, out, TableRole::RowGroup);
+        }
+        DisplayInside::TableRow
+            if matches!(
+                table_parent_role(doc, container_node_id),
+                Some(TableRole::Other | TableRole::RowGroup)
+            ) =>
+        {
+            collect_table_children(doc, container_node_id, out, TableRole::Row);
+        }
+        DisplayInside::TableColumnGroup
+            if matches!(
+                table_parent_role(doc, container_node_id),
+                Some(TableRole::Other)
+            ) =>
+        {
+            collect_table_children(doc, container_node_id, out, TableRole::ColumnGroup);
         }
 
         // Flow, FlowRoot and TableCell, plus internal table displays (row,
@@ -627,13 +708,15 @@ fn collect_layout_children_with_wrap(
                     .flags
                     .insert(NodeFlags::IS_INLINE_ROOT);
 
-                find_inline_layout_embedded_boxes(doc, container_node_id, &mut out.children);
+                find_inline_layout_embedded_boxes(doc, container_node_id, out);
                 return;
             }
 
             // If the children are either all inline or all block then simply return the regular children
             // as the layout children
-            if classification.all_block & !classification.has_contents {
+            if classification.has_internal_table {
+                // Wrapped in anonymous tables below
+            } else if classification.all_block & !classification.has_contents {
                 return push_non_whitespace_children_and_pseudos(
                     &mut out.children,
                     &doc.nodes[container_node_id],
@@ -653,10 +736,170 @@ fn collect_layout_children_with_wrap(
     }
 }
 
+/// The table role of the box that will lay out `node_id`'s box (its nearest non-`display: contents`
+/// ancestor): `Other` for a table, or `None` when the node has no styled ancestor.
+fn table_parent_role(doc: &BaseDocument, node_id: NodeId) -> Option<TableRole> {
+    let node = &doc.nodes[node_id];
+    // Boxes wrapped in an anonymous table during the parent's box construction
+    if let Some(anon_id) = node.layout_parent.get()
+        && let Some(anon) = doc.nodes.get(anon_id)
+        && matches!(anon.data, NodeData::AnonymousBlock(_))
+        && anon.children.contains(&node_id)
+        && anon
+            .display_style()
+            .is_some_and(|d| d.inside() == DisplayInside::Table)
+    {
+        return Some(TableRole::Other);
+    }
+    let mut parent_id = node.parent;
+    while let Some(id) = parent_id {
+        let parent = &doc.nodes[id];
+        let display = parent.display_style()?;
+        if display.inside() == DisplayInside::Contents {
+            parent_id = parent.parent;
+            continue;
+        }
+        return match display.inside() {
+            DisplayInside::Table => Some(TableRole::Other),
+            _ => Some(stylo_taffy::convert::table_role(display)),
+        };
+    }
+    None
+}
+
+/// Visit the children (and ::before/::after pseudos) of a table part, hoisting the children of
+/// `display: contents` nodes, with the display each generates a box with.
+fn for_each_table_child(
+    doc: &mut BaseDocument,
+    container_node_id: NodeId,
+    visit: &mut impl FnMut(&mut BaseDocument, NodeId, Display),
+) {
+    let node = &doc.nodes[container_node_id];
+    let child_ids: Vec<NodeId> = node
+        .before()
+        .into_iter()
+        .chain(node.children.iter().copied())
+        .chain(node.after())
+        .collect();
+    for child_id in child_ids {
+        let child = &doc.nodes[child_id];
+        // Whitespace-only text between the children of a table, row group or row generates no
+        // box whatever its `white-space` (CSS Tables 3 §3.1)
+        if child.data.kind() == NodeKind::Comment || child.is_whitespace_node() {
+            continue;
+        }
+        let display = child.display_style().unwrap_or(Display::inline());
+        if display.inside() == DisplayInside::Contents {
+            doc.nodes[child_id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+            for_each_table_child(doc, child_id, visit);
+        } else {
+            visit(doc, child_id, display);
+        }
+    }
+}
+
+/// Collect the layout children of a table (`container_role` `Other`), row group, row or column
+/// group, generating the anonymous boxes the CSS table model requires (CSS 2.1 §17.2.1): cells
+/// directly inside a table or row group are wrapped in an anonymous row, and content other
+/// than cells inside a row is wrapped in an anonymous cell. Columns, column groups and captions
+/// are laid out by the table. Taffy's table algorithm takes care of the anonymous row group
+/// around rows that sit directly in the table.
+fn collect_table_children(
+    doc: &mut BaseDocument,
+    container_node_id: NodeId,
+    out: &mut LayoutChildren,
+    container_role: TableRole,
+) {
+    // Header row groups come first and footer row groups last, whatever their document order
+    let group_order = |display: Display| -> u8 {
+        match display.inside() {
+            DisplayInside::TableHeaderGroup => 0,
+            DisplayInside::TableFooterGroup => 2,
+            _ => 1,
+        }
+    };
+    let passes: &[u8] = if container_role == TableRole::Other {
+        &[0, 1, 2]
+    } else {
+        &[1]
+    };
+
+    for pass in passes {
+        for_each_table_child(doc, container_node_id, &mut |doc, child_id, display| {
+            let order = if container_role == TableRole::Other {
+                group_order(display)
+            } else {
+                1
+            };
+            if order != *pass {
+                return;
+            }
+
+            let node = &doc.nodes[child_id];
+            if display.inside() == DisplayInside::None || display.outside() == DisplayOutside::None
+            {
+                doc.nodes[child_id]
+                    .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+                return;
+            }
+
+            // Out-of-flow children take no part in the table grid; Taffy's table algorithm
+            // hoists them to their containing block.
+            if node.is_out_of_flow() {
+                out.push(child_id, doc);
+                return;
+            }
+
+            let role = if node.is_element() || node.data.kind() == NodeKind::AnonymousBlock {
+                stylo_taffy::convert::table_role(display)
+            } else {
+                TableRole::Other
+            };
+            match (container_role, role) {
+                // Row groups, rows, column groups, columns and captions directly in the table,
+                // rows in a row group, columns in a column group, cells in a row
+                (
+                    TableRole::Other,
+                    TableRole::RowGroup
+                    | TableRole::Row
+                    | TableRole::ColumnGroup
+                    | TableRole::Column
+                    | TableRole::Caption,
+                )
+                | (TableRole::RowGroup, TableRole::Row)
+                | (TableRole::ColumnGroup, TableRole::Column)
+                | (TableRole::Row, TableRole::Cell) => out.push(child_id, doc),
+                // Anything else in a table or row group is wrapped in an anonymous row (and,
+                // if it is not a cell, in an anonymous cell when that row is constructed)
+                (TableRole::Other | TableRole::RowGroup, _) => out.push_wrapped_in(
+                    container_node_id,
+                    child_id,
+                    doc,
+                    PseudoElement::ServoAnonymousTableRow,
+                ),
+                // Anything else in a row is wrapped in an anonymous cell
+                (TableRole::Row, _) => out.push_wrapped_in(
+                    container_node_id,
+                    child_id,
+                    doc,
+                    PseudoElement::ServoAnonymousTableCell,
+                ),
+                // Anything but a column inside a column group, and anything inside a column,
+                // generates no box
+                (TableRole::ColumnGroup | TableRole::Column, _) => doc.nodes[child_id]
+                    .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC),
+                (TableRole::Cell | TableRole::Caption, _) => {
+                    unreachable!("cells and captions are flow containers")
+                }
+            }
+        });
+    }
+}
+
 /// Extract the text generated by a pseudo-element's `content` property
 /// (only string content items are currently supported; other item types
 /// are skipped).
-fn pe_content_text(style: &style::properties::ComputedValues) -> Option<String> {
+fn pe_content_text(style: &ComputedValues) -> Option<String> {
     match &style.get_counters().content {
         Content::Items(item_data) => {
             let items = &item_data.items[0..item_data.alt_start];
@@ -841,6 +1084,24 @@ fn collect_complex_layout_children(
             });
             collect_layout_children_with_wrap(doc, child_id, out, wrap)
         }
+        // Consecutive row groups, rows, columns, cells and captions outside of a table are
+        // wrapped in an anonymous table (CSS 2.1 §17.2.1), which the whitespace between them is
+        // dropped from.
+        else if matches!(
+            child_display.outside(),
+            DisplayOutside::InternalTable | DisplayOutside::TableCaption
+        ) {
+            out.push_wrapped_in(
+                container_node_id,
+                child_id,
+                doc,
+                PseudoElement::ServoAnonymousTable,
+            );
+        } else if out.anonymous_pseudo == Some(PseudoElement::ServoAnonymousTable)
+            && doc.nodes[child_id].is_collapsible_whitespace_node()
+        {
+            // Dropped
+        }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
         else if needs_wrap(child_node_kind, display_outside) {
@@ -939,21 +1200,163 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
 /// Find and return the "layout_children" (inline boxes) for an inline layout
 /// without actually constructing the layout. This allows us to defer the expensive
 /// construction of the Parley layout (which invokes text shaping) to a paralell phase.
+/// The children an inline box contributes to its inline formatting context: its `::before`, then
+/// its DOM children with runs of table parts replaced by the anonymous inline-table wrapping
+/// them (see [`wrap_inline_table_parts_recursive`]), then its `::after`.
+pub(crate) fn inline_children_and_pseudos(node: &Node) -> Vec<NodeId> {
+    let mut children = Vec::with_capacity(node.children.len() + 2);
+    children.extend(node.before());
+    match node.layout_children.borrow().as_deref() {
+        Some(wrapped) => children.extend_from_slice(wrapped),
+        None => children.extend_from_slice(&node.children),
+    }
+    children.extend(node.after());
+    children
+}
+
+/// Whether `node_id` is an inline box whose children take part in the surrounding inline
+/// formatting context (an inline flow box that is not an atomic inline, or `display: contents`)
+fn is_transparent_inline(nodes: &crate::NodeTree, node_id: NodeId) -> bool {
+    let node = &nodes[node_id];
+    let Some(element_data) = node.element_data() else {
+        return false;
+    };
+    let display = node.display_style().unwrap_or(Display::inline());
+    match (display.outside(), display.inside()) {
+        (DisplayOutside::None, DisplayInside::Contents) => true,
+        (DisplayOutside::Inline, DisplayInside::Flow) => {
+            !is_inline_box_element(&element_data.name.local)
+                && element_data.name.local != local_name!("br")
+        }
+        _ => false,
+    }
+}
+
+/// Table parts (cells, rows, row groups, columns and captions) inside inline content form an
+/// anonymous inline-table (CSS 2.1 §17.2.1): each run of consecutive table parts among the
+/// children of `node_id`, and the whitespace between them, is replaced by one anonymous
+/// `inline-table` box holding them. The replacement child list is stored as the node's
+/// `layout_children`; nodes with no table parts get `None` so that a stale list is never read.
+/// Recurses into every inline box that contributes to the same inline formatting context.
+fn wrap_inline_table_parts_recursive(
+    doc: &mut BaseDocument,
+    inline_root_node_id: NodeId,
+    node_id: NodeId,
+    anonymous_blocks: &mut ThinVec<NodeId>,
+) {
+    let children: Vec<NodeId> = doc.nodes[node_id].children.to_vec();
+    let is_table_part = |doc: &BaseDocument, child_id: NodeId| {
+        doc.nodes[child_id].display_style().is_some_and(|d| {
+            matches!(
+                d.outside(),
+                DisplayOutside::InternalTable | DisplayOutside::TableCaption
+            )
+        })
+    };
+
+    // The inline root's own table parts are wrapped during block-level collection
+    if node_id != inline_root_node_id {
+        let has_table_part = children
+            .iter()
+            .any(|&child_id| is_table_part(doc, child_id));
+        if !has_table_part {
+            *doc.nodes[node_id].layout_children.borrow_mut() = None;
+        } else {
+            let mut wrapped: Vec<NodeId> = Vec::with_capacity(children.len());
+            let mut index = 0;
+            while index < children.len() {
+                let child_id = children[index];
+                if !is_table_part(doc, child_id) {
+                    wrapped.push(child_id);
+                    index += 1;
+                    continue;
+                }
+                // A run of table parts: whitespace between two of them generates no box
+                // (CSS Tables 3 §3.1), whitespace after the last one stays in the inline content
+                let mut run = vec![child_id];
+                let mut end = index + 1;
+                let mut cursor = end;
+                while cursor < children.len() {
+                    let next_id = children[cursor];
+                    let next = &doc.nodes[next_id];
+                    let generates_no_box = next.data.kind() == NodeKind::Comment
+                        || next.is_whitespace_node()
+                        || next.display_style().is_some_and(|d| {
+                            d.outside() == DisplayOutside::None && d.inside() == DisplayInside::None
+                        });
+                    if generates_no_box {
+                        cursor += 1;
+                    } else if is_table_part(doc, next_id) {
+                        run.extend_from_slice(&children[end..cursor]);
+                        run.push(next_id);
+                        cursor += 1;
+                        end = cursor;
+                    } else {
+                        break;
+                    }
+                }
+                let anon_id = new_anonymous_box(
+                    doc,
+                    node_id,
+                    PseudoElement::ServoAnonymousTable,
+                    Some(Display::InlineTable),
+                );
+                for &part_id in &run {
+                    doc.nodes[part_id].layout_parent.set(Some(anon_id));
+                }
+                doc.nodes[anon_id].children = run.into_iter().collect();
+                anonymous_blocks.push(anon_id);
+                wrapped.push(anon_id);
+                index = end;
+            }
+            *doc.nodes[node_id].layout_children.borrow_mut() = Some(wrapped.into_iter().collect());
+        }
+    }
+
+    let mut descend: Vec<NodeId> = children
+        .into_iter()
+        .filter(|&child_id| is_transparent_inline(&doc.nodes, child_id))
+        .collect();
+    descend.extend(doc.nodes[node_id].before());
+    descend.extend(doc.nodes[node_id].after());
+    for child_id in descend {
+        if is_transparent_inline(&doc.nodes, child_id) {
+            wrap_inline_table_parts_recursive(doc, inline_root_node_id, child_id, anonymous_blocks);
+        }
+    }
+}
+
 pub(crate) fn find_inline_layout_embedded_boxes(
     doc: &mut BaseDocument,
     inline_context_root_node_id: NodeId,
-    layout_children: &mut ThinVec<NodeId>,
+    out: &mut LayoutChildren,
 ) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
+    wrap_inline_table_parts_recursive(
+        doc,
+        inline_context_root_node_id,
+        inline_context_root_node_id,
+        &mut out.anonymous_blocks,
+    );
 
-    iter_children_and_pseudos!(doc.nodes[inline_context_root_node_id], |child_id| {
+    // The root's own `layout_children` is the embedded box list being rebuilt here, so its DOM
+    // children are what it contributes
+    let root = &doc.nodes[inline_context_root_node_id];
+    let root_children: Vec<NodeId> = root
+        .before()
+        .into_iter()
+        .chain(root.children.iter().copied())
+        .chain(root.after())
+        .collect();
+    let layout_children = &mut out.children;
+    for child_id in root_children {
         find_inline_layout_embedded_boxes_recursive(
             &mut doc.nodes,
             inline_context_root_node_id,
             child_id,
             layout_children,
         );
-    });
+    }
 
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
@@ -1018,14 +1421,14 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                         } else {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            iter_children_and_pseudos!(nodes[node_id], |child_id| {
+                            for child_id in inline_children_and_pseudos(&nodes[node_id]) {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,
                                     node_id,
                                     child_id,
                                     layout_children,
                                 );
-                            });
+                            }
                         }
                     }
                     // Inline box
