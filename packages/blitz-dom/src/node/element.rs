@@ -672,8 +672,47 @@ impl ElementData {
         }
     }
 
+    pub(crate) fn contenteditable_attr(&self) -> Option<bool> {
+        let value = self.attr(local_name!("contenteditable"))?;
+        if value.is_empty()
+            || value.eq_ignore_ascii_case("true")
+            || value.eq_ignore_ascii_case("plaintext-only")
+        {
+            Some(true)
+        } else if value.eq_ignore_ascii_case("false") {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    pub fn always_triggers_focus_visible(&self) -> bool {
+        if self.name.local == local_name!("textarea") {
+            return true;
+        }
+        if self.name.local == local_name!("input") {
+            let Some(ty) = self.attr(local_name!("type")) else {
+                return true;
+            };
+            return !matches!(
+                ty.to_ascii_lowercase().as_str(),
+                "button"
+                    | "submit"
+                    | "reset"
+                    | "image"
+                    | "checkbox"
+                    | "radio"
+                    | "file"
+                    | "range"
+                    | "color"
+                    | "hidden"
+            );
+        }
+        self.contenteditable_attr() == Some(true)
+    }
+
     pub fn flush_is_focussable(&mut self) {
-        let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
+        let disabled = self.can_be_disabled() && self.has_attr(local_name!("disabled"));
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
         let contains_sub_document: bool = self.sub_doc_data().is_some();
 
@@ -685,15 +724,22 @@ impl ElementData {
                         // Some focusable HTML elements have a default tabindex value of 0 set under the hood by the user agent.
                         // These elements are:
                         //   - <a> or <area> with href attribute
-                        //   - <button>, <frame>, <iframe>, <input>, <object>, <select>, <textarea>, and SVG <a> element
-                        //   - <summary> element that provides summary for a <details> element.
+                        //   - <button>, <frame>, <iframe>, <input> (unless hidden), <object>, <select>, <textarea>, and SVG <a> element
+                        //   - <summary> element that provides summary for a <details> element
+                        //   - [contenteditable] editing hosts
 
-                        if [local_name!("a"), local_name!("area")].contains(&self.name.local) {
+                        if self.contenteditable_attr() == Some(true) {
+                            true
+                        } else if [local_name!("a"), local_name!("area")].contains(&self.name.local)
+                        {
                             self.attr(local_name!("href")).is_some()
+                        } else if self.name.local == local_name!("input") {
+                            !self
+                                .attr(local_name!("type"))
+                                .is_some_and(|ty| ty.eq_ignore_ascii_case("hidden"))
                         } else {
-                            const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 7] = [
+                            const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 6] = [
                                 local_name!("button"),
-                                local_name!("input"),
                                 local_name!("select"),
                                 local_name!("textarea"),
                                 local_name!("frame"),

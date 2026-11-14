@@ -282,9 +282,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::KeyUp(data)))
             }
             UiEvent::KeyDown(data) => {
+                self.doc.inner_mut().note_keydown_modality(&data);
                 self.handle_dom_event(DomEvent::new(target, DomEventData::KeyDown(data)))
             }
             UiEvent::Ime(data) => {
+                self.doc.inner_mut().note_ime_modality(&data);
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
             }
             UiEvent::Paste(text) => {

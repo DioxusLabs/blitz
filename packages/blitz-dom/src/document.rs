@@ -21,12 +21,13 @@ use crate::{
 };
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{DomEvent, HitResult, UiEvent};
+use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
+use keyboard_types::{Key, Modifiers, NamedKey};
 use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, local_name};
 use parley::{FontContext, PlainEditorDriver};
@@ -180,6 +181,27 @@ impl Document for Rc<RefCell<BaseDocument>> {
     }
 }
 
+/// Origin of a focus transition for `:focus-visible` determination.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum FocusSource {
+    /// Sequential (`Tab`/`Shift+Tab`) or spatial keyboard navigation.
+    Keyboard,
+    /// Mouse, touch, or pen press focusing an element.
+    Pointer,
+    /// Programmatic focus (`HTMLElement.focus()`, `MountedData::set_focus`, `[autofocus]`).
+    Script,
+}
+
+/// Options controlling programmatic focus behavior (`FocusOptions`).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct FocusOptions {
+    /// If `true`, do not scroll the newly focused element into view.
+    pub prevent_scroll: bool,
+    /// Explicit `:focus-visible` override (`Some(true)` forces ring, `Some(false)` suppresses
+    /// ring, `None` delegates to input modality and element heuristics).
+    pub focus_visible: Option<bool>,
+}
+
 pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
     /// A navigation originating from within an iframe's sub-document
@@ -265,6 +287,11 @@ pub struct BaseDocument {
     pub(crate) last_client_pointer_position: Option<taffy::Point<f32>>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<NodeId>,
+    /// Whether the most recent modality-relevant interaction was keyboard-driven
+    /// (initialized to `true` before any pointer focus occurs).
+    pub(crate) had_keyboard_event: bool,
+    /// Options passed to the most recent focus call on the currently focused node.
+    pub(crate) last_focus_options: FocusOptions,
     /// The node which is currently active (if any)
     pub(crate) active_node_id: Option<NodeId>,
     /// The node which recieved a mousedown event (if any)
@@ -487,6 +514,8 @@ impl BaseDocument {
             hover_node_is_text: false,
             last_client_pointer_position: None,
             focus_node_id: None,
+            had_keyboard_event: true,
+            last_focus_options: FocusOptions::default(),
             active_node_id: None,
             mousedown_node_id: None,
             has_active_animations: false,
@@ -973,6 +1002,7 @@ impl BaseDocument {
                 }
             }
             self.focus_node_id = None;
+            self.last_focus_options = FocusOptions::default();
         }
         if self.mousedown_node_id == Some(node_id) {
             self.mousedown_node_id = None;
@@ -1707,18 +1737,141 @@ impl BaseDocument {
         }
     }
 
+    pub fn had_keyboard_event(&self) -> bool {
+        self.had_keyboard_event
+    }
+
+    pub fn is_focus_visible(&self, node_id: NodeId) -> bool {
+        self.get_node(node_id)
+            .is_some_and(|node| node.is_focus_visible())
+    }
+
+    fn is_node_contenteditable(&self, node_id: NodeId) -> bool {
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let Some(node) = self.get_node(id) else {
+                break;
+            };
+            if let Some(el) = node.element_data() {
+                if let Some(editable) = el.contenteditable_attr() {
+                    return editable;
+                }
+                if id == node_id
+                    && matches!(
+                        el.name.local,
+                        local_name!("input") | local_name!("button") | local_name!("select")
+                    )
+                {
+                    return false;
+                }
+            }
+            current = node.parent;
+        }
+        false
+    }
+
+    fn element_always_triggers_focus_visible(&self, node_id: NodeId) -> bool {
+        let Some(el) = self.get_node(node_id).and_then(|node| node.element_data()) else {
+            return false;
+        };
+        el.always_triggers_focus_visible() || self.is_node_contenteditable(node_id)
+    }
+
+    fn compute_should_show_focus_ring(&self, node_id: NodeId, options: FocusOptions) -> bool {
+        if let Some(explicit) = options.focus_visible {
+            explicit
+        } else {
+            self.had_keyboard_event || self.element_always_triggers_focus_visible(node_id)
+        }
+    }
+
+    fn is_modality_arming_keydown(event: &BlitzKeyEvent) -> bool {
+        if event
+            .modifiers
+            .intersects(Modifiers::CONTROL | Modifiers::ALT | Modifiers::META)
+        {
+            return false;
+        }
+        !matches!(
+            event.key,
+            Key::Named(
+                NamedKey::Control
+                    | NamedKey::Alt
+                    | NamedKey::AltGraph
+                    | NamedKey::Meta
+                    | NamedKey::Shift
+                    | NamedKey::CapsLock
+                    | NamedKey::NumLock
+                    | NamedKey::ScrollLock
+                    | NamedKey::Fn
+                    | NamedKey::FnLock
+                    | NamedKey::Symbol
+                    | NamedKey::SymbolLock
+            )
+        )
+    }
+
+    fn arm_keyboard_modality(&mut self) {
+        self.had_keyboard_event = true;
+        self.last_focus_options.focus_visible = None;
+        if let Some(focused_id) = self.focus_node_id {
+            if !self.is_focus_visible(focused_id) {
+                self.snapshot_node_and(focused_id, ElementState::FOCUSRING, |node| {
+                    if let Some(data) = node.element_data_mut() {
+                        data.element_state.insert(ElementState::FOCUSRING);
+                    }
+                    node.mark_ancestors_dirty();
+                });
+                self.has_changes = true;
+                self.shell_provider.request_redraw();
+            }
+        }
+    }
+
+    pub fn note_keydown_modality(&mut self, event: &BlitzKeyEvent) {
+        if Self::is_modality_arming_keydown(event) {
+            self.arm_keyboard_modality();
+        }
+    }
+
+    pub fn note_ime_modality(&mut self, event: &BlitzImeEvent) {
+        if matches!(
+            event,
+            BlitzImeEvent::Preedit(_, _) | BlitzImeEvent::Commit(_)
+        ) {
+            self.arm_keyboard_modality();
+        }
+    }
+
+    pub(crate) fn resync_focused_element_focus_ring(&mut self) {
+        let Some(focused_id) = self.focus_node_id else {
+            return;
+        };
+        let show_ring = self.compute_should_show_focus_ring(focused_id, self.last_focus_options);
+        if self.is_focus_visible(focused_id) != show_ring {
+            self.snapshot_node_and(focused_id, ElementState::FOCUSRING, |node| {
+                if let Some(data) = node.element_data_mut() {
+                    data.element_state.set(ElementState::FOCUSRING, show_ring);
+                }
+                node.mark_ancestors_dirty();
+            });
+            self.has_changes = true;
+            self.shell_provider.request_redraw();
+        }
+    }
+
     pub fn focus_next_node(&mut self) -> Option<NodeId> {
-        let focussed_node_id = self.get_focussed_node_id()?;
+        let focussed_node_id = self.get_focussed_node_id().unwrap_or(self.root_node_id);
         let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
-        self.set_focus_to(id);
+        self.set_focus_to_with_source(id, FocusSource::Keyboard);
         Some(id)
     }
 
     /// Move focus to the previous focussable node in the document
     pub fn focus_prev_node(&mut self) -> Option<NodeId> {
-        let focussed_node_id = self.get_focussed_node_id()?;
+        let focussed_node_id = self.get_focussed_node_id().unwrap_or(self.root_node_id);
         let id = self.prev_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
-        self.set_focus_to(id);
+        self.set_focus_to_with_source(id, FocusSource::Keyboard);
         Some(id)
     }
 
@@ -1735,6 +1888,7 @@ impl BaseDocument {
                 });
             }
             self.focus_node_id = None;
+            self.last_focus_options = FocusOptions::default();
             self.has_changes = true;
             self.shell_provider.request_redraw();
         }
@@ -1743,15 +1897,55 @@ impl BaseDocument {
     pub fn set_mousedown_node_id(&mut self, node_id: Option<NodeId>) {
         self.mousedown_node_id = node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
     }
+
     pub fn set_focus_to(&mut self, focus_node_id: NodeId) -> bool {
+        self.set_focus_to_with_source(focus_node_id, FocusSource::Script)
+    }
+
+    pub fn set_focus_to_with_source(&mut self, focus_node_id: NodeId, source: FocusSource) -> bool {
+        self.set_focus_to_with_options(focus_node_id, source, FocusOptions::default())
+    }
+
+    pub fn set_focus_to_with_options(
+        &mut self,
+        focus_node_id: NodeId,
+        source: FocusSource,
+        options: FocusOptions,
+    ) -> bool {
         let Some(focus_node_id) = self.nearest_non_anonymous_ancestor(focus_node_id) else {
             return false;
         };
-        if Some(focus_node_id) == self.focus_node_id {
+        let node = &self.nodes[focus_node_id];
+        // A node that is detached or disabled cannot be focused
+        if !node.flags.is_in_document() || node.element_state().contains(ElementState::DISABLED) {
             return false;
         }
-        // A node that is not in the document cannot be focused
-        if !self.nodes[focus_node_id].flags.is_in_document() {
+
+        match source {
+            FocusSource::Keyboard => self.had_keyboard_event = true,
+            FocusSource::Pointer => self.had_keyboard_event = false,
+            FocusSource::Script => {}
+        }
+        self.last_focus_options = options;
+        let show_ring = self.compute_should_show_focus_ring(focus_node_id, options);
+
+        if Some(focus_node_id) == self.focus_node_id {
+            let ring_changed = self.is_focus_visible(focus_node_id) != show_ring;
+            if ring_changed {
+                self.snapshot_node_and(focus_node_id, ElementState::FOCUSRING, |node| {
+                    if let Some(data) = node.element_data_mut() {
+                        data.element_state.set(ElementState::FOCUSRING, show_ring);
+                    }
+                    node.mark_ancestors_dirty();
+                });
+                self.has_changes = true;
+            }
+            let scrolled = !options.prevent_scroll
+                && source != FocusSource::Pointer
+                && self.scroll_into_view_for_focus(focus_node_id);
+            if ring_changed || scrolled {
+                self.shell_provider.request_redraw();
+            }
             return false;
         }
 
@@ -1771,7 +1965,7 @@ impl BaseDocument {
         self.snapshot_node_and(
             focus_node_id,
             ElementState::FOCUS | ElementState::FOCUSRING,
-            |node| node.focus(shell_provider),
+            |node| node.set_focused(shell_provider, show_ring),
         );
 
         // Update :focus-within on the ancestor chains (shared prefix stays)
@@ -1794,6 +1988,9 @@ impl BaseDocument {
         }
 
         self.focus_node_id = Some(focus_node_id);
+        if !options.prevent_scroll && source != FocusSource::Pointer {
+            self.scroll_into_view_for_focus(focus_node_id);
+        }
         self.has_changes = true;
 
         // The focus is styled (:focus, :focus-visible, :focus-within), so
@@ -3760,5 +3957,377 @@ mod change_tracking_tests {
         doc.clear_changes();
         doc.clear_focus();
         assert!(doc.has_changes());
+    }
+}
+
+#[cfg(test)]
+mod focus_visible_tests {
+    use super::*;
+    use crate::{Attribute, QualName, qual_name};
+    use blitz_traits::events::KeyState;
+    use blitz_traits::shell::ColorScheme;
+    use keyboard_types::{Code, Location};
+
+    #[derive(Default)]
+    struct CountingShell {
+        redraws: AtomicUsize,
+    }
+
+    impl ShellProvider for CountingShell {
+        fn request_redraw(&self) {
+            self.redraws.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    impl CountingShell {
+        fn take_redraws(&self) -> usize {
+            self.redraws.swap(0, Ordering::Relaxed)
+        }
+    }
+
+    fn attr(name: QualName, value: &str) -> Attribute {
+        Attribute {
+            name,
+            value: value.to_string(),
+        }
+    }
+
+    fn keydown(key: Key, modifiers: Modifiers) -> BlitzKeyEvent {
+        BlitzKeyEvent {
+            key,
+            code: Code::Unidentified,
+            modifiers,
+            location: Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: None,
+        }
+    }
+
+    #[test]
+    fn initial_modality_is_keyboard_and_script_focus_shows_ring() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        assert!(doc.had_keyboard_event());
+
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(qual_name!("body", html), vec![]);
+        let button = mutator.create_element(qual_name!("button", html), vec![]);
+        mutator.append_children(body, &[button]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        assert!(doc.set_focus_to(button));
+        assert!(doc.is_focus_visible(button));
+
+        doc.clear_focus();
+        assert!(!doc.is_focus_visible(button));
+        assert!(doc.had_keyboard_event());
+    }
+
+    #[test]
+    fn pointer_focus_disarms_modality_while_text_inputs_keep_ring() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(qual_name!("body", html), vec![]);
+        let button = mutator.create_element(qual_name!("button", html), vec![]);
+        let div = mutator.create_element(
+            qual_name!("div", html),
+            vec![attr(qual_name!("tabindex"), "-1")],
+        );
+        let input = mutator.create_element(
+            qual_name!("input", html),
+            vec![attr(qual_name!("type"), "text")],
+        );
+        mutator.append_children(body, &[button, div, input]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        assert!(doc.set_focus_to_with_source(button, FocusSource::Pointer));
+        assert!(!doc.had_keyboard_event());
+        assert!(!doc.is_focus_visible(button));
+
+        assert!(doc.set_focus_to(div));
+        assert!(!doc.is_focus_visible(div));
+
+        assert!(doc.set_focus_to_with_source(input, FocusSource::Pointer));
+        assert!(!doc.had_keyboard_event());
+        assert!(doc.is_focus_visible(input));
+
+        assert!(doc.set_focus_to(button));
+        assert!(!doc.is_focus_visible(button));
+    }
+
+    #[test]
+    fn focus_options_explicit_focus_visible_overrides_modality_and_input_defaults() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(qual_name!("body", html), vec![]);
+        let button = mutator.create_element(qual_name!("button", html), vec![]);
+        let input = mutator.create_element(
+            qual_name!("input", html),
+            vec![attr(qual_name!("type"), "text")],
+        );
+        mutator.append_children(body, &[button, input]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        doc.set_focus_to_with_source(button, FocusSource::Pointer);
+        assert!(!doc.had_keyboard_event());
+
+        doc.set_focus_to_with_options(
+            button,
+            FocusSource::Script,
+            FocusOptions {
+                prevent_scroll: false,
+                focus_visible: Some(true),
+            },
+        );
+        assert!(doc.is_focus_visible(button));
+        assert!(!doc.had_keyboard_event());
+
+        doc.set_focus_to_with_source(button, FocusSource::Keyboard);
+        assert!(doc.had_keyboard_event());
+
+        doc.set_focus_to_with_options(
+            input,
+            FocusSource::Script,
+            FocusOptions {
+                prevent_scroll: false,
+                focus_visible: Some(false),
+            },
+        );
+        assert!(!doc.is_focus_visible(input));
+        assert!(doc.had_keyboard_event());
+    }
+
+    #[test]
+    fn focus_options_prevent_scroll_controls_container_and_viewport_scrolling() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 200, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body", html),
+            vec![attr(qual_name!("style"), "margin: 0;")],
+        );
+        let scroller = mutator.create_element(
+            qual_name!("div", html),
+            vec![attr(
+                qual_name!("style"),
+                "height: 80px; overflow-y: auto; display: block;",
+            )],
+        );
+        let spacer_inner = mutator.create_element(
+            qual_name!("div", html),
+            vec![attr(qual_name!("style"), "height: 250px; display: block;")],
+        );
+        let inner_button = mutator.create_element(
+            qual_name!("button", html),
+            vec![attr(qual_name!("style"), "display: block; height: 24px;")],
+        );
+        let spacer_page = mutator.create_element(
+            qual_name!("div", html),
+            vec![attr(qual_name!("style"), "height: 500px; display: block;")],
+        );
+        let bottom_button = mutator.create_element(
+            qual_name!("button", html),
+            vec![attr(qual_name!("style"), "display: block; height: 24px;")],
+        );
+        mutator.append_children(scroller, &[spacer_inner, inner_button]);
+        mutator.append_children(body, &[scroller, spacer_page, bottom_button]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        doc.set_focus_to_with_options(
+            inner_button,
+            FocusSource::Script,
+            FocusOptions {
+                prevent_scroll: true,
+                focus_visible: None,
+            },
+        );
+        assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 0.0);
+
+        doc.set_focus_to_with_options(
+            inner_button,
+            FocusSource::Script,
+            FocusOptions {
+                prevent_scroll: false,
+                focus_visible: None,
+            },
+        );
+        assert!(doc.get_node(scroller).unwrap().scroll_offset().y > 0.0);
+
+        doc.set_focus_to_with_options(
+            bottom_button,
+            FocusSource::Script,
+            FocusOptions {
+                prevent_scroll: true,
+                focus_visible: None,
+            },
+        );
+        assert_eq!(doc.viewport_scroll().y, 0.0);
+
+        doc.set_focus_to_with_options(
+            bottom_button,
+            FocusSource::Script,
+            FocusOptions {
+                prevent_scroll: false,
+                focus_visible: None,
+            },
+        );
+        assert!(doc.viewport_scroll().y > 0.0);
+    }
+
+    #[test]
+    fn refocusing_same_node_updates_focus_ring_in_place() {
+        let shell = Arc::new(CountingShell::default());
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            shell_provider: Some(shell.clone() as _),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(qual_name!("body", html), vec![]);
+        let button = mutator.create_element(qual_name!("button", html), vec![]);
+        mutator.append_children(body, &[button]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+        shell.take_redraws();
+
+        assert!(doc.set_focus_to_with_source(button, FocusSource::Keyboard));
+        assert!(doc.is_focus_visible(button));
+        assert_eq!(shell.take_redraws(), 1);
+
+        assert!(!doc.set_focus_to_with_source(button, FocusSource::Keyboard));
+        assert_eq!(shell.take_redraws(), 0);
+
+        assert!(!doc.set_focus_to_with_source(button, FocusSource::Pointer));
+        assert!(!doc.is_focus_visible(button));
+        assert_eq!(shell.take_redraws(), 1);
+
+        assert!(!doc.set_focus_to_with_source(button, FocusSource::Pointer));
+        assert_eq!(shell.take_redraws(), 0);
+    }
+
+    #[test]
+    fn removing_focused_node_clears_focus_and_preserves_modality() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(qual_name!("body", html), vec![]);
+        let first = mutator.create_element(qual_name!("button", html), vec![]);
+        let second = mutator.create_element(qual_name!("button", html), vec![]);
+        let third = mutator.create_element(qual_name!("button", html), vec![]);
+        mutator.append_children(body, &[first, second, third]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        doc.set_focus_to_with_source(first, FocusSource::Pointer);
+        assert!(!doc.had_keyboard_event());
+        doc.mutate().remove_node(first);
+        assert_ne!(doc.get_focussed_node_id(), Some(first));
+        assert!(!doc.had_keyboard_event());
+
+        doc.set_focus_to(second);
+        assert!(!doc.is_focus_visible(second));
+
+        doc.set_focus_to_with_source(second, FocusSource::Keyboard);
+        assert!(doc.had_keyboard_event());
+        doc.mutate().remove_node(second);
+        assert!(doc.had_keyboard_event());
+
+        doc.set_focus_to(third);
+        assert!(doc.is_focus_visible(third));
+    }
+
+    #[test]
+    fn keydown_and_ime_modality_arming_matrix() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(qual_name!("body", html), vec![]);
+        let button = mutator.create_element(qual_name!("button", html), vec![]);
+        mutator.append_children(body, &[button]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        doc.set_focus_to_with_source(button, FocusSource::Pointer);
+        assert!(!doc.is_focus_visible(button));
+
+        for non_arming in [
+            keydown(Key::Named(NamedKey::Control), Modifiers::CONTROL),
+            keydown(Key::Named(NamedKey::Alt), Modifiers::ALT),
+            keydown(Key::Named(NamedKey::Meta), Modifiers::META),
+            keydown(Key::Named(NamedKey::Shift), Modifiers::SHIFT),
+            keydown(Key::Named(NamedKey::CapsLock), Modifiers::CAPS_LOCK),
+            keydown(Key::Character("y".into()), Modifiers::CONTROL),
+            keydown(Key::Character("x".into()), Modifiers::ALT),
+            keydown(Key::Character("k".into()), Modifiers::META),
+        ] {
+            doc.note_keydown_modality(&non_arming);
+            assert!(!doc.had_keyboard_event());
+            assert!(!doc.is_focus_visible(button));
+        }
+
+        doc.note_keydown_modality(&keydown(Key::Named(NamedKey::Tab), Modifiers::SHIFT));
+        assert!(doc.had_keyboard_event());
+        assert!(doc.is_focus_visible(button));
+
+        doc.set_focus_to_with_source(button, FocusSource::Pointer);
+        doc.note_ime_modality(&BlitzImeEvent::Enabled);
+        assert!(!doc.had_keyboard_event());
+
+        doc.note_ime_modality(&BlitzImeEvent::Preedit("a".into(), None));
+        assert!(doc.had_keyboard_event());
+        assert!(doc.is_focus_visible(button));
+
+        doc.set_focus_to_with_source(button, FocusSource::Pointer);
+        doc.note_ime_modality(&BlitzImeEvent::Commit("a".into()));
+        assert!(doc.had_keyboard_event());
+        assert!(doc.is_focus_visible(button));
     }
 }
