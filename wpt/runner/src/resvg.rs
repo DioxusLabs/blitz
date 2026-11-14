@@ -12,7 +12,7 @@
 //!   usvg on the same rasterizer, with `BLITZ_NATIVE_SVG=1`)
 //!
 //! Run them with `WPT_DIR=<out dir>` and `FONTCONFIG_FILE=<out dir>/resvg/fonts.conf`,
-//! then `wpt resvg-summary` prints per-directory pass counts (`just test-resvg`
+//! then `wpt resvg-summary` prints per-directory pass counts (`just resvg`
 //! does all of this, with results in `wpt/resvg/output` rather than `wpt/output`).
 
 use html_escape::{encode_double_quoted_attribute, encode_text};

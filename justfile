@@ -21,7 +21,7 @@ wpt *ARGS:
 # resvg's test suite at wpt/RESVG_COMMIT, wrapped as reftests (see wpt/runner/src/resvg.rs).
 # Prefix with BLITZ_NATIVE_SVG=1 to render inline SVG with the native backend, and with
 # RESVG_PNG_FUZZY=<threshold>;<pixels> to compare against resvg's PNGs at another tolerance.
-test-resvg *ARGS="resvg":
+resvg *ARGS="resvg":
   [ "$(git -C wpt/resvg/checkout rev-parse HEAD 2>/dev/null)" = "$(cat wpt/RESVG_COMMIT)" ] || ( \
     git init -q wpt/resvg/checkout && \
     git -C wpt/resvg/checkout fetch -q --depth 1 https://github.com/linebender/resvg "$(cat wpt/RESVG_COMMIT)" && \
