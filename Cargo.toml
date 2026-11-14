@@ -301,6 +301,14 @@ vello_gpu = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 
+# Bitmap glyphs drawn through the atlas on Vello GPU when glyph caching is off (fixes emoji).
+# Drop once it ships.
+[patch.crates-io]
+glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1794431434-gpu-bitmap-glyph-atlas" }
+vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1794431434-gpu-bitmap-glyph-atlas" }
+vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1794431434-gpu-bitmap-glyph-atlas" }
+vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/1794431434-gpu-bitmap-glyph-atlas" }
+
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
