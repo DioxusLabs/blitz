@@ -11,6 +11,7 @@ use std::cell::Ref;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use style::Atom;
+use style::servo::attr::parse_unsigned_integer;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::CopyStyleGetters;
@@ -278,23 +279,26 @@ impl LayoutPassState<'_> {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
                 // TODO: deduplicate with single-line text input
                 if *element_data.name.local == *"textarea" {
+                    // Both attributes are parsed with the HTML rules for parsing non-negative
+                    // integers; a missing, zero or invalid value falls back to the defaults
                     let rows = element_data
                         .attr(local_name!("rows"))
-                        .and_then(|val| val.parse::<f32>().ok())
-                        .unwrap_or(2.0);
+                        .and_then(|val| parse_unsigned_integer(val.chars()).ok())
+                        .filter(|rows| *rows > 0)
+                        .map_or(2.0, |rows| rows as f32);
 
                     let cols = element_data
                         .attr(local_name!("cols"))
-                        .and_then(|val| val.parse::<f32>().ok());
+                        .and_then(|val| parse_unsigned_integer(val.chars()).ok())
+                        .filter(|cols| *cols > 0)
+                        .map_or(20.0, |cols| cols as f32);
 
                     let output = compute_leaf_layout(
                         inputs,
                         &node.layout_style(),
                         resolve_calc_value,
                         |_known_size, _available_space| taffy::Size {
-                            width: cols
-                                .map(|cols| cols * font_size.unwrap_or(16.0) * 0.6)
-                                .unwrap_or(300.0),
+                            width: cols * font_size.unwrap_or(16.0) * 0.6,
                             height: resolved_line_height.unwrap_or(16.0) * rows,
                         },
                     );
