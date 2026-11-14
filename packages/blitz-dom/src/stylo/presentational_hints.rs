@@ -199,16 +199,15 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         Some(size.clamp(1, 7) as u8)
     }
 
-    /// The `face` attribute's value parsed as a `font-family` list, as Gecko and
-    /// Blink parse it: CSS-wide keywords and `var()` are not family lists.
-    fn parse_font_face_attr(value: &str) -> Option<PropertyDeclaration> {
+    /// `value` parsed as a declaration of `property`, as an author style would be.
+    fn parse_declaration(property: &str, value: &str) -> Option<PropertyDeclaration> {
         use style::properties::{
             PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
         };
         use style::stylesheets::{CssRuleType, Origin};
         use style_traits::ParsingMode;
 
-        let property = PropertyId::parse_enabled_for_all_content("font-family").ok()?;
+        let property = PropertyId::parse_enabled_for_all_content(property).ok()?;
         let mut declarations = SourcePropertyDeclaration::default();
         parse_one_declaration_into(
             &mut declarations,
@@ -222,11 +221,57 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             CssRuleType::Style,
         )
         .ok()?;
-        declarations
-            .drain()
-            .declarations
-            .find(|declaration| matches!(declaration, PropertyDeclaration::FontFamily(_)))
+        declarations.drain().declarations.next()
     }
+
+    /// The `face` attribute's value parsed as a `font-family` list, as Gecko and
+    /// Blink parse it: CSS-wide keywords and `var()` are not family lists.
+    fn parse_font_face_attr(value: &str) -> Option<PropertyDeclaration> {
+        parse_declaration("font-family", value)
+            .filter(|declaration| matches!(declaration, PropertyDeclaration::FontFamily(_)))
+    }
+
+    /// An SVG `transform` attribute (SVG transform-list syntax, e.g. unitless
+    /// `translate(20, 30)`) as a CSS `transform` declaration. Translations are
+    /// written as `px` lengths so that `zoom` scales them as it would CSS ones.
+    #[cfg(feature = "svg")]
+    fn parse_svg_transform_attr(value: &str) -> Option<PropertyDeclaration> {
+        use std::fmt::Write;
+        use svgtypes::{TransformListParser, TransformListToken as Token};
+
+        let mut css = String::new();
+        for token in TransformListParser::from(value) {
+            match token.ok()? {
+                Token::Matrix { a, b, c, d, e, f } => {
+                    write!(
+                        css,
+                        "translate({e}px, {f}px) matrix({a}, {b}, {c}, {d}, 0, 0) "
+                    )
+                }
+                Token::Translate { tx, ty } => write!(css, "translate({tx}px, {ty}px) "),
+                Token::Scale { sx, sy } => write!(css, "scale({sx}, {sy}) "),
+                Token::Rotate { angle } => write!(css, "rotate({angle}deg) "),
+                Token::SkewX { angle } => write!(css, "skewX({angle}deg) "),
+                Token::SkewY { angle } => write!(css, "skewY({angle}deg) "),
+            }
+            .ok()?;
+        }
+        if css.is_empty() {
+            return None;
+        }
+        parse_declaration("transform", &css)
+    }
+
+    // The outermost `<svg>` is a CSS box, so its `transform` attribute transforms
+    // the box like the CSS `transform` property it maps to.
+    // https://svgwg.org/svg2-draft/coords.html#TransformProperty
+    #[cfg(feature = "svg")]
+    let is_outermost_svg = *tag == local_name!("svg")
+        && elem.name.ns == ns!(svg)
+        && node
+            .parent_node()
+            .and_then(|parent| parent.data.downcast_element())
+            .is_none_or(|parent| parent.name.ns != ns!(svg));
 
     // `<input type=image>` is the only input type that is replaced
     // content, and it is the only one that takes the embedded-content
@@ -427,6 +472,15 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
                     PropertyDeclaration::Height(size)
                 });
             }
+        }
+
+        #[cfg(feature = "svg")]
+        if is_outermost_svg
+            && attr.name.ns == ns!()
+            && *name == local_name!("transform")
+            && let Some(transform) = parse_svg_transform_attr(value)
+        {
+            push_style(transform);
         }
 
         // The `border` attribute maps to the four border widths as a

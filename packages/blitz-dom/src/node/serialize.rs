@@ -1,7 +1,7 @@
 //! Serialization of nodes to HTML, and of inline `<svg>` subtrees to SVG source for usvg.
 
 use html_escape::{encode_quoted_attribute_to_string, encode_text_to_string};
-use markup5ever::{QualName, ns};
+use markup5ever::{QualName, local_name, ns};
 use style_traits::values::ToCss;
 use stylo_taffy::CopyStyleGetters;
 
@@ -20,6 +20,8 @@ struct SerializeOpts {
     resolve_current_color: bool,
     /// Declare the `xlink` prefix on the root element so that the output is well-formed XML
     declare_xlink_ns: bool,
+    /// Leave out the root element's `transform` attribute, which is applied as a CSS transform
+    skip_root_transform: bool,
 }
 
 impl SerializeOpts {
@@ -28,6 +30,7 @@ impl SerializeOpts {
             style,
             resolve_current_color: false,
             declare_xlink_ns: false,
+            skip_root_transform: false,
         }
     }
 }
@@ -109,6 +112,7 @@ impl Node {
             style: OutputStyle::Normal,
             resolve_current_color: true,
             declare_xlink_ns: true,
+            skip_root_transform: true,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
         output
@@ -181,6 +185,13 @@ impl Node {
                 }
 
                 for attr in data.attrs() {
+                    if opts.skip_root_transform
+                        && nesting == 0
+                        && attr.name.ns == ns!()
+                        && attr.name.local == local_name!("transform")
+                    {
+                        continue;
+                    }
                     writer.push(' ');
                     write_attr_name(&attr.name, writer);
                     writer.push_str("=\"");
