@@ -489,6 +489,7 @@ impl ElementData {
         }
 
         data.flush_open_state();
+        data.flush_read_write_state();
 
         data
     }
@@ -514,6 +515,59 @@ impl ElementData {
 
     pub fn can_be_disabled(&self) -> bool {
         local_names!("button", "input", "select", "textarea").contains(&self.name.local)
+    }
+
+    /// Whether the `readonly` attribute applies to this element: a `<textarea>`, or an
+    /// `<input>` whose type edits text, a number or a date/time.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/input.html#the-readonly-attribute>
+    pub fn readonly_applies(&self) -> bool {
+        match self.name.local {
+            local_name!("textarea") => true,
+            local_name!("input") => {
+                let Some(ty) = self.attr(local_name!("type")) else {
+                    return true;
+                };
+                const NOT_APPLICABLE: [&str; 10] = [
+                    "hidden", "range", "color", "checkbox", "radio", "file", "submit", "image",
+                    "reset", "button",
+                ];
+                // An unknown type is the text state, which readonly applies to.
+                !NOT_APPLICABLE.iter().any(|t| ty.eq_ignore_ascii_case(t))
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether this element is a text control whose value the user can't edit because it has
+    /// the `readonly` attribute.
+    pub fn is_read_only_text_control(&self) -> bool {
+        self.readonly_applies() && self.has_attr(local_name!("readonly"))
+    }
+
+    /// Whether this element is an `<input type=password>`.
+    pub fn is_password_input(&self) -> bool {
+        self.name.local == local_name!("input")
+            && self
+                .attr(local_name!("type"))
+                .is_some_and(|ty| ty.eq_ignore_ascii_case("password"))
+    }
+
+    /// Sync the `:read-write`/`:read-only` bits of `element_state`: a form control that
+    /// `readonly` applies to is read-write unless it is readonly or disabled; every other
+    /// element is read-only. Must be called whenever `readonly`, `disabled` or `type` changes.
+    ///
+    /// <https://html.spec.whatwg.org/multipage/semantics-other.html#selector-read-write>
+    pub fn flush_read_write_state(&mut self) {
+        let read_write = self.readonly_applies()
+            && !self.has_attr(local_name!("readonly"))
+            && !self.has_attr(local_name!("disabled"));
+        self.element_state
+            .remove(ElementState::READWRITE | ElementState::READONLY);
+        self.element_state.insert(match read_write {
+            true => ElementState::READWRITE,
+            false => ElementState::READONLY,
+        });
     }
 
     /// Whether this element is a link (an `<a>` or `<area>` element with an `href` attribute)

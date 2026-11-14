@@ -379,6 +379,13 @@ impl DocumentMutator<'_> {
             element.flush_is_focussable();
         }
 
+        if name.local == local_name!("readonly")
+            || name.local == local_name!("disabled")
+            || name.local == local_name!("type")
+        {
+            element.flush_read_write_state();
+        }
+
         if name.local == local_name!("href") {
             element.flush_link_state();
         }
@@ -520,6 +527,13 @@ impl DocumentMutator<'_> {
             || name.local == local_name!("disabled")
         {
             element.flush_is_focussable();
+        }
+
+        if name.local == local_name!("readonly")
+            || name.local == local_name!("disabled")
+            || name.local == local_name!("type")
+        {
+            element.flush_read_write_state();
         }
 
         if name.local == local_name!("href") {
