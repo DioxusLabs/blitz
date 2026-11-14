@@ -11,6 +11,7 @@ use std::cell::Ref;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use style::Atom;
+use style::servo::attr::parse_unsigned_integer;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::CopyStyleGetters;
@@ -361,13 +362,24 @@ impl LayoutPassState<'_> {
                                 inputs,
                                 &node.layout_style(),
                                 resolve_calc_value,
-                                |_known_size, _available_space| taffy::Size {
-                                    width: match inputs.available_space.width {
-                                        AvailableSpace::Definite(limit) => limit.min(300.0),
-                                        AvailableSpace::MinContent => 0.0,
-                                        AvailableSpace::MaxContent => 300.0,
-                                    },
-                                    height: resolved_line_height.unwrap_or(16.0),
+                                |_known_size, _available_space| {
+                                    // The size attribute is the width in characters, parsed with
+                                    // the HTML rules for parsing non-negative integers; a missing,
+                                    // zero or invalid value falls back to the default of 20
+                                    let size = node
+                                        .attr(local_name!("size"))
+                                        .and_then(|val| parse_unsigned_integer(val.chars()).ok())
+                                        .filter(|size| *size > 0)
+                                        .map_or(20.0, |size| size as f32);
+                                    let width = size * font_size.unwrap_or(16.0) * 0.6;
+                                    taffy::Size {
+                                        width: match inputs.available_space.width {
+                                            AvailableSpace::Definite(limit) => limit.min(width),
+                                            AvailableSpace::MinContent => 0.0,
+                                            AvailableSpace::MaxContent => width,
+                                        },
+                                        height: resolved_line_height.unwrap_or(16.0),
+                                    }
                                 },
                             );
                         }

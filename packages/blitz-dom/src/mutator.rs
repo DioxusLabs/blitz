@@ -720,6 +720,7 @@ impl DocumentMutator<'_> {
                     | local_name!("rowspan")
                     | local_name!("rows")
                     | local_name!("cols")
+                    | local_name!("size")
                     | local_name!("start")
                     | local_name!("reversed")
                     | local_name!("src")
