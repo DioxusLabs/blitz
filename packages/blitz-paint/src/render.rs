@@ -1302,12 +1302,23 @@ impl ElementCx<'_, '_> {
         let viewport = svg_viewport_affine(svg, paint_size.width, paint_size.height);
         let transform = (self.transform * viewport).then_translate(Vec2 { x, y });
 
-        self.with_replaced_content_clip(
+        // The SVG's root viewport clips its content, as does the content box when the
+        // object-fit rect overflows it.
+        let viewport_rect = Rect::new(
+            x,
+            y,
+            x + paint_size.width as f64,
+            y + paint_size.height as f64,
+        );
+        self.context.layer_manager.maybe_with_layer(
             scene,
-            container_size,
-            paint_size,
-            x_offset.px(),
-            y_offset.px(),
+            true,
+            BlendMode::default(),
+            1.0,
+            self.transform,
+            &viewport_rect.intersect(content_box),
+            None,
+            None,
             |scene| {
                 self.draw_svg_image(scene, &svg.tree, transform);
             },
