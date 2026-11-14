@@ -1,14 +1,9 @@
-//! Regression tests for node removal in `dioxus-native-dom`.
+//! Regression tests for stale `ElementId -> NodeId` mappings after node removal.
 //! See https://github.com/DioxusLabs/dioxus/pull/5182
 //!
-//! Removing a node used to leave `ElementId -> NodeId` mappings for its
-//! subtree behind. When blitz-dom reused the freed slot for a new node and
-//! dioxus-core reused the stale `ElementId`, the writer dropped the new node
-//! and a later mutation in the same render panicked with "invalid key".
-//!
-//! Node ids are now generational and dioxus-core always re-maps an
-//! `ElementId` (`set_id`) before pushing it, so these tests only check that
-//! heavy template, keyed-list and `ElementId` churn renders without panicking.
+//! Dropping a node drops its whole subtree. If the mappings of the dropped
+//! descendants were left behind they would point at freed node slots and, once
+//! dioxus-core reused their `ElementId`s, could alias onto unrelated nodes.
 
 use blitz_test_harness::HarnessOptions;
 use dioxus::prelude::*;
@@ -52,11 +47,36 @@ impl Harness {
         Self { inner, generation }
     }
 
+    fn doc(&self) -> &DioxusDocument {
+        &self.inner.doc
+    }
+
     fn step(&mut self) {
         self.generation.set(self.generation.get() + 1);
         self.inner.doc.vdom.mark_dirty(ScopeId::APP);
         self.inner.pump();
     }
+}
+
+/// Check that every ElementId -> NodeId mapping points at a node that still
+/// exists in the document. A mapping pointing at a freed slab slot will cause
+/// an "invalid key" panic (or worse: silent deletion of an unrelated node
+/// that happens to reuse the slot) on a later render.
+fn assert_no_stale_mappings(doc: &DioxusDocument, context: &str) {
+    let inner = doc.inner.borrow();
+    let mut stale = Vec::new();
+    for raw_id in 0..4096 {
+        let element_id = dioxus_core::ElementId::from_raw(raw_id);
+        if let Some(node_id) = doc.vdom_state.try_element_to_node_id(element_id)
+            && inner.get_node(node_id).is_none()
+        {
+            stale.push((raw_id, node_id));
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "stale node_id_mapping entries (ElementId, NodeId) after {context}: {stale:?}"
+    );
 }
 
 fn bare_text(generation: usize) -> Element {
@@ -135,10 +155,11 @@ fn toggle_app(generation: usize) -> Element {
 }
 
 #[test]
-fn template_swaps_do_not_panic_over_many_steps() {
+fn template_swaps_do_not_leave_stale_mappings() {
     let mut harness = Harness::new(toggle_app);
-    for _ in 0..20 {
+    for i in 0..20 {
         harness.step();
+        assert_no_stale_mappings(harness.doc(), &format!("step {i}"));
     }
 }
 
@@ -207,7 +228,8 @@ fn list_app(generation: usize) -> Element {
 #[test]
 fn keyed_list_grow_shrink() {
     let mut harness = Harness::new(list_app);
-    for _ in 0..300 {
+    for i in 0..300 {
         harness.step();
+        assert_no_stale_mappings(harness.doc(), &format!("step {i}"));
     }
 }
