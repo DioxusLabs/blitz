@@ -452,6 +452,19 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             }
         }
 
+        // A table's `border` attribute maps to its four border widths as a
+        // pixel length, 1px when the value does not parse. The border
+        // styles come from default.css, through `:-servo-nonzero-border`.
+        // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+        if *name == local_name!("border") && *tag == local_name!("table") {
+            use style::values::specified::BorderSideWidth;
+            let width = BorderSideWidth::from_px(table_border_width(value) as f32);
+            push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
+            push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
+            push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
+            push_style(PropertyDeclaration::BorderLeftWidth(width));
+        }
+
         // `body` carries four legacy margin attributes, as pixel lengths:
         // marginwidth and marginheight set both sides of an axis, and
         // leftmargin and topmargin set one side each.
@@ -553,4 +566,12 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         own: wrap(declarations),
         cell_padding,
     }
+}
+
+/// The border width in pixels that a table's `border` attribute asks for: the
+/// value parsed with the HTML rules for parsing non-negative integers, or 1 when
+/// that fails. Zero means the attribute is "equivalent to zero".
+/// https://html.spec.whatwg.org/multipage/rendering.html#tables-2
+pub(crate) fn table_border_width(value: &str) -> u32 {
+    style::servo::attr::parse_unsigned_integer(value.chars()).unwrap_or(1)
 }

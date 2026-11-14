@@ -726,8 +726,11 @@ impl DocumentMutator<'_> {
                     | local_name!("srcdoc")
                     | local_name!("span")
             );
-        // A table's `cellpadding` is a presentational hint on its cells, not on the table.
-        let restyles_cells = *attr == local_name!("cellpadding")
+        // A table's `cellpadding` is a presentational hint on its cells, not on the
+        // table, and its `border` is matched by `:-servo-nonzero-border`, which
+        // carries no element state for the attribute invalidation to find.
+        let restyles_cells = (*attr == local_name!("cellpadding")
+            || *attr == local_name!("border"))
             && node.data.is_element_with_tag_name(&local_name!("table"));
         if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
             data.hint |= if is_style {
