@@ -9618,6 +9618,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "web-viewer"
+version = "0.0.0"
+dependencies = [
+ "anyrender_vello_hybrid",
+ "blitz-dom",
+ "blitz-html",
+ "blitz-net",
+ "blitz-paint",
+ "blitz-shell",
+ "blitz-traits",
+ "console_error_panic_hook",
+ "js-sys",
+ "parley",
+ "url",
+ "wasm-bindgen",
+ "web-sys",
+ "winit",
+]
+
+[[package]]
 name = "web_atoms"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
