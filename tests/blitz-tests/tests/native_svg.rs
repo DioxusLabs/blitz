@@ -1703,7 +1703,7 @@ fn filter_layer_is_bounded_by_the_filter_region() {
     assert_eq!(filter.nodes().len(), 1);
     assert!(matches!(
         &filter.nodes()[0].effect,
-        FilterEffect::GaussianBlur(blur) if blur.std_deviation == 2.0
+        FilterEffect::GaussianBlur(blur) if blur.std_deviation_x == 2.0 && blur.std_deviation_y == 2.0
     ));
 
     let mut doc = load(
