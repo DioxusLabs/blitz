@@ -167,6 +167,26 @@ impl LayoutChildren {
         {
             doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
         }
+        // Each anonymous flex or grid item is an item of its own, not a continuation of the
+        // container's first line, so it keeps the indent (css-text-3 anonymous-flex-item-001
+        // and anonymous-grid-item-001). The most recent in-flow sibling is found first.
+        let container_is_block = !matches!(
+            doc.nodes[container_node_id]
+                .display_style()
+                .map(|d| d.inside()),
+            Some(DisplayInside::Flex | DisplayInside::Grid)
+        );
+        if container_is_block
+            && self
+                .children
+                .iter()
+                .rev()
+                .any(|id| doc.nodes[*id].is_in_flow())
+        {
+            doc.nodes[node_id]
+                .flags
+                .insert(NodeFlags::IS_ANONYMOUS_AFTER_IN_FLOW_SIBLING);
+        }
         doc.nodes[node_id].parent = Some(container_node_id);
         doc.nodes[node_id]
             .layout_parent

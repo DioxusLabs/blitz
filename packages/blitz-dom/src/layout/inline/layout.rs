@@ -25,6 +25,7 @@ use stylo_taffy::StyleFlags;
 
 use crate::layout::LayoutPassState;
 use crate::layout::resolve_calc_value;
+use crate::node::NodeFlags;
 use crate::stylo_to_parley;
 
 /// Subtract a child's margins from the definite axes of the available space it is laid out in.
@@ -593,10 +594,22 @@ impl LayoutPassState<'_> {
             });
         }
 
-        let text_indent = self.nodes[node_id]
+        let mut text_indent = self.nodes[node_id]
             .primary_styles()
             .map(|s| s.slow_clone_text_indent())
             .unwrap_or_else(GenericTextIndent::zero);
+        // The first line of an anonymous block box is only indented if it is the first child of
+        // its parent (CSS 2.1 §16.1). `each-line` also indents the first line after a block-level
+        // box, so it keeps the indent. With `hanging` every line of such a block should be
+        // indented, which the indent options cannot express: it keeps its unindented first line.
+        if self.nodes[node_id]
+            .flags
+            .contains(NodeFlags::IS_ANONYMOUS_AFTER_IN_FLOW_SIBLING)
+            && !text_indent.each_line
+            && !text_indent.hanging
+        {
+            text_indent = GenericTextIndent::zero();
+        }
         let indent_options = IndentOptions {
             each_line: text_indent.each_line,
             hanging: text_indent.hanging,

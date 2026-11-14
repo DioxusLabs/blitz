@@ -62,6 +62,12 @@ bitflags! {
         const IS_IN_DOCUMENT = 0b00000100;
         /// Whether the node is an inline box whose in-flow content is block-level only
         const IS_INLINE_WITH_ONLY_BLOCK_CHILDREN = 0b00001000;
+        /// Whether the node is an anonymous block box that follows an in-flow sibling, so
+        /// that its first line is not the first line of its parent (CSS 2.1 §16.1). Set by
+        /// the parent's box construction on the freshly created anonymous node, which is
+        /// recreated with empty flags whenever the parent is reconstructed; it is not one of
+        /// the node's own construction flags that `reset_construction_flags` clears.
+        const IS_ANONYMOUS_AFTER_IN_FLOW_SIBLING = 0b00010000;
     }
 }
 
@@ -1309,6 +1315,17 @@ impl Node {
     pub fn is_out_of_flow(&self) -> bool {
         self.primary_styles()
             .is_some_and(|s| style_is_out_of_flow(&s))
+    }
+
+    /// Whether the node generates an in-flow box: it is not `display: none`, floated or
+    /// absolutely positioned. Stricter than `!is_out_of_flow()`, which only covers absolute
+    /// and fixed positioning. Returns `false` for nodes without styles (text, comments).
+    pub fn is_in_flow(&self) -> bool {
+        self.primary_styles().is_some_and(|s| {
+            !s.clone_display().is_none()
+                && !s.clone_float().is_floating()
+                && !matches!(s.clone_position(), Position::Absolute | Position::Fixed)
+        })
     }
 
     /// Record in [`Node::out_of_flow`] whether `style` (the node's new primary style)
