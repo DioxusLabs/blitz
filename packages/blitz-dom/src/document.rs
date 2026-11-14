@@ -21,7 +21,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{DomEvent, HitResult, UiEvent};
+use blitz_traits::events::{BlitzWheelEvent, DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -136,6 +136,18 @@ pub trait Document: Any + 'static {
         let mut doc = self.inner_mut();
         let mut driver = EventDriver::new(&mut *doc, NoopEventHandler);
         driver.handle_ui_event(event);
+    }
+
+    /// Update the [`Document`] in response to a wheel event, returning the part of the
+    /// event's delta which no scroller in the document could consume. A document which
+    /// embeds this one as a sub-document chains that remainder to its own scrollers.
+    ///
+    /// Documents which override [`Document::handle_ui_event`] to run their own
+    /// [`EventHandler`](crate::EventHandler) should override this too.
+    fn handle_wheel_event(&mut self, event: BlitzWheelEvent) -> crate::util::Point<f64> {
+        let mut doc = self.inner_mut();
+        let mut driver = EventDriver::new(&mut *doc, NoopEventHandler);
+        driver.handle_wheel_event(event)
     }
 
     /// Poll any pending async operations, and flush changes to the underlying [`BaseDocument`]

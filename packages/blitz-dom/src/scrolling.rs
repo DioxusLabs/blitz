@@ -134,6 +134,16 @@ impl BaseDocument {
         request: ScrollRequest,
         dispatch_event: &mut dyn FnMut(DomEvent),
     ) -> bool {
+        self.scroll_with_remainder(request, dispatch_event).0
+    }
+
+    /// [`BaseDocument::scroll`], also returning the part of the delta which no scroller in
+    /// the chain could consume (always zero for unchained and smooth scrolls).
+    fn scroll_with_remainder(
+        &mut self,
+        request: ScrollRequest,
+        dispatch_event: &mut dyn FnMut(DomEvent),
+    ) -> (bool, Point<f64>) {
         if request.interrupt_animation
             && matches!(self.scroll_animation, ScrollAnimationState::ScrollTo(_))
         {
@@ -147,10 +157,10 @@ impl BaseDocument {
         if let (ScrollTarget::Node(node_id), ScrollAmount::By(delta), ScrollOverflow::Chain) =
             (target, request.amount, request.overflow)
         {
-            if let Some(has_changed) =
+            if let Some(result) =
                 self.scroll_inner_content_by(node_id, delta, request, dispatch_event)
             {
-                return has_changed;
+                return result;
             }
         }
 
@@ -170,7 +180,7 @@ impl BaseDocument {
 
         if self.should_scroll_smoothly(target, request.behavior) {
             self.start_scroll_animation(target, end);
-            return end != current;
+            return (end != current, Point::ZERO);
         }
 
         let has_changed = self.write_scroll_offset(target, end, dispatch_event);
@@ -188,59 +198,64 @@ impl BaseDocument {
                         amount: ScrollAmount::By(remainder),
                         ..request
                     };
-                    return has_changed | self.scroll(request, dispatch_event);
+                    let (next_changed, remainder) =
+                        self.scroll_with_remainder(request, dispatch_event);
+                    return (has_changed | next_changed, remainder);
                 }
+                return (has_changed, remainder);
             }
         }
 
-        has_changed
+        (has_changed, Point::ZERO)
     }
 
     /// Scroll a node which scrolls content of its own rather than an overflow scrollport
     /// (a text input or a sub-document), returning `None` if the node is not such a node.
+    /// Scroll the node cannot consume is transferred to the next scroller in the chain.
     fn scroll_inner_content_by(
         &mut self,
         node_id: NodeId,
         delta: Point<f64>,
         request: ScrollRequest,
         dispatch_event: &mut dyn FnMut(DomEvent),
-    ) -> Option<bool> {
+    ) -> Option<(bool, Point<f64>)> {
         let node = self.nodes.get_mut(node_id)?;
 
-        if let Some(mut sub_doc) = node.subdoc_mut().map(|doc| doc.inner_mut()) {
-            let target = sub_doc
-                .get_hover_node_id()
-                .map_or(ScrollTarget::Viewport, ScrollTarget::Node);
-            // TODO: propagate the remaining scroll to the outer document
-            let request = ScrollRequest {
-                target,
-                amount: ScrollAmount::By(delta),
-                ..request
+        let (has_changed, remainder) =
+            if let Some(mut sub_doc) = node.subdoc_mut().map(|doc| doc.inner_mut()) {
+                let target = sub_doc
+                    .get_hover_node_id()
+                    .map_or(ScrollTarget::Viewport, ScrollTarget::Node);
+                let request = ScrollRequest {
+                    target,
+                    amount: ScrollAmount::By(delta),
+                    ..request
+                };
+                sub_doc.scroll_with_remainder(request, dispatch_event)
+            } else {
+                // Single-line inputs scroll their text horizontally, multi-line inputs vertically.
+                node.element_data()?.text_input_data()?;
+                let content_box_width = node.final_layout().content_box_width();
+                let content_box_height = node.final_layout().content_box_height();
+                let input = node
+                    .element_data_mut()
+                    .and_then(|el| el.text_input_data_mut())
+                    .unwrap();
+
+                // `TextInputData::scroll_by` takes (and returns the unconsumed part of) a delta
+                // in the opposite direction to a scroll offset.
+                let mut remainder = delta;
+                if input.is_multiline {
+                    remainder.y =
+                        -(input.scroll_by(-delta.y as f32, content_box_width, content_box_height)
+                            as f64);
+                } else {
+                    remainder.x =
+                        -(input.scroll_by(-delta.x as f32, content_box_width, content_box_height)
+                            as f64);
+                }
+                (remainder != delta, remainder)
             };
-            return Some(sub_doc.scroll(request, dispatch_event));
-        }
-
-        // Single-line inputs scroll their text horizontally, multi-line inputs vertically.
-        node.element_data()?.text_input_data()?;
-        let content_box_width = node.final_layout().content_box_width();
-        let content_box_height = node.final_layout().content_box_height();
-        let input = node
-            .element_data_mut()
-            .and_then(|el| el.text_input_data_mut())
-            .unwrap();
-
-        // `TextInputData::scroll_by` takes (and returns the unconsumed part of) a delta in
-        // the opposite direction to a scroll offset.
-        let mut remainder = delta;
-        if input.is_multiline {
-            remainder.y =
-                -(input.scroll_by(-delta.y as f32, content_box_width, content_box_height) as f64);
-        } else {
-            remainder.x =
-                -(input.scroll_by(-delta.x as f32, content_box_width, content_box_height) as f64);
-        }
-
-        let has_changed = remainder != delta;
 
         if remainder != Point::ZERO {
             if let Some(next) = self.next_scroller_in_chain(ScrollTarget::Node(node_id)) {
@@ -249,11 +264,12 @@ impl BaseDocument {
                     amount: ScrollAmount::By(remainder),
                     ..request
                 };
-                return Some(has_changed | self.scroll(request, dispatch_event));
+                let (next_changed, remainder) = self.scroll_with_remainder(request, dispatch_event);
+                return Some((has_changed | next_changed, remainder));
             }
         }
 
-        Some(has_changed)
+        Some((has_changed, remainder))
     }
 
     /// The scroller which unconsumed scroll is transferred to: the node's parent, or the
@@ -410,7 +426,20 @@ impl BaseDocument {
         scroll_y: f64,
         dispatch_event: &mut dyn FnMut(DomEvent),
     ) -> bool {
-        self.scroll(
+        self.scroll_chain_by_with_remainder(anchor_node_id, scroll_x, scroll_y, dispatch_event)
+            .0
+    }
+
+    /// [`BaseDocument::scroll_chain_by`], also returning the part of the delta (in the same
+    /// direction as `scroll_x`/`scroll_y`) which no scroller in the chain could consume.
+    pub(crate) fn scroll_chain_by_with_remainder(
+        &mut self,
+        anchor_node_id: Option<NodeId>,
+        scroll_x: f64,
+        scroll_y: f64,
+        dispatch_event: &mut dyn FnMut(DomEvent),
+    ) -> (bool, Point<f64>) {
+        let (has_changed, remainder) = self.scroll_with_remainder(
             ScrollRequest {
                 target: anchor_node_id.map_or(ScrollTarget::Viewport, ScrollTarget::Node),
                 amount: ScrollAmount::By(Point {
@@ -425,6 +454,13 @@ impl BaseDocument {
                 interrupt_animation: true,
             },
             dispatch_event,
+        );
+        (
+            has_changed,
+            Point {
+                x: -remainder.x,
+                y: -remainder.y,
+            },
         )
     }
 

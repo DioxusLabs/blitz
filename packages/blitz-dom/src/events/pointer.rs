@@ -832,13 +832,13 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     _: NodeId,
     event: BlitzWheelEvent,
     mut dispatch_event: F,
-) {
+) -> crate::util::Point<f64> {
     let (scroll_x, scroll_y) = match event.delta {
         BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
 
-    let has_changed = doc.scroll_chain_by(
+    let (has_changed, remainder) = doc.scroll_chain_by_with_remainder(
         doc.get_hover_node_id(),
         scroll_x,
         scroll_y,
@@ -847,4 +847,5 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     if has_changed {
         doc.shell_provider.request_redraw();
     }
+    remainder
 }
