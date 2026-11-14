@@ -1,8 +1,8 @@
 //! Chrome DevTools Protocol server implementation
 //!
 //! Implements the server side of the [Chrome DevTools Protocol] (the DOM,
-//! CSS and Overlay domains) allowing Chrome DevTools' Elements panel to
-//! connect to and inspect Blitz documents.
+//! CSS, Overlay and Network domains) allowing Chrome DevTools' Elements and
+//! Network panels to connect to and inspect Blitz documents.
 //!
 //! Targets are advertised over HTTP at `/json/list` (and `/json/version`),
 //! and each target is debuggable over a WebSocket at
@@ -16,7 +16,7 @@
 //! [Chrome DevTools Protocol]: https://chromedevtools.github.io/devtools-protocol/
 
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, SyncSender, channel};
 use std::time::Duration;
@@ -29,12 +29,15 @@ mod devtools_provider;
 pub mod documents;
 mod dom;
 mod frontend;
+mod network;
 mod session;
 mod style_sheets;
 mod transport;
 
+use blitz_traits::net::NetProvider;
 use devtools_provider::MutationLog;
 pub use frontend::frontend_url;
+use network::{NetworkLog, RecordingNetProvider};
 use session::Session;
 
 pub(crate) type JsonValue = serde_json::Value;
@@ -77,6 +80,10 @@ pub struct CdpServer {
     event_sender: Sender<CdpEvent>,
     local_addr: Arc<std::sync::Mutex<Option<std::net::SocketAddr>>>,
     mutation_log: Arc<MutationLog>,
+    network_log: Arc<NetworkLog>,
+    /// The recording providers currently installed on documents, keyed by
+    /// their address
+    net_recorders: HashMap<*const (), Arc<RecordingNetProvider>>,
 }
 
 impl CdpServer {
@@ -85,6 +92,8 @@ impl CdpServer {
         CdpServer {
             connections: HashMap::new(),
             mutation_log: Arc::new(MutationLog::new(waker.clone())),
+            network_log: Arc::new(NetworkLog::new(waker.clone())),
+            net_recorders: HashMap::new(),
             waker,
             event_sender: sender,
             event_queue: receiver,
@@ -151,6 +160,96 @@ impl CdpServer {
         for conn in self.connections.values_mut() {
             conn.session.sync_style_sheets(&mut conn.writer, docs);
         }
+        self.sync_network_recording(docs);
+        self.flush_network(docs);
+    }
+
+    /// Install a recording [`NetProvider`] on every document inspected (or
+    /// hosted as a sub-document by a document inspected) by a session with
+    /// the `Network` domain enabled, and restore the original provider of
+    /// every other document
+    fn sync_network_recording(&mut self, docs: &mut dyn DocumentProvider) {
+        let mut recorded = HashSet::new();
+        for conn in self.connections.values() {
+            if !conn.session.network_enabled() {
+                continue;
+            }
+            if let Some(doc_id) = conn.session.doc_id(docs) {
+                with_document(docs, doc_id, |doc| {
+                    let mut ids = Vec::new();
+                    documents::collect_document_ids(doc, &mut ids);
+                    recorded.extend(ids);
+                });
+            }
+        }
+        if recorded.is_empty() && self.net_recorders.is_empty() {
+            return;
+        }
+        self.network_log.set_active(!recorded.is_empty());
+        let recorders = &mut self.net_recorders;
+        let log = &self.network_log;
+        for doc_id in docs.document_ids() {
+            with_document(docs, doc_id, |doc| {
+                let key = Arc::as_ptr(&doc.net_provider) as *const ();
+                match (recorded.contains(&doc_id), recorders.get(&key)) {
+                    (true, None) => {
+                        let recorder = Arc::new(RecordingNetProvider::new(
+                            Arc::clone(&doc.net_provider),
+                            Arc::clone(log),
+                        ));
+                        recorders.insert(Arc::as_ptr(&recorder) as *const (), recorder.clone());
+                        doc.set_net_provider(recorder as Arc<dyn NetProvider>);
+                    }
+                    (false, Some(recorder)) => doc.set_net_provider(Arc::clone(&recorder.inner)),
+                    _ => {}
+                }
+            });
+        }
+        if recorded.is_empty() {
+            self.net_recorders.clear();
+        } else {
+            // Forget the recorders of documents that have been dropped (e.g.
+            // replaced by navigating their host element)
+            self.net_recorders
+                .retain(|_, recorder| Arc::strong_count(recorder) > 1);
+        }
+    }
+
+    /// Send the events for all logged network activity to the sessions
+    /// recording the documents that issued the requests
+    fn flush_network(&mut self, docs: &mut dyn DocumentProvider) {
+        let records = self.network_log.take();
+        if records.is_empty() {
+            return;
+        }
+        let mut doc_urls = HashMap::new();
+        for (doc_id, _) in &records {
+            doc_urls.entry(*doc_id).or_insert_with(|| {
+                session::with_doc(docs, *doc_id, |doc| doc.url().to_string()).unwrap_or_default()
+            });
+        }
+        for conn in self.connections.values_mut() {
+            if !conn.session.network_enabled() {
+                continue;
+            }
+            let Some(doc_id) = conn.session.doc_id(docs) else {
+                continue;
+            };
+            let mut ids = Vec::new();
+            with_document(docs, doc_id, |doc| {
+                documents::collect_document_ids(doc, &mut ids)
+            });
+            for (record_doc_id, record) in &records {
+                if ids.contains(record_doc_id) {
+                    conn.session.emit_network_record(
+                        &mut conn.writer,
+                        *record_doc_id,
+                        &doc_urls[record_doc_id],
+                        record,
+                    );
+                }
+            }
+        }
     }
 
     /// Send the events for all buffered DOM mutations to the sessions
@@ -208,6 +307,7 @@ impl CdpServer {
                     {
                         with_document(docs, doc_id, |doc| doc.set_devtools_provider(None));
                     }
+                    self.sync_network_recording(docs);
                 }
             }
             CdpEventData::Command(command) => {
@@ -239,6 +339,9 @@ impl CdpServer {
                     });
                 }
                 self.flush_mutations(docs);
+                if command.method.starts_with("Network.") {
+                    self.sync_network_recording(docs);
+                }
                 let conn = self.connections.get_mut(&event.connection_id).unwrap();
                 match result {
                     Ok(result) => conn.writer.reply(&command, result),

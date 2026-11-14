@@ -13,6 +13,7 @@ use crate::{CdpCommand, DocumentProvider, JsonValue, MessageWriter, TargetId};
 mod css;
 mod dom;
 mod mutations;
+mod network;
 mod overlay;
 mod page;
 
@@ -62,7 +63,6 @@ pub(crate) fn blitz_node_id(cdp_id: u64) -> Option<NodeId> {
 /// these domains are irrelevant to the Elements panel but the frontend
 /// enables/configures them at startup
 const STUB_DOMAIN_PREFIXES: &[&str] = &[
-    "Network.",
     "Log.",
     "Emulation.",
     "Audits.",
@@ -156,6 +156,8 @@ pub(crate) struct Session {
     /// The style sheets reported to the frontend, while the `CSS` domain
     /// is enabled
     pub(crate) style_sheets: Option<StyleSheets>,
+    /// The `Network` domain state, while it is enabled
+    network: Option<network::NetworkState>,
 }
 
 impl Session {
@@ -168,6 +170,7 @@ impl Session {
             last_picker_node: None,
             children_sent: HashSet::new(),
             style_sheets: None,
+            network: None,
         }
     }
 
@@ -243,6 +246,10 @@ impl Session {
 
         if method.starts_with("CSS.") && !STUB_METHODS.contains(&method) {
             return css::dispatch(self, writer, docs, command);
+        }
+
+        if method.starts_with("Network.") {
+            return network::dispatch(self, command);
         }
 
         // Generic stubs: domain enable/disable commands and commands from
