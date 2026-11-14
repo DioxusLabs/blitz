@@ -28,7 +28,7 @@ members = [
     "examples/wgpu_texture",
     "examples/wasm_hello",
 ]
-exclude = ["sites"]
+exclude = ["sites", "gui-bench"]
 resolver = "2"
 
 [workspace.package]

@@ -1,0 +1,8 @@
+[package]
+name = "bench-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Shared workloads, op scripts and timing output for the gui-bench toolkit apps"
+
+[dependencies]

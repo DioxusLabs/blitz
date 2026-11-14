@@ -1,0 +1,22 @@
+[package]
+name = "bench-iced"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+bench-core = { path = "../../bench-core" }
+iced_wgpu = "0.14"
+iced_winit = "0.14"
+iced_widget = { version = "0.14", features = ["wgpu"] }
+wgpu = "27"
+pollster = "0.4"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+debug = "line-tables-only"
+
+# Standalone workspace: each toolkit pins its own wgpu/winit versions.
+[workspace]

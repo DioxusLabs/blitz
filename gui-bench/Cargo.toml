@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = ["bench-core", "runner"]
+# Each app is its own workspace (toolkits pin conflicting wgpu/winit versions).
+exclude = ["apps"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+debug = "line-tables-only"

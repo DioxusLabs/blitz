@@ -1,0 +1,23 @@
+[package]
+name = "bench-egui"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+bench-core = { path = "../../bench-core" }
+egui = { version = "0.37", features = ["default_fonts"] }
+egui-wgpu = "0.37"
+egui-winit = "0.37"
+wgpu = "30"
+winit = "0.30.13"
+pollster = "0.4"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+debug = "line-tables-only"
+
+# Standalone workspace: each toolkit pins its own wgpu/winit versions.
+[workspace]

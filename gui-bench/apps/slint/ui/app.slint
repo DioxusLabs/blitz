@@ -1,0 +1,47 @@
+import { Button } from "std-widgets.slint";
+
+export struct RowData { id: int, label: string, selected: bool }
+// kind: 0 heading, 1 paragraph, 2 emphasis, 3 code
+export struct BlockData { text: string, kind: int }
+
+export component App inherits Window {
+    title: "gui-bench: slint";
+    width: 1024px;
+    height: 768px;
+    background: white;
+    in property <bool> scroll-workload;
+    in property <[RowData]> rows;
+    in property <[BlockData]> blocks;
+    in property <length> scroll-y;
+
+    if !scroll-workload: Flickable {
+        content-height: table.preferred-height;
+        table := VerticalLayout {
+            alignment: start;
+            for row in rows: HorizontalLayout {
+                spacing: 8px;
+                height: 24px;
+                Text { text: row.id; width: 60px; vertical-alignment: center; }
+                Text { text: row.label; color: row.selected ? #cc0000 : black; horizontal-stretch: 1; vertical-alignment: center; }
+                Button { text: "x"; }
+            }
+        }
+    }
+    if scroll-workload: Flickable {
+        content-y: -root.scroll-y;
+        content-height: doc.preferred-height;
+        doc := VerticalLayout {
+            width: root.width;
+            padding: 8px;
+            spacing: 8px;
+            for block in blocks: Text {
+                text: block.text;
+                wrap: word-wrap;
+                font-size: block.kind == 0 ? 24px : block.kind == 3 ? 14px : 16px;
+                font-weight: block.kind == 0 ? 700 : 400;
+                font-italic: block.kind == 2;
+                font-family: block.kind == 3 ? "monospace" : "sans-serif";
+            }
+        }
+    }
+}
