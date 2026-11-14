@@ -165,6 +165,38 @@ impl LayoutPassState<'_> {
 }
 
 impl LayoutPassState<'_> {
+    /// Replace a min-content constraint on the available space in `node_id`'s block axis with a
+    /// max-content one.
+    ///
+    /// A box is laid out the same way under both (its min-content block size is its max-content
+    /// block size), so passing on a single constraint lets the two share a layout cache entry.
+    /// `inputs` are in the axes of the running algorithm (the node's parent), so the node's block
+    /// axis is `height` unless the node is in an orthogonal flow, where it is `width`.
+    fn coalesce_block_size_constraint(
+        &self,
+        node_id: NodeId,
+        mut inputs: taffy::tree::LayoutInput,
+    ) -> taffy::tree::LayoutInput {
+        #[cfg(feature = "writing-mode")]
+        let is_orthogonal =
+            self.layout_wm_of(dom_node_id(node_id)).is_vertical() != self.layout_wm.is_vertical();
+        #[cfg(not(feature = "writing-mode"))]
+        let is_orthogonal = {
+            let _ = node_id;
+            false
+        };
+
+        let block_axis_space = if is_orthogonal {
+            &mut inputs.available_space.width
+        } else {
+            &mut inputs.available_space.height
+        };
+        if *block_axis_space == AvailableSpace::MinContent {
+            *block_axis_space = AvailableSpace::MaxContent;
+        }
+        inputs
+    }
+
     /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
     /// boxes for which it is the containing block. Must be called inside the layout
     /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
@@ -680,6 +712,7 @@ impl LayoutPartialTree for LayoutPassState<'_> {
         node_id: NodeId,
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
+        let inputs = self.coalesce_block_size_constraint(node_id, inputs);
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             tree.compute_child_layout_internal(node_id, inputs, None)
         })
@@ -789,6 +822,7 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
         inputs: taffy::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
+        let inputs = self.coalesce_block_size_constraint(node_id, inputs);
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             tree.compute_child_layout_internal(node_id, inputs, block_ctx)
         })
