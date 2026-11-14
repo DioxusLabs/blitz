@@ -1077,6 +1077,26 @@ impl ElementCx<'_, '_> {
                 };
             }
 
+            // Underline an IME's composition (the preedit), as platforms
+            // mark text that isn't committed yet.
+            if let (Some(compose), Some(layout)) = (
+                input_data.editor.raw_compose(),
+                input_data.editor.try_layout(),
+            ) {
+                use parley::{Affinity, Cursor, Selection};
+                let color = self.style.get_inherited_text().color.as_srgb_color();
+                let thickness = self.scale.max(1.0);
+                let preedit = Selection::new(
+                    Cursor::from_byte_index(layout, compose.start, Affinity::Downstream),
+                    Cursor::from_byte_index(layout, compose.end, Affinity::Upstream),
+                );
+                for (rect, _line) in preedit.geometry(layout) {
+                    let underline =
+                        kurbo::Rect::new(rect.x0, rect.y1 - thickness, rect.x1, rect.y1);
+                    scene.fill(Fill::NonZero, transform, color, None, &underline);
+                }
+            }
+
             // Render text
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
