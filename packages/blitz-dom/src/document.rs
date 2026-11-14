@@ -21,7 +21,10 @@ use crate::{
 };
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{DomEvent, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzPointerEvent, BlitzPointerId, DomEvent, HitResult, MouseEventButtons, PointerCaptureError,
+    UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -148,6 +151,27 @@ pub trait Document: Any + 'static {
     /// Get the [`Document`]'s id
     fn id(&self) -> usize {
         self.inner().id
+    }
+
+    fn set_pointer_capture(
+        &mut self,
+        node_id: NodeId,
+        pointer_id: i32,
+    ) -> Result<(), PointerCaptureError> {
+        self.inner_mut().set_pointer_capture(node_id, pointer_id)
+    }
+
+    fn release_pointer_capture(
+        &mut self,
+        node_id: NodeId,
+        pointer_id: i32,
+    ) -> Result<(), PointerCaptureError> {
+        self.inner_mut()
+            .release_pointer_capture(node_id, pointer_id)
+    }
+
+    fn has_pointer_capture(&self, node_id: NodeId, pointer_id: i32) -> bool {
+        self.inner().has_pointer_capture(node_id, pointer_id)
     }
 }
 
@@ -277,6 +301,14 @@ pub struct BaseDocument {
     pub(crate) click_count: u16,
     /// Whether we're currently in a text selection drag (moved 2px+ from mousedown)
     pub(crate) drag_mode: DragMode,
+    /// Active pointers currently known to the document, keyed by DOM `pointerId`.
+    pub(crate) active_pointers: HashMap<i32, ActivePointerRecord>,
+    /// Pending pointer capture targets to be promoted on the next pointer event.
+    pub(crate) pending_pointer_capture_targets: HashMap<i32, PendingCapture>,
+    /// Currently active pointer capture targets, keyed by DOM `pointerId`.
+    pub(crate) pointer_capture_targets: HashMap<i32, CaptureTarget>,
+    /// Pre-resolved click target for the in-flight `PointerUp` default action.
+    pub(crate) pending_click_target: Option<Option<NodeId>>,
     /// The scrollbar thumb currently under the pointer, if any
     pub(crate) hovered_scrollbar: Option<crate::node::ScrollbarRef>,
     /// When each scroll container's overlay scrollbars were last shown
@@ -367,6 +399,27 @@ pub struct BaseDocument {
     pub(crate) devtools_title: Option<String>,
     /// Reusable buffers for document-wide passes.
     pub(crate) scratch: DocumentScratch,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ActivePointerRecord {
+    pub(crate) id: BlitzPointerId,
+    pub(crate) is_primary: bool,
+    pub(crate) buttons: MouseEventButtons,
+    pub(crate) last_event: BlitzPointerEvent,
+    pub(crate) element_under_pointer: Option<NodeId>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PendingCapture {
+    pub(crate) target: NodeId,
+    pub(crate) explicit: bool,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CaptureTarget {
+    Connected { target: NodeId, explicit: bool },
+    DisconnectedPendingLostCapture,
 }
 
 /// Buffers reused across runs of document-wide passes to avoid reallocating
@@ -520,6 +573,10 @@ impl BaseDocument {
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
             drag_mode: DragMode::None,
+            active_pointers: HashMap::new(),
+            pending_pointer_capture_targets: HashMap::new(),
+            pointer_capture_targets: HashMap::new(),
+            pending_click_target: None,
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
@@ -995,6 +1052,19 @@ impl BaseDocument {
         };
         if drag_references_node {
             self.drag_mode = DragMode::None;
+        }
+        self.pending_pointer_capture_targets
+            .retain(|_, pending| pending.target != node_id);
+        for target in self.pointer_capture_targets.values_mut() {
+            if matches!(*target, CaptureTarget::Connected { target, .. } if target == node_id) {
+                *target = CaptureTarget::DisconnectedPendingLostCapture;
+            }
+        }
+        let surviving_ancestor = self.nearest_surviving_element_ancestor(node_id);
+        for record in self.active_pointers.values_mut() {
+            if record.element_under_pointer == Some(node_id) {
+                record.element_under_pointer = surviving_ancestor;
+            }
         }
         self.scrollbar_activity.remove(&node_id);
     }
@@ -2020,11 +2090,186 @@ impl BaseDocument {
         let x = pos.x + self.viewport_scroll().x as f32;
         let y = pos.y + self.viewport_scroll().y as f32;
         let prev_hover = self.hover_state();
-        let changed = self.set_hover_to(x, y);
+        let changed = if let Some(captured_id) = self.active_primary_capture_node() {
+            self.set_hover_to_captured_node(captured_id, x, y)
+        } else {
+            self.set_hover_to(x, y)
+        };
         if self.hover_state() != prev_hover {
             self.update_cursor();
         }
         changed
+    }
+
+    pub fn set_pointer_capture(
+        &mut self,
+        node_id: NodeId,
+        pointer_id: i32,
+    ) -> Result<(), PointerCaptureError> {
+        let Some(record) = self.active_pointers.get(&pointer_id) else {
+            return Err(PointerCaptureError::NotFound);
+        };
+        if !self.is_connected_element(node_id) {
+            return Err(PointerCaptureError::InvalidState);
+        }
+        if record.buttons.is_empty() {
+            return Ok(());
+        }
+        self.pending_pointer_capture_targets.insert(
+            pointer_id,
+            PendingCapture {
+                target: node_id,
+                explicit: true,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn release_pointer_capture(
+        &mut self,
+        node_id: NodeId,
+        pointer_id: i32,
+    ) -> Result<(), PointerCaptureError> {
+        if !self.active_pointers.contains_key(&pointer_id) {
+            return Err(PointerCaptureError::NotFound);
+        }
+        if self.has_pointer_capture(node_id, pointer_id) {
+            self.pending_pointer_capture_targets.remove(&pointer_id);
+        }
+        Ok(())
+    }
+
+    pub fn has_pointer_capture(&self, node_id: NodeId, pointer_id: i32) -> bool {
+        if !self.is_connected_element(node_id) {
+            return false;
+        }
+        self.pending_pointer_capture_targets
+            .get(&pointer_id)
+            .is_some_and(|pending| pending.target == node_id)
+    }
+
+    pub(crate) fn set_implicit_pointer_capture(&mut self, node_id: NodeId, pointer_id: i32) {
+        let Some(target) = self.nearest_connected_element(node_id) else {
+            return;
+        };
+        if self
+            .active_pointers
+            .get(&pointer_id)
+            .is_some_and(|record| !record.buttons.is_empty())
+        {
+            self.pending_pointer_capture_targets.insert(
+                pointer_id,
+                PendingCapture {
+                    target,
+                    explicit: false,
+                },
+            );
+        }
+    }
+
+    pub(crate) fn is_connected_element(&self, node_id: NodeId) -> bool {
+        self.nodes
+            .get(node_id)
+            .is_some_and(|node| node.is_element() && node.flags.is_in_document())
+    }
+
+    pub(crate) fn nearest_connected_element(&self, node_id: NodeId) -> Option<NodeId> {
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let node = self.get_node(id)?;
+            if node.is_element() && node.flags.is_in_document() {
+                return Some(id);
+            }
+            current = node.parent;
+        }
+        None
+    }
+
+    pub(crate) fn common_element_ancestor(&self, a: NodeId, b: NodeId) -> Option<NodeId> {
+        let a = self.nearest_connected_element(a)?;
+        let b = self.nearest_connected_element(b)?;
+        if a == b {
+            return Some(a);
+        }
+        let a_chain = self.node_element_ancestors(a);
+        let b_chain = self.node_element_ancestors(b);
+        a_chain
+            .iter()
+            .zip(&b_chain)
+            .take_while(|(x, y)| x == y)
+            .last()
+            .map(|(&id, _)| id)
+    }
+
+    pub(crate) fn active_capture_node_by_dom_id(&self, pointer_id: i32) -> Option<NodeId> {
+        match self.pointer_capture_targets.get(&pointer_id) {
+            Some(CaptureTarget::Connected { target, .. }) if self.is_connected_element(*target) => {
+                Some(*target)
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn active_capture_node(&self, pointer_id: BlitzPointerId) -> Option<NodeId> {
+        self.active_capture_node_by_dom_id(pointer_id.to_dom_pointer_id())
+    }
+
+    pub(crate) fn has_explicit_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        matches!(
+            self.pointer_capture_targets.get(&pointer_id.to_dom_pointer_id()),
+            Some(CaptureTarget::Connected { target, explicit: true }) if self.is_connected_element(*target)
+        )
+    }
+
+    pub(crate) fn active_primary_capture_node(&self) -> Option<NodeId> {
+        self.active_pointers
+            .iter()
+            .filter(|(_, record)| record.is_primary)
+            .find_map(|(&pointer_id, _)| self.active_capture_node_by_dom_id(pointer_id))
+    }
+
+    pub(crate) fn set_hover_to_captured_node(
+        &mut self,
+        captured_id: NodeId,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        self.last_client_pointer_position = Some(taffy::Point {
+            x: x - self.viewport_scroll().x as f32,
+            y: y - self.viewport_scroll().y as f32,
+        });
+
+        let scrollbar_changed = self.hovered_scrollbar.is_some();
+        if let Some(scrollbar) = self.hovered_scrollbar.take() {
+            self.show_scrollbars(scrollbar.node_id);
+        }
+
+        let hover_node_id = self.nearest_connected_element(captured_id);
+        self.hover_hit_node_id = hover_node_id;
+        self.hover_node_is_text = false;
+
+        if hover_node_id == self.hover_node_id {
+            return scrollbar_changed;
+        }
+
+        let old_node_path = self.maybe_node_element_ancestors(self.hover_node_id);
+        let new_node_path = self.maybe_node_element_ancestors(hover_node_id);
+        let same_count = old_node_path
+            .iter()
+            .zip(&new_node_path)
+            .take_while(|(o, n)| o == n)
+            .count();
+        for &id in old_node_path.iter().skip(same_count) {
+            self.snapshot_node_and(id, ElementState::HOVER, |node| node.unhover());
+        }
+        for &id in new_node_path.iter().skip(same_count) {
+            self.snapshot_node_and(id, ElementState::HOVER, |node| node.hover());
+        }
+
+        self.hover_node_id = hover_node_id;
+        self.shell_provider.request_redraw();
+
+        true
     }
 
     /// The hover state that determines the cursor: the hovered node, the precise hit
@@ -3760,5 +4005,112 @@ mod change_tracking_tests {
         doc.clear_changes();
         doc.clear_focus();
         assert!(doc.has_changes());
+    }
+}
+
+#[cfg(test)]
+mod pointer_capture_tests {
+    use super::*;
+    use crate::qual_name;
+    use blitz_traits::events::{MouseEventButton, Point, PointerCoords, PointerDetails};
+    use blitz_traits::shell::ColorScheme;
+
+    fn sample_pointer_event(id: BlitzPointerId, buttons: MouseEventButtons) -> BlitzPointerEvent {
+        BlitzPointerEvent {
+            id,
+            is_primary: true,
+            coords: PointerCoords {
+                page_x: 10.0,
+                page_y: 10.0,
+                screen_x: 10.0,
+                screen_y: 10.0,
+                client_x: 10.0,
+                client_y: 10.0,
+            },
+            button: MouseEventButton::Main,
+            buttons,
+            mods: Default::default(),
+            details: PointerDetails::default(),
+            element: Point::default(),
+            active_pointers: Default::default(),
+        }
+    }
+
+    #[test]
+    fn pointer_capture_state_validation_and_slab_reuse() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(200, 200, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let body = mutator.create_element(qual_name!("body"), vec![]);
+        let a = mutator.create_element(qual_name!("div"), vec![]);
+        let b = mutator.create_element(qual_name!("div"), vec![]);
+        let disconnected = mutator.create_element(qual_name!("div"), vec![]);
+        mutator.append_children(body, &[a, b]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+
+        assert_eq!(
+            doc.set_pointer_capture(a, 1),
+            Err(PointerCaptureError::NotFound)
+        );
+        assert_eq!(
+            doc.release_pointer_capture(a, 1),
+            Err(PointerCaptureError::NotFound)
+        );
+        assert!(!doc.has_pointer_capture(a, 1));
+
+        doc.active_pointers.insert(
+            1,
+            ActivePointerRecord {
+                id: BlitzPointerId::Mouse,
+                is_primary: true,
+                buttons: MouseEventButtons::None,
+                last_event: sample_pointer_event(BlitzPointerId::Mouse, MouseEventButtons::None),
+                element_under_pointer: Some(a),
+            },
+        );
+        assert_eq!(
+            doc.set_pointer_capture(disconnected, 1),
+            Err(PointerCaptureError::InvalidState)
+        );
+        assert_eq!(doc.set_pointer_capture(a, 1), Ok(()));
+        assert!(!doc.has_pointer_capture(a, 1));
+
+        doc.active_pointers.get_mut(&1).unwrap().buttons = MouseEventButtons::Primary;
+        assert_eq!(doc.set_pointer_capture(a, 1), Ok(()));
+        assert!(doc.has_pointer_capture(a, 1));
+        assert!(!doc.has_pointer_capture(b, 1));
+
+        assert_eq!(doc.release_pointer_capture(b, 1), Ok(()));
+        assert!(doc.has_pointer_capture(a, 1));
+
+        assert_eq!(doc.set_pointer_capture(b, 1), Ok(()));
+        assert!(!doc.has_pointer_capture(a, 1));
+        assert!(doc.has_pointer_capture(b, 1));
+
+        doc.pointer_capture_targets.insert(
+            1,
+            CaptureTarget::Connected {
+                target: b,
+                explicit: true,
+            },
+        );
+        let mut mutator = doc.mutate();
+        mutator.remove_and_drop_node(b);
+        let reused = mutator.create_element(qual_name!("span"), vec![]);
+        mutator.append_children(body, &[reused]);
+        drop(mutator);
+
+        assert_eq!(
+            doc.pointer_capture_targets.get(&1),
+            Some(&CaptureTarget::DisconnectedPendingLostCapture)
+        );
+        assert!(!doc.has_pointer_capture(reused, 1));
+        assert_eq!(doc.active_capture_node(BlitzPointerId::Mouse), None);
     }
 }
