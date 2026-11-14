@@ -46,6 +46,16 @@ impl HtmlDocument {
         Self::parse_with(html, config, DocumentHtmlParser::parse_into_mutator)
     }
 
+    /// Parse HTML into an [`HtmlDocument`], without sniffing for XHTML.
+    ///
+    /// A document served as `text/html` is HTML whatever its DOCTYPE or `xmlns` says, and
+    /// browsers parse it as such: an XHTML DOCTYPE in it doesn't make it XML. Callers which know
+    /// the content type (an HTTP `Content-Type`, a mail's MIME part) should use this rather
+    /// than [`from_html`](Self::from_html).
+    pub fn from_html_without_sniffing(html: &str, config: DocumentConfig) -> Self {
+        Self::parse_with(html, config, DocumentHtmlParser::parse_html_into_mutator)
+    }
+
     /// Parse XML (XHTML) into an [`HtmlDocument`]
     pub fn from_xml(xml: &str, config: DocumentConfig) -> Self {
         Self::parse_with(xml, config, DocumentHtmlParser::parse_xml_into_mutator)

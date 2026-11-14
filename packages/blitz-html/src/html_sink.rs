@@ -99,24 +99,33 @@ impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
         if is_xhtml_doc {
             Self::parse_xml_into_mutator(mutr, html);
         } else {
-            // Parse as HTML
-            let mut sink = DocumentHtmlParser::new(mutr);
-            sink.is_xml = false;
-            let opts = ParseOpts {
-                tokenizer: TokenizerOpts::default(),
-                tree_builder: TreeBuilderOpts {
-                    exact_errors: false,
-                    scripting_enabled: false, // Enables parsing of <noscript> tags
-                    iframe_srcdoc: false,
-                    drop_doctype: true,
-                    quirks_mode: QuirksMode::NoQuirks,
-                },
-            };
-            html5ever::parse_document(sink, opts)
-                .from_utf8()
-                .read_from(&mut html.as_bytes())
-                .unwrap();
+            Self::parse_html_into_mutator(mutr, html);
         }
+    }
+
+    /// Parse the input as HTML, regardless of its content.
+    ///
+    /// [`parse_into_mutator`](Self::parse_into_mutator) parses a document with an XHTML
+    /// DOCTYPE or an `xmlns` on its root as XML, but a document served as `text/html` is HTML
+    /// whatever its DOCTYPE says, and browsers parse it as such. Callers which know the document
+    /// is HTML from out-of-band information (a `text/html` `Content-Type`) should use this method.
+    pub fn parse_html_into_mutator<'a, 'd>(mutr: &'a mut DocumentMutator<'d>, html: &str) {
+        let mut sink = DocumentHtmlParser::new(mutr);
+        sink.is_xml = false;
+        let opts = ParseOpts {
+            tokenizer: TokenizerOpts::default(),
+            tree_builder: TreeBuilderOpts {
+                exact_errors: false,
+                scripting_enabled: false, // Enables parsing of <noscript> tags
+                iframe_srcdoc: false,
+                drop_doctype: true,
+                quirks_mode: QuirksMode::NoQuirks,
+            },
+        };
+        html5ever::parse_document(sink, opts)
+            .from_utf8()
+            .read_from(&mut html.as_bytes())
+            .unwrap();
     }
 
     /// Parse the input as XML (XHTML), regardless of its content.
