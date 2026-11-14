@@ -218,6 +218,17 @@ impl Node {
         }
     }
 
+    /// This node's layout output state, if it has been allocated. Returns
+    /// `None` for node kinds which do not participate in layout.
+    #[inline]
+    pub fn try_layout_data(&self) -> Option<&LayoutData> {
+        match &self.data {
+            NodeData::Element(data) | NodeData::AnonymousBlock(data) => data.layout_data.as_deref(),
+            NodeData::Document(data) => data.layout_data.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Mutable access to this node's layout output state, if it has been
     /// allocated. Never allocates. Returns `None` for node kinds which do not
     /// participate in layout.

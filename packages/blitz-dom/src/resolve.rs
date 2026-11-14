@@ -175,7 +175,11 @@ impl BaseDocument {
 
         let scale = self.viewport.scale_f64();
 
+        // Anonymous boxes are never skipped: damage marking walks the DOM
+        // parent chain, which bypasses them, so a damaged descendant may be
+        // reachable only through an undamaged anonymous box.
         if !resolve_all
+            && !self.nodes[node_id].is_anonymous()
             && !self.nodes[node_id]
                 .damage()
                 .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))
