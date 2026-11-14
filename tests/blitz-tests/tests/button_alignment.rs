@@ -1,4 +1,25 @@
+use blitz_dom::node::TextLayout;
+use blitz_dom::text::InlineText as _;
 use blitz_test_harness::Harness;
+
+/// The extent of the text's lines, in CSS pixels relative to the content box moved down by the
+/// block offset: `(left, width, height)`.
+fn text_extent(layout: &TextLayout) -> (f64, f64, f64) {
+    let mut extent = None;
+    layout.for_each_selection_rect(0, layout.text_len(), |rect| {
+        extent = Some(match extent {
+            Some(extent) => rect.union(extent),
+            None => rect,
+        });
+    });
+    let extent = extent.expect("the layout holds text");
+    let scale = f64::from(layout.scale());
+    (
+        extent.x0 / scale,
+        extent.width() / scale,
+        extent.height() / scale,
+    )
+}
 
 fn button(css: &str, child_css: &str) -> Harness {
     Harness::from_html(&format!(
@@ -38,9 +59,10 @@ fn default_button_centers_text() {
         .inline_layout_data
         .as_ref()
         .unwrap();
-    assert!(layout.layout.width() > 0.0);
-    assert_eq!(layout.layout.height(), 20.0);
-    assert_eq!(layout.block_offset, 40.0);
+    let (_, width, height) = text_extent(layout);
+    assert!(width > 0.0);
+    assert_eq!(height, 20.0);
+    assert_eq!(layout.block_offset(), 40.0);
 }
 
 #[test]
@@ -188,8 +210,8 @@ fn button_like_inputs_use_block_centering_without_ua_flex_alignment() {
             .inline_layout_data
             .as_ref()
             .unwrap();
-        assert_eq!(layout.layout.height(), 20.0);
-        assert_eq!(layout.block_offset, 40.0);
+        assert_eq!(text_extent(layout).2, 20.0);
+        assert_eq!(layout.block_offset(), 40.0);
     }
 }
 
@@ -224,10 +246,10 @@ fn author_flex_and_grid_inputs_still_block_layout_their_labels() {
                 .inline_layout_data
                 .as_ref()
                 .unwrap();
-            assert_eq!(layout.layout.height(), 20.0);
-            assert_eq!(layout.block_offset, 40.0, "{input_type}, {display}");
-            let line = layout.layout.lines().next().unwrap();
-            assert!(line.metrics().offset > 0.0, "{input_type}, {display}");
+            let (left, _, height) = text_extent(layout);
+            assert_eq!(height, 20.0);
+            assert_eq!(layout.block_offset(), 40.0, "{input_type}, {display}");
+            assert!(left > 0.0, "{input_type}, {display}");
         }
     }
 }
@@ -255,7 +277,8 @@ fn button_input_block_alignment_overrides_and_overflow() {
                 .as_ref()
                 .unwrap();
             assert_eq!(
-                layout.block_offset, y,
+                layout.block_offset(),
+                y,
                 "{input_type}, {alignment}, {height}"
             );
         }
@@ -283,7 +306,7 @@ fn button_input_display_restyle_preserves_label_centering() {
             .inline_layout_data
             .as_ref()
             .unwrap()
-            .block_offset,
+            .block_offset(),
         40.0
     );
 }

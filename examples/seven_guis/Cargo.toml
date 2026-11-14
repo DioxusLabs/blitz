@@ -13,7 +13,9 @@ path = "src/main.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["hybrid"]
+default = ["hybrid", "parley"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["dioxus-native/parley"]
 vello = ["dioxus-native/vello"]
 hybrid = ["dioxus-native/vello-hybrid"]
 skia = ["dioxus-native/skia"]

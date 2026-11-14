@@ -264,3 +264,35 @@ fn retains_dom_endpoints_when_anonymous_inline_roots_are_rebuilt() {
     assert_eq!(doc.take_js_errors(), Vec::<String>::new());
     assert_eq!(doc.take_messages(), ["ℎ"]);
 }
+
+#[test]
+fn maps_text_after_white_space_around_an_inline_box() {
+    assert_eq!(
+        select(
+            "<div id='test'>a <span style='display:inline-block;width:10px;height:10px'></span> bc</div>",
+            r#"
+        const s = getSelection(), text = test.lastChild;
+        s.setBaseAndExtent(text, 1, text, 2);
+        __blitz_send_message(String(s));
+        s.setBaseAndExtent(test.firstChild, 0, text, 3);
+        __blitz_send_message(String(s));
+    "#
+        ),
+        ["b", "a  bc"]
+    );
+}
+
+#[test]
+fn maps_text_after_an_inside_list_marker() {
+    assert_eq!(
+        select(
+            "<ul style='list-style-position:inside'><li id='test'>abc</li></ul>",
+            r#"
+        const s = getSelection(), text = test.firstChild;
+        s.setBaseAndExtent(text, 1, text, 2);
+        __blitz_send_message(String(s));
+    "#
+        ),
+        ["b"]
+    );
+}

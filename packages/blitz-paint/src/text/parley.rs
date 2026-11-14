@@ -1,17 +1,203 @@
+//! Painting text laid out by Parley.
+
 use anyrender::PaintScene;
-use blitz_dom::CopyStyleGetters;
-use blitz_dom::{BaseDocument, NodeId, node::TextBrush};
-use kurbo::{Affine, Rect};
-use parley::{Affinity, Cursor, GlyphRun, Layout, Line, PositionedLayoutItem, Selection};
-use peniko::Fill;
+use anyrender::filters::{Filter, FilterEffect};
+use blitz_dom::node::Marker;
+use blitz_dom::text::InlineText as _;
+use blitz_dom::text::parley::parley::{GlyphRun, Line, PositionedLayoutItem};
+use blitz_dom::node::TextLayout;
+use blitz_dom::text::parley::{MarkerLayout, TextBrush, TextEditor};
+use blitz_dom::{BaseDocument, CopyStyleGetters, NodeId};
+use kurbo::{Affine, Point, Rect};
+use peniko::{Fill, Mix};
 use std::sync::Arc;
 
+use super::{DrawTextContext, RunRecord, TextPaintOptions, font_embolden, paint_selection};
 use crate::color::{Color, ToColorColor as _};
 use crate::text_decorations::{
-    DecorationRunGeometry, DecorationStackEntry, LineDecoration, ResolvedTextShadow,
-    WinAscentCache, draw_line_text_shadows, flush_line_decorations, resolve_decoration_entry,
+    DecorationRunGeometry, LineDecoration, WinAscentCache, flush_line_decorations,
+    resolve_decoration_entry,
 };
 use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
+
+
+/// Paints an inline formatting context: its inline elements' backgrounds, the selection
+/// highlight, and its text and decorations.
+///
+/// `transform` takes the content box's device pixels, moved down by the layout's block offset,
+/// onto the scene.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_inline_layout(
+    scene: &mut impl PaintScene,
+    text_layout: &TextLayout,
+    doc: &BaseDocument,
+    transform: Affine,
+    options: TextPaintOptions,
+    root: NodeId,
+    selection: Option<(usize, usize)>,
+    context: &mut DrawTextContext,
+) {
+    // Render inline element backgrounds (e.g. `<span style="background: ...">`)
+    // behind the text and selection highlight.
+    draw_inline_backgrounds(scene, text_layout.backend.layout.lines(), doc, transform, root);
+
+    // Render text selection highlight (if any) using cached selection ranges
+    if let Some((sel_start, sel_end)) = selection {
+        paint_selection(scene, text_layout, transform, sel_start, sel_end);
+    }
+
+    // Render text
+    stroke_text(
+        scene,
+        text_layout.backend.layout.lines(),
+        doc,
+        transform,
+        options,
+        root,
+        context,
+    );
+}
+
+/// Paints the text of an `<input>` or `<textarea>`, and its selection and caret where it is
+/// focussed.
+///
+/// `transform` takes the text's device pixels onto the scene.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_text_input(
+    scene: &mut impl PaintScene,
+    editor: &TextEditor,
+    focussed: bool,
+    caret_color: Color,
+    doc: &BaseDocument,
+    transform: Affine,
+    options: TextPaintOptions,
+    node_id: NodeId,
+    context: &mut DrawTextContext,
+) {
+    let editor = editor.plain_editor();
+    if focussed {
+        // Render selection/caret
+        for (rect, _line_idx) in editor.selection_geometry().iter() {
+            scene.fill(
+                Fill::NonZero,
+                transform,
+                SELECTION_COLOR,
+                None,
+                &convert_rect(rect),
+            );
+        }
+        if let Some(cursor) = editor.cursor_geometry(1.5) {
+            scene.fill(
+                Fill::NonZero,
+                transform,
+                caret_color,
+                None,
+                &convert_rect(&cursor),
+            );
+        };
+    }
+
+    // Render text
+    let Some(layout) = editor.try_layout() else {
+        return;
+    };
+    stroke_text(
+        scene,
+        layout.lines(),
+        doc,
+        transform,
+        options,
+        node_id,
+        context,
+    );
+}
+
+/// Paints a list item's outside marker, right-aligned before its border box, on the baseline of
+/// the item's first line of text.
+///
+/// `pos` is the item's content box origin in CSS pixels, and `transform` takes the element's CSS
+/// pixels, scaled to device pixels, onto the scene.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_marker(
+    scene: &mut impl PaintScene,
+    marker: &Marker,
+    layout: &MarkerLayout,
+    text_layout: Option<&TextLayout>,
+    item_layout: &taffy::Layout,
+    doc: &BaseDocument,
+    pos: Point,
+    transform: Affine,
+    options: TextPaintOptions,
+    node_id: NodeId,
+    context: &mut DrawTextContext,
+) {
+    // Right align and pad the bullet when rendering outside
+    let x_padding = match marker {
+        Marker::Char(_) => 8.0,
+        Marker::String(_) => 0.0,
+    };
+    // Outside markers are placed outside the list item's border box
+    // (`pos` is the origin of its content box)
+    let x_offset = -(layout.full_width() / layout.scale()
+        + x_padding
+        + item_layout.padding.left
+        + item_layout.border.left);
+
+    // Align the marker with the baseline of the first line of text in the list item
+    let y_offset = text_layout
+        .and_then(|text_layout| text_layout.first_baseline())
+        .zip(layout.lines().next())
+        .map_or(0.0, |(baseline, marker_line)| {
+            baseline - marker_line.metrics().baseline / layout.scale()
+        });
+
+    let pos = Point {
+        x: pos.x + x_offset as f64,
+        y: pos.y + y_offset as f64,
+    };
+
+    let transform = transform * Affine::translate((pos.x * options.scale, pos.y * options.scale));
+
+    stroke_text(
+        scene,
+        layout.lines(),
+        doc,
+        transform,
+        options,
+        node_id,
+        context,
+    );
+}
+
+/// Converts parley BoundingBox into peniko Rect
+fn convert_rect(rect: &blitz_dom::text::parley::parley::BoundingBox) -> kurbo::Rect {
+    peniko::kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1)
+}
+
+/// Paints only the text of an inline formatting context, for a `background-clip: text` mask.
+///
+/// `transform` takes the content box's device pixels, moved down by the layout's block offset,
+/// onto the scene.
+pub(crate) fn paint_inline_text(
+    scene: &mut impl PaintScene,
+    text_layout: &TextLayout,
+    doc: &BaseDocument,
+    transform: Affine,
+    options: TextPaintOptions,
+    root: NodeId,
+    context: &mut DrawTextContext,
+) {
+    stroke_text(
+        scene,
+        text_layout.backend.layout.lines(),
+        doc,
+        transform,
+        options,
+        root,
+        context,
+    );
+}
+
 
 /// Draw the backgrounds of inline elements (e.g. `<span style="background: ...">`).
 ///
@@ -22,7 +208,7 @@ use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
 ///
 /// The inline root's own background is painted separately (as a normal block box), so
 /// runs belonging to the root are skipped to avoid drawing it twice.
-pub(crate) fn draw_inline_backgrounds<'a>(
+fn draw_inline_backgrounds<'a>(
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     doc: &BaseDocument,
@@ -67,31 +253,7 @@ pub(crate) fn draw_inline_backgrounds<'a>(
     }
 }
 
-/// Per glyph run values recorded while walking a line, so the line can be painted in
-/// passes (shadows beneath, then glyphs) without re-resolving styles.
-pub(crate) struct RunRecord {
-    pub(crate) fill_color: Color,
-    pub(crate) shadows: Option<Arc<[ResolvedTextShadow]>>,
-}
-
-/// Reusable scratch storage for drawing text across all inline formatting contexts in a
-/// document. The vectors are cleared between uses without releasing their allocations.
-#[derive(Default)]
-pub(crate) struct DrawTextContext {
-    stack: Vec<DecorationStackEntry>,
-    path_scratch: Vec<NodeId>,
-    deco_boxes: Vec<LineDecoration>,
-    run_records: Vec<RunRecord>,
-    win_ascent_ratios: WinAscentCache,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct TextPaintOptions {
-    pub scale: f64,
-    pub brush_override: Option<Color>,
-}
-
-pub(crate) fn stroke_text<'a>(
+fn stroke_text<'a>(
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     doc: &BaseDocument,
@@ -339,59 +501,112 @@ pub(crate) fn glyph_run_rect(glyph_run: &GlyphRun<'_, TextBrush>) -> Rect {
     Rect::new(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1))
 }
 
-/// Draw selection highlight rectangles for the given byte range in a layout.
-/// Uses Parley's Selection type for accurate geometry calculation.
-pub(crate) fn draw_text_selection(
+/// Paint the `text-shadow`s of one line.
+///
+/// Like Blink and Gecko, a shadow is painted by drawing the text again, offset and in the
+/// shadow colour, beneath the real text; the shadows in a list are drawn last-to-first so
+/// the first one ends up on top. An unblurred shadow is just an extra glyph draw. A
+/// blurred one needs a blur filter layer, which is the expensive part, so consecutive runs
+/// that share the same `text-shadow` list (by `Arc` identity: a paragraph's runs normally
+/// all inherit one list) are batched into a single layer per shadow.
+#[allow(clippy::too_many_arguments)]
+fn draw_line_text_shadows(
     scene: &mut impl PaintScene,
-    layout: &Layout<TextBrush>,
+    line: &Line<'_, TextBrush>,
+    run_records: &[RunRecord],
+    deco_boxes: &[LineDecoration],
+    win_ascent_ratios: &mut WinAscentCache,
     transform: Affine,
-    selection_start: usize,
-    selection_end: usize,
+    options: TextPaintOptions,
+    inline_root_id: NodeId,
 ) {
-    let anchor = Cursor::from_byte_index(layout, selection_start, Affinity::Downstream);
-    let focus = Cursor::from_byte_index(layout, selection_end, Affinity::Downstream);
-    let selection = Selection::new(anchor, focus);
+    let line_metrics = line.metrics();
+    let line_baseline = line_metrics.baseline;
+    let line_height = (line_metrics.block_max_coord - line_metrics.block_min_coord) as f64;
 
-    selection.geometry_with(layout, |rect, _line_idx| {
-        let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
-        scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
-    });
-}
+    let mut start = 0;
+    while start < run_records.len() {
+        let Some(shadow_list) = &run_records[start].shadows else {
+            start += 1;
+            continue;
+        };
 
-/// Approximates macOS font smoothing (stem dilation). CoreGraphics dilates each side by an amount
-/// in device pixels that grows with the device ppem up to 0.3px (fitted to Safari's ink at 9-72px
-/// and 1x-3x scale), and keeps dilating at large sizes, so there is no ppem cutoff. glifo applies
-/// the embolden in user units, so the device amounts are divided by the transform's scale.
-fn font_embolden(font_size: f64, color: Color, transform: Affine) -> kurbo::Vec2 {
-    const MAX_DEVICE_EMBOLDEN: f64 = 0.3;
-    let [a, b, c, d, _, _] = transform.as_coeffs();
-    let (scale_x, scale_y) = (a.hypot(b), c.hypot(d));
-    let device_ppem = font_size * (a * d - b * c).abs().sqrt();
-    if scale_x == 0.0 || scale_y == 0.0 || !device_ppem.is_finite() {
-        return kurbo::Vec2::default();
-    }
-    let fs = device_ppem * embolden_scale(color);
-    kurbo::Vec2::new(
-        (0.0121 * fs).min(MAX_DEVICE_EMBOLDEN) / scale_x,
-        (0.015125 * fs).min(MAX_DEVICE_EMBOLDEN) / scale_y,
-    )
-}
+        // The batch: this run plus following runs with the same shadow list.
+        let end = start
+            + run_records[start..]
+                .iter()
+                .take_while(|record| {
+                    record
+                        .shadows
+                        .as_ref()
+                        .is_some_and(|list| Arc::ptr_eq(list, shadow_list))
+                })
+                .count();
+        let batch = || glyph_runs(line).skip(start).take(end - start);
 
-/// Scales Pathfinder's stem-darkening factors by the text's relative luminance. CoreText
-/// dilates light text more than dark text; the points are fitted to Safari's ink for text
-/// colours from black to white on black and white backgrounds.
-fn embolden_scale(color: Color) -> f64 {
-    const POINTS: [(f64, f64); 4] = [(0.1, 0.5), (0.125, 0.72), (0.35, 0.72), (1.0, 1.3)];
-    let lum = color.discard_alpha().relative_luminance() as f64;
-    let mut prev = POINTS[0];
-    if lum <= prev.0 {
-        return prev.1;
-    }
-    for point in &POINTS[1..] {
-        if lum <= point.0 {
-            return prev.1 + (point.1 - prev.1) * (lum - prev.0) / (point.0 - prev.0);
+        let glyph_bounds = batch()
+            .map(|run| glyph_run_rect(&run))
+            .reduce(|a, b| a.union(b))
+            .unwrap_or(Rect::ZERO);
+        // Decorations drawn under these runs are shadowed with them, clipped to the runs'
+        // horizontal extent. The vertical extent is generous to cover any decoration style.
+        let has_decorations = deco_boxes
+            .iter()
+            .any(|acc| acc.max_x > glyph_bounds.x0 && acc.min_x < glyph_bounds.x1);
+        let deco_clip = Rect::new(
+            glyph_bounds.x0,
+            line_metrics.block_min_coord as f64 - line_height,
+            glyph_bounds.x1,
+            line_metrics.block_max_coord as f64 + line_height,
+        );
+        let batch_bounds = if has_decorations {
+            glyph_bounds.union(deco_clip)
+        } else {
+            glyph_bounds
+        };
+
+        for shadow in shadow_list.iter().rev() {
+            if shadow.color.components[3] <= 0.0 {
+                continue;
+            }
+            if shadow.is_blurred() {
+                let filter = Arc::new(Filter::single(FilterEffect::blur(shadow.std_dev as f32)));
+                // Layer clip: the shadowed content's bounds, offset, plus room for the blur.
+                let margin = 3.0 * shadow.std_dev;
+                let clip = (batch_bounds + shadow.offset).inflate(margin, margin);
+                scene.push_layer(
+                    Fill::NonZero,
+                    Mix::Normal,
+                    1.0,
+                    transform,
+                    &clip,
+                    Some(filter),
+                    None,
+                );
+            }
+
+            let shadow_transform = transform * Affine::translate(shadow.offset);
+            for run in batch() {
+                draw_glyph_run(scene, &run, shadow.color, shadow_transform);
+            }
+            if has_decorations {
+                flush_line_decorations(
+                    scene,
+                    transform,
+                    options,
+                    deco_boxes,
+                    win_ascent_ratios,
+                    inline_root_id,
+                    line_baseline,
+                    Some((shadow, deco_clip)),
+                );
+            }
+
+            if shadow.is_blurred() {
+                scene.pop_layer();
+            }
         }
-        prev = *point;
+
+        start = end;
     }
-    prev.1
 }
