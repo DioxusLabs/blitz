@@ -8,3 +8,6 @@ icon = ["./assets/blitz-logo.png", "./assets/blitz-logo.ico"]
 
 [bundle.windows]
 webview_install_mode = "Skip"
+
+[web.app]
+title = "Blitz"

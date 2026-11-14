@@ -1444,7 +1444,9 @@ dependencies = [
  "blitz-traits",
  "blitz-vibey-script",
  "browser-persistence",
+ "console_error_panic_hook",
  "dioxus-native",
+ "gloo-timers",
  "image",
  "linebender_resource_handle",
  "mimalloc",
@@ -1456,6 +1458,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "usvg",
+ "web-sys",
+ "web-time",
  "webbrowser",
  "winit",
 ]
@@ -1469,6 +1473,7 @@ dependencies = [
  "rusqlite_migration",
  "tracing",
  "url",
+ "web-time",
 ]
 
 [[package]]
@@ -2732,6 +2737,7 @@ dependencies = [
  "slotmap",
  "tokio",
  "tracing",
+ "web-sys",
  "webbrowser",
  "wgpu_context",
  "winit",

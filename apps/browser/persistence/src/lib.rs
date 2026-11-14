@@ -25,16 +25,22 @@
 //! latency-sensitive thread (e.g. by wrapping calls in `spawn_blocking`).
 
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, UNIX_EPOCH};
 
+#[cfg(not(target_arch = "wasm32"))]
 use rusqlite::{Connection, params};
+#[cfg(not(target_arch = "wasm32"))]
 use rusqlite_migration::{M, Migrations};
 use url::Url;
+use web_time::SystemTime;
 
 // Schema migrations. Append a new `M::up(...)` for every schema change —
 // never edit a previously-released entry, since the index in this list is
 // the version number that gets stamped into `PRAGMA user_version` on disk.
+#[cfg(not(target_arch = "wasm32"))]
 fn migrations() -> Migrations<'static> {
     Migrations::new(vec![M::up(
         "CREATE TABLE history_entries (
@@ -74,6 +80,7 @@ impl HistoryEntry {
     }
 
     /// Construct an entry from persisted parts, assigning a fresh in-memory id.
+    #[cfg(not(target_arch = "wasm32"))]
     fn from_parts(
         url: Url,
         title: String,
@@ -95,11 +102,13 @@ fn next_history_entry_id() -> HistoryEntryId {
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
 pub struct HistoryStore {
     conn: Arc<Mutex<Connection>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl HistoryStore {
     pub fn open() -> Self {
         let mut conn = open_connection();
@@ -148,6 +157,30 @@ impl HistoryStore {
     }
 }
 
+/// wasm has no sqlite: history lives only in the in-process store, and every
+/// write here is a no-op.
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
+pub struct HistoryStore;
+
+#[cfg(target_arch = "wasm32")]
+impl HistoryStore {
+    pub fn open() -> Self {
+        Self
+    }
+
+    pub fn load_recent(&self, _limit: usize) -> Vec<HistoryEntry> {
+        Vec::new()
+    }
+
+    pub fn record_visit(&self, _entry: &HistoryEntry) {}
+
+    pub fn clear(&self) {}
+
+    pub fn set_favicon_by_url(&self, _page_url: &Url, _favicon_url: &Url) {}
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn load_recent_inner(conn: &Connection, limit: usize) -> Vec<HistoryEntry> {
     let mut stmt = match conn.prepare(
         "SELECT url, title, favicon_url, visited_at
@@ -197,6 +230,7 @@ fn load_recent_inner(conn: &Connection, limit: usize) -> Vec<HistoryEntry> {
     entries
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn record_visit_inner(conn: &Connection, entry: &HistoryEntry) {
     if let Err(e) = record_visit_tx(conn, entry) {
         tracing::warn!("history_store: record_visit failed: {e}");
@@ -205,6 +239,7 @@ fn record_visit_inner(conn: &Connection, entry: &HistoryEntry) {
 
 // Wrap the upsert + prune in a single transaction so a crash between the
 // two writes can't leave the on-disk row count over `MAX_HISTORY_ENTRIES`.
+#[cfg(not(target_arch = "wasm32"))]
 fn record_visit_tx(conn: &Connection, entry: &HistoryEntry) -> rusqlite::Result<()> {
     let visited_secs = entry
         .visited_at
@@ -258,12 +293,14 @@ fn record_visit_tx(conn: &Connection, entry: &HistoryEntry) -> rusqlite::Result<
     tx.commit()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn clear_inner(conn: &Connection) {
     if let Err(e) = conn.execute("DELETE FROM history_entries", []) {
         tracing::warn!("history_store: clear failed: {e}");
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn set_favicon_by_url_inner(conn: &Connection, page_url: &Url, favicon_url: &Url) {
     if let Err(e) = conn.execute(
         "UPDATE history_entries SET favicon_url = ?1
@@ -276,7 +313,7 @@ fn set_favicon_by_url_inner(conn: &Connection, page_url: &Url, favicon_url: &Url
 
 // Mobile (Android, iOS) skips the file path entirely and always lands in
 // in-memory mode. `directories` isn't pulled in for those targets.
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
 fn open_file_connection() -> Result<Connection, String> {
     use directories::ProjectDirs;
 
@@ -290,6 +327,7 @@ fn open_file_connection() -> Result<Connection, String> {
     Connection::open(&db_path).map_err(|e| format!("open({}): {e}", db_path.display()))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn open_connection() -> Connection {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
@@ -307,6 +345,7 @@ fn open_connection() -> Connection {
 // connection can be passed in without standing up the full `HistoryStore`
 // wrapper. The behavior we care about — fold semantics, prune cap, NULL-only
 // patching — lives in the inner fns.
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, UNIX_EPOCH};

@@ -1,4 +1,6 @@
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+
+use web_time::SystemTime;
 
 use blitz_traits::net::{Request, Url};
 use dioxus_native::prelude::*;
@@ -116,7 +118,7 @@ fn HistoryPage(on_navigate: Callback<Request>) -> Element {
     let mut now = use_signal(SystemTime::now);
     use_future(move || async move {
         loop {
-            tokio::time::sleep(HISTORY_REFRESH_INTERVAL).await;
+            crate::timer::sleep(HISTORY_REFRESH_INTERVAL).await;
             now.set(SystemTime::now());
         }
     });

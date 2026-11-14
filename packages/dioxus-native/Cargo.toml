@@ -48,8 +48,6 @@ apple-font-embolden = ["blitz-paint/apple-font-embolden"]
 scrollbars = ["blitz-paint/scrollbars"]
 
 # Other features
-# No-op on wasm32 (blitz_net::Provider needs tokio's threaded runtime); launch_cfg
-# falls back to the in-process DioxusNativeNetProvider there.
 net = ["dep:tokio", "dep:blitz-net"]
 html = ["dep:blitz-html"]
 
@@ -122,6 +120,7 @@ slotmap = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 anyrender_vello_hybrid = { workspace = true, optional = true, features = ["webgl"] }
+web-sys = { workspace = true, features = ["Window", "Document", "Node"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"], optional = true }
