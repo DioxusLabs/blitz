@@ -106,6 +106,8 @@ impl BaseDocument {
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
+        #[cfg(feature = "svg")]
+        self.resolve_inline_svg_viewports();
         timer.record_time("layout");
         self.nodes.bump_geometry_generation();
 
@@ -427,6 +429,53 @@ impl BaseDocument {
         }
 
         self.deferred_construction_nodes.clear();
+    }
+
+    /// Re-parse inline `<svg>` elements without a `viewBox` or intrinsic size whose
+    /// laid-out size changed, so that percentage lengths resolve against their viewport.
+    #[cfg(feature = "svg")]
+    fn resolve_inline_svg_viewports(&mut self) {
+        use crate::node::ImageData;
+
+        let mut svg_nodes = std::mem::take(&mut self.inline_svg_viewport_nodes);
+        svg_nodes.retain(|&node_id| {
+            let Some(node) = self.nodes.get(node_id) else {
+                return false;
+            };
+            let Some(ImageData::Svg(svg)) = node.element_data().and_then(|el| el.image_data())
+            else {
+                return false;
+            };
+            if !node.flags.is_in_document() {
+                return true;
+            }
+
+            let zoom = node
+                .primary_styles()
+                .map(|style| style.effective_zoom.value())
+                .unwrap_or(1.0);
+            let content_size = node.final_layout().content_box_size();
+            let size = (content_size.width / zoom, content_size.height / zoom);
+            if svg.viewport_size == Some(size) || size.0 <= 0.0 || size.1 <= 0.0 {
+                return true;
+            }
+
+            // usvg resolves percentages in a root without a `viewBox` against a fixed
+            // 100x100, so give the root an explicit size instead.
+            let source = node.svg_source_with_root_size(Some(size));
+            if let Ok(mut parsed) = crate::util::parse_svg_image(source.as_bytes())
+                && let Some(ImageData::Svg(svg)) = self.nodes[node_id]
+                    .element_data_mut()
+                    .and_then(|el| el.image_data_mut())
+            {
+                // Keep the dimensions the root actually declared.
+                parsed.intrinsic_dimensions = svg.intrinsic_dimensions;
+                parsed.viewport_size = Some(size);
+                *svg = parsed;
+            }
+            true
+        });
+        self.inline_svg_viewport_nodes = svg_nodes;
     }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system

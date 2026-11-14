@@ -22,6 +22,8 @@ struct SerializeOpts {
     declare_xlink_ns: bool,
     /// Leave out the root element's `transform` attribute, which is applied as a CSS transform
     skip_root_transform: bool,
+    /// Replace the root element's `width`/`height` attributes with this size in px
+    root_size: Option<(f32, f32)>,
 }
 
 impl SerializeOpts {
@@ -31,6 +33,7 @@ impl SerializeOpts {
             resolve_current_color: false,
             declare_xlink_ns: false,
             skip_root_transform: false,
+            root_size: None,
         }
     }
 }
@@ -107,12 +110,20 @@ impl Node {
     /// `currentColor` resolved against each element's computed `color`.
     #[cfg(feature = "svg")]
     pub(crate) fn svg_source(&self) -> String {
+        self.svg_source_with_root_size(None)
+    }
+
+    /// Serializes this `<svg>` subtree like [`Self::svg_source`], optionally with the
+    /// root `width`/`height` replaced by the given size in px.
+    #[cfg(feature = "svg")]
+    pub(crate) fn svg_source_with_root_size(&self, root_size: Option<(f32, f32)>) -> String {
         let mut output = String::new();
         let opts = SerializeOpts {
             style: OutputStyle::Normal,
             resolve_current_color: true,
             declare_xlink_ns: true,
             skip_root_transform: true,
+            root_size,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
         output
@@ -184,11 +195,23 @@ impl Node {
                     writer.push('"');
                 }
 
+                let root_size = opts.root_size.filter(|_| nesting == 0);
+                if let Some((width, height)) = root_size {
+                    writer.push_str(&format!(" width=\"{width}\" height=\"{height}\""));
+                }
+
                 for attr in data.attrs() {
                     if opts.skip_root_transform
                         && nesting == 0
                         && attr.name.ns == ns!()
                         && attr.name.local == local_name!("transform")
+                    {
+                        continue;
+                    }
+                    if root_size.is_some()
+                        && attr.name.ns == ns!()
+                        && (attr.name.local == local_name!("width")
+                            || attr.name.local == local_name!("height"))
                     {
                         continue;
                     }

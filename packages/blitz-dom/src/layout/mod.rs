@@ -409,22 +409,23 @@ impl LayoutPassState<'_> {
                             ImageData::Svg(svg) => {
                                 let mut width = svg.intrinsic_width();
                                 let mut height = svg.intrinsic_height();
-                                // An SVG with no declared dimensions and no viewBox has no
-                                // intrinsic dimensions per CSS, but usvg still resolves a
-                                // concrete size; use it in place of the default object size.
-                                if width.is_none()
-                                    && height.is_none()
-                                    && svg.viewbox_aspect_ratio().is_none()
-                                {
+                                // An inline `<svg>` with no declared dimensions and no viewBox
+                                // has no intrinsic dimensions or ratio, so it gets the default
+                                // object size. SVG images keep usvg's size until their
+                                // percentages can be resolved against the concrete object size.
+                                let is_inline = element_data.name.local == local_name!("svg");
+                                if !is_inline && svg.lacks_intrinsic_geometry() {
                                     let size = svg.tree.size();
                                     width = Some(size.width());
                                     height = Some(size.height());
                                 }
+                                let ratio = (!is_inline || !svg.lacks_intrinsic_geometry())
+                                    .then(|| svg.aspect_ratio());
                                 (
                                     IntrinsicSizes {
                                         width,
                                         height,
-                                        ratio: Some(svg.aspect_ratio()),
+                                        ratio,
                                     },
                                     DEFAULT_OBJECT_SIZE,
                                 )
