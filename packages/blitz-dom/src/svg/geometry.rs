@@ -222,6 +222,25 @@ pub(super) fn stroke(
     viewport: SvgViewport,
     path: &BezPath,
 ) -> Option<Stroke> {
+    stroke_with_path_length(style, viewport, || {
+        let author_length = attr(element, "pathLength")
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v >= 0.0)?;
+        Some((author_length, path_length(path)))
+    })
+}
+
+/// The stroke style of an element without `pathLength` (text).
+pub(super) fn stroke_style(style: &ComputedValues, viewport: SvgViewport) -> Option<Stroke> {
+    stroke_with_path_length(style, viewport, || None)
+}
+
+/// `path_length` gives the author's `pathLength` and the computed length.
+fn stroke_with_path_length(
+    style: &ComputedValues,
+    viewport: SvgViewport,
+    path_length: impl FnOnce() -> Option<(f64, f64)>,
+) -> Option<Stroke> {
     let svg = style.get_inherited_svg();
     let width = match &svg.stroke_width {
         SVGWidth::LengthPercentage(lp) => viewport.other(&lp.0),
@@ -265,17 +284,14 @@ pub(super) fn stroke(
 
     // `pathLength` scales dash lengths and offsets from the author's length
     // to the computed one. https://svgwg.org/svg2-draft/paths.html#PathLengthAttribute
-    let author_length = attr(element, "pathLength")
-        .and_then(|v| v.trim().parse::<f64>().ok())
-        .filter(|v| v.is_finite() && *v >= 0.0);
-    if let Some(author_length) = author_length {
+    if let Some((author_length, computed_length)) = path_length() {
         if author_length == 0.0 {
             // An infinite scale: the first non-zero entry covers the path.
             // A leading dash makes it solid; a leading gap hides it.
             let first = dashes.iter().position(|d| *d > 0.0).unwrap();
             return (first % 2 == 0).then_some(stroke);
         }
-        let scale = path_length(path) / author_length;
+        let scale = computed_length / author_length;
         dashes.iter_mut().for_each(|d| *d *= scale);
         offset *= scale;
     }

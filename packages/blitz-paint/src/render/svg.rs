@@ -4,17 +4,18 @@
 //! its subtree as live DOM nodes styled by Stylo. SVG layout
 //! (`blitz_dom::svg`) has already resolved each element's transform, geometry
 //! and stroke; painting walks the subtree, reads those results and the paint
-//! properties from computed styles. Patterns, `<use>`, `<text>`,
+//! properties from computed styles. Patterns, `<use>`,
 //! `<image>`, markers, clipping, masking and filters are not painted yet.
 
 use anyrender::PaintScene;
 use blitz_dom::node::Node;
 use blitz_dom::svg::{
-    SvgGradient, SvgGradientShape, SvgLayoutKind, SvgPaintServer, SvgSpreadMethod, SvgViewport,
+    SvgGlyphRun, SvgGradient, SvgGradientShape, SvgLayoutKind, SvgPaintServer, SvgSpreadMethod,
+    SvgText, SvgTextDecorationKind, SvgViewport,
 };
 use color::{ColorSpaceTag, DynamicColor};
-use kurbo::{Affine, BezPath, Rect, Stroke};
-use peniko::{BlendMode, ColorStop, Extend, Fill, Gradient, InterpolationAlphaSpace};
+use kurbo::{Affine, BezPath, Rect, Shape, Stroke, Vec2};
+use peniko::{BlendMode, ColorStop, Extend, Fill, Gradient, InterpolationAlphaSpace, StyleRef};
 use style::computed_values::fill_rule::T as FillRule;
 use style::computed_values::isolation::T as Isolation;
 use style::computed_values::visibility::T as Visibility;
@@ -163,11 +164,177 @@ impl ElementCx<'_, '_> {
                     self.paint_shape(scene, &target, transform, path, stroke.as_ref());
                 }
             }
+            SvgLayoutKind::Text(text) => {
+                let bbox = layout.bbox;
+                self.paint_text(scene, node, text, transform, bbox, viewport);
+            }
         }
 
         if grouped {
             scene.pop_layer();
         }
+    }
+
+    /// Paint a `<text>`: underlines and overlines, then the glyphs, then
+    /// line-throughs, each with the paint of the element it belongs to. Paint
+    /// servers use the `<text>` element's bounding box.
+    fn paint_text(
+        &self,
+        scene: &mut impl PaintScene,
+        node: &Node,
+        text: &SvgText,
+        transform: Affine,
+        bbox: Option<Rect>,
+        viewport: SvgViewport,
+    ) {
+        let paint_decorations = |scene: &mut _, line_through: bool| {
+            for deco in &text.decorations {
+                if (deco.kind == SvgTextDecorationKind::LineThrough) != line_through {
+                    continue;
+                }
+                let Some(style) = node.with(deco.node).primary_styles() else {
+                    continue;
+                };
+                if style.get_inherited_box().visibility != Visibility::Visible {
+                    continue;
+                }
+                let target = PaintTarget {
+                    style: &style,
+                    bbox,
+                    viewport,
+                };
+                let path = deco.rect.to_path(0.1);
+                self.paint_shape(scene, &target, transform, &path, deco.stroke.as_ref());
+            }
+        };
+        paint_decorations(scene, false);
+        for run in &text.runs {
+            let Some(style) = node.with(run.node).primary_styles() else {
+                continue;
+            };
+            if style.get_inherited_box().visibility != Visibility::Visible {
+                continue;
+            }
+            let target = PaintTarget {
+                style: &style,
+                bbox,
+                viewport,
+            };
+            // `opacity` on a `<tspan>` or `<a>` applies to its glyphs (the
+            // `<text>` element's own opacity is applied as a group).
+            let mut alpha = 1.0;
+            let mut current = Some(run.node);
+            while let Some(id) = current
+                && id != node.id
+            {
+                let span = node.with(id);
+                alpha *= span
+                    .primary_styles()
+                    .map_or(1.0, |s| s.get_effects().opacity);
+                current = span.parent;
+            }
+            if alpha < 1.0 {
+                let painter = self.context;
+                scene.push_layer(
+                    Fill::NonZero,
+                    BlendMode::default(),
+                    alpha,
+                    Affine::IDENTITY,
+                    &Rect::new(
+                        painter.initial_x,
+                        painter.initial_y,
+                        painter.initial_x + painter.width as f64,
+                        painter.initial_y + painter.height as f64,
+                    ),
+                    None,
+                    None,
+                );
+            }
+            let svg = style.get_inherited_svg();
+            if let Some(paint) = self.svg_paint(&target, &svg.fill, &svg.fill_opacity) {
+                draw_svg_glyphs(scene, run, transform, &paint, None);
+            }
+            if let Some(stroke) = &run.stroke
+                && let Some(paint) = self.svg_paint(&target, &svg.stroke, &svg.stroke_opacity)
+            {
+                draw_svg_glyphs(scene, run, transform, &paint, Some(stroke));
+            }
+            if alpha < 1.0 {
+                scene.pop_layer();
+            }
+        }
+        paint_decorations(scene, true);
+    }
+}
+
+/// Draw a run's glyphs, batching consecutive glyphs that share a rotation
+/// and scale. A gradient's brush transform is folded into the scene transform
+/// (`draw_glyphs` has no brush transform), with glyph positions and outlines
+/// mapped back through its inverse.
+fn draw_svg_glyphs(
+    scene: &mut impl PaintScene,
+    run: &SvgGlyphRun,
+    transform: Affine,
+    paint: &ShapePaint,
+    stroke: Option<&Stroke>,
+) {
+    if run.font_size <= 0.0 {
+        return;
+    }
+    let brush_transform = match paint {
+        ShapePaint::Solid(_) => Affine::IDENTITY,
+        ShapePaint::Gradient(_, brush_transform) => *brush_transform,
+    };
+    if brush_transform.determinant().abs() < 1e-12 {
+        return;
+    }
+    let inverse = brush_transform.inverse();
+    let inverse_linear = inverse.with_translation(Vec2::ZERO);
+    let skew = run
+        .skew
+        .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
+    let coords: &[anyrender::NormalizedCoord] = bytemuck::cast_slice(&run.normalized_coords);
+    for batch in run
+        .glyphs
+        .chunk_by(|a, b| a.rotate == b.rotate && a.scale_x == b.scale_x)
+    {
+        let outline = match (batch[0].transform(), skew) {
+            (Some(t), Some(s)) => Some(t * s),
+            (t, s) => t.or(s),
+        };
+        let glyph_transform = if brush_transform == Affine::IDENTITY {
+            outline
+        } else {
+            Some(inverse_linear * outline.unwrap_or_default())
+        };
+        let brush: anyrender::PaintRef = match paint {
+            ShapePaint::Solid(color) => (*color).into(),
+            ShapePaint::Gradient(gradient, _) => gradient.into(),
+        };
+        let style: StyleRef = match stroke {
+            Some(stroke) => stroke.into(),
+            None => Fill::NonZero.into(),
+        };
+        scene.draw_glyphs(
+            &run.font,
+            run.font_size,
+            false,
+            coords,
+            Vec2::ZERO,
+            style,
+            brush,
+            1.0,
+            transform * brush_transform,
+            glyph_transform,
+            batch.iter().map(|glyph| {
+                let p = inverse * kurbo::Point::new(glyph.x as f64, glyph.y as f64);
+                anyrender::Glyph {
+                    id: glyph.id,
+                    x: p.x as f32,
+                    y: p.y as f32,
+                }
+            }),
+        );
     }
 }
 

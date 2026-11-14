@@ -6,6 +6,7 @@
 /* set default namespace to HTML */
 @namespace xul url(http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul);
 @namespace svg url(http://www.w3.org/2000/svg);
+@namespace xml url(http://www.w3.org/XML/1998/namespace);
 
 @font-face {
     font-family: -moz-bullet-font;
@@ -1170,6 +1171,13 @@ slot {
    to documents that render inline SVG natively): usvg applies the outermost
    <svg>'s `transform` to its content rather than its CSS box, so clipping that
    box would cut the content off. */
+svg|*[xml|space="preserve"] {
+    white-space: pre;
+}
+svg|*[xml|space="default"] {
+    white-space: normal;
+}
+
 svg|symbol,
 svg|image,
 svg|marker,

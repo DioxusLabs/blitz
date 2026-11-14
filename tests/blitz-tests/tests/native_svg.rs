@@ -956,3 +956,75 @@ fn references_resolve_against_the_document_url() {
     let buffer = render(&mut doc);
     assert_eq!(pixel(&buffer, 50, 50), LIME);
 }
+
+fn count(buffer: &[u8], color: [u8; 3], xs: std::ops::Range<usize>) -> usize {
+    (0..H as usize)
+        .flat_map(|y| xs.clone().map(move |x| (x, y)))
+        .filter(|&(x, y)| pixel(buffer, x, y) == color)
+        .count()
+}
+
+const TEXT: &str = r#"<svg width="100" height="100"><text id="t" x="5" y="80" font-size="70" fill="red">H<tspan fill="lime">H</tspan></text></svg>"#;
+
+#[test]
+fn native_svg_paints_text_and_tspan_fills() {
+    let mut doc = load(TEXT, true);
+    let buffer = render(&mut doc);
+    assert!(
+        count(&buffer, RED, 0..50) > 100,
+        "the text's glyph is filled"
+    );
+    assert!(
+        count(&buffer, LIME, 40..100) > 100,
+        "the tspan's glyph follows it"
+    );
+    assert_eq!(count(&buffer, LIME, 0..30), 0);
+}
+
+#[test]
+fn native_svg_text_position_attributes_relayout() {
+    let mut doc = load(TEXT, true);
+    let text = doc.query_selector("#t").unwrap().unwrap();
+    doc.mutate().set_attribute(text, attr("x"), "200");
+    doc.resolve(0.0);
+    let buffer = render(&mut doc);
+    assert_eq!(count(&buffer, RED, 0..100), 0);
+
+    doc.mutate().set_attribute(text, attr("x"), "100");
+    doc.mutate().set_attribute(text, attr("text-anchor"), "end");
+    doc.resolve(0.0);
+    let buffer = render(&mut doc);
+    assert!(count(&buffer, RED, 0..60) > 100, "anchored at its end");
+}
+
+fn assert_same_render(a: &str, b: &str) {
+    let a = render(&mut load(a, true));
+    let b = render(&mut load(b, true));
+    assert!(
+        count(&a, [0, 0, 0], 0..W as usize) > 0,
+        "the text is painted"
+    );
+    assert!(a == b, "renders differ");
+}
+
+#[test]
+fn text_without_x_starts_at_zero() {
+    let svg = |x: &str| {
+        format!(
+            r#"<svg width="100" height="100"><g transform="translate(50,0)" font-size="20">
+            <text {x} y="25">&#x5d0;&#x5d1; ab</text>
+            <text {x} y="55" text-anchor="middle">&#x5d0;&#x5d1; ab</text>
+            <text {x} y="85" direction="rtl">&#x202b;ab cd&#x202c;</text>
+            </g></svg>"#
+        )
+    };
+    assert_same_render(&svg(""), &svg(r#"x="0""#));
+}
+
+#[test]
+fn text_length_glyph_scaling_keeps_explicit_x() {
+    assert_same_render(
+        r#"<svg width="100" height="100"><text x="0 50" y="80" font-size="40" textLength="60" lengthAdjust="spacingAndGlyphs">HH</text></svg>"#,
+        r#"<svg width="100" height="100"><text x="0" y="80" font-size="40" textLength="30" lengthAdjust="spacingAndGlyphs">H</text><text x="50" y="80" font-size="40" textLength="30" lengthAdjust="spacingAndGlyphs">H</text></svg>"#,
+    );
+}

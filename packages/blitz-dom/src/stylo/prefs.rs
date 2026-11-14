@@ -16,6 +16,7 @@ pub(crate) fn init_stylo_prefs() {
         style_config::set_pref!("layout.css.text-indent-keywords.enabled", true);
         style_config::set_pref!("layout.css.word-break.break-word.enabled", true);
         style_config::set_pref!("layout.css.svg-properties.enabled", true);
+        style_config::set_pref!("layout.css.dominant-baseline.enabled", true);
         #[cfg(feature = "writing-mode")]
         {
             style_config::set_pref!("layout.css.writing-mode.enabled", true);
