@@ -78,10 +78,16 @@
 //! The hook is called through a shared reference on every painted frame. Keep changing state
 //! in a `Cell` or `RefCell`. The painter only runs when something asks for a frame; an
 //! animating hook asks for the next one with the document's `shell_provider.request_redraw()`.
+//!
+//! # The GPU
+//!
+//! A scene holds drawing commands, not shaders. A hook that renders with its own shader does so
+//! into a texture of its own and places that texture in the scene. [`PaintHook::prepare`] gives
+//! it the renderer's context for that, once per paint, before any element.
 
 use std::any::Any;
 
-use anyrender::Scene;
+use anyrender::{RenderContext, Scene};
 use kurbo::Affine;
 
 use crate::{BaseDocument, Node};
@@ -125,6 +131,16 @@ pub enum PaintPoint {
 
 /// Code that draws on elements while the document is painted. See the module documentation.
 pub trait PaintHook: Any {
+    /// Called once each time the document is painted, before any element, with the renderer's
+    /// context. This is the only moment a hook can reach the GPU: get the device
+    /// (`renderer_specific_context`) and register a texture (`try_register_custom_resource`),
+    /// which [`paint`](Self::paint) can then place by its id.
+    ///
+    /// A resource the hook registers is the hook's to unregister.
+    fn prepare(&self, render_ctx: &mut dyn RenderContext) {
+        let _ = render_ctx;
+    }
+
     /// Called once for each painted element, before any point. Return `false` to receive no
     /// [`replaces`](Self::replaces) or [`paint`](Self::paint) calls for this element.
     ///

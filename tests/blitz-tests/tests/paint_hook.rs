@@ -3,7 +3,7 @@
 use anyrender::{PaintScene as _, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::paint_hook::PaintPoint::{After, At, Before};
-use blitz_dom::paint_hook::anyrender::Scene;
+use blitz_dom::paint_hook::anyrender::{RenderContext, Scene};
 use blitz_dom::paint_hook::kurbo::{Affine, Rect, Shape, Stroke, Vec2};
 use blitz_dom::paint_hook::peniko::{Color, Fill};
 use blitz_dom::paint_hook::{PaintEl, PaintHook, PaintPoint, Step};
@@ -194,6 +194,30 @@ fn shadow_point_is_not_cut_by_the_opacity_layer() {
 
     let at_shadow = on_box(Before(Step::Shadow), move |_, cx| fill(cx, &halo, RED));
     assert_eq!(pixel(&page, 1.0, (110, 50), at_shadow), [255, 0, 0]);
+}
+
+/// `prepare` runs once per paint, before any element, with the renderer's context.
+#[test]
+fn prepare_runs_once_before_the_elements() {
+    struct Trace(Rc<RefCell<Vec<&'static str>>>);
+    impl PaintHook for Trace {
+        fn prepare(&self, _: &mut dyn RenderContext) {
+            self.0.borrow_mut().push("prepare");
+        }
+        fn begin_element(&self, el: &PaintEl<'_>) -> bool {
+            if tag(el) == "html" {
+                self.0.borrow_mut().push("html");
+            }
+            false
+        }
+        fn paint(&self, _: PaintPoint, _: &PaintEl<'_>, _: &mut Scene) {}
+    }
+    let trace = Rc::new(RefCell::new(Vec::new()));
+    let mut doc = document(PAGE, 1.0);
+    doc.set_paint_hook(Trace(trace.clone()));
+    paint(&mut doc, 1.0, (50, 50));
+    paint(&mut doc, 1.0, (50, 50));
+    assert_eq!(*trace.borrow(), ["prepare", "html", "prepare", "html"]);
 }
 
 /// Children are painted inside their parent, so `begin_element` and `end_element` nest.
