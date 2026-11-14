@@ -9193,6 +9193,7 @@ version = "1.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97277d36b9c3ace13e58fa6e753f8b0bbbf302a18dd193240d70f9e29681059a"
 dependencies = [
+ "getrandom 0.4.3",
  "js-sys",
  "serde_core",
  "wasm-bindgen",
@@ -10781,6 +10782,7 @@ dependencies = [
  "thread_local",
  "url",
  "wpt_manifest",
+ "wpt_serve",
  "wptreport",
 ]
 
@@ -10800,6 +10802,18 @@ dependencies = [
  "sha1 0.10.7",
  "url",
  "xml5ever",
+]
+
+[[package]]
+name = "wpt_serve"
+version = "0.2.0"
+source = "git+https://github.com/nicoburns/wpt-rs?rev=3f7bbb65f157d25d63b853e79912c6bcff1786cd#3f7bbb65f157d25d63b853e79912c6bcff1786cd"
+dependencies = [
+ "encoding_rs",
+ "flate2",
+ "log",
+ "url",
+ "uuid",
 ]
 
 [[package]]

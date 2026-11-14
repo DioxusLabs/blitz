@@ -16,9 +16,10 @@ pub fn process_crash_test(
     ctx: &mut ThreadCtx,
     relative_path: &str,
     html: &str,
+    is_xml_document: bool,
     flags: TestFlags,
 ) -> SubtestCounts {
-    let mut document = parse_and_resolve_document(ctx, html, relative_path);
+    let mut document = parse_and_resolve_document(ctx, html, is_xml_document, relative_path);
 
     if flags.contains(TestFlags::USES_SCRIPT) {
         let mut script_document = run_document_scripts(ctx, document);

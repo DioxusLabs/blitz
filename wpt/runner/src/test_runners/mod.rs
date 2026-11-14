@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
-use std::{fs, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use blitz_dom::traversal::TreeTraverser;
 use blitz_dom::{BaseDocument, Document as _, DocumentConfig};
@@ -197,10 +197,20 @@ pub fn process_test_file(
         );
     }
 
-    let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
-            // Tests encoded as UTF-16 or a legacy encoding are not supported: skip them.
+    let request_url = ctx.dummy_base_url.join(test_url).unwrap();
+    let (file_contents, is_xml_document) =
+        match wpt_serve::serve(&ctx.wpt_dir, relative_path, &request_url) {
+            Ok(response) => {
+                let is_xml_document = response.is_xml().unwrap_or_else(|| is_xml(relative_path));
+                (response.text(), is_xml_document)
+            }
+            Err(err) => panic!("Failed to read {relative_path}: {err}"),
+        };
+    let file_contents = match file_contents {
+        Some(contents) => contents,
+        None => {
+            // Tests encoded as UTF-16 or a legacy encoding are only supported when
+            // their `.headers` give a charset: skip the others.
             warn!("Skipping {relative_path}: not valid UTF-8");
             return (
                 TestKind::Unknown,
@@ -210,7 +220,6 @@ pub fn process_test_file(
                 Vec::new(),
             );
         }
-        Err(err) => panic!("Failed to read {relative_path}: {err}"),
     };
 
     // Compute flags
@@ -242,7 +251,7 @@ pub fn process_test_file(
 
     match test_type {
         TestType::Crash => {
-            let counts = process_crash_test(ctx, test_url, &file_contents, flags);
+            let counts = process_crash_test(ctx, test_url, &file_contents, is_xml_document, flags);
             let status = counts.as_status();
             (TestKind::Crash, flags, status, counts, Vec::new())
         }
@@ -255,6 +264,7 @@ pub fn process_test_file(
                 ctx,
                 test_url,
                 file_contents.as_str(),
+                is_xml_document,
                 match_references,
                 mismatch_references,
                 fuzzy,
@@ -269,7 +279,7 @@ pub fn process_test_file(
             if relative_path.ends_with(".any.js") || relative_path.ends_with(".window.js") {
                 flags |= TestFlags::USES_SCRIPT;
                 let html = wrapper_html_for_js_test(relative_path, &file_contents);
-                let (status, counts, results) = process_harness_test(ctx, &html, test_url);
+                let (status, counts, results) = process_harness_test(ctx, &html, false, test_url);
                 return (TestKind::TestHarness, flags, status, counts, results);
             }
 
@@ -287,13 +297,14 @@ pub fn process_test_file(
                 debug!("{selector}");
 
                 let (status, counts, results) =
-                    process_attr_test(ctx, &selector, &file_contents, test_url);
+                    process_attr_test(ctx, &selector, &file_contents, is_xml_document, test_url);
 
                 return (TestKind::Attr, flags, status, counts, results);
             }
             drop(matches);
 
-            let (status, counts, results) = process_harness_test(ctx, &file_contents, test_url);
+            let (status, counts, results) =
+                process_harness_test(ctx, &file_contents, is_xml_document, test_url);
             (TestKind::TestHarness, flags, status, counts, results)
         }
     }
@@ -302,11 +313,13 @@ pub fn process_test_file(
 fn parse_and_resolve_document(
     ctx: &mut ThreadCtx,
     html: &str,
+    is_xml_document: bool,
     relative_path: &str,
 ) -> BaseDocument {
     ctx.net_provider.reset();
+    let url = ctx.dummy_base_url.join(relative_path).unwrap();
     let config = DocumentConfig {
-        base_url: Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
+        base_url: Some(url.to_string()),
         font_ctx: Some(ctx.font_ctx.clone()),
         net_provider: Some(Arc::clone(&ctx.net_provider) as _),
         navigation_provider: Some(Arc::clone(&ctx.navigation_provider)),
@@ -316,10 +329,10 @@ fn parse_and_resolve_document(
         ..Default::default()
     };
 
-    // Extensions which wptserve serves with an XML content type must be parsed
-    // as XML: content sniffing cannot detect all XHTML documents (e.g. ones
-    // with a plain `<!DOCTYPE html>`)
-    let mut document = if is_xml(relative_path) {
+    // Documents which wptserve serves with an XML content type (by extension or
+    // `.headers`) must be parsed as XML: content sniffing cannot detect all XHTML
+    // documents (e.g. ones with a plain `<!DOCTYPE html>`)
+    let mut document = if is_xml_document {
         HtmlDocument::from_xml(html, config)
     } else {
         HtmlDocument::from_html(html, config)

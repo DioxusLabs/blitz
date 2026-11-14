@@ -451,7 +451,7 @@ fn main() {
                         Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
                             .unwrap();
 
-                    let dummy_base_url = Url::parse("http://dummy.local").unwrap();
+                    let dummy_base_url = Url::parse(wpt_serve::ORIGIN).unwrap();
                     let navigation_provider = Arc::new(DummyNavigationProvider);
 
                     RefCell::new(ThreadCtx {

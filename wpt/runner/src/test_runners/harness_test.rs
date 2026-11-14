@@ -107,7 +107,14 @@ impl ScriptFetcher for WptScriptFetcher {
             path = "/resources/webidl2/lib/webidl2.js";
         }
         let relative_path = path.strip_prefix('/').unwrap_or(path);
-        std::fs::read_to_string(self.wpt_dir.join(relative_path)).map_err(FetchError::Io)
+        let response =
+            wpt_serve::serve(&self.wpt_dir, relative_path, url).map_err(FetchError::Io)?;
+        response.text().ok_or_else(|| {
+            FetchError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stream did not contain valid UTF-8",
+            ))
+        })
     }
 }
 
@@ -119,9 +126,10 @@ enum HarnessPumpOutcome {
 pub fn process_harness_test(
     ctx: &mut ThreadCtx,
     html: &str,
+    is_xml_document: bool,
     relative_path: &str,
 ) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
-    let document = parse_and_resolve_document(ctx, html, relative_path);
+    let document = parse_and_resolve_document(ctx, html, is_xml_document, relative_path);
     let mut document = run_document_scripts(ctx, document);
 
     // Pump timers until the harness reports results (or the timeout expires).
