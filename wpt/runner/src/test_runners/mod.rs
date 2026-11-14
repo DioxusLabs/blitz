@@ -12,12 +12,12 @@ use regex::Regex;
 
 use harness_test::WptScriptFetcher;
 
-use crate::test_variants::is_xml;
+use crate::manifest::{TestType, is_xml};
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
 mod attr_test;
 mod crash_test;
-mod fuzzy;
+pub mod fuzzy;
 mod harness_test;
 mod js_wrapper;
 mod ref_test;
@@ -25,7 +25,7 @@ mod ref_test;
 pub use attr_test::process_attr_test;
 pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
-pub use js_wrapper::{js_test_has_window_variant, js_test_variants, wrapper_html_for_js_test};
+pub use js_wrapper::wrapper_html_for_js_test;
 pub use ref_test::process_ref_test;
 
 static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
@@ -174,6 +174,7 @@ pub fn process_test_file(
     ctx: &mut ThreadCtx,
     relative_path: &str,
     test_url: &str,
+    test_type: &TestType,
 ) -> (
     TestKind,
     TestFlags,
@@ -239,111 +240,63 @@ pub fn process_test_file(
         flags |= TestFlags::USES_SCRIPT;
     }
 
-    // JS-file (`.any.js` / `.window.js`) testharness test: synthesize the
-    // wrapper HTML which wptserve would serve and run it as a harness test
-    if relative_path.ends_with(".any.js") || relative_path.ends_with(".window.js") {
-        flags |= TestFlags::USES_SCRIPT;
-
-        // No window variant (worker-only test): not a runnable test
-        if !js_test_has_window_variant(relative_path, &file_contents) {
-            return (
-                TestKind::Unknown,
-                flags,
-                TestStatus::Skip,
-                SubtestCounts::ZERO_OF_ZERO,
-                Vec::new(),
+    match test_type {
+        TestType::Crash => {
+            let counts = process_crash_test(ctx, test_url, &file_contents, flags);
+            let status = counts.as_status();
+            (TestKind::Crash, flags, status, counts, Vec::new())
+        }
+        TestType::Ref {
+            match_references,
+            mismatch_references,
+            fuzzy,
+        } => {
+            let counts = process_ref_test(
+                ctx,
+                test_url,
+                file_contents.as_str(),
+                match_references,
+                mismatch_references,
+                fuzzy,
+                &mut flags,
             );
+            let status = counts.as_status();
+            (TestKind::Ref, flags, status, counts, Vec::new())
         }
+        TestType::TestHarness => {
+            // JS-file (`.any.js` / `.window.js`) test: synthesize the wrapper HTML which
+            // wptserve would serve and run it as a harness test
+            if relative_path.ends_with(".any.js") || relative_path.ends_with(".window.js") {
+                flags |= TestFlags::USES_SCRIPT;
+                let html = wrapper_html_for_js_test(relative_path, &file_contents);
+                let (status, counts, results) = process_harness_test(ctx, &html, test_url);
+                return (TestKind::TestHarness, flags, status, counts, results);
+            }
 
-        let html = wrapper_html_for_js_test(relative_path, &file_contents);
-        let (status, counts, results) = process_harness_test(ctx, &html, test_url);
-        return (TestKind::TestHarness, flags, status, counts, results);
-    }
+            // Attr Test
+            let mut matches = ctx.attrtest_re.captures_iter(&file_contents);
+            let first = matches.next();
+            let second = matches.next();
+            if first.is_some() && second.is_none() {
+                // TODO: handle tests with multiple calls to checkLayout.
+                #[allow(clippy::unnecessary_unwrap)]
+                let captures = first.unwrap();
+                let selector = captures.get(1).unwrap().as_str().to_string();
+                drop(matches);
 
-    // Crash Test
-    if is_crash_test(relative_path) {
-        let counts = process_crash_test(ctx, test_url, &file_contents, flags);
-        let status = counts.as_status();
-        return (TestKind::Crash, flags, status, counts, Vec::new());
-    }
+                debug!("{selector}");
 
-    // Ref Test
-    let mut match_references: Vec<String> = Vec::new();
-    let mut mismatch_references: Vec<String> = Vec::new();
-    for link in ctx.link_re.find_iter(&file_contents) {
-        let tag = link.as_str();
-        let Some(rel) = ctx.rel_re.captures(tag).and_then(|c| c.get(1)) else {
-            continue;
-        };
-        let Some(href) = ctx
-            .href_re
-            .captures(tag)
-            .and_then(|c| c.get(1).or(c.get(2)))
-        else {
-            continue;
-        };
-        match rel.as_str() {
-            "match" => match_references.push(href.as_str().to_string()),
-            "mismatch" => mismatch_references.push(href.as_str().to_string()),
-            _ => {}
+                let (status, counts, results) =
+                    process_attr_test(ctx, &selector, &file_contents, test_url);
+
+                return (TestKind::Attr, flags, status, counts, results);
+            }
+            drop(matches);
+
+            let (status, counts, results) = process_harness_test(ctx, &file_contents, test_url);
+            (TestKind::TestHarness, flags, status, counts, results)
         }
     }
-    if !match_references.is_empty() || !mismatch_references.is_empty() {
-        let counts = process_ref_test(
-            ctx,
-            test_url,
-            file_contents.as_str(),
-            &match_references,
-            &mismatch_references,
-            &mut flags,
-        );
-
-        let status = counts.as_status();
-        return (TestKind::Ref, flags, status, counts, Vec::new());
-    }
-
-    // Attr Test
-    let mut matches = ctx.attrtest_re.captures_iter(&file_contents);
-    let first = matches.next();
-    let second = matches.next();
-    if first.is_some() && second.is_none() {
-        // TODO: handle tests with multiple calls to checkLayout.
-        #[allow(clippy::unnecessary_unwrap)]
-        let captures = first.unwrap();
-        let selector = captures.get(1).unwrap().as_str().to_string();
-        drop(matches);
-
-        debug!("{selector}");
-
-        let (status, counts, results) = process_attr_test(ctx, &selector, &file_contents, test_url);
-
-        return (TestKind::Attr, flags, status, counts, results);
-    }
-    drop(matches);
-
-    // Testharness (testharness.js) test
-    if ctx.testharness_re.is_match(&file_contents) {
-        let (status, counts, results) = process_harness_test(ctx, &file_contents, test_url);
-        return (TestKind::TestHarness, flags, status, counts, results);
-    }
-
-    // TODO: Handle other test formats.
-    (
-        TestKind::Unknown,
-        flags,
-        TestStatus::Skip,
-        SubtestCounts::ZERO_OF_ZERO,
-        Vec::new(),
-    )
-}
-
-fn is_crash_test(relative_path: &str) -> bool {
-    relative_path.split('/').any(|seg| seg == "crashtests")
-        || ["", ".https", ".h2", ".www"].iter().any(|flag| {
-            [".html", ".htm", ".xht", ".xhtm", ".xhtml", ".xml", ".svg"]
-                .iter()
-                .any(|ext| relative_path.ends_with(&format!("-crash{flag}{ext}")))
-        })
 }
 
 fn parse_and_resolve_document(

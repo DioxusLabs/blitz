@@ -6,8 +6,10 @@ use markup5ever::{LocalName, QualName, local_name};
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use std::cell::Cell;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, OnceLock};
+
+use crate::stylo::PresentationalHints;
 use style::Atom;
 use style::parser::ParserContext;
 use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
@@ -67,6 +69,10 @@ pub struct ElementData {
 
     /// The element's parsed style attribute (used by stylo)
     pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
+
+    /// The declaration blocks of the element's presentational hints, built from its
+    /// attributes when style matching first asks for them. Cleared when an attribute changes.
+    pub(crate) presentational_hints: OnceLock<PresentationalHints>,
 
     /// Heterogeneous data that depends on the element's type.
     /// For example:
@@ -326,6 +332,7 @@ impl Clone for ElementData {
             template_contents: self.template_contents,
 
             // Runtime state: reset to defaults.
+            presentational_hints: OnceLock::new(),
             stylo_element_data: Default::default(),
             selector_flags: Cell::new(ElementSelectorFlags::empty()),
             guard: self.guard.clone(),
@@ -433,6 +440,7 @@ impl ElementData {
             attrs: Attributes::new(attrs),
             is_focussable: false,
             style_attribute: Default::default(),
+            presentational_hints: OnceLock::new(),
             inline_layout_data: None,
             list_item_data: None,
             special_data: SpecialElementData::None,

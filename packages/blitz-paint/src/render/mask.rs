@@ -6,10 +6,14 @@
 //!  1. Pushing an isolation layer (clipped to the mask painting area) before the
 //!     element is painted
 //!  2. Painting the element (and its descendants) as normal
-//!  3. Pushing a `Compose::DestIn` layer and drawing the mask image layers into it,
-//!     which multiplies the alpha of the already-painted element by the alpha of
-//!     the mask
+//!  3. Pushing a mask layer and drawing the mask image layers into it, which
+//!     multiplies the alpha of the already-painted element by the mask
 //!  4. Popping both layers
+//!
+//! A mask with a single image layer uses that layer's `mask-mode` for the mask
+//! layer. With several image layers, the mask layer is an alpha mask and each
+//! `luminance` layer is converted to alpha before it is composited with the
+//! layers below it.
 //!
 //! The mask image layers themselves are positioned/sized/repeated using the same
 //! code as `background-image` layers (see `background.rs`), as the `mask-*` and
@@ -18,13 +22,11 @@ use crate::render::background::get_cyclic;
 
 use super::background::ImageLayerStyles;
 use super::{ALMOST_OPAQUE, ElementCx};
-use anyrender::PaintScene;
-use peniko::{BlendMode, Compose, Fill, Mix};
+use anyrender::{MaskMode, PaintScene};
+use peniko::{BlendMode, Color, Compose, Fill, Mix};
 use style::properties::generated::longhands::mask_composite::single_value::computed_value::T as StyloMaskComposite;
+use style::properties::generated::longhands::mask_mode::single_value::computed_value::T as StyloMaskMode;
 use style::values::generics::image::GenericImage;
-
-#[cfg(feature = "tracing")]
-use tracing::warn;
 
 impl ElementCx<'_, '_> {
     /// Whether the element has any CSS `mask-image` layers
@@ -52,7 +54,7 @@ impl ElementCx<'_, '_> {
             Mix::Normal,
             ALMOST_OPAQUE,
             self.transform,
-            &self.frame.border_box_path(),
+            &self.frame.border_box_shape(),
             None,
             None,
         );
@@ -61,28 +63,46 @@ impl ElementCx<'_, '_> {
 
     /// Apply the CSS mask to the content drawn since the corresponding
     /// [`maybe_push_css_mask_layer`](Self::maybe_push_css_mask_layer) by drawing the
-    /// mask image layers with `Compose::DestIn`, then pop the isolation layer.
+    /// mask image layers into a mask layer, then pop the isolation layer.
     pub(super) fn maybe_pop_css_mask_layer(&self, scene: &mut impl PaintScene, layer_pushed: bool) {
         if !layer_pushed {
             return;
         }
 
-        scene.push_layer(
+        let svg_styles = self.style.get_svg();
+        let single_layer = svg_styles.mask_image.0.len() == 1;
+        let mode = if single_layer {
+            self.css_mask_mode(0)
+        } else {
+            MaskMode::Alpha
+        };
+
+        scene.push_mask_layer(
             Fill::NonZero,
-            BlendMode::new(Mix::Normal, Compose::DestIn),
-            1.0,
+            mode,
             self.transform,
-            &self.frame.border_box_path(),
-            None,
-            None,
+            &self.frame.border_box_shape(),
         );
-        self.draw_css_mask(scene);
-        scene.pop_layer(); // Mask (DestIn) layer
+        self.draw_css_mask(scene, !single_layer);
+        scene.pop_layer(); // Mask layer
         scene.pop_layer(); // Isolation layer
     }
 
-    /// Draw the mask image layers (analogous to `draw_background` for `background-image`)
-    fn draw_css_mask(&self, scene: &mut impl PaintScene) {
+    /// The mask mode of the mask image layer at `idx`
+    fn css_mask_mode(&self, idx: usize) -> MaskMode {
+        match get_cyclic(&self.style.get_svg().mask_mode.0, idx) {
+            StyloMaskMode::Luminance => MaskMode::Luminance,
+            // `match-source` is `alpha` for images. `<mask>` element references
+            // (which would use the mask's `mask-type`) aren't supported.
+            StyloMaskMode::Alpha | StyloMaskMode::MatchSource => MaskMode::Alpha,
+        }
+    }
+
+    /// Draw the mask image layers (analogous to `draw_background` for `background-image`).
+    ///
+    /// If `convert_luminance_layers` is set, `luminance` layers are converted to alpha
+    /// so that they can be composited with the other layers into an alpha mask.
+    fn draw_css_mask(&self, scene: &mut impl PaintScene, convert_luminance_layers: bool) {
         let svg_styles = self.style.get_svg();
         let image_data = &self.element.mask_images;
         let layer_count = svg_styles.mask_image.0.len();
@@ -90,17 +110,6 @@ impl ElementCx<'_, '_> {
         for idx in (0..layer_count).rev() {
             let layer = ImageLayerStyles::from_svg(svg_styles, image_data, idx);
             let mask_clip_path = self.box_path(layer.clip);
-
-            // TODO: support `mask-mode: luminance` (luminance masks are currently
-            // rendered as alpha masks).
-            #[cfg(feature = "tracing")]
-            {
-                use style::properties::generated::longhands::mask_mode::single_value::computed_value::T as StyloMaskMode;
-                let mask_mode = &svg_styles.mask_mode.0;
-                if matches!(get_cyclic(&mask_mode, idx), StyloMaskMode::Luminance) {
-                    warn!("mask-mode: luminance is not supported (falling back to alpha)");
-                }
-            }
 
             // Each mask layer is composited with the (already drawn) layers below it
             // using the Porter-Duff operator given by its `mask-composite` value. The
@@ -129,7 +138,28 @@ impl ElementCx<'_, '_> {
                 None,
                 None,
             );
-            self.draw_image_layer(scene, &layer);
+            if convert_luminance_layers && self.css_mask_mode(idx) == MaskMode::Luminance {
+                // Mask an opaque fill with the luminance of the layer. The bottommost
+                // layer's (SrcOver) layer may not be isolated, but it has nothing
+                // below it for the luminance mask layer to erase.
+                scene.fill(
+                    Fill::NonZero,
+                    self.transform,
+                    Color::WHITE,
+                    None,
+                    &mask_clip_path,
+                );
+                scene.push_mask_layer(
+                    Fill::NonZero,
+                    MaskMode::Luminance,
+                    self.transform,
+                    &mask_clip_path,
+                );
+                self.draw_image_layer(scene, &layer);
+                scene.pop_layer();
+            } else {
+                self.draw_image_layer(scene, &layer);
+            }
             scene.pop_layer();
         }
     }

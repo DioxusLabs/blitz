@@ -196,3 +196,15 @@ fn a_semantic_page_has_no_unknown_elements() {
     // this document should map to something an assistive technology can use.
     assert_eq!(unknown_tags(html), vec!["body", "html"]);
 }
+
+#[test]
+fn an_image_with_an_empty_alt_is_decorative() {
+    let html = r#"<html><body>
+        <img id="decorative" alt="" src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E">
+        <img id="described" alt="A map" src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E">
+        <img id="unlabelled" src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E">
+    </body></html>"#;
+    assert_role(html, "decorative", Role::GenericContainer);
+    assert_role(html, "described", Role::Image);
+    assert_role(html, "unlabelled", Role::Image);
+}

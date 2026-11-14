@@ -20,12 +20,14 @@ fn query_for_font_styles<'a>(
     use parley::fontique::Attributes;
 
     let mut query = font_ctx.collection.query(&mut font_ctx.source_cache);
-    let families = font_styles
-        .font_family
-        .families
-        .iter()
-        .map(stylo_to_parley::query_font_family);
-    query.set_families(families);
+    let families = &font_styles.font_family.families;
+    let fallback = stylo_to_parley::fallback_font_family(families);
+    query.set_families(
+        families
+            .iter()
+            .map(stylo_to_parley::query_font_family)
+            .chain(fallback.map(parley::fontique::QueryFamily::Generic)),
+    );
     query.set_attributes(Attributes {
         width: stylo_to_parley::font_width(font_styles.font_width),
         weight: stylo_to_parley::font_weight(font_styles.font_weight),

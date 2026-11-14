@@ -293,7 +293,8 @@ impl<Rend: WindowRenderer> View<Rend> {
     /// Start resuming the renderer. Dispatches [`BlitzShellEvent::ResumeReady`]
     /// when initialization completes — synchronously on native, asynchronously
     /// on wasm32. The embedder must call [`complete_resume`](Self::complete_resume)
-    /// in response.
+    /// in response. Renderers that are polled instead (see
+    /// [`WindowRenderer::is_pending`]) are completed from [`redraw`](Self::redraw).
     pub fn resume(&mut self) {
         let window_id = self.window_id();
         let animation_time = self.current_animation_time();
@@ -314,6 +315,11 @@ impl<Rend: WindowRenderer> View<Rend> {
             .resume(Arc::new(self.window.clone()), width, height, move || {
                 proxy.send_event(BlitzShellEvent::ResumeReady { window_id });
             });
+
+        // Polled renderers finish their setup in `complete_resume`, which `redraw` calls.
+        if self.renderer.is_pending() {
+            self.window.request_redraw();
+        }
     }
 
     /// Finalize a previously-started resume. Should be called in response to a
@@ -393,6 +399,14 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn redraw(&mut self) {
         #[cfg(target_os = "ios")]
         self.ios_request_redraw.set(false);
+
+        if self.renderer.is_pending() {
+            if !self.complete_resume() {
+                self.window.request_redraw();
+            }
+            return;
+        }
+
         let animation_time = self.current_animation_time();
         let is_visible = self.is_visible;
 

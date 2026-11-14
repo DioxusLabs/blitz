@@ -158,7 +158,7 @@ jobs:
               name: android,
               target: aarch64-linux-android,
               os: ubuntu-latest,
-              cross: true,
+              cross: false,
               command: "build",
               args: "--all",
             }
@@ -194,6 +194,32 @@ jobs:
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-bin: ${{ matrix.platform.os != 'macos-latest' }} # works around https://github.com/Swatinem/rust-cache/issues/341
+
+      # The NDK in cross's Android image is too old to link the Skia prebuilts,
+      # so build with cargo against a recent NDK instead.
+      - name: Install Android NDK
+        if: ${{ matrix.platform.name == 'android' }}
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r30
+          add-to-path: false
+
+      - name: Configure Android toolchain
+        if: ${{ matrix.platform.name == 'android' }}
+        env:
+          NDK: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          {
+            echo "ANDROID_NDK=$NDK"
+            echo "ANDROID_NDK_HOME=$NDK"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$BIN/aarch64-linux-android26-clang"
+            echo "CC_aarch64_linux_android=$BIN/aarch64-linux-android26-clang"
+            echo "CXX_aarch64_linux_android=$BIN/aarch64-linux-android26-clang++"
+            echo "AR_aarch64_linux_android=$BIN/llvm-ar"
+            echo "RANLIB_aarch64_linux_android=$BIN/llvm-ranlib"
+          } >> "$GITHUB_ENV"
 
       - name: Install apt deps
         if: ${{ matrix.platform.os == 'ubuntu-latest' }}

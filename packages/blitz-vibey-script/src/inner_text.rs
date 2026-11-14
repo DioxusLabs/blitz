@@ -219,7 +219,10 @@ impl InnerTextCollector {
                     while let Some(ibox) = boxes.next_if(|ibox| ibox.index <= range.start) {
                         self.visit_inline_box(root, ibox.id, filter);
                     }
-                    if range.start >= marker_len && include(&cluster.style().brush) {
+                    if range.start >= marker_len
+                        && !layout.is_inline_box_char(range.start)
+                        && include(&cluster.style().brush)
+                    {
                         self.push_str(&text[range]);
                     }
                 }

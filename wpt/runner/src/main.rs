@@ -40,13 +40,15 @@ use std::{env, fs};
 
 mod test_runners;
 
+mod manifest;
 mod net_provider;
 mod panic_backtrace;
 mod report;
-mod test_variants;
 
+#[cfg(test)]
+use manifest::TestType;
+use manifest::{Test, split_test_url};
 use net_provider::WptNetProvider;
-use test_variants::{Test, expand_test, split_test_url};
 
 /// Create a unix timestamp of the current time using the standard library
 fn unix_timestamp() -> u64 {
@@ -173,139 +175,26 @@ const BLOCKED_TESTS: &[&str] = &[
     "css/css-masking/clip-path-svg-content/clip-path-recursion-001.svg",
 ];
 
-fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
-    path.components()
-        .any(|component| component.as_os_str() == dir_name)
-}
-
-const TEST_EXTENSIONS: &[&str] = &["htm", "html", "xht", "xhtm", "xhtml", "xml", "svg"];
-
-fn has_suffix_with_test_extension(path_str: &str, suffix: &str) -> bool {
-    TEST_EXTENSIONS
-        .iter()
-        .any(|ext| path_str.ends_with(&format!("{suffix}.{ext}")))
-}
-
-/// Matches file stems which the upstream WPT manifest classifies as reference files:
-/// `foo-ref`, `foo-notref`, `foo-ref2`, `foo_ref-a`, `ref-foo`, ...
-static REFERENCE_NAME_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(^|[\-_])(not)?ref[0-9]*([\-_]|$)").unwrap());
-
-/// Reference-named files are still tests in the upstream WPT manifest if their content makes them
-/// a reftest (`<link rel=match|mismatch>`, see RFC #15) or a testharness test.
-static REFERENCE_IS_TEST_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r#"<(?:[A-Za-z_][\w.\-]*:)?link\s[^>]*rel\s*=\s*['"]?(match|mismatch)['"]?[^>]*>|/resources/testharness\.js"#,
-    )
-    .unwrap()
-});
-
-/// Is the path a reference file (by upstream WPT naming rules) which is *not* also a test?
-fn is_non_test_reference(p: &Path) -> bool {
-    let stem = p
-        .file_stem()
-        .map(|s| s.to_string_lossy())
-        .unwrap_or_default();
-    let is_ref_name = path_contains_directory(p, "reference") || REFERENCE_NAME_RE.is_match(&stem);
-    if !is_ref_name {
-        return false;
-    }
-    // Only reference-named files are sniffed, so the extra read is limited to a
-    // small fraction of the tree.
-    match fs::read_to_string(p) {
-        Ok(contents) => !REFERENCE_IS_TEST_RE.is_match(&contents),
-        Err(_) => true,
-    }
-}
-
-fn filter_path(p: &Path) -> bool {
-    // let is_tentative = path_buf.ends_with("tentative.html");
-    let path_str = p.to_string_lossy();
-    let is_ref = is_non_test_reference(p);
-    // Manual tests require human interaction/verification and cannot be run automatically
-    let is_manual = has_suffix_with_test_extension(&path_str, "-manual");
-    // `support`, `tools` and `resources` directories contain helper files, not tests
-    // (matching the upstream WPT manifest rules)
-    let is_support_file = path_contains_directory(p, "support")
-        || path_contains_directory(p, "tools")
-        || path_contains_directory(p, "resources");
-
-    let is_blocked = BLOCKED_TESTS
-        .iter()
-        .any(|suffix| path_str.ends_with(suffix));
-
-    let is_dir = p.is_dir();
-
-    !(is_ref | is_manual | is_support_file | is_blocked | is_dir)
-}
-
 fn collect_tests(wpt_dir: &Path, mut suites: Vec<String>) -> Vec<Test> {
-    let mut tests = Vec::new();
     if suites.is_empty() {
         suites.push("css/css-flexbox".to_string());
         suites.push("css/css-grid".to_string());
     }
 
-    // "full" runs every top-level suite except `encoding`
+    let all_tests = manifest::load_tests(wpt_dir).into_iter().filter(|test| {
+        !BLOCKED_TESTS
+            .iter()
+            .any(|blocked| split_test_url(&test.url).0 == *blocked)
+    });
+
+    // "full" runs every test except the `encoding` suite
     if suites.iter().any(|suite| suite == "full") {
-        suites = fs::read_dir(wpt_dir)
-            .expect("Failed to read WPT_DIR")
-            .filter_map(|entry| {
-                let entry = entry.expect("Failed to read WPT_DIR entry");
-                if !entry.file_type().is_ok_and(|t| t.is_dir()) {
-                    return None;
-                }
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if name == "encoding" || name.starts_with('.') {
-                    return None;
-                }
-                Some(name)
-            })
+        return all_tests
+            .filter(|test| !test.url.starts_with("encoding/"))
             .collect();
-        suites.sort_unstable();
     }
 
-    // JS-file tests which wptserve wraps in an auto-generated HTML document
-    const JS_TEST_SUFFIXES: &[&str] = &["any.js", "window.js"];
-
-    for suite in suites {
-        let (suite_path, suffix) = split_test_url(&suite);
-        let source_path = if let Some(stem) = suite_path.strip_suffix(".any.html") {
-            format!("{stem}.any.js")
-        } else if let Some(stem) = suite_path.strip_suffix(".window.html") {
-            format!("{stem}.window.js")
-        } else {
-            suite_path.to_string()
-        };
-        for pat in std::iter::once(String::new())
-            .chain(TEST_EXTENSIONS.iter().map(|ext| format!("/**/*.{ext}")))
-            .chain(
-                JS_TEST_SUFFIXES
-                    .iter()
-                    .map(|suffix| format!("/**/*.{suffix}")),
-            )
-        {
-            let pattern = format!("{}/{}{}", wpt_dir.display(), source_path, pat);
-
-            let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
-
-            tests.extend(
-                glob_results
-                    .map(|glob_result| {
-                        if let Ok(path_buf) = glob_result {
-                            path_buf
-                        } else {
-                            error!("Failure during glob.");
-                            panic!("Failure during glob");
-                        }
-                    })
-                    .filter(|path_buf| filter_path(path_buf))
-                    .flat_map(|path| expand_test(wpt_dir, path, suffix)),
-            );
-        }
-    }
-
-    tests
+    manifest::select_tests(wpt_dir, all_tests.collect(), &suites)
 }
 
 enum BufferKind {
@@ -335,9 +224,6 @@ struct ThreadCtx {
     buffers: Buffers,
 
     // Things that aren't really thread-specifc, but are convenient to store here
-    link_re: Regex,
-    rel_re: Regex,
-    href_re: Regex,
     attrtest_re: Regex,
     float_re: Regex,
     intrinsic_re: Regex,
@@ -347,7 +233,6 @@ struct ThreadCtx {
     subgrid_re: Regex,
     grid_lanes_re: Regex,
     script_re: Regex,
-    testharness_re: Regex,
     out_dir: PathBuf,
     wpt_dir: PathBuf,
     dummy_base_url: Url,
@@ -556,12 +441,6 @@ fn main() {
                         ColorScheme::Light,
                     );
                     let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                    // SVG reftests declare their references with a namespace
-                    // prefix (`<html:link rel="match">`)
-                    let link_re = Regex::new(r#"<(?:[A-Za-z_][\w.\-]*:)?link\s[^>]*>"#).unwrap();
-                    let rel_re = Regex::new(r#"rel\s*=\s*['"]?(match|mismatch)['"]?"#).unwrap();
-                    let href_re =
-                        Regex::new(r#"href\s*=\s*(?:['"]([^'"]+)['"]|([^\s'">]+))"#).unwrap();
 
                     let float_re = Regex::new(r#"float:"#).unwrap();
                     let intrinsic_re =
@@ -572,7 +451,6 @@ fn main() {
                     let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
                     let grid_lanes_re = Regex::new(r#"grid-lanes"#).unwrap();
                     let script_re = Regex::new(r#"<script|onload="#).unwrap();
-                    let testharness_re = Regex::new(r#"/resources/testharness\.js"#).unwrap();
 
                     let attrtest_re =
                         Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
@@ -592,9 +470,6 @@ fn main() {
                             test_buffer,
                             ref_buffer,
                         },
-                        link_re,
-                        rel_re,
-                        href_re,
                         attrtest_re,
                         float_re,
                         intrinsic_re,
@@ -604,7 +479,6 @@ fn main() {
                         subgrid_re,
                         grid_lanes_re,
                         script_re,
-                        testharness_re,
                         out_dir: out_dir.clone(),
                         wpt_dir: wpt_dir.clone(),
                         dummy_base_url,
@@ -627,7 +501,7 @@ fn main() {
             let start = Instant::now();
 
             let result = catch_unwind(AssertUnwindSafe(|| {
-                panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path, &test.url))
+                panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path, &test.url, &test.test_type))
             }));
             let (kind, flags, status, subtest_counts, panic_info, subtest_results) = match result {
                 Ok((kind, flags, status, subtest_counts, subtest_results)) => {
@@ -858,38 +732,47 @@ fn main() {
 mod tests {
     use super::*;
 
-    #[test]
-    fn discovers_variants_and_accepts_explicit_urls() {
+    const HARNESS: &str = "<script src=/resources/testharness.js></script>";
+
+    fn write_suite() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let suite = dir.path().join("suite");
         fs::create_dir(&suite).unwrap();
-        fs::write(
-            suite.join("test.html"),
-            "<meta name=variant content='?one'><meta name=variant content='?two#part'>",
-        )
-        .unwrap();
-        fs::write(
-            suite.join("test.any.js"),
-            "// META: variant=?js\ntest(() => {});",
-        )
-        .unwrap();
-        fs::write(
-            suite.join("test.window.js"),
-            "// META: variant=?window\ntest(() => {});",
-        )
-        .unwrap();
-        fs::write(suite.join("plain.html"), "<p>No variants</p>").unwrap();
-        fs::write(suite.join("test.xhtml"), "<html xmlns='http://www.w3.org/1999/xhtml'><meta name='variant' content='?xml'/></html>").unwrap();
+        let files = [
+            (
+                "test.html",
+                format!("<meta name=variant content='?one'><meta name=variant content='?two#part'>{HARNESS}"),
+            ),
+            ("test.any.js", "// META: variant=?js\ntest(() => {});".into()),
+            ("test.window.js", "// META: variant=?window\ntest(() => {});".into()),
+            ("plain.html", "<p>No test</p>".into()),
+            (
+                "test.xhtml",
+                "<html xmlns='http://www.w3.org/1999/xhtml'><meta name='variant' content='?xml'/><script src='/resources/testharness.js'/></html>".into(),
+            ),
+            ("ref.html", "<link rel=match href=ref-ref.html><meta name=fuzzy content='0-2;0-10'>".into()),
+            ("ref-ref.html", "<p>Reference</p>".into()),
+            ("foo-crash.html", "<p>Crash</p>".into()),
+        ];
+        for (name, contents) in files {
+            fs::write(suite.join(name), contents).unwrap();
+        }
+        dir
+    }
 
-        let mut urls: Vec<_> = collect_tests(dir.path(), vec!["suite".into()])
-            .into_iter()
-            .map(|test| test.url)
-            .collect();
-        urls.sort_unstable();
+    fn urls(tests: &[Test]) -> Vec<&str> {
+        tests.iter().map(|test| test.url.as_str()).collect()
+    }
+
+    #[test]
+    fn discovers_tests_from_manifest() {
+        let dir = write_suite();
+        let tests = collect_tests(dir.path(), vec!["suite".into()]);
         assert_eq!(
-            urls,
+            urls(&tests),
             [
-                "suite/plain.html",
+                "suite/foo-crash.html",
+                "suite/ref.html",
                 "suite/test.any.html?js",
                 "suite/test.html?one",
                 "suite/test.html?two#part",
@@ -897,6 +780,43 @@ mod tests {
                 "suite/test.xhtml?xml"
             ]
         );
+        assert!(matches!(tests[0].test_type, TestType::Crash));
+        let TestType::Ref {
+            match_references,
+            mismatch_references,
+            fuzzy,
+        } = &tests[1].test_type
+        else {
+            panic!("ref.html is not a reftest");
+        };
+        assert_eq!(match_references, &["/suite/ref-ref.html"]);
+        assert!(mismatch_references.is_empty());
+        assert_eq!(fuzzy.len(), 1);
+        assert_eq!(fuzzy[0].reference, None);
+        assert_eq!(fuzzy[0].tolerance.total_pixels.max, 10);
+        assert!(matches!(tests[2].test_type, TestType::TestHarness));
+        assert_eq!(tests[2].path, dir.path().join("suite/test.any.js"));
+    }
+
+    #[test]
+    fn selects_files_globs_and_explicit_urls() {
+        let dir = write_suite();
+        let suite = dir.path().join("suite");
+
+        let tests = collect_tests(
+            dir.path(),
+            vec!["suite/test.html".into(), "suite/*.xhtml".into()],
+        );
+        assert_eq!(
+            urls(&tests),
+            [
+                "suite/test.html?one",
+                "suite/test.html?two#part",
+                "suite/test.xhtml?xml"
+            ]
+        );
+        assert!(collect_tests(dir.path(), vec!["sui*".into()]).len() == 7);
+        assert!(collect_tests(dir.path(), vec!["*.html".into()]).is_empty());
 
         let tests = collect_tests(
             dir.path(),
@@ -904,14 +824,28 @@ mod tests {
                 "suite/test.html?override#hash".into(),
                 "suite/test.any.html?override".into(),
                 "suite/test.window.html?override".into(),
+                "suite/ref.html?override".into(),
             ],
         );
-        assert_eq!(tests.len(), 3);
-        assert_eq!(tests[0].url, "suite/test.html?override#hash");
-        assert_eq!(tests[0].path, suite.join("test.html"));
-        assert_eq!(tests[1].url, "suite/test.any.html?override");
-        assert_eq!(tests[1].path, suite.join("test.any.js"));
-        assert_eq!(tests[2].url, "suite/test.window.html?override");
+        assert_eq!(
+            urls(&tests),
+            [
+                "suite/ref.html?override",
+                "suite/test.any.html?override",
+                "suite/test.html?override#hash",
+                "suite/test.window.html?override"
+            ]
+        );
+        let TestType::Ref {
+            match_references, ..
+        } = &tests[0].test_type
+        else {
+            panic!("ref.html is not a reftest");
+        };
+        assert_eq!(match_references, &["/suite/ref-ref.html?override"]);
+        let tests = &tests[1..];
+        assert_eq!(tests[0].path, suite.join("test.any.js"));
+        assert_eq!(tests[1].path, suite.join("test.html"));
         assert_eq!(tests[2].path, suite.join("test.window.js"));
     }
 }
