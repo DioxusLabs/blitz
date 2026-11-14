@@ -20,6 +20,7 @@ use crate::{
     HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading, TextNodeData,
 };
 use bitflags::bitflags;
+use blitz_traits::DocumentId;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -38,7 +39,6 @@ use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
 use std::task::{Context as TaskContext, Waker};
@@ -146,7 +146,7 @@ pub trait Document: Any + 'static {
     }
 
     /// Get the [`Document`]'s id
-    fn id(&self) -> usize {
+    fn id(&self) -> DocumentId {
         self.inner().id
     }
 }
@@ -192,7 +192,7 @@ pub enum DocumentEvent {
 
 pub struct BaseDocument {
     /// ID of the document
-    id: usize,
+    id: DocumentId,
 
     // Config
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
@@ -395,9 +395,7 @@ impl BaseDocument {
     pub fn new(config: DocumentConfig) -> Self {
         init_stylo_prefs();
 
-        static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
-
-        let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
+        let id = DocumentId::new();
 
         let font_ctx = config
             .font_ctx
@@ -614,7 +612,7 @@ impl BaseDocument {
         &self.nodes
     }
 
-    pub fn id(&self) -> usize {
+    pub fn id(&self) -> DocumentId {
         self.id
     }
 

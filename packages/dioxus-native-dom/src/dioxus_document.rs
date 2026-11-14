@@ -10,6 +10,7 @@ use blitz_dom::{
     Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
     EventHandler, Node,
 };
+use blitz_traits::DocumentId;
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::{PlatformEventData, set_event_converter};
@@ -206,7 +207,7 @@ impl DioxusDocument {
 
 // Implement DocumentLike and required traits for DioxusDocument
 impl Document for DioxusDocument {
-    fn id(&self) -> usize {
+    fn id(&self) -> DocumentId {
         self.inner.borrow().id()
     }
 

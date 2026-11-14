@@ -9,7 +9,7 @@ pub struct SubDocumentAttr(WriteOnceAttr<Box<dyn Document>>);
 impl SubDocumentAttr {
     /// Accepts any [`Document`] implementation, e.g. a plain [`BaseDocument`](blitz_dom::BaseDocument).
     pub fn new(doc: impl Document) -> Self {
-        let id = doc.id();
+        let id = doc.id().get();
         Self(WriteOnceAttr::new(id, Box::new(doc) as Box<dyn Document>))
     }
 }

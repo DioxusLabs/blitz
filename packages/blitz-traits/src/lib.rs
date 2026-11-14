@@ -2,11 +2,13 @@
 //! circular or unnecessary dependencies.
 
 pub mod devtools;
+pub mod document_id;
 pub mod events;
 pub mod navigation;
 pub mod net;
 pub mod node_id;
 pub mod shell;
 
+pub use document_id::DocumentId;
 pub use node_id::NodeId;
 pub use smol_str::SmolStr;

@@ -3,6 +3,7 @@
 use http::{HeaderMap, Method};
 use url::Url;
 
+use crate::DocumentId;
 use crate::net::{Body, Request};
 
 /// An abstraction to allow embedders to hook into "navigation events" such as clicking a link
@@ -27,8 +28,9 @@ pub struct NavigationOptions {
 
     pub content_type: Option<String>,
 
-    /// Source document for the navigation
-    pub source_document: usize,
+    /// Source document for the navigation (`None` if it didn't come from a
+    /// document, e.g. a URL typed into a browser's address bar)
+    pub source_document: Option<DocumentId>,
 
     pub method: Method,
 
@@ -36,7 +38,11 @@ pub struct NavigationOptions {
 }
 
 impl NavigationOptions {
-    pub fn new(url: Url, content_type: Option<String>, source_document: usize) -> Self {
+    pub fn new(
+        url: Url,
+        content_type: Option<String>,
+        source_document: Option<DocumentId>,
+    ) -> Self {
         Self {
             url,
             content_type,

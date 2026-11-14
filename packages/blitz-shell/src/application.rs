@@ -1,6 +1,7 @@
 use crate::event::{BlitzShellEvent, BlitzShellProxy};
 
 use anyrender::WindowRenderer;
+use blitz_traits::DocumentId;
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 use winit::application::ApplicationHandler;
@@ -30,7 +31,7 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
 
 /// Whether a document or (recursively) any of its sub-documents has the
 /// given id
-fn document_contains_id(doc: &blitz_dom::BaseDocument, doc_id: usize) -> bool {
+fn document_contains_id(doc: &blitz_dom::BaseDocument, doc_id: DocumentId) -> bool {
     if doc.id() == doc_id {
         return true;
     }
@@ -64,7 +65,7 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         self.pending_windows.push(window_config);
     }
 
-    fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Rend>> {
+    fn window_mut_by_doc_id(&mut self, doc_id: DocumentId) -> Option<&mut View<Rend>> {
         self.windows
             .values_mut()
             .find(|w| document_contains_id(&w.doc.inner(), doc_id))
