@@ -116,15 +116,15 @@ skrifa = { version = "0.49", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
-anyrender_tiny_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "17b0ec928bc8e6a61f404c8dc973f3ba6d4a7f15" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
+anyrender_tiny_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "aa5be856542b44ea1eccbff58ff49d321c7a6b5c" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
