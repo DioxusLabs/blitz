@@ -961,6 +961,7 @@ dependencies = [
  "objc2 0.6.5",
  "parley",
  "percent-encoding",
+ "png 0.18.1",
  "rayon",
  "selectors",
  "skrifa",

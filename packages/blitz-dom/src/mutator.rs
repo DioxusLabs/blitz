@@ -3,13 +3,13 @@ use blitz_traits::devtools::{
     AttributeChanged, CharacterDataChanged, MutationRecord, NodeInserted, NodeRemoved,
 };
 use blitz_traits::node_id::NodeId;
-use markup5ever::LocalName;
+use markup5ever::{LocalName, ns};
 use std::collections::HashSet;
 use std::mem;
 use std::ops::{Deref, DerefMut, Range};
 
 use crate::layout::damage::ALL_DAMAGE;
-use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
+use crate::net::{ResourceHandler, StylesheetHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::stylo::DeviceChanges;
 use crate::util::ImageType;
@@ -441,7 +441,12 @@ impl DocumentMutator<'_> {
 
         if (tag, attr) == tag_and_attr!("input", "checked") {
             set_input_checked_state(element, value.to_string());
-        } else if (tag, attr) == tag_and_attr!("img", "src") {
+        } else if (tag, attr) == tag_and_attr!("img", "src")
+            || (cfg!(feature = "svg")
+                && element.name.ns == ns!(svg)
+                && matches!(&**tag, "image" | "feImage")
+                && *attr == local_name!("href"))
+        {
             self.load_image(node_id);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.load_custom_paint_src(node_id);
@@ -1225,6 +1230,9 @@ impl<'doc> DocumentMutator<'doc> {
                 _ if has_custom_widget => {}
                 "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
                 "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
+                "image" | "feImage" if cfg!(feature = "svg") && element.name.ns == ns!(svg) => {
+                    self.eager_op_queue.push(SpecialOp::LoadImage(node_id))
+                }
                 "iframe" => self.eager_op_queue.push(SpecialOp::LoadIframe(node_id)),
                 "canvas" => self
                     .eager_op_queue
@@ -1425,54 +1433,40 @@ impl<'doc> DocumentMutator<'doc> {
         self.doc.stylesheet_generation += 1;
     }
 
+    /// Load the image of an `<img>`, or the href of an SVG `<image>` or `<feImage>`,
+    /// which usvg reads from the image cache when parsing the `<svg>`.
     fn load_image(&mut self, target_id: NodeId) {
-        let node = &self.doc.nodes[target_id];
-        if let Some(raw_src) = node.attr(local_name!("src")) {
-            if !raw_src.is_empty()
-                && let Some(src) = self.doc.resolve_url(raw_src)
-            {
-                let src_string = src.as_str();
+        let Some(element) = self.doc.nodes[target_id].element_data() else {
+            return;
+        };
+        let raw_src = if element.name.ns == ns!(svg) {
+            // usvg resolves `data:` URLs and `#fragment` references itself
+            element
+                .svg_href()
+                .filter(|href| !href.starts_with('#') && !is_data_url(href))
+        } else {
+            element.attr(local_name!("src"))
+        };
+        let Some(raw_src) = raw_src.filter(|src| !src.is_empty()) else {
+            return;
+        };
+        let Some(src) = self.doc.resolve_url(raw_src) else {
+            return;
+        };
 
-                // Check cache first
-                if let Some(cached_image) = self.doc.image_cache.get(src_string) {
-                    #[cfg(feature = "tracing")]
-                    tracing::info!("Loading image {src_string} from cache");
-                    let node = &mut self.doc.nodes[target_id];
-                    node.element_data_mut().unwrap().special_data =
-                        SpecialElementData::Image(Box::new(cached_image.clone()));
-                    node.clear_layout_cache();
-                    node.insert_damage(ALL_DAMAGE);
-                    return;
-                }
-
-                // Check if there's already a pending request for this URL
-                if let Some(waiting_list) = self.doc.pending_images.get_mut(src_string) {
-                    #[cfg(feature = "tracing")]
-                    tracing::info!("Image {src_string} already pending, queueing node {target_id}");
-                    waiting_list.push((target_id, ImageType::Image));
-                    return;
-                }
-
-                // Start fetch and track as pending
-                #[cfg(feature = "tracing")]
-                tracing::info!("Fetching image {src_string}");
-                self.doc
-                    .pending_images
-                    .insert(src_string.to_string(), vec![(target_id, ImageType::Image)]);
-
-                self.doc.net_provider.fetch(
-                    self.doc.id(),
-                    self.doc.build_request(src),
-                    ResourceHandler::boxed(
-                        self.doc.tx.clone(),
-                        self.doc.id(),
-                        None, // Don't pass node_id, we'll handle it via pending_images
-                        self.doc.shell_provider.clone(),
-                        ImageHandler::new(ImageType::Image),
-                    ),
-                );
-            }
+        // Check cache first
+        if let Some(cached_image) = self.doc.image_cache.get(src.as_str()) {
+            #[cfg(feature = "tracing")]
+            tracing::info!("Loading image {src} from cache");
+            let node = &mut self.doc.nodes[target_id];
+            node.element_data_mut().unwrap().special_data =
+                SpecialElementData::Image(Box::new(cached_image.clone()));
+            node.clear_layout_cache();
+            node.insert_damage(ALL_DAMAGE);
+            return;
         }
+
+        self.doc.fetch_image(src, target_id, ImageType::Image);
     }
 
     fn load_iframe(&mut self, target_id: NodeId) {
@@ -1582,6 +1576,12 @@ impl<'doc> DocumentMutator<'doc> {
 }
 
 /// Set 'checked' state on an input based on given attributevalue
+fn is_data_url(url: &str) -> bool {
+    url.trim_start()
+        .get(..5)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("data:"))
+}
+
 fn set_input_checked_state(element: &mut ElementData, value: String) {
     let Ok(checked) = value.parse() else {
         return;
