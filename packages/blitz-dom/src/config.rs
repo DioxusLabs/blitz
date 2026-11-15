@@ -68,12 +68,6 @@ pub struct DocumentConfig {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub subdocument_depth: usize,
-    /// Whether SVG images (`<img src="x.svg">`, CSS images) load the external
-    /// images their `<image>` and `<feImage>` elements reference, fetched
-    /// through the net provider relative to the SVG's URL. Browsers render
-    /// SVG images in "secure animated mode", which loads no external
-    /// resources, so this defaults to `false`. `data:` URLs always load.
-    pub svg_external_images: bool,
     /// Devtools provider notified of DOM mutations (e.g. by a remote inspector)
     #[cfg(feature = "devtools")]
     pub devtools_provider: Option<Arc<dyn DevtoolsProvider>>,
@@ -95,7 +89,6 @@ impl Default for DocumentConfig {
             incremental: None,
             abort_signal: None,
             subdocument_depth: 0,
-            svg_external_images: false,
             #[cfg(feature = "devtools")]
             devtools_provider: None,
         }

@@ -218,8 +218,6 @@ pub struct BaseDocument {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub(crate) subdocument_depth: usize,
-    /// See [`DocumentConfig::svg_external_images`]
-    pub(crate) svg_external_images: bool,
 
     // Events
     pub(crate) tx: Sender<DocumentEvent>,
@@ -335,6 +333,9 @@ pub struct BaseDocument {
     /// requests for the same URL are queued here instead of starting new fetches.
     /// Value is a list of (node_id, image_type) pairs waiting for the image.
     pub(crate) pending_images: HashMap<String, Vec<(NodeId, ImageType)>>,
+    /// The external images inline `<svg>` elements reference, by URL
+    #[cfg(feature = "svg")]
+    pub(crate) svg_href_images: HashMap<url::Url, crate::net::SvgHrefImage>,
 
     /// Nodes whose `background-image`/`mask-image` layers need flushing to
     /// dedicated storage on the node because their style changed (populated by
@@ -475,7 +476,6 @@ impl BaseDocument {
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
             subdocument_depth: config.subdocument_depth,
-            svg_external_images: config.svg_external_images,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
             nodes_to_stylesheet: BTreeMap::new(),
@@ -507,6 +507,8 @@ impl BaseDocument {
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
+            #[cfg(feature = "svg")]
+            svg_href_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
@@ -1419,6 +1421,23 @@ impl BaseDocument {
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
+            }
+            #[cfg(feature = "svg")]
+            Resource::SvgHrefImage(url, bytes) => {
+                use crate::net::SvgHrefImage;
+                let previous = self
+                    .svg_href_images
+                    .insert(url, SvgHrefImage::Loaded(bytes));
+                let Some(SvgHrefImage::Pending(svg_nodes)) = previous else {
+                    return;
+                };
+                for node_id in svg_nodes {
+                    if let Some(node) = self.get_node_mut(node_id) {
+                        node.clear_layout_cache();
+                        node.insert_damage(ALL_DAMAGE);
+                        node.mark_ancestors_dirty();
+                    }
+                }
             }
             Resource::None => {
                 // Do nothing

@@ -1,6 +1,5 @@
 //! SVG image data and CSS intrinsic sizing for SVG.
 
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use usvg::roxmltree;
@@ -67,21 +66,6 @@ impl SvgIntrinsicDimensions {
     }
 }
 
-/// The text of SVG (or gzip-compressed SVGZ) data.
-pub(crate) fn svg_text(data: &[u8]) -> Result<Cow<'_, str>, usvg::Error> {
-    // Gzip magic bytes, matching the SVGZ detection in `usvg::Tree::from_data`.
-    if data.starts_with(&[0x1f, 0x8b]) {
-        let decompressed = usvg::decompress_svgz(data)?;
-        String::from_utf8(decompressed)
-            .map(Cow::Owned)
-            .map_err(|_| usvg::Error::NotAnUtf8Str)
-    } else {
-        std::str::from_utf8(data)
-            .map(Cow::Borrowed)
-            .map_err(|_| usvg::Error::NotAnUtf8Str)
-    }
-}
-
 /// Parse SVG text into an XML document the way usvg does.
 pub(crate) fn parse_svg_xml(text: &str) -> Result<roxmltree::Document<'_>, usvg::Error> {
     let xml_options = roxmltree::ParsingOptions {
@@ -138,12 +122,21 @@ impl SvgImageData {
     /// Like [`usvg::Tree::from_data`], gzip-compressed data (SVGZ) is
     /// decompressed first.
     pub fn from_data(data: &[u8], options: &usvg::Options) -> Result<Self, usvg::Error> {
-        let text = svg_text(data)?;
-        let doc = parse_svg_xml(&text)?;
+        // Gzip magic bytes, matching the SVGZ detection in `usvg::Tree::from_data`.
+        let decompressed;
+        let data = if data.starts_with(&[0x1f, 0x8b]) {
+            decompressed = usvg::decompress_svgz(data)?;
+            decompressed.as_slice()
+        } else {
+            data
+        };
+
+        let text = std::str::from_utf8(data).map_err(|_| usvg::Error::NotAnUtf8Str)?;
+        let doc = parse_svg_xml(text)?;
         Self::from_xmltree(&doc, options)
     }
 
-    fn from_xmltree(
+    pub(crate) fn from_xmltree(
         doc: &roxmltree::Document,
         options: &usvg::Options,
     ) -> Result<Self, usvg::Error> {

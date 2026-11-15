@@ -1468,12 +1468,7 @@ impl<'doc> DocumentMutator<'doc> {
                         self.doc.id(),
                         None, // Don't pass node_id, we'll handle it via pending_images
                         self.doc.shell_provider.clone(),
-                        ImageHandler::for_document(
-                            ImageType::Image,
-                            self.doc.svg_external_images,
-                            &self.doc.net_provider,
-                            self.doc.abort_signal.as_ref(),
-                        ),
+                        ImageHandler::new(ImageType::Image),
                     ),
                 );
             }

@@ -29,7 +29,9 @@ use url::Url;
 use crate::{document::DocumentEvent, util::ImageType};
 
 #[cfg(feature = "svg")]
-mod svg_image;
+mod svg_href;
+#[cfg(feature = "svg")]
+pub(crate) use svg_href::{SvgHrefImage, parse_inline_svg};
 
 pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request {
     let mut req = Request::get(url);
@@ -67,6 +69,9 @@ pub enum Resource {
     Image(ImageType, u32, u32, Arc<Vec<u8>>),
     #[cfg(feature = "svg")]
     Svg(ImageType, crate::node::SvgImageData),
+    /// An external image of an inline `<svg>`, by the URL it was requested with
+    #[cfg(feature = "svg")]
+    SvgHrefImage(Url, Bytes),
     Css(DocumentStyleSheet),
     /// Stylesheet loaded for an `@import` rule, to be attached to the rule on the document thread
     ImportedCss(ServoArc<Locked<ImportRule>>, ServoArc<Stylesheet>),
@@ -596,86 +601,55 @@ impl NetHandler for ResourceHandler<DocumentSrcHandler> {
 
 pub struct ImageHandler {
     kind: ImageType,
-    /// Fetches the external images an SVG image's `<image>` and `<feImage>`
-    /// elements reference. `None` leaves them unloaded.
-    #[cfg(feature = "svg")]
-    svg_external_images: Option<(Arc<dyn NetProvider>, Option<AbortSignal>)>,
 }
 impl ImageHandler {
     pub fn new(kind: ImageType) -> Self {
-        Self {
-            kind,
-            #[cfg(feature = "svg")]
-            svg_external_images: None,
-        }
-    }
-
-    /// Load the external images an SVG image references through
-    /// `net_provider`. See [`crate::DocumentConfig::svg_external_images`].
-    #[cfg(feature = "svg")]
-    pub fn with_svg_external_images(
-        mut self,
-        net_provider: Arc<dyn NetProvider>,
-        signal: Option<AbortSignal>,
-    ) -> Self {
-        self.svg_external_images = Some((net_provider, signal));
-        self
-    }
-
-    /// The handler for an image a document loads, given the document's
-    /// [`crate::DocumentConfig::svg_external_images`] setting
-    pub(crate) fn for_document(
-        kind: ImageType,
-        svg_external_images: bool,
-        net_provider: &Arc<dyn NetProvider>,
-        signal: Option<&AbortSignal>,
-    ) -> Self {
-        let handler = Self::new(kind);
-        #[cfg(feature = "svg")]
-        if svg_external_images {
-            return handler.with_svg_external_images(net_provider.clone(), signal.cloned());
-        }
-        #[cfg(not(feature = "svg"))]
-        let _ = (svg_external_images, net_provider, signal);
-        handler
+        Self { kind }
     }
 }
 
 impl NetHandler for ResourceHandler<ImageHandler> {
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
-        let image_err = match self.data.decode_raster(&bytes) {
-            Ok(resource) => return self.respond(resolved_url, Ok(resource)),
-            Err(e) => e,
-        };
-
-        #[cfg(feature = "svg")]
-        svg_image::load(self, resolved_url, bytes, image_err);
-        #[cfg(not(feature = "svg"))]
-        self.respond(
-            resolved_url,
-            Err(format!(
-                "Could not parse image ({} bytes): image-crate error: {image_err}; svg fallback error: svg feature disabled",
-                bytes.len()
-            )),
-        );
+        let result = self.data.parse(bytes);
+        self.respond(resolved_url, result)
     }
 }
 
 impl ImageHandler {
-    fn decode_raster(&self, bytes: &Bytes) -> Result<Resource, String> {
-        let image = image::ImageReader::new(Cursor::new(bytes))
+    fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
+        let image_err = match image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
-            .map_err(|e| e.to_string())?;
-        let width = image.width();
-        let height = image.height();
-        let raw_rgba8_data = image.into_rgba8().into_raw();
-        Ok(Resource::Image(
-            self.kind,
-            width,
-            height,
-            Arc::new(raw_rgba8_data),
+        {
+            Ok(image) => {
+                let width = image.width();
+                let height = image.height();
+                let raw_rgba8_data = image.into_rgba8().into_raw();
+                return Ok(Resource::Image(
+                    self.kind,
+                    width,
+                    height,
+                    Arc::new(raw_rgba8_data),
+                ));
+            }
+            Err(e) => e.to_string(),
+        };
+
+        #[cfg(feature = "svg")]
+        let svg_err = {
+            use crate::util::parse_svg_image;
+            match parse_svg_image(&bytes) {
+                Ok(svg) => return Ok(Resource::Svg(self.kind, svg)),
+                Err(e) => e.to_string(),
+            }
+        };
+        #[cfg(not(feature = "svg"))]
+        let svg_err = "svg feature disabled";
+
+        Err(format!(
+            "Could not parse image ({} bytes): image-crate error: {image_err}; svg fallback error: {svg_err}",
+            bytes.len()
         ))
     }
 }
