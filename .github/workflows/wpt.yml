@@ -46,6 +46,8 @@ jobs:
         run: cargo build -rp wpt
       - name: Run WPT tests
         run: cargo run -rp wpt css svg
+        env:
+          BLITZ_NATIVE_SVG: 1
       - name: Compress report (zstd)
         run: zstd -22 --ultra -o ./wpt/output/wptreport.json.zst ./wpt/output/wptreport.json
       - uses: actions/upload-artifact@v7
