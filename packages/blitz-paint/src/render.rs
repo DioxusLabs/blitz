@@ -1302,12 +1302,41 @@ impl ElementCx<'_, '_> {
         let viewport = svg_viewport_affine(svg, paint_size.width, paint_size.height);
         let transform = (self.transform * viewport).then_translate(Vec2 { x, y });
 
-        self.with_replaced_content_clip(
+        // An inline `<svg>`'s `transform` attribute is applied inside the tree, so its
+        // viewport clip is left to `overflow`.
+        if self.node.data.is_element_with_tag_name(&local_name!("svg")) {
+            self.with_replaced_content_clip(
+                scene,
+                container_size,
+                paint_size,
+                x_offset.px(),
+                y_offset.px(),
+                |scene| {
+                    self.draw_svg_image(scene, &svg.tree, transform);
+                },
+            );
+            return;
+        }
+
+        // An SVG image's root viewport clips its content, as does the content box when
+        // the object-fit rect overflows it. The viewport is rounded out to whole pixels
+        // so its clip doesn't anti-alias the content's own edges a second time.
+        let viewport_rect = Rect::new(
+            x,
+            y,
+            x + paint_size.width as f64,
+            y + paint_size.height as f64,
+        )
+        .expand();
+        self.context.layer_manager.maybe_with_layer(
             scene,
-            container_size,
-            paint_size,
-            x_offset.px(),
-            y_offset.px(),
+            true,
+            BlendMode::default(),
+            1.0,
+            self.transform,
+            &viewport_rect.intersect(content_box),
+            None,
+            None,
             |scene| {
                 self.draw_svg_image(scene, &svg.tree, transform);
             },
