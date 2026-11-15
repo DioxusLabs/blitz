@@ -1,4 +1,4 @@
-use anyrender::PaintScene as _;
+use anyrender::{AntiAliasing, PaintScene as _};
 use blitz_dom::node::ComputedStyles;
 use blitz_traits::events::UiEvent;
 use color::parse_color;
@@ -163,6 +163,7 @@ impl Widget for DemoWidget {
             self.color.clone(),
             None,
             &Rect::from_origin_size((0.0, 0.0), (w, h)),
+            AntiAliasing::Enabled,
         );
 
         scene

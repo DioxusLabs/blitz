@@ -20,7 +20,7 @@ use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
 use crate::text::{DrawTextContext, TextPaintOptions};
 use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
-use anyrender::{PaintScene, Scene};
+use anyrender::{AntiAliasing, PaintScene, Scene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
@@ -236,7 +236,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 (self.initial_x, self.initial_y),
                 (bg_width as f64, bg_height as f64),
             );
-            scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+            scene.fill(
+                Fill::NonZero,
+                Affine::IDENTITY,
+                bg_color,
+                None,
+                &rect,
+                AntiAliasing::Enabled,
+            );
         }
 
         // The root clip rectangle is the viewport (in screen coordinates, with the
@@ -957,6 +964,7 @@ impl ElementCx<'_, '_> {
                     track_color.multiply_alpha(opacity),
                     None,
                     &track_rect,
+                    AntiAliasing::Enabled,
                 );
             }
 
@@ -981,6 +989,7 @@ impl ElementCx<'_, '_> {
                 color.multiply_alpha(opacity),
                 None,
                 &rect.to_rounded_rect(radius),
+                AntiAliasing::Enabled,
             );
             // Contrast stroke, default thumbs only: an author-specified
             // scrollbar-color is rendered exactly as given.
@@ -993,6 +1002,7 @@ impl ElementCx<'_, '_> {
                     stroke_color.multiply_alpha(opacity),
                     None,
                     &stroke_rect.to_rounded_rect(radius - stroke_width / 2.0),
+                    AntiAliasing::Enabled,
                 );
             }
         }
@@ -1088,6 +1098,7 @@ impl ElementCx<'_, '_> {
                         SELECTION_COLOR,
                         None,
                         &convert_rect(rect),
+                        AntiAliasing::Enabled,
                     );
                 }
                 if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
@@ -1103,6 +1114,7 @@ impl ElementCx<'_, '_> {
                         caret_color.as_srgb_color(),
                         None,
                         &convert_rect(&cursor),
+                        AntiAliasing::Enabled,
                     );
                 };
             }
@@ -1478,7 +1490,14 @@ impl ElementCx<'_, '_> {
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 
-            scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
+            scene.stroke(
+                &stroke,
+                self.transform,
+                stroke_color,
+                None,
+                &shape,
+                AntiAliasing::Enabled,
+            );
         }
     }
 }

@@ -1,7 +1,7 @@
 use super::{ALMOST_OPAQUE, ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
-use anyrender::{NonUniformRoundedRect, PaintScene};
+use anyrender::{AntiAliasing, NonUniformRoundedRect, PaintScene};
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::NodeId;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
@@ -368,7 +368,14 @@ impl ElementCx<'_, '_> {
 
             let shape = rect.scale_from_origin(self.scale);
             for color in colors {
-                scene.fill(Fill::NonZero, self.transform, *color, None, &shape);
+                scene.fill(
+                    Fill::NonZero,
+                    self.transform,
+                    *color,
+                    None,
+                    &shape,
+                    AntiAliasing::Enabled,
+                );
             }
         }
     }
@@ -382,7 +389,14 @@ impl ElementCx<'_, '_> {
 
         if bg_color != Color::TRANSPARENT {
             // Fill the color
-            scene.fill(Fill::NonZero, self.transform, bg_color, None, shape);
+            scene.fill(
+                Fill::NonZero,
+                self.transform,
+                bg_color,
+                None,
+                shape,
+                AntiAliasing::Enabled,
+            );
         }
     }
 
@@ -573,6 +587,7 @@ impl ElementCx<'_, '_> {
                     to_peniko_image(image_data, quality).as_ref(),
                     None,
                     &tile_rect,
+                    AntiAliasing::Enabled,
                 );
             }
         }
@@ -665,6 +680,7 @@ impl ElementCx<'_, '_> {
                     brush.clone(),
                     gradient_transform,
                     &tile_rect,
+                    AntiAliasing::Enabled,
                 );
             }
         }
