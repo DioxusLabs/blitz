@@ -1,4 +1,4 @@
-use anyrender::PaintScene;
+use anyrender::{AntiAliasing, PaintScene};
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, NodeId, node::TextBrush};
 use kurbo::{Affine, Rect};
@@ -62,7 +62,14 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             let y1 = baseline + metrics.descent as f64;
             let rect = Rect::new(x, y0, x + w, y1);
 
-            scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
+            scene.fill(
+                Fill::NonZero,
+                transform,
+                bg_color,
+                None,
+                &rect,
+                AntiAliasing::Enabled,
+            );
         }
     }
 }
@@ -311,12 +318,12 @@ pub(crate) fn draw_glyph_run(
     scene.draw_glyphs(
         run.font(),
         font_size,
-        !FONT_EMBOLDEN_ENABLED, // hint
+        !FONT_EMBOLDEN_ENABLED,
         normalized_coords,
         embolden,
         Fill::NonZero,
         &anyrender::Paint::from(color),
-        1.0, // alpha
+        1.0,
         transform,
         glyph_xform,
         glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
@@ -324,6 +331,7 @@ pub(crate) fn draw_glyph_run(
             x: glyph.x,
             y: glyph.y,
         }),
+        AntiAliasing::Enabled,
     );
 }
 
@@ -354,7 +362,14 @@ pub(crate) fn draw_text_selection(
 
     selection.geometry_with(layout, |rect, _line_idx| {
         let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
-        scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            SELECTION_COLOR,
+            None,
+            &rect,
+            AntiAliasing::Enabled,
+        );
     });
 }
 
