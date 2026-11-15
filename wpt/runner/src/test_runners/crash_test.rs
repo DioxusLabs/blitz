@@ -1,14 +1,9 @@
 use std::time::Duration;
 
-use anyrender::{ImageRenderer as _, PaintScene as _};
-use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
-use blitz_paint::paint_scene;
-use peniko::Fill;
-use peniko::kurbo::Rect;
 
 use super::{parse_and_resolve_document, pump_net_provider, pump_timers, run_document_scripts};
-use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
+use crate::{BufferKind, SubtestCounts, TestFlags, ThreadCtx};
 
 /// How long to keep running pending JS timers (crashtests often crash in
 /// `setTimeout`/`requestAnimationFrame` callbacks a few frames after load)
@@ -52,21 +47,5 @@ pub fn process_crash_test(
 
 fn render_to_buffer(ctx: &mut ThreadCtx, document: &mut BaseDocument) {
     let buf = ctx.buffers.get_mut(BufferKind::Test);
-    ctx.renderer.render_to_vec(
-        |scene| {
-            scene.reset();
-
-            // Render white background
-            scene.fill(
-                Fill::NonZero,
-                Default::default(),
-                Color::WHITE,
-                Default::default(),
-                &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
-            );
-
-            paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
-        },
-        buf,
-    );
+    ctx.renderer.render_to_vec(document, buf);
 }

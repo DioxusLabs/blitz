@@ -54,6 +54,9 @@ pub struct FontFaceOverrides {
     pub weight: Option<f32>,
     /// `font-style` descriptor mapped to fontique's `FontStyle`.
     pub style: Option<parley::fontique::FontStyle>,
+    /// `font-stretch` (`font-width`) descriptor as a single width. Like
+    /// `weight`, we record the lower bound of Stylo's range.
+    pub width: Option<parley::fontique::FontWidth>,
 }
 
 #[derive(Clone, Debug)]
@@ -428,6 +431,11 @@ pub(crate) fn fetch_font_face_rules<'a>(
                         .as_ref()
                         .and_then(|range| range.0.compute().map(|w| w.value())),
                     style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
+                    width: descriptor.font_width.as_ref().and_then(|range| {
+                        range
+                            .compute()
+                            .map(|w| parley::fontique::FontWidth::from_percentage(w.0.0.to_float()))
+                    }),
                 };
                 Some((src, overrides))
             }

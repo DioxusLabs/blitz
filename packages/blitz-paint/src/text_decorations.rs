@@ -661,7 +661,10 @@ pub(crate) fn draw_line_text_shadows(
                 continue;
             }
             if shadow.is_blurred() {
-                let filter = Arc::new(Filter::single(FilterEffect::blur(shadow.std_dev as f32)));
+                let filter = Arc::new(Filter::single(
+                    FilterEffect::blur(shadow.std_dev as f32),
+                    batch_bounds + shadow.offset,
+                ));
                 // Layer clip: the shadowed content's bounds, offset, plus room for the blur.
                 let margin = 3.0 * shadow.std_dev;
                 let clip = (batch_bounds + shadow.offset).inflate(margin, margin);

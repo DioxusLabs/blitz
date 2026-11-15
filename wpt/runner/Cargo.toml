@@ -7,9 +7,10 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["cpu"]
+default = ["cpu", "tiny-skia"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
+tiny-skia = ["dep:anyrender_tiny_skia"]
 
 [dependencies]
 mimalloc = "0.1.48"
@@ -21,6 +22,7 @@ blitz-paint = { workspace = true, features = ["default"] }
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
+anyrender_tiny_skia = { workspace = true, optional = true }
 
 taffy = { workspace = true }
 style = { workspace = true }

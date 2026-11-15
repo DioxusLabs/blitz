@@ -295,8 +295,9 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
+ "image_filters_types",
  "kurbo",
  "peniko",
  "raw-window-handle",
@@ -307,7 +308,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "anyrender",
  "image",
@@ -325,7 +326,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "anyrender",
  "ash",
@@ -340,6 +341,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",
  "objc2-core-graphics",
+ "objc2-core-text",
  "objc2-metal 0.3.2",
  "objc2-quartz-core 0.3.2",
  "objc2-ui-kit",
@@ -356,7 +358,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "anyrender",
  "image",
@@ -366,9 +368,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyrender_tiny_skia"
+version = "0.1.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
+dependencies = [
+ "anyrender",
+ "bytemuck",
+ "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "image_filters_types",
+ "kurbo",
+ "peniko",
+ "rgb",
+ "skrifa",
+ "tiny-skia",
+]
+
+[[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -386,7 +404,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -404,7 +422,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3150,7 +3168,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4444,6 +4462,17 @@ checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
 dependencies = [
  "byteorder-lite",
  "quick-error",
+]
+
+[[package]]
+name = "image_filters_types"
+version = "0.1.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
+dependencies = [
+ "kurbo",
+ "peniko",
+ "serde",
+ "smallvec",
 ]
 
 [[package]]
@@ -6406,7 +6435,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6719,7 +6748,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7144,6 +7173,9 @@ name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "ring"
@@ -7242,7 +7274,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7299,7 +7331,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7740,9 +7772,9 @@ dependencies = [
 
 [[package]]
 name = "skia-bindings"
-version = "0.156.0"
+version = "0.157.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fdac65e59d2ee3d2307397cc0a6a5156e4364debf3db465af1a8fd8252781f1"
+checksum = "3930c7f5e8d813364d74c3b17b227f3bb3a84504f93bb1f8c222d8fd5a7d9c6f"
 dependencies = [
  "bindgen",
  "cc",
@@ -7757,9 +7789,9 @@ dependencies = [
 
 [[package]]
 name = "skia-safe"
-version = "0.156.0"
+version = "0.157.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38c60bc899f4b9e23eba0223187ff572b25d26155d0176b26e9b3a743f1e75b1"
+checksum = "dc1c946dbc1a10b6b1ace7e368ea71f96c81448bbf55effcad0a9a3a392358eb"
 dependencies = [
  "bitflags 2.13.2",
  "skia-bindings",
@@ -7928,7 +7960,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8388,7 +8420,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8575,6 +8607,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "log",
+ "png 0.18.1",
  "tiny-skia-path",
 ]
 
@@ -10038,7 +10071,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=1a314052b7b19cc510606d2d3c6145cf8b9a8a84#1a314052b7b19cc510606d2d3c6145cf8b9a8a84"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=aa5be856542b44ea1eccbff58ff49d321c7a6b5c#aa5be856542b44ea1eccbff58ff49d321c7a6b5c"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
@@ -10111,7 +10144,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10707,6 +10740,7 @@ name = "wpt"
 version = "0.1.0"
 dependencies = [
  "anyrender",
+ "anyrender_tiny_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
  "atomic_float",

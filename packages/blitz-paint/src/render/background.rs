@@ -495,7 +495,7 @@ impl ElementCx<'_, '_> {
             ))
             * viewport;
 
-        anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
+        self.context.draw_svg_image(scene, &svg.tree, transform);
     }
 
     fn draw_raster_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
