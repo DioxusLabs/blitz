@@ -28,11 +28,6 @@ use url::Url;
 
 use crate::{document::DocumentEvent, util::ImageType};
 
-#[cfg(feature = "svg")]
-mod svg_href;
-#[cfg(feature = "svg")]
-pub(crate) use svg_href::parse_inline_svg;
-
 pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request {
     let mut req = Request::get(url);
     if let Some(sig) = signal {

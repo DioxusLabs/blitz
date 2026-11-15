@@ -72,9 +72,6 @@ pub enum ImageType {
     Image,
     Background(usize),
     Mask(usize),
-    /// An `<image>` or `<feImage>` href of the inline `<svg>` node
-    #[cfg(feature = "svg")]
-    SvgHref,
 }
 
 /// A point
@@ -164,6 +161,62 @@ pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData
         ..Default::default()
     };
     crate::node::SvgImageData::from_data(source, &options)
+}
+
+/// Parse an inline `<svg>` (or the root of an SVG document) from its serialized
+/// `source`. Its `<image>` and `<feImage>` elements fetch their hrefs like
+/// `<img src>` does, so usvg resolves them from `image_cache` and never reads
+/// a local file. Images still loading are left out until they arrive and
+/// reconstruct the `<svg>`.
+///
+/// SVG images (`<img src="x.svg">`, CSS images) don't load external
+/// resources, as browsers render them in "secure animated mode", so they use
+/// [`parse_svg_image`].
+#[cfg(feature = "svg")]
+pub(crate) fn parse_inline_svg(
+    source: &[u8],
+    base_url: &crate::url::DocumentUrl,
+    image_cache: &std::collections::HashMap<String, crate::node::ImageData>,
+) -> Result<crate::node::SvgImageData, usvg::Error> {
+    let options = usvg::Options {
+        fontdb: Arc::clone(&*FONT_DB),
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_data: usvg::ImageHrefResolver::default_data_resolver(),
+            resolve_string: Box::new(|href, _| {
+                svg_image_kind(image_cache.get(base_url.resolve_relative(href)?.as_str())?)
+            }),
+        },
+        ..Default::default()
+    };
+    crate::node::SvgImageData::from_data(source, &options)
+}
+
+/// A loaded image as an image usvg can render
+#[cfg(feature = "svg")]
+fn svg_image_kind(image: &crate::node::ImageData) -> Option<usvg::ImageKind> {
+    use crate::node::ImageData;
+    match image {
+        // TODO: hand usvg the decoded pixels instead of re-encoding them once
+        // usvg supports that: https://github.com/linebender/resvg/issues/1096
+        ImageData::Raster(raster) => {
+            encode_png(raster).map(|png| usvg::ImageKind::PNG(Arc::new(png)))
+        }
+        ImageData::Svg(svg) => Some(usvg::ImageKind::SVG((*svg.tree).clone())),
+        ImageData::None => None,
+    }
+}
+
+#[cfg(feature = "svg")]
+fn encode_png(image: &crate::node::RasterImageData) -> Option<Vec<u8>> {
+    let mut png = Vec::new();
+    let mut encoder = png::Encoder::new(&mut png, image.width, image.height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(png::Compression::Fastest);
+    let mut writer = encoder.write_header().ok()?;
+    writer.write_image_data(image.data.data()).ok()?;
+    writer.finish().ok()?;
+    Some(png)
 }
 
 pub trait ToColorColor {

@@ -1493,7 +1493,7 @@ impl BaseDocument {
                         let images = match image_type {
                             ImageType::Background(_) => &mut el.background_images,
                             ImageType::Mask(_) => &mut el.mask_images,
-                            _ => unreachable!(),
+                            ImageType::Image => unreachable!(),
                         };
                         images.get_mut(idx)
                     });
@@ -1501,13 +1501,6 @@ impl BaseDocument {
                         layer_image.status = Status::Ok;
                         layer_image.image = image.clone();
                     }
-                }
-                #[cfg(feature = "svg")]
-                ImageType::SvgHref => {
-                    // Reconstruct the `<svg>`, which now finds the image in the cache
-                    node.clear_layout_cache();
-                    node.insert_damage(ALL_DAMAGE);
-                    node.mark_ancestors_dirty();
                 }
             }
         }
