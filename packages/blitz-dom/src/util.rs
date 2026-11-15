@@ -39,11 +39,11 @@ pub fn decode_font_bytes(bytes: &[u8]) -> Cow<'_, [u8]> {
     }
 }
 
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 use std::sync::{Arc, LazyLock};
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 use usvg::fontdb;
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -165,7 +165,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
 /// load external resources, as browsers render them in "secure animated mode".
 ///
 /// Either way usvg never reads a local file.
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 pub(crate) fn parse_svg(
     source: &[u8],
     images: Option<(
@@ -188,7 +188,7 @@ pub(crate) fn parse_svg(
 }
 
 /// A loaded image as an image usvg can render
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 fn svg_image_kind(image: &crate::node::ImageData) -> Option<usvg::ImageKind> {
     use crate::node::ImageData;
     match image {
@@ -202,7 +202,7 @@ fn svg_image_kind(image: &crate::node::ImageData) -> Option<usvg::ImageKind> {
     }
 }
 
-#[cfg(feature = "svg")]
+#[cfg(feature = "svg-usvg")]
 fn encode_png(image: &crate::node::RasterImageData) -> Option<Vec<u8>> {
     let mut png = Vec::new();
     let mut encoder = png::Encoder::new(&mut png, image.width, image.height);
@@ -229,7 +229,7 @@ impl ToColorColor for AbsoluteColor {
     }
 }
 
-#[cfg(all(test, feature = "svg"))]
+#[cfg(all(test, feature = "svg-usvg"))]
 mod svg_tests {
     use super::parse_svg;
 

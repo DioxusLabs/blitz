@@ -1,14 +1,54 @@
 //! SVG image data and CSS intrinsic sizing for SVG.
 
+#[cfg(feature = "svg-usvg")]
 use std::sync::Arc;
 
+#[cfg(feature = "svg-usvg")]
 use usvg::roxmltree;
+
+/// A non-degenerate `viewBox` rectangle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SvgViewBox {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// A 2D affine transform in SVG matrix order (`a b c d e f`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SvgTransform {
+    pub sx: f32,
+    pub ky: f32,
+    pub kx: f32,
+    pub sy: f32,
+    pub tx: f32,
+    pub ty: f32,
+}
+
+impl SvgTransform {
+    pub const IDENTITY: Self = Self {
+        sx: 1.0,
+        ky: 0.0,
+        kx: 0.0,
+        sy: 1.0,
+        tx: 0.0,
+        ty: 0.0,
+    };
+}
+
+#[cfg(feature = "svg-usvg")]
+impl From<SvgTransform> for usvg::Transform {
+    fn from(t: SvgTransform) -> Self {
+        usvg::Transform::from_row(t.sx, t.ky, t.kx, t.sy, t.tx, t.ty)
+    }
+}
 
 /// Dimensions declared on the root `<svg>` element, before any resolution.
 ///
-/// Unlike [`usvg::Tree::size`], which always produces a concrete size, this
-/// preserves what the SVG actually declared: absent attributes are `None` and
-/// percentage lengths are kept unresolved.
+/// Unlike usvg's resolved tree size, which is always concrete, this preserves
+/// what the SVG actually declared: absent attributes are `None` and percentage
+/// lengths are kept unresolved.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SvgIntrinsicDimensions {
     /// The root `width` attribute, if declared. Percentages are unresolved.
@@ -16,7 +56,7 @@ pub struct SvgIntrinsicDimensions {
     /// The root `height` attribute, if declared. Percentages are unresolved.
     pub height: Option<svgtypes::Length>,
     /// The root `viewBox`, if declared and valid.
-    pub view_box: Option<usvg::NonZeroRect>,
+    pub view_box: Option<SvgViewBox>,
     /// The root `preserveAspectRatio` (default `xMidYMid meet`).
     pub preserve_aspect_ratio: svgtypes::AspectRatio,
     /// Whether the root declared a `viewBox` with a zero width or height,
@@ -30,16 +70,22 @@ impl SvgIntrinsicDimensions {
     /// `None` and percentages unresolved. [`usvg::Tree`] does not preserve
     /// these (it always resolves to a concrete size), so they are read from
     /// the XML document here.
+    #[cfg(feature = "svg-usvg")]
     pub fn from_xmltree(doc: &roxmltree::Document) -> Self {
         let root = doc.root_element();
+        Self::from_attrs(|name| root.attribute(name))
+    }
 
+    /// Extract the declared dimensions from an attribute lookup, used both for
+    /// parsed SVG documents and for live inline `<svg>` DOM elements.
+    pub fn from_attrs<'a>(attr: impl Fn(&str) -> Option<&'a str>) -> Self {
         let parse_length = |name: &str| -> Option<svgtypes::Length> {
-            root.attribute(name)?.parse::<svgtypes::Length>().ok()
+            attr(name)?.parse::<svgtypes::Length>().ok()
         };
         // Parsed manually rather than via `svgtypes::ViewBox`, which rejects
         // zero sizes: a zero `viewBox` width/height is distinguished from an
         // invalid `viewBox` as it disables rendering of the element.
-        let view_box_dims = root.attribute("viewBox").and_then(|s| {
+        let view_box_dims = attr("viewBox").and_then(|s| {
             let mut numbers = svgtypes::NumberListParser::from(s);
             let x = numbers.next()?.ok()? as f32;
             let y = numbers.next()?.ok()? as f32;
@@ -48,11 +94,16 @@ impl SvgIntrinsicDimensions {
             (numbers.next().is_none() && w.is_finite() && h.is_finite() && w >= 0.0 && h >= 0.0)
                 .then_some((x, y, w, h))
         });
-        let view_box =
-            view_box_dims.and_then(|(x, y, w, h)| usvg::NonZeroRect::from_xywh(x, y, w, h));
+        let view_box = view_box_dims.and_then(|(x, y, width, height)| {
+            (width > 0.0 && height > 0.0).then_some(SvgViewBox {
+                x,
+                y,
+                width,
+                height,
+            })
+        });
         let degenerate_view_box = view_box_dims.is_some_and(|(_, _, w, h)| w == 0.0 || h == 0.0);
-        let preserve_aspect_ratio = root
-            .attribute("preserveAspectRatio")
+        let preserve_aspect_ratio = attr("preserveAspectRatio")
             .and_then(|s| s.parse().ok())
             .unwrap_or_default();
 
@@ -64,6 +115,55 @@ impl SvgIntrinsicDimensions {
             degenerate_view_box,
         }
     }
+
+    /// The root `width` attribute in CSS px when it is an absolute length
+    /// (`px`, `in`, `cm`, `mm`, `pt`, `pc` or unitless). Percentages and
+    /// font-relative units are `None`: they are not intrinsic.
+    pub fn absolute_width(&self) -> Option<f32> {
+        self.width.and_then(absolute_length_px)
+    }
+
+    /// The root `height` attribute in CSS px when it is an absolute length.
+    /// See [`Self::absolute_width`].
+    pub fn absolute_height(&self) -> Option<f32> {
+        self.height.and_then(absolute_length_px)
+    }
+
+    /// The intrinsic aspect ratio: the ratio of the absolute `width`/`height`
+    /// when both are declared, otherwise the `viewBox` ratio, otherwise `None`.
+    /// <https://svgwg.org/svg2-draft/coords.html#SizingSVGInCSS>
+    pub fn intrinsic_aspect_ratio(&self) -> Option<f32> {
+        match (self.absolute_width(), self.absolute_height()) {
+            (Some(w), Some(h)) if h > 0.0 => Some(w / h),
+            _ => self.view_box.map(|vb| vb.width / vb.height),
+        }
+    }
+
+    /// The transform from `viewBox` user space onto a viewport of the given
+    /// size, applying `preserveAspectRatio`. Identity without a `viewBox`.
+    pub fn viewport_transform(&self, width: f32, height: f32) -> SvgTransform {
+        match self.view_box {
+            Some(view_box) => {
+                view_box_transform(view_box, self.preserve_aspect_ratio, width, height)
+            }
+            None => SvgTransform::IDENTITY,
+        }
+    }
+}
+
+/// Convert an absolute SVG length to CSS px (`None` for relative units).
+fn absolute_length_px(len: svgtypes::Length) -> Option<f32> {
+    use svgtypes::LengthUnit;
+    let n = len.number as f32;
+    Some(match len.unit {
+        LengthUnit::None | LengthUnit::Px => n,
+        LengthUnit::In => n * 96.0,
+        LengthUnit::Cm => n * 96.0 / 2.54,
+        LengthUnit::Mm => n * 96.0 / 25.4,
+        LengthUnit::Pt => n * 96.0 / 72.0,
+        LengthUnit::Pc => n * 16.0,
+        LengthUnit::Em | LengthUnit::Ex | LengthUnit::Percent => return None,
+    })
 }
 
 /// A parsed SVG image.
@@ -74,6 +174,7 @@ impl SvgIntrinsicDimensions {
 /// intrinsic width/height (only an intrinsic aspect ratio). The accessors on
 /// this type resolve the CSS intrinsic dimensions from the declared root
 /// attributes, which are captured at parse time.
+#[cfg(feature = "svg-usvg")]
 #[derive(Debug, Clone)]
 pub struct SvgImageData {
     /// The parsed SVG tree.
@@ -82,6 +183,7 @@ pub struct SvgImageData {
     pub intrinsic_dimensions: SvgIntrinsicDimensions,
 }
 
+#[cfg(feature = "svg-usvg")]
 impl SvgImageData {
     /// Parse an SVG image from raw data, capturing both the rendered
     /// [`usvg::Tree`] and the declared root dimensions from a single XML
@@ -139,7 +241,7 @@ impl SvgImageData {
     pub fn viewbox_aspect_ratio(&self) -> Option<f32> {
         self.intrinsic_dimensions
             .view_box
-            .map(|view_box| view_box.width() / view_box.height())
+            .map(|view_box| view_box.width / view_box.height)
     }
 
     /// The transform from the rendered tree (in [`usvg::Tree::size`] units) to a
@@ -153,10 +255,12 @@ impl SvgImageData {
         };
         let aspect = self.intrinsic_dimensions.preserve_aspect_ratio;
         // usvg has already mapped the `viewBox` onto `Tree::size`, so undo that first.
-        let view_box_to_tree = view_box_transform(view_box, aspect, size.width(), size.height());
+        let view_box_to_tree: usvg::Transform =
+            view_box_transform(view_box, aspect, size.width(), size.height()).into();
         match view_box_to_tree.invert() {
             Some(tree_to_view_box) => {
-                view_box_transform(view_box, aspect, width, height).pre_concat(tree_to_view_box)
+                usvg::Transform::from(view_box_transform(view_box, aspect, width, height))
+                    .pre_concat(tree_to_view_box)
             }
             None => stretch,
         }
@@ -232,15 +336,15 @@ impl SvgImageData {
 
 /// Map a `viewBox` onto a viewport of the given size per `preserveAspectRatio`.
 fn view_box_transform(
-    view_box: usvg::NonZeroRect,
+    view_box: SvgViewBox,
     aspect: svgtypes::AspectRatio,
     width: f32,
     height: f32,
-) -> usvg::Transform {
+) -> SvgTransform {
     use svgtypes::Align;
 
-    let sx = width / view_box.width();
-    let sy = height / view_box.height();
+    let sx = width / view_box.width;
+    let sy = height / view_box.height;
     let (sx, sy) = if aspect.align == Align::None {
         (sx, sy)
     } else if aspect.slice {
@@ -259,7 +363,14 @@ fn view_box_transform(
         Align::XMidYMax => (0.5, 1.0),
         Align::XMaxYMax => (1.0, 1.0),
     };
-    let tx = (width - view_box.width() * sx) * align_x - view_box.x() * sx;
-    let ty = (height - view_box.height() * sy) * align_y - view_box.y() * sy;
-    usvg::Transform::from_row(sx, 0.0, 0.0, sy, tx, ty)
+    let tx = (width - view_box.width * sx) * align_x - view_box.x * sx;
+    let ty = (height - view_box.height * sy) * align_y - view_box.y * sy;
+    SvgTransform {
+        sx,
+        ky: 0.0,
+        kx: 0.0,
+        sy,
+        tx,
+        ty,
+    }
 }

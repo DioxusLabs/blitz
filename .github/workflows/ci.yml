@@ -97,6 +97,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo clippy --workspace -- -D warnings
       - run: cargo clippy -p blitz-dom --no-default-features --features svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings
+      # The native SVG backend must build without usvg
+      - run: cargo clippy -p blitz-dom --no-default-features --features svg-native --all-targets -- -D warnings
+      - run: cargo clippy -p blitz-paint --no-default-features --features svg-native --all-targets -- -D warnings
 
   ci-scripts:
     name: "Test CI scripts"

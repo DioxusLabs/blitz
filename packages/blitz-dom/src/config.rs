@@ -61,6 +61,14 @@ pub struct DocumentConfig {
     /// whole tree is reconstructed and laid out from scratch through the same
     /// damage-driven pipeline used by incremental mode.
     pub incremental: Option<bool>,
+    /// Which compiled SVG backend renders inline `<svg>` elements when both
+    /// the `svg-native` and `svg-usvg` cargo features are enabled: `Some(true)`
+    /// keeps the subtree as live, stylo-styled DOM nodes painted from their
+    /// computed styles; `Some(false)` (the default) serializes it and
+    /// re-parses it with usvg on every change. Ignored when only one backend
+    /// is compiled. External SVG resources (`<img src="x.svg">`, CSS
+    /// `background-image`) always go through usvg.
+    pub native_svg: Option<bool>,
     /// If set, every sub-resource `Request` blitz-dom creates for this
     /// document will carry this signal. Aborting it cancels every in-flight
     /// fetch tied to this document.
@@ -87,6 +95,7 @@ impl Default for DocumentConfig {
             media_type: None,
             style_threading: StyleThreading::default(),
             incremental: None,
+            native_svg: None,
             abort_signal: None,
             subdocument_depth: 0,
             #[cfg(feature = "devtools")]

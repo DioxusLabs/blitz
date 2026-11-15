@@ -79,6 +79,8 @@ async fn main() {
                 scale as f32,
                 ColorScheme::Light,
             )),
+            // `BLITZ_NATIVE_SVG=1` renders inline SVG natively instead of via usvg
+            native_svg: Some(std::env::var_os("BLITZ_NATIVE_SVG").is_some_and(|v| v != "0")),
             ..Default::default()
         },
     );
