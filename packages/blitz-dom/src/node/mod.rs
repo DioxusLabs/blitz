@@ -28,4 +28,6 @@ pub use scrollbar::{ScrollbarColor, ScrollbarRef, ScrollbarWidth};
 pub use stylo_data::ComputedStyleRef;
 #[cfg(feature = "svg")]
 pub use svg::{SvgImageData, SvgIntrinsicDimensions};
+#[cfg(feature = "svg")]
+pub(crate) use svg::{external_image_hrefs, parse_svg_xml, svg_text};
 pub use text::{GeneratedTextInputEvent, INLINE_BOX_CHAR, TextBrush, TextInputData, TextLayout};

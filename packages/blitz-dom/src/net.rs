@@ -28,6 +28,9 @@ use url::Url;
 
 use crate::{document::DocumentEvent, util::ImageType};
 
+#[cfg(feature = "svg")]
+mod svg_image;
+
 pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request {
     let mut req = Request::get(url);
     if let Some(sig) = signal {
@@ -593,55 +596,65 @@ impl NetHandler for ResourceHandler<DocumentSrcHandler> {
 
 pub struct ImageHandler {
     kind: ImageType,
+    /// Fetches the external images an SVG image's `<image>` elements reference
+    #[cfg(feature = "svg")]
+    net_provider: Arc<dyn NetProvider>,
+    #[cfg(feature = "svg")]
+    signal: Option<AbortSignal>,
 }
 impl ImageHandler {
-    pub fn new(kind: ImageType) -> Self {
-        Self { kind }
+    pub fn new(
+        kind: ImageType,
+        net_provider: Arc<dyn NetProvider>,
+        signal: Option<AbortSignal>,
+    ) -> Self {
+        #[cfg(not(feature = "svg"))]
+        let _ = (net_provider, signal);
+        Self {
+            kind,
+            #[cfg(feature = "svg")]
+            net_provider,
+            #[cfg(feature = "svg")]
+            signal,
+        }
     }
 }
 
 impl NetHandler for ResourceHandler<ImageHandler> {
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
-        let result = self.data.parse(bytes);
-        self.respond(resolved_url, result)
+        let image_err = match self.data.decode_raster(&bytes) {
+            Ok(resource) => return self.respond(resolved_url, Ok(resource)),
+            Err(e) => e,
+        };
+
+        #[cfg(feature = "svg")]
+        svg_image::load(self, resolved_url, bytes, image_err);
+        #[cfg(not(feature = "svg"))]
+        self.respond(
+            resolved_url,
+            Err(format!(
+                "Could not parse image ({} bytes): image-crate error: {image_err}; svg fallback error: svg feature disabled",
+                bytes.len()
+            )),
+        );
     }
 }
 
 impl ImageHandler {
-    fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
-        let image_err = match image::ImageReader::new(Cursor::new(&bytes))
+    fn decode_raster(&self, bytes: &Bytes) -> Result<Resource, String> {
+        let image = image::ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
-        {
-            Ok(image) => {
-                let width = image.width();
-                let height = image.height();
-                let raw_rgba8_data = image.into_rgba8().into_raw();
-                return Ok(Resource::Image(
-                    self.kind,
-                    width,
-                    height,
-                    Arc::new(raw_rgba8_data),
-                ));
-            }
-            Err(e) => e.to_string(),
-        };
-
-        #[cfg(feature = "svg")]
-        let svg_err = {
-            use crate::util::parse_svg_image;
-            match parse_svg_image(&bytes) {
-                Ok(svg) => return Ok(Resource::Svg(self.kind, svg)),
-                Err(e) => e.to_string(),
-            }
-        };
-        #[cfg(not(feature = "svg"))]
-        let svg_err = "svg feature disabled";
-
-        Err(format!(
-            "Could not parse image ({} bytes): image-crate error: {image_err}; svg fallback error: {svg_err}",
-            bytes.len()
+            .map_err(|e| e.to_string())?;
+        let width = image.width();
+        let height = image.height();
+        let raw_rgba8_data = image.into_rgba8().into_raw();
+        Ok(Resource::Image(
+            self.kind,
+            width,
+            height,
+            Arc::new(raw_rgba8_data),
         ))
     }
 }

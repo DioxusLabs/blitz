@@ -1,5 +1,6 @@
 //! SVG image data and CSS intrinsic sizing for SVG.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use usvg::roxmltree;
@@ -66,6 +67,53 @@ impl SvgIntrinsicDimensions {
     }
 }
 
+/// The text of SVG (or gzip-compressed SVGZ) data.
+pub(crate) fn svg_text(data: &[u8]) -> Result<Cow<'_, str>, usvg::Error> {
+    // Gzip magic bytes, matching the SVGZ detection in `usvg::Tree::from_data`.
+    if data.starts_with(&[0x1f, 0x8b]) {
+        let decompressed = usvg::decompress_svgz(data)?;
+        String::from_utf8(decompressed)
+            .map(Cow::Owned)
+            .map_err(|_| usvg::Error::NotAnUtf8Str)
+    } else {
+        std::str::from_utf8(data)
+            .map(Cow::Borrowed)
+            .map_err(|_| usvg::Error::NotAnUtf8Str)
+    }
+}
+
+/// Parse SVG text into an XML document the way usvg does.
+pub(crate) fn parse_svg_xml(text: &str) -> Result<roxmltree::Document<'_>, usvg::Error> {
+    let xml_options = roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..Default::default()
+    };
+    roxmltree::Document::parse_with_options(text, xml_options).map_err(usvg::Error::ParsingFailed)
+}
+
+/// The `href`s of `<image>` and `<feImage>` elements that point outside the
+/// SVG: neither `data:` URLs nor same-document `#fragment`s. These are the
+/// hrefs usvg asks its [`usvg::ImageHrefResolver::resolve_string`] for.
+pub(crate) fn external_image_hrefs<'a>(
+    doc: &'a roxmltree::Document,
+) -> impl Iterator<Item = &'a str> + 'a {
+    const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
+    doc.descendants()
+        .filter(|node| matches!(node.tag_name().name(), "image" | "feImage"))
+        // SVG 2: an unprefixed `href` takes precedence over `xlink:href`.
+        .filter_map(|node| {
+            node.attribute("href")
+                .or_else(|| node.attribute((XLINK_NS, "href")))
+        })
+        .filter(|href| {
+            let href = href.trim_start();
+            !href.starts_with('#')
+                && !href
+                    .get(..5)
+                    .is_some_and(|scheme| scheme.eq_ignore_ascii_case("data:"))
+        })
+}
+
 /// A parsed SVG image.
 ///
 /// usvg always resolves the root `<svg>` to a concrete [`usvg::Tree::size`],
@@ -90,26 +138,19 @@ impl SvgImageData {
     /// Like [`usvg::Tree::from_data`], gzip-compressed data (SVGZ) is
     /// decompressed first.
     pub fn from_data(data: &[u8], options: &usvg::Options) -> Result<Self, usvg::Error> {
-        // Gzip magic bytes, matching the SVGZ detection in `usvg::Tree::from_data`.
-        let decompressed;
-        let data = if data.starts_with(&[0x1f, 0x8b]) {
-            decompressed = usvg::decompress_svgz(data)?;
-            decompressed.as_slice()
-        } else {
-            data
-        };
+        let text = svg_text(data)?;
+        let doc = parse_svg_xml(&text)?;
+        Self::from_xmltree(&doc, options)
+    }
 
-        let text = std::str::from_utf8(data).map_err(|_| usvg::Error::NotAnUtf8Str)?;
-        let xml_options = roxmltree::ParsingOptions {
-            allow_dtd: true,
-            ..Default::default()
-        };
-        let doc = roxmltree::Document::parse_with_options(text, xml_options)
-            .map_err(usvg::Error::ParsingFailed)?;
-        let tree = usvg::Tree::from_xmltree(&doc, options)?;
+    fn from_xmltree(
+        doc: &roxmltree::Document,
+        options: &usvg::Options,
+    ) -> Result<Self, usvg::Error> {
+        let tree = usvg::Tree::from_xmltree(doc, options)?;
         Ok(Self {
             tree: Arc::new(tree),
-            intrinsic_dimensions: SvgIntrinsicDimensions::from_xmltree(&doc),
+            intrinsic_dimensions: SvgIntrinsicDimensions::from_xmltree(doc),
         })
     }
 
