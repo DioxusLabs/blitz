@@ -214,7 +214,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             property,
             value,
             Origin::Author,
-            &crate::url::DocumentUrl::default().url_extra_data(),
+            &crate::url::DocumentUrl::default_url_extra_data(),
             None,
             ParsingMode::DEFAULT,
             style::context::QuirksMode::NoQuirks,
@@ -293,7 +293,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
 
     #[cfg(feature = "svg")]
     let svg_url_data =
-        (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
+        (elem.name.ns == ns!(svg)).then(crate::url::DocumentUrl::default_url_extra_data);
     // Stack buffer large enough for one declaration (or one expanded
     // shorthand), reused for every presentation attribute on the element.
     #[cfg(feature = "svg")]

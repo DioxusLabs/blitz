@@ -1,5 +1,6 @@
 use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use style::servo_arc::Arc as ServoArc;
 use style::stylesheets::UrlExtraData;
@@ -11,6 +12,12 @@ pub(crate) struct DocumentUrl {
 }
 
 impl DocumentUrl {
+    /// The `UrlExtraData` of the default URL, shared instead of reparsed on every call.
+    pub(crate) fn default_url_extra_data() -> UrlExtraData {
+        static DEFAULT: LazyLock<DocumentUrl> = LazyLock::new(DocumentUrl::default);
+        DEFAULT.url_extra_data()
+    }
+
     /// Create a stylo `UrlExtraData` from the URL
     pub(crate) fn url_extra_data(&self) -> UrlExtraData {
         UrlExtraData(ServoArc::clone(&self.base_url))
