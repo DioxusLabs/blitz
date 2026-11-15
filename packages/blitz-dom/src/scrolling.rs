@@ -776,4 +776,471 @@ impl BaseDocument {
             }
         }
     }
+
+    /// Whether `node_id` generates a rendered CSS box in the document (attached, neither
+    /// `display: none` nor `display: contents`, and with no `display: none` ancestor).
+    fn has_rendered_box(&self, node_id: NodeId) -> bool {
+        let Some(node) = self.nodes.get(node_id) else {
+            return false;
+        };
+        if !node.is_element() || !node.has_boxes() {
+            return false;
+        }
+        let mut parent_id = node.parent;
+        while let Some(ancestor_id) = parent_id {
+            let Some(ancestor) = self.nodes.get(ancestor_id) else {
+                return false;
+            };
+            if ancestor
+                .primary_styles()
+                .is_some_and(|styles| styles.clone_display().is_none())
+            {
+                return false;
+            }
+            parent_id = ancestor.parent;
+        }
+        true
+    }
+
+    /// Clamp viewport, element, and active smooth-scroll offsets to the post-layout
+    /// scrollable ranges without synchronously dispatching `scroll` events.
+    pub(crate) fn clamp_scroll_offsets(&mut self) {
+        let (cur, min, max) = self.scroll_state(ScrollTarget::Viewport, false);
+        let clamped = Point {
+            x: cur.x.clamp(min.x, max.x),
+            y: cur.y.clamp(min.y, max.y),
+        };
+        if clamped != cur {
+            self.set_viewport_scroll(clamped);
+        }
+
+        let root_id = self.try_root_element().map(|el| el.id);
+        let mut clamped_nodes = Vec::new();
+        for (node_id, node) in self.nodes.iter() {
+            if Some(node_id) == root_id || !node.is_element() {
+                continue;
+            }
+            let Some(cur) = node.try_layout_data().map(|layout| layout.scroll_offset) else {
+                continue;
+            };
+            if cur == Point::ZERO {
+                continue;
+            }
+            let clamped = if !self.has_rendered_box(node_id) {
+                Point::ZERO
+            } else {
+                let (_cur, min, max) = self.scroll_state(ScrollTarget::Node(node_id), true);
+                Point {
+                    x: cur.x.clamp(min.x, max.x),
+                    y: cur.y.clamp(min.y, max.y),
+                }
+            };
+            if clamped != cur {
+                clamped_nodes.push((node_id, clamped));
+            }
+        }
+        if !clamped_nodes.is_empty() {
+            for (node_id, clamped) in clamped_nodes {
+                *self.nodes[node_id].scroll_offset_mut() = clamped;
+            }
+            self.nodes.bump_geometry_generation();
+        }
+
+        if let ScrollAnimationState::ScrollTo(ref scroll_to) = self.scroll_animation {
+            let scroll_to = scroll_to.clone();
+            let target = self.canonical_scroll_target(scroll_to.target);
+            if let ScrollTarget::Node(node_id) = target
+                && !self.has_rendered_box(node_id)
+            {
+                self.scroll_animation = ScrollAnimationState::None;
+            } else {
+                let (_cur, min, max) = self.scroll_state(target, true);
+                let clamped_start = Point {
+                    x: scroll_to.start.x.clamp(min.x, max.x),
+                    y: scroll_to.start.y.clamp(min.y, max.y),
+                };
+                let clamped_end = Point {
+                    x: scroll_to.end.x.clamp(min.x, max.x),
+                    y: scroll_to.end.y.clamp(min.y, max.y),
+                };
+                if clamped_start == clamped_end {
+                    self.scroll_animation = ScrollAnimationState::None;
+                } else if let ScrollAnimationState::ScrollTo(ref mut state) = self.scroll_animation
+                {
+                    state.start = clamped_start;
+                    state.end = clamped_end;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Attribute, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    fn style_attr(value: &str) -> Attribute {
+        Attribute {
+            name: qual_name!("style"),
+            value: value.to_string(),
+        }
+    }
+
+    fn set_style(doc: &mut BaseDocument, node_id: NodeId, value: &str) {
+        let mut mutator = doc.mutate();
+        mutator.set_attribute(node_id, qual_name!("style"), value);
+    }
+
+    #[test]
+    fn viewport_scroll_clamps_when_root_content_shrinks() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let doc_root = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![style_attr("margin:0")]);
+        let body = mutator.create_element(qual_name!("body", html), vec![style_attr("margin:0")]);
+        let content =
+            mutator.create_element(qual_name!("div", html), vec![style_attr("height:1000px")]);
+        mutator.append_children(body, &[content]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(doc_root, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        doc.scroll_to(html, 0.0, 650.0, ScrollBehavior::Instant);
+        assert_eq!(doc.viewport_scroll(), Point { x: 0.0, y: 650.0 });
+
+        // Partial shrink: max.y drops from 700.0 to 200.0 (500 - 300).
+        set_style(&mut doc, content, "height:500px");
+        doc.resolve(0.0);
+        assert_eq!(doc.viewport_scroll(), Point { x: 0.0, y: 200.0 });
+
+        // Shrink to <= window_height: max.y drops to 0.0 (200 <= 300).
+        set_style(&mut doc, content, "height:200px");
+        doc.resolve(0.0);
+        assert_eq!(doc.viewport_scroll(), Point::ZERO);
+    }
+
+    #[test]
+    fn viewport_scroll_clamps_against_new_layout_on_viewport_resize() {
+        // Two 300x400 flex items wrap vertically (total height 800px) in a 400x300
+        // viewport (max.y = 500), then unwrap side-by-side (total height 400px) when
+        // the viewport widens to 700x350 (new max.y = 50). Clamping must use the new
+        // post-layout dimensions (50) rather than stale pre-layout dimensions (450).
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let doc_root = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![style_attr("margin:0")]);
+        let body = mutator.create_element(qual_name!("body", html), vec![style_attr("margin:0")]);
+        let flex = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("display:flex; flex-wrap:wrap")],
+        );
+        let item_a = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("width:300px; height:400px")],
+        );
+        let item_b = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("width:300px; height:400px")],
+        );
+        mutator.append_children(flex, &[item_a, item_b]);
+        mutator.append_children(body, &[flex]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(doc_root, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        doc.scroll_to(html, 0.0, 500.0, ScrollBehavior::Instant);
+        assert_eq!(doc.viewport_scroll(), Point { x: 0.0, y: 500.0 });
+
+        doc.set_viewport(Viewport::new(700, 350, 1.0, ColorScheme::Light));
+        doc.resolve(0.0);
+        assert_eq!(doc.viewport_scroll(), Point { x: 0.0, y: 50.0 });
+
+        doc.set_viewport(Viewport::new(700, 500, 1.0, ColorScheme::Light));
+        doc.resolve(0.0);
+        assert_eq!(doc.viewport_scroll(), Point::ZERO);
+    }
+
+    #[test]
+    fn element_auto_scroll_offset_clamps_on_child_shrink_or_removal() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let doc_root = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![style_attr("margin:0")]);
+        let body = mutator.create_element(qual_name!("body", html), vec![style_attr("margin:0")]);
+        let scroller = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("width:200px; height:100px; overflow:auto")],
+        );
+        let child_a =
+            mutator.create_element(qual_name!("div", html), vec![style_attr("height:250px")]);
+        let child_b =
+            mutator.create_element(qual_name!("div", html), vec![style_attr("height:250px")]);
+        mutator.append_children(scroller, &[child_a, child_b]);
+        mutator.append_children(body, &[scroller]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(doc_root, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        doc.scroll_to(scroller, 0.0, 350.0, ScrollBehavior::Instant);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 0.0, y: 350.0 }
+        );
+
+        // Shrink second child so total content is 300px (max.y = 200.0).
+        set_style(&mut doc, child_b, "height:50px");
+        doc.resolve(0.0);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 0.0, y: 200.0 }
+        );
+
+        // Remove first child so remaining content is 50px <= 100px (max.y = 0.0).
+        doc.mutate().remove_and_drop_node(child_a);
+        doc.resolve(0.0);
+        assert_eq!(*doc.nodes[scroller].scroll_offset(), Point::ZERO);
+    }
+
+    #[test]
+    fn element_scroll_offset_resets_on_non_scrolling_overflow_or_display_none() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let doc_root = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![style_attr("margin:0")]);
+        let body = mutator.create_element(qual_name!("body", html), vec![style_attr("margin:0")]);
+        let wrapper =
+            mutator.create_element(qual_name!("div", html), vec![style_attr("display:block")]);
+        let scroller = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("width:200px; height:100px; overflow:auto")],
+        );
+        let child = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("width:400px; height:400px")],
+        );
+        mutator.append_children(scroller, &[child]);
+        mutator.append_children(wrapper, &[scroller]);
+        mutator.append_children(body, &[wrapper]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(doc_root, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+
+        // 1. overflow: auto -> overflow: visible
+        doc.scroll_to(scroller, 50.0, 120.0, ScrollBehavior::Instant);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 50.0, y: 120.0 }
+        );
+        set_style(
+            &mut doc,
+            scroller,
+            "width:200px; height:100px; overflow:visible",
+        );
+        doc.resolve(0.0);
+        assert_eq!(*doc.nodes[scroller].scroll_offset(), Point::ZERO);
+
+        // 2. overflow: auto -> overflow: clip
+        set_style(
+            &mut doc,
+            scroller,
+            "width:200px; height:100px; overflow:auto",
+        );
+        doc.resolve(0.0);
+        doc.scroll_to(scroller, 50.0, 120.0, ScrollBehavior::Instant);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 50.0, y: 120.0 }
+        );
+        set_style(
+            &mut doc,
+            scroller,
+            "width:200px; height:100px; overflow:clip",
+        );
+        doc.resolve(0.0);
+        assert_eq!(*doc.nodes[scroller].scroll_offset(), Point::ZERO);
+
+        // 3. display: none on scroller itself
+        set_style(
+            &mut doc,
+            scroller,
+            "width:200px; height:100px; overflow:auto",
+        );
+        doc.resolve(0.0);
+        doc.scroll_to(scroller, 50.0, 120.0, ScrollBehavior::Instant);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 50.0, y: 120.0 }
+        );
+        set_style(
+            &mut doc,
+            scroller,
+            "width:200px; height:100px; overflow:auto; display:none",
+        );
+        doc.resolve(0.0);
+        assert_eq!(*doc.nodes[scroller].scroll_offset(), Point::ZERO);
+
+        // 4. display: none on ancestor wrapper
+        set_style(
+            &mut doc,
+            scroller,
+            "width:200px; height:100px; overflow:auto",
+        );
+        doc.resolve(0.0);
+        doc.scroll_to(scroller, 50.0, 120.0, ScrollBehavior::Instant);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 50.0, y: 120.0 }
+        );
+        set_style(&mut doc, wrapper, "display:none");
+        doc.resolve(0.0);
+        assert_eq!(*doc.nodes[scroller].scroll_offset(), Point::ZERO);
+    }
+
+    #[test]
+    fn element_hidden_overflow_preserves_valid_programmatic_scroll_and_clamps_on_shrink() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let doc_root = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![style_attr("margin:0")]);
+        let body = mutator.create_element(qual_name!("body", html), vec![style_attr("margin:0")]);
+        let scroller = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("width:200px; height:100px; overflow:hidden")],
+        );
+        let child = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("width:400px; height:400px")],
+        );
+        mutator.append_children(scroller, &[child]);
+        mutator.append_children(body, &[scroller]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(doc_root, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+        doc.scroll_to(scroller, 120.0, 180.0, ScrollBehavior::Instant);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 120.0, y: 180.0 }
+        );
+
+        // In-range programmatic scroll on overflow:hidden survives resolve().
+        doc.resolve(0.0);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 120.0, y: 180.0 }
+        );
+
+        // Shrinking child clamps offset to updated max (250 - 200 = 50, 220 - 100 = 120).
+        set_style(&mut doc, child, "width:250px; height:220px");
+        doc.resolve(0.0);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 50.0, y: 120.0 }
+        );
+
+        // Shrinking child within container bounds clamps offset to zero.
+        set_style(&mut doc, child, "width:100px; height:80px");
+        doc.resolve(0.0);
+        assert_eq!(*doc.nodes[scroller].scroll_offset(), Point::ZERO);
+    }
+
+    #[test]
+    fn smooth_scroll_animation_clamps_or_terminates_when_overflow_shrinks() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let doc_root = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![style_attr("margin:0")]);
+        let body = mutator.create_element(qual_name!("body", html), vec![style_attr("margin:0")]);
+        let scroller = mutator.create_element(
+            qual_name!("div", html),
+            vec![style_attr("width:200px; height:100px; overflow:auto")],
+        );
+        let child =
+            mutator.create_element(qual_name!("div", html), vec![style_attr("height:600px")]);
+        mutator.append_children(scroller, &[child]);
+        mutator.append_children(body, &[scroller]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(doc_root, &[html]);
+        drop(mutator);
+
+        doc.resolve(0.0);
+
+        // 1. Partial shrink mid-animation clamps `end` so subsequent ticks never overshoot.
+        doc.scroll_to(scroller, 0.0, 450.0, ScrollBehavior::Smooth);
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64 as f64;
+        if let ScrollAnimationState::ScrollTo(ref mut state) = doc.scroll_animation {
+            state.duration = 60_000.0;
+            state.start_time = now_ms - 30_000.0;
+        } else {
+            panic!("expected ScrollTo animation state");
+        }
+
+        // Shrink child to 250px (new max.y = 150.0) while animation is 50% complete (~225.0).
+        set_style(&mut doc, child, "height:250px");
+        doc.resolve(0.0);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 0.0, y: 150.0 }
+        );
+        match doc.scroll_animation {
+            ScrollAnimationState::ScrollTo(ref state) => {
+                assert_eq!(state.end, Point { x: 0.0, y: 150.0 });
+            }
+            ref other => panic!("expected clamped ScrollTo state, got {other:?}"),
+        }
+
+        // Advance animation past completion; offset must land at 150.0 and never overshoot.
+        if let ScrollAnimationState::ScrollTo(ref mut state) = doc.scroll_animation {
+            state.start_time = now_ms - 70_000.0;
+        }
+        doc.resolve(0.0);
+        assert_eq!(
+            *doc.nodes[scroller].scroll_offset(),
+            Point { x: 0.0, y: 150.0 }
+        );
+        assert_eq!(doc.scroll_animation, ScrollAnimationState::None);
+
+        // 2. Collapse to non-scrollable range terminates smooth animation immediately.
+        set_style(&mut doc, child, "height:600px");
+        doc.resolve(0.0);
+        doc.scroll_to(scroller, 0.0, 0.0, ScrollBehavior::Instant);
+        doc.scroll_to(scroller, 0.0, 400.0, ScrollBehavior::Smooth);
+        if let ScrollAnimationState::ScrollTo(ref mut state) = doc.scroll_animation {
+            state.duration = 60_000.0;
+            state.start_time = now_ms - 10_000.0;
+        }
+        set_style(&mut doc, child, "height:80px");
+        doc.resolve(0.0);
+        assert_eq!(*doc.nodes[scroller].scroll_offset(), Point::ZERO);
+        assert_eq!(doc.scroll_animation, ScrollAnimationState::None);
+    }
 }

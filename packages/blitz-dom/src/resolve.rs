@@ -115,6 +115,8 @@ impl BaseDocument {
         self.resolve_transforms(root_node_id, resolve_all);
         timer.record_time("transform");
 
+        self.clamp_scroll_offsets();
+
         // Build paint children / stacking contexts for damaged subtrees. Runs
         // after layout and transforms so that stacking-context roots created by
         // this frame's transforms are picked up, and before damage is cleared.

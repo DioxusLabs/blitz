@@ -2209,7 +2209,6 @@ impl BaseDocument {
         let viewport_units_changed =
             old_viewport_size != device.au_viewport_size() && device.used_viewport_size();
         self.restyle_for_device_change(viewport_units_changed);
-        self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
         // Text is shaped at a specific scale factor, so cached inline layouts
         // must be invalidated when the scale changes, as must every node's
