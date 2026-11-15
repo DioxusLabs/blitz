@@ -7,6 +7,7 @@ use blitz_traits::node_id::NodeId;
 use slotmap::{Key as _, KeyData, SlotMap};
 
 use crate::Node;
+use crate::url::DocumentUrl;
 
 slotmap::new_key_type! {
     /// The internal [`slotmap`] key for node storage. Only used at the
@@ -41,11 +42,14 @@ pub struct NodeTree {
     /// Scroll offset of the viewport (the root element scrolls the viewport,
     /// so its offset lives here rather than on the node).
     viewport_scroll: crate::Point<f64>,
+    /// The document's base URL, which presentational hints resolve `url()`s against.
+    pub(crate) url: DocumentUrl,
 }
 
 impl NodeTree {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(url: DocumentUrl) -> Self {
         Self {
+            url,
             map: SlotMap::with_key(),
             geometry_generation: AtomicU64::new(1),
             viewport_scroll: crate::Point::ZERO,

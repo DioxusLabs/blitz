@@ -430,7 +430,6 @@ impl BaseDocument {
         let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
-        let nodes = Box::new(NodeTree::new());
         let guard = SharedRwLock::new();
         let nodes_to_id = HashMap::new();
 
@@ -438,6 +437,7 @@ impl BaseDocument {
             .base_url
             .and_then(|url| DocumentUrl::from_str(&url).ok())
             .unwrap_or_default();
+        let nodes = Box::new(NodeTree::new(base_url.clone()));
 
         let net_provider = config
             .net_provider
@@ -599,6 +599,7 @@ impl BaseDocument {
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub fn set_base_url(&mut self, url: &str) {
         self.url = DocumentUrl::from(Url::parse(url).unwrap());
+        self.nodes.url = self.url.clone();
     }
 
     /// The base url used for resolving linked resources (stylesheets, images, fonts, etc)

@@ -83,6 +83,7 @@ fn table_of_cell(cell: &Node) -> Option<&Node> {
 
 fn compute_presentational_hints(node: &Node, elem: &ElementData) -> PresentationalHints {
     let tag = &elem.name.local;
+    let url_data = node.tree().url.url_extra_data();
 
     let mut declarations = PropertyDeclarationBlock::new();
     let mut push_style = |decl: PropertyDeclaration| {
@@ -200,7 +201,11 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     }
 
     /// `value` parsed as a declaration of `property`, as an author style would be.
-    fn parse_declaration(property: &str, value: &str) -> Option<PropertyDeclaration> {
+    fn parse_declaration(
+        property: &str,
+        value: &str,
+        url_data: &style::stylesheets::UrlExtraData,
+    ) -> Option<PropertyDeclaration> {
         use style::properties::{
             PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
         };
@@ -214,7 +219,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             property,
             value,
             Origin::Author,
-            &crate::url::DocumentUrl::default_url_extra_data(),
+            url_data,
             None,
             ParsingMode::DEFAULT,
             style::context::QuirksMode::NoQuirks,
@@ -226,8 +231,11 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
 
     /// The `face` attribute's value parsed as a `font-family` list, as Gecko and
     /// Blink parse it: CSS-wide keywords and `var()` are not family lists.
-    fn parse_font_face_attr(value: &str) -> Option<PropertyDeclaration> {
-        parse_declaration("font-family", value)
+    fn parse_font_face_attr(
+        value: &str,
+        url_data: &style::stylesheets::UrlExtraData,
+    ) -> Option<PropertyDeclaration> {
+        parse_declaration("font-family", value, url_data)
             .filter(|declaration| matches!(declaration, PropertyDeclaration::FontFamily(_)))
     }
 
@@ -235,7 +243,10 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     /// `translate(20, 30)`) as a CSS `transform` declaration. Translations are
     /// written as `px` lengths so that `zoom` scales them as it would CSS ones.
     #[cfg(feature = "svg")]
-    fn parse_svg_transform_attr(value: &str) -> Option<PropertyDeclaration> {
+    fn parse_svg_transform_attr(
+        value: &str,
+        url_data: &style::stylesheets::UrlExtraData,
+    ) -> Option<PropertyDeclaration> {
         use std::fmt::Write;
         use svgtypes::{TransformListParser, TransformListToken as Token};
 
@@ -259,7 +270,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         if css.is_empty() {
             return None;
         }
-        parse_declaration("transform", &css)
+        parse_declaration("transform", &css, url_data)
     }
 
     // The outermost `<svg>` is a CSS box, so its `transform` attribute transforms
@@ -292,8 +303,6 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let mut lang = None;
 
     #[cfg(feature = "svg")]
-    let svg_url_data =
-        (elem.name.ns == ns!(svg)).then(crate::url::DocumentUrl::default_url_extra_data);
     // Stack buffer large enough for one declaration (or one expanded
     // shorthand), reused for every presentation attribute on the element.
     #[cfg(feature = "svg")]
@@ -316,7 +325,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // https://html.spec.whatwg.org/multipage/rendering.html#phrasing-content-3
         if *tag == local_name!("font") && elem.name.ns == ns!(html) {
             if *name == local_name!("face")
-                && let Some(family) = parse_font_face_attr(value)
+                && let Some(family) = parse_font_face_attr(value, &url_data)
             {
                 push_style(family);
             } else if *name == local_name!("size")
@@ -532,7 +541,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // CSS box as well would apply them twice. Its `transform` is still
         // mapped below, for the box: the serialized source drops it.
         #[cfg(feature = "svg")]
-        if let Some(url_data) = &svg_url_data
+        if elem.name.ns == ns!(svg)
             && attr.name.ns == ns!()
             && !is_svg_root_size
             && !(is_outermost_svg
@@ -541,7 +550,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
                     "transform" | "opacity" | "filter" | "clip-path" | "mask"
                 ))
         {
-            super::svg_attrs::svg_presentation_hint(tag, name, value, url_data, &mut svg_hint);
+            super::svg_attrs::svg_presentation_hint(tag, name, value, &url_data, &mut svg_hint);
             for decl in svg_hint.drain().declarations {
                 push_style(decl);
             }
@@ -551,7 +560,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         if is_outermost_svg
             && attr.name.ns == ns!()
             && *name == local_name!("transform")
-            && let Some(transform) = parse_svg_transform_attr(value)
+            && let Some(transform) = parse_svg_transform_attr(value, &url_data)
         {
             push_style(transform);
         }
