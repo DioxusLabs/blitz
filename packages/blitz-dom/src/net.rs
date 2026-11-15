@@ -31,7 +31,7 @@ use crate::{document::DocumentEvent, util::ImageType};
 #[cfg(feature = "svg")]
 mod svg_href;
 #[cfg(feature = "svg")]
-pub(crate) use svg_href::{SvgHrefImage, parse_inline_svg};
+pub(crate) use svg_href::parse_inline_svg;
 
 pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request {
     let mut req = Request::get(url);
@@ -69,9 +69,6 @@ pub enum Resource {
     Image(ImageType, u32, u32, Arc<Vec<u8>>),
     #[cfg(feature = "svg")]
     Svg(ImageType, crate::node::SvgImageData),
-    /// An external image of an inline `<svg>`, by the URL it was requested with
-    #[cfg(feature = "svg")]
-    SvgHrefImage(Url, Bytes),
     Css(DocumentStyleSheet),
     /// Stylesheet loaded for an `@import` rule, to be attached to the rule on the document thread
     ImportedCss(ServoArc<Locked<ImportRule>>, ServoArc<Stylesheet>),

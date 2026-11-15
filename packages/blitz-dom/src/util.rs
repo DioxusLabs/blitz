@@ -67,11 +67,14 @@ impl ImageLayerKind {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ImageType {
     Image,
     Background(usize),
     Mask(usize),
+    /// An `<image>` or `<feImage>` href of the inline `<svg>` node
+    #[cfg(feature = "svg")]
+    SvgHref,
 }
 
 /// A point

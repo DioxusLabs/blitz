@@ -9,7 +9,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut, Range};
 
 use crate::layout::damage::ALL_DAMAGE;
-use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
+use crate::net::{ResourceHandler, StylesheetHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::stylo::DeviceChanges;
 use crate::util::ImageType;
@@ -1445,32 +1445,7 @@ impl<'doc> DocumentMutator<'doc> {
                     return;
                 }
 
-                // Check if there's already a pending request for this URL
-                if let Some(waiting_list) = self.doc.pending_images.get_mut(src_string) {
-                    #[cfg(feature = "tracing")]
-                    tracing::info!("Image {src_string} already pending, queueing node {target_id}");
-                    waiting_list.push((target_id, ImageType::Image));
-                    return;
-                }
-
-                // Start fetch and track as pending
-                #[cfg(feature = "tracing")]
-                tracing::info!("Fetching image {src_string}");
-                self.doc
-                    .pending_images
-                    .insert(src_string.to_string(), vec![(target_id, ImageType::Image)]);
-
-                self.doc.net_provider.fetch(
-                    self.doc.id(),
-                    self.doc.build_request(src),
-                    ResourceHandler::boxed(
-                        self.doc.tx.clone(),
-                        self.doc.id(),
-                        None, // Don't pass node_id, we'll handle it via pending_images
-                        self.doc.shell_provider.clone(),
-                        ImageHandler::new(ImageType::Image),
-                    ),
-                );
+                self.doc.fetch_image(src, target_id, ImageType::Image);
             }
         }
     }

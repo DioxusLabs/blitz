@@ -4,7 +4,8 @@ use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
 use crate::net::{
-    Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
+    ImageHandler, Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler,
+    StylesheetLoader,
 };
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::scrolling::ScrollAnimationState;
@@ -333,9 +334,6 @@ pub struct BaseDocument {
     /// requests for the same URL are queued here instead of starting new fetches.
     /// Value is a list of (node_id, image_type) pairs waiting for the image.
     pub(crate) pending_images: HashMap<String, Vec<(NodeId, ImageType)>>,
-    /// The external images inline `<svg>` elements reference, by URL
-    #[cfg(feature = "svg")]
-    pub(crate) svg_href_images: HashMap<url::Url, crate::net::SvgHrefImage>,
 
     /// Nodes whose `background-image`/`mask-image` layers need flushing to
     /// dedicated storage on the node because their style changed (populated by
@@ -507,8 +505,6 @@ impl BaseDocument {
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
-            #[cfg(feature = "svg")]
-            svg_href_images: HashMap::new(),
             pending_style_image_nodes: Vec::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
@@ -627,6 +623,36 @@ impl BaseDocument {
     /// when `&self` would conflict with a held `&mut` borrow on a field.
     pub(crate) fn build_request(&self, url: url::Url) -> Request {
         crate::net::stamped_request(url, self.abort_signal.as_ref())
+    }
+
+    /// Fetch the image at `url` for `node_id`, unless it is already being fetched,
+    /// in which case `node_id` is queued for it. Callers check `image_cache` first.
+    pub(crate) fn fetch_image(&mut self, url: url::Url, node_id: NodeId, image_type: ImageType) {
+        let waiting = (node_id, image_type);
+        if let Some(waiting_list) = self.pending_images.get_mut(url.as_str()) {
+            #[cfg(feature = "tracing")]
+            tracing::info!("Image {url} already pending, queueing node {node_id}");
+            if !waiting_list.contains(&waiting) {
+                waiting_list.push(waiting);
+            }
+            return;
+        }
+
+        #[cfg(feature = "tracing")]
+        tracing::info!("Fetching image {url}");
+        self.pending_images
+            .insert(url.as_str().to_string(), vec![waiting]);
+        self.net_provider.fetch(
+            self.id(),
+            self.build_request(url),
+            ResourceHandler::boxed(
+                self.tx.clone(),
+                self.id(),
+                None, // Don't pass node_id, we'll handle it via pending_images
+                self.shell_provider.clone(),
+                ImageHandler::new(image_type),
+            ),
+        );
     }
 
     pub fn favicon_url(&self) -> Option<String> {
@@ -1422,23 +1448,6 @@ impl BaseDocument {
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
             }
-            #[cfg(feature = "svg")]
-            Resource::SvgHrefImage(url, bytes) => {
-                use crate::net::SvgHrefImage;
-                let previous = self
-                    .svg_href_images
-                    .insert(url, SvgHrefImage::Loaded(bytes));
-                let Some(SvgHrefImage::Pending(svg_nodes)) = previous else {
-                    return;
-                };
-                for node_id in svg_nodes {
-                    if let Some(node) = self.get_node_mut(node_id) {
-                        node.clear_layout_cache();
-                        node.insert_damage(ALL_DAMAGE);
-                        node.mark_ancestors_dirty();
-                    }
-                }
-            }
             Resource::None => {
                 // Do nothing
             }
@@ -1484,7 +1493,7 @@ impl BaseDocument {
                         let images = match image_type {
                             ImageType::Background(_) => &mut el.background_images,
                             ImageType::Mask(_) => &mut el.mask_images,
-                            ImageType::Image => unreachable!(),
+                            _ => unreachable!(),
                         };
                         images.get_mut(idx)
                     });
@@ -1492,6 +1501,13 @@ impl BaseDocument {
                         layer_image.status = Status::Ok;
                         layer_image.image = image.clone();
                     }
+                }
+                #[cfg(feature = "svg")]
+                ImageType::SvgHref => {
+                    // Reconstruct the `<svg>`, which now finds the image in the cache
+                    node.clear_layout_cache();
+                    node.insert_damage(ALL_DAMAGE);
+                    node.mark_ancestors_dirty();
                 }
             }
         }
