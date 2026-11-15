@@ -4,6 +4,7 @@
 //! [`resolve`](crate::BaseDocument::resolve), no matter how many changes
 //! occurred since the last resolve.
 
+use std::hash::{BuildHasher, RandomState};
 use std::sync::{Arc, Mutex};
 
 use bitflags::bitflags;
@@ -70,8 +71,16 @@ pub(crate) fn make_device(
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
         Box::new(BlitzFontMetricsProvider { font_ctx }),
         "Submit Query".into(),
+        random_hasher_key(),
         make_media_data(viewport, media_type),
     )
+}
+
+/// A per-document key for Stylo's hashing of CSS `random()` inputs, so `random()` values
+/// differ between documents.
+fn random_hasher_key() -> (u64, u64) {
+    let state = RandomState::new();
+    (state.hash_one(0u8), state.hash_one(1u8))
 }
 
 /// The [`MediaData`] (the media-query-visible state of the [`Device`]) for the given viewport
