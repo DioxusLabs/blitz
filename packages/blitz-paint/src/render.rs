@@ -715,6 +715,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             &overflow_clip_shape(&cx.frame, clipped_axes)
                         };
 
+                        #[cfg(feature = "svg-native")]
+                        let should_clip = should_clip && !cx.native_svg_within(cx.transform, clip);
+
                         // Clip layer if box requires clipping. Opacity set to 1.0
                         self.layer_manager.maybe_with_layer(
                             scene,
