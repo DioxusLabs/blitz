@@ -322,12 +322,13 @@ impl CssBox {
     /// Whether every corner has an equal x and y radius, i.e. each corner is a
     /// circular (not elliptical) arc. Corners may still differ from one another, so
     /// this also covers plain rectangles (radius 0) and ordinary rounded rectangles,
-    /// not just circles. Such a border can be drawn as a single stroked
-    /// `kurbo::RoundedRect` rather than the filled per-edge annulus in
+    /// not just circles. Such a border can be drawn as a single stroke along its
+    /// center line rather than the filled per-edge annulus in
     /// `draw_border` — simpler and faster, since it avoids building and filling a
     /// separate path per edge. (`draw_border` additionally requires uniform border
     /// width/color and each radius to be 0 or ≥ the border width for the stroke to
-    /// reproduce the CSS shape exactly.)
+    /// reproduce the CSS shape exactly, and center-line corners that do not overlap
+    /// along any side.)
     pub fn is_uniform_corner_border(&self) -> bool {
         let is_circular = |c: Vec2| (c.x - c.y).abs() < 0.01;
         let radii = &self.border_radii;
