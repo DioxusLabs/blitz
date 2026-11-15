@@ -3,7 +3,8 @@
 use blitz_dom::CopyStyleGetters;
 use std::cell::Cell;
 
-use blitz_dom::{BaseDocument, Node, NodeId, node::NodeData};
+use blitz_dom::node::{INLINE_BOX_CHAR, NodeData, TextLayout};
+use blitz_dom::{BaseDocument, Node, NodeId};
 use boa_engine::{
     Context, Finalize, JsData, JsNativeError, JsResult, JsValue, Trace, object::JsObject,
 };
@@ -197,6 +198,7 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
         let mut mapper = OffsetMapper {
             doc,
             root,
+            layout,
             text: &layout.text,
             cursor: 0,
             collapsed_space: false,
@@ -260,6 +262,7 @@ fn subtree_point(doc: &BaseDocument, id: NodeId, end: bool) -> Option<Point> {
 struct OffsetMapper<'a> {
     doc: &'a BaseDocument,
     root: NodeId,
+    layout: &'a TextLayout,
     text: &'a str,
     cursor: usize,
     collapsed_space: bool,
@@ -276,6 +279,17 @@ impl OffsetMapper<'_> {
             .primary_styles()
             .is_some_and(|style| style.clone_display() == style::values::computed::Display::None)
         {
+            return;
+        }
+        if id != self.root
+            && let Some(index) = self.layout.inline_box_char_index(id)
+        {
+            let after = index + INLINE_BOX_CHAR.len_utf8();
+            if id == self.point.0 {
+                self.result = Some(if self.point.1 == 0 { index } else { after });
+            }
+            self.cursor = self.cursor.max(after);
+            self.collapsed_space = false;
             return;
         }
         if id != self.root

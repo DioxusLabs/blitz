@@ -111,8 +111,8 @@ pub(crate) fn build_layout(
     }
 
     let mut layout = builder.build(&display);
+    layout.set_alignment(Alignment::Start, AlignmentOptions::default());
     layout.break_all_lines(*wrap_width);
-    layout.align(Alignment::Start, AlignmentOptions::default());
     layout
 }
 

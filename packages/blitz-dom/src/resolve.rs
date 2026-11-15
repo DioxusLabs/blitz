@@ -6,8 +6,6 @@ use std::cell::RefCell;
 use debug_timer::debug_timer;
 use kurbo::{Affine, Rect};
 use parley::LayoutContext;
-use selectors::Element as _;
-use style::dom::TDocument;
 
 #[cfg(feature = "parallel-construct")]
 use rayon::prelude::*;
@@ -38,10 +36,7 @@ use crate::{
 impl BaseDocument {
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self, current_time_for_animations: f64) {
-        if TDocument::as_node(&self.root_node())
-            .first_element_child()
-            .is_none()
-        {
+        if self.root_node().first_element_child().is_none() {
             #[cfg(feature = "tracing")]
             tracing::warn!("No DOM - not resolving");
             return;
@@ -178,7 +173,11 @@ impl BaseDocument {
 
         let scale = self.viewport.scale_f64();
 
+        // Anonymous boxes are never skipped: damage marking walks the DOM
+        // parent chain, which bypasses them, so a damaged descendant may be
+        // reachable only through an undamaged anonymous box.
         if !resolve_all
+            && !self.nodes[node_id].is_anonymous()
             && !self.nodes[node_id]
                 .damage()
                 .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))

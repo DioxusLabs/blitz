@@ -71,7 +71,7 @@ These pieces can be combined together to make a cohesive web engine.
 Both wrappers can optionally use <b>`blitz-net`</b> to fetch sub-resources.
 
 
-### Using the git verison of Dioxus Native
+### Using the git version of Dioxus Native
 
 The latest development version of the Dioxus Native lives in this repository. As Dioxus Native is under rapid development it can be useful to use this version to get access to the latest features and bug fixes sooner than they are available in an official release.
 
@@ -81,7 +81,7 @@ To use the git version of `dioxus-native`:
 - Add `dioxus-native = { git = "https://github.com/DioxusLabs/blitz", rev = "e64a3d8", features = ["prelude"] }`
 - (replace `e64a3d8` with the git commit id of the version you want to use)
 - In your rust code change all instances of `use dioxus::prelude::*` to `use dioxus_native::prelude::*`.
-- If you need to access additonal functionality from the `dioxus` crate that is not exported from the Dioxus Native prelude then you can import it from the individual sub-crates (`dioxus-html`, `dioxus-signals`, `dioxus-router`, etc) instead.
+- If you need to access additional functionality from the `dioxus` crate that is not exported from the Dioxus Native prelude then you can import it from the individual sub-crates (`dioxus-html`, `dioxus-signals`, `dioxus-router`, etc) instead.
 
 The git versions of Dioxus Native currently depend on Dioxus `0.8.0-alpha.3` from crates.io (commits before `286874c` use the stable v0.7.x version), so any additional libraries that you are using (`dioxus-sdk`, `dioxus-components`, `dioxus-free-icons`, etc) need to be versions that work with Dioxus `0.8.0-alpha.3`.
 

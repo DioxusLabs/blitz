@@ -1,8 +1,6 @@
 use blitz_traits::node_id::NodeId;
 use std::cmp::Ordering;
 
-use style::dom::TNode as _;
-
 use crate::{BaseDocument, Node};
 
 macro_rules! iter_children {
