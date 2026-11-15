@@ -18,9 +18,9 @@ struct SerializeOpts {
     style: OutputStyle,
     /// Replace `currentColor` in attribute values with the element's computed `color`
     resolve_current_color: bool,
-    /// Write namespace declarations so that the output is namespace-well-formed XML
-    /// whose element and attribute namespaces match the DOM
-    write_namespaces: bool,
+    /// Write the `xmlns` declarations that XML needs and HTML serialization leaves out, so that
+    /// the element and attribute namespaces in the output match the DOM
+    xml_namespaces: bool,
     /// Leave out the root element's `transform` attribute, which is applied as a CSS transform
     skip_root_transform: bool,
 }
@@ -30,7 +30,7 @@ impl SerializeOpts {
         Self {
             style,
             resolve_current_color: false,
-            write_namespaces: false,
+            xml_namespaces: false,
             skip_root_transform: false,
         }
     }
@@ -157,7 +157,7 @@ impl Node {
         let opts = SerializeOpts {
             style: OutputStyle::Normal,
             resolve_current_color: true,
-            write_namespaces: true,
+            xml_namespaces: true,
             skip_root_transform: true,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
@@ -221,7 +221,7 @@ impl Node {
                 writer.push('<');
                 writer.push_str(&data.name.local);
 
-                if opts.write_namespaces {
+                if opts.xml_namespaces {
                     let parent_ns = (nesting > 0)
                         .then(|| self.parent.and_then(|id| self.tree()[id].element_data()))
                         .flatten()
@@ -248,7 +248,7 @@ impl Node {
                         continue;
                     }
                     writer.push(' ');
-                    if opts.write_namespaces {
+                    if opts.xml_namespaces {
                         if !write_xml_attr_name(&attr.name, &mut declared_prefixes, writer) {
                             writer.pop();
                             continue;
