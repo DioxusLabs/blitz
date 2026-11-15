@@ -344,6 +344,6 @@ mod tests {
                 "</svg>",
             )
         );
-        assert!(crate::util::parse_svg_image(source.as_bytes()).is_ok());
+        assert!(crate::util::parse_svg(source.as_bytes(), None).is_ok());
     }
 }
