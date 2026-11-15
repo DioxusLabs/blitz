@@ -1,7 +1,7 @@
 use crate::Document;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, Point, PointerCoords,
-    UiEvent,
+    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, HitResult, Point,
+    PointerCoords, UiEvent,
 };
 use blitz_traits::node_id::NodeId;
 use std::collections::VecDeque;
@@ -298,7 +298,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::AppleStandardKeybinding(data) => {
                 let mut dom_event =
                     DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
-                self.run_default_action(&mut dom_event);
+                self.run_default_action(&mut dom_event, None);
                 self.process_queue();
             }
         };
@@ -331,7 +331,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     ) {
         let mut ptr_event = DomEvent::new(target, make_ptr_data(data.clone()));
         let mut event_state = EventState::default();
-        event_state = self.run_handler_event(&mut ptr_event, event_state);
+        let (state, hit) = self.run_handler_event(&mut ptr_event, event_state);
+        event_state = state;
 
         // Generate the corresponding compatibility event (mouse events for the
         // mouse, touch events for fingers and pen/stylus input) and expose it to
@@ -344,25 +345,25 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             if data.is_mouse() {
                 if let Some(make_mouse_data) = make_mouse_data {
                     let mut mouse_event = DomEvent::new(target, make_mouse_data(data));
-                    event_state = self.run_handler_event(&mut mouse_event, event_state);
+                    event_state = self.run_handler_event(&mut mouse_event, event_state).0;
                 }
             } else if data.is_finger() || data.is_pen() {
                 let mut touch_event = DomEvent::new(target, make_touch_data(data));
-                event_state = self.run_handler_event(&mut touch_event, event_state);
+                event_state = self.run_handler_event(&mut touch_event, event_state).0;
             }
         }
 
         if !event_state.is_cancelled() {
-            self.run_default_action(&mut ptr_event);
+            self.run_default_action(&mut ptr_event, hit);
         }
         self.process_queue();
     }
 
     fn process_queue(&mut self) {
         while let Some(mut event) = self.queue.pop_front() {
-            let event_state = self.run_handler_event(&mut event, EventState::default());
+            let (event_state, hit) = self.run_handler_event(&mut event, EventState::default());
             if !event_state.is_cancelled() {
-                self.run_default_action(&mut event);
+                self.run_default_action(&mut event, hit);
             }
         }
     }
@@ -372,18 +373,28 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         target: NodeId,
         coords: &PointerCoords,
         element: &mut Point<f32>,
-    ) {
-        if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
+    ) -> Option<HitResult> {
+        let doc = self.doc.inner();
+        let hit = doc
+            .hit(coords.page_x, coords.page_y)
+            .filter(|hit| hit.node_id == target);
+        if let Some(hit) = hit {
+            element.x = hit.x;
+            element.y = hit.y;
+            return Some(hit);
+        }
+        if let Some(rect) = doc.get_client_bounding_rect(target) {
             element.x = coords.client_x - rect.x as f32;
             element.y = coords.client_y - rect.y as f32;
         }
+        None
     }
 
     fn run_handler_event(
         &mut self,
         event: &mut DomEvent,
         initial_event_state: EventState,
-    ) -> EventState {
+    ) -> (EventState, Option<HitResult>) {
         let chain = if event.bubbles {
             let doc = self.doc.inner();
             doc.node_chain(event.target)
@@ -391,7 +402,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             vec![event.target]
         };
 
-        match &mut event.data {
+        let hit = match &mut event.data {
             DomEventData::PointerMove(data)
             | DomEventData::PointerDown(data)
             | DomEventData::PointerUp(data)
@@ -419,18 +430,20 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             DomEventData::Wheel(data) => {
                 self.adjust_element_coords(event.target, &data.coords, &mut data.element)
             }
-            _ => {}
-        }
+            _ => None,
+        };
 
         let mut event_state = initial_event_state;
         self.handler
             .handle_event(&chain, event, self.doc, &mut event_state);
 
-        event_state
+        (event_state, hit)
     }
 
-    fn run_default_action(&mut self, event: &mut DomEvent) {
+    fn run_default_action(&mut self, event: &mut DomEvent, hit: Option<HitResult>) {
         let mut doc = self.doc.inner_mut();
-        doc.handle_dom_event(event, |new_evt| self.queue.push_back(new_evt));
+        super::handle_dom_event(&mut doc, event, hit, |new_evt| {
+            self.queue.push_back(new_evt)
+        });
     }
 }

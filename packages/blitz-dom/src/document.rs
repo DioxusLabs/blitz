@@ -694,7 +694,7 @@ impl BaseDocument {
         event: &mut DomEvent,
         dispatch_event: F,
     ) {
-        handle_dom_event(self, event, dispatch_event)
+        handle_dom_event(self, event, None, dispatch_event)
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {

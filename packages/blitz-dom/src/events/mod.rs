@@ -5,7 +5,7 @@ mod keyboard;
 mod pointer;
 
 use crate::util::Point;
-use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
+use blitz_traits::events::{DomEvent, DomEventData, HitResult, PointerCoords, UiEvent};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
@@ -14,29 +14,6 @@ pub(crate) use pointer::DragMode;
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 
 use crate::{BaseDocument, events::pointer::handle_wheel};
-
-#[cfg(feature = "custom-widget")]
-fn widget_event_transform(node: &crate::Node, scale: f64) -> kurbo::Affine {
-    let layout = node.final_layout();
-    let mut transform =
-        kurbo::Affine::translate((layout.content_box_x() as f64, layout.content_box_y() as f64));
-    let mut current = Some(node);
-    while let Some(node) = current {
-        if let Some(local) = node.transform().as_deref() {
-            transform = kurbo::Affine::scale(1.0 / scale)
-                * *local
-                * kurbo::Affine::scale(scale)
-                * transform;
-        }
-        let location = node.final_layout().location;
-        let scroll = node.scroll_offset();
-        transform =
-            kurbo::Affine::translate((location.x as f64 - scroll.x, location.y as f64 - scroll.y))
-                * transform;
-        current = node.containing_block().map(|id| node.with(id));
-    }
-    transform.inverse()
-}
 
 fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
@@ -125,6 +102,7 @@ fn map_dom_event_to_ui_event(
 pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
+    _hit: Option<HitResult>,
     mut dispatch_event: F,
 ) {
     let target_node_id = event.target;
@@ -173,22 +151,21 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
     // Handle event forwarding for custom widget
     #[cfg(feature = "custom-widget")]
-    let widget_transform = node
-        .element_data()
-        .and_then(|el| el.custom_widget_data())
-        .map(|_| widget_event_transform(node, doc.viewport.scale_f64()));
+    let widget_point = _hit.map(|hit| Point {
+        x: hit.x - node.final_layout().content_box_x(),
+        y: hit.y - node.final_layout().content_box_y(),
+    });
     #[cfg(feature = "custom-widget")]
-    if let Some((widget_data, transform)) = node
+    if let Some(widget_data) = node
         .element_data_mut()
         .and_then(|el| el.custom_widget_data_mut())
-        .zip(widget_transform)
     {
         let set_focus = matches!(
             &event.data,
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
-        let ui_event = map_dom_event_to_ui_event(event, Point { x: 0.0, y: 0.0 }, viewport_scroll);
+        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
         if let Some(mut ui_event) = ui_event {
             let pointer_coords = match &mut ui_event {
@@ -200,15 +177,13 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 UiEvent::Wheel(event) => Some((&mut event.coords, &mut event.element)),
                 _ => None,
             };
-            if let Some((coords, element)) = pointer_coords {
-                let local =
-                    transform * kurbo::Point::new(coords.page_x as f64, coords.page_y as f64);
-                coords.page_x = local.x as f32;
-                coords.page_y = local.y as f32;
-                coords.client_x = local.x as f32;
-                coords.client_y = local.y as f32;
-                element.x = local.x as f32;
-                element.y = local.y as f32;
+            if let Some(((coords, element), local)) = pointer_coords.zip(widget_point) {
+                coords.page_x = local.x;
+                coords.page_y = local.y;
+                coords.client_x = local.x;
+                coords.client_y = local.y;
+                element.x = local.x;
+                element.y = local.y;
             }
             widget_data.widget.handle_event(&ui_event);
         }
