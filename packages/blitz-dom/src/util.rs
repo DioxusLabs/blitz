@@ -158,6 +158,16 @@ pub fn walk_tree(indent: usize, node: &Node) {
 pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData, usvg::Error> {
     let options = usvg::Options {
         fontdb: Arc::clone(&*FONT_DB),
+        // SVG content (inline `<svg>` and SVG image resources) is untrusted web content and must
+        // not be able to read local files. usvg's default string resolver treats any non-`data:`
+        // `<image href>` as a filesystem path and loads it, so only `data:` URLs are resolved
+        // here (including nested SVGs, which are parsed with these same options) and all other
+        // hrefs are ignored. A follow-up could route them through the document's `NetProvider`.
+        resources_dir: None,
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_data: usvg::ImageHrefResolver::default_data_resolver(),
+            resolve_string: Box::new(|_href, _options| None),
+        },
         ..Default::default()
     };
     crate::node::SvgImageData::from_data(source, &options)
@@ -239,6 +249,79 @@ mod svg_tests {
         let svg = parse_svg_image(src).unwrap();
         assert_eq!(svg.intrinsic_width(), None);
         assert_eq!(svg.intrinsic_height(), None);
+    }
+
+    /// A valid 1x1 PNG.
+    const PNG_1X1: [u8; 70] = [
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+        0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc,
+        0xcf, 0xc0, 0xf0, 0x1f, 0x00, 0x05, 0x05, 0x02, 0x00, 0x5f, 0xc8, 0xf1, 0xd2, 0x00, 0x00,
+        0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+    /// `PNG_1X1` encoded as base64.
+    const PNG_1X1_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+
+    fn contains_image(group: &usvg::Group) -> bool {
+        group.children().iter().any(|node| match node {
+            usvg::Node::Image(_) => true,
+            usvg::Node::Group(group) => contains_image(group),
+            _ => false,
+        })
+    }
+
+    fn svg_with_image(href_attr: &str, href: &str) -> String {
+        format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="16" height="16"><image {href_attr}="{href}" width="16" height="16"/></svg>"#
+        )
+    }
+
+    #[test]
+    fn svg_image_href_does_not_read_files() {
+        let dir = std::env::temp_dir();
+        let unique = format!("blitz-svg-href-{}", std::process::id());
+        let png_path = dir.join(format!("{unique}.png"));
+        let svg_path = dir.join(format!("{unique}.svg"));
+        std::fs::write(&png_path, PNG_1X1).unwrap();
+        std::fs::write(
+            &svg_path,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16"/></svg>"#,
+        )
+        .unwrap();
+
+        let png = png_path.to_str().unwrap();
+        let cases = [
+            svg_with_image("href", png),
+            svg_with_image("xlink:href", png),
+            svg_with_image("href", &format!("file://{png}")),
+            svg_with_image("href", svg_path.to_str().unwrap()),
+        ];
+        let results: Vec<bool> = cases
+            .iter()
+            .map(|src| contains_image(parse_svg_image(src.as_bytes()).unwrap().tree.root()))
+            .collect();
+
+        let _ = std::fs::remove_file(&png_path);
+        let _ = std::fs::remove_file(&svg_path);
+
+        for (src, has_image) in cases.iter().zip(results) {
+            assert!(!has_image, "local file was loaded for {src}");
+        }
+    }
+
+    #[test]
+    fn svg_data_url_image_still_loads() {
+        let png = svg_with_image("href", &format!("data:image/png;base64,{PNG_1X1_BASE64}"));
+        let svg = parse_svg_image(png.as_bytes()).unwrap();
+        assert!(contains_image(svg.tree.root()));
+
+        // Nested SVG images in data: URLs are parsed with the same options and still load.
+        let nested = svg_with_image(
+            "href",
+            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect width='16' height='16'/%3E%3C/svg%3E",
+        );
+        let svg = parse_svg_image(nested.as_bytes()).unwrap();
+        assert!(contains_image(svg.tree.root()));
     }
 }
 
