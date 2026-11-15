@@ -9,7 +9,7 @@ publish = false
 [features]
 default = ["cpu", "tiny-skia", "skia"]
 gpu = ["dep:anyrender_vello"]
-cpu = ["dep:anyrender_vello_cpu"]
+cpu = ["dep:anyrender_vello_cpu", "anyrender_vello_cpu/filters"]
 tiny-skia = ["dep:anyrender_tiny_skia"]
 skia = ["dep:anyrender_skia"]
 
