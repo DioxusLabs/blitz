@@ -10,10 +10,12 @@
 
 mod geometry;
 mod paint_server;
+mod text;
 
 pub use paint_server::{
     SvgGradient, SvgGradientShape, SvgGradientStop, SvgPaintServer, SvgSpreadMethod,
 };
+pub use text::{SvgGlyph, SvgGlyphRun, SvgText, SvgTextDecoration, SvgTextDecorationKind};
 
 use blitz_traits::node_id::NodeId;
 use kurbo::{Affine, BezPath, Rect, Stroke};
@@ -115,6 +117,9 @@ pub enum SvgLayoutKind {
         path: BezPath,
         stroke: Option<Stroke>,
     },
+    /// `<text>`: its shaped and positioned glyphs. The content of its
+    /// `<tspan>` descendants is laid out with it.
+    Text(Box<SvgText>),
 }
 
 impl SvgLayout {
@@ -384,6 +389,14 @@ impl BaseDocument {
         let mut children_blending = false;
         match &mut layout.kind {
             SvgLayoutKind::NotRendered | SvgLayoutKind::Shape { .. } => {}
+            // Text is laid out again whenever it or its content is damaged.
+            SvgLayoutKind::Text(text) => {
+                let style = self.nodes[id].primary_styles().unwrap();
+                let viewport = viewport.for_element(&style);
+                drop(style);
+                **text = self.layout_svg_text(id, viewport);
+                layout.bbox = text.bbox;
+            }
             SvgLayoutKind::Group => {
                 (layout.bbox, children_blending) =
                     self.layout_svg_children(id, viewport, force_children);
@@ -446,6 +459,8 @@ fn layout_own(element: &ElementData, style: &ComputedValues, viewport: SvgViewpo
         SvgLayoutKind::Group
     } else if *tag == local_name!("switch") {
         SvgLayoutKind::Switch { child: None }
+    } else if *tag == local_name!("text") {
+        SvgLayoutKind::Text(Box::default())
     } else if *tag == local_name!("svg") {
         nested_viewport(element, style, viewport)
     } else if let Some(path) = geometry::shape_path(tag, element, style, viewport) {

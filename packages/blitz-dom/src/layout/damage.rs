@@ -557,6 +557,19 @@ impl BaseDocument {
                 self.nodes[parent_id].insert_damage(ALL_DAMAGE);
             }
         }
+
+        // Native SVG text is shaped during SVG layout: lay out each root again.
+        #[cfg(feature = "svg-native")]
+        for &root in &self.svg_roots {
+            if let Some(crate::node::SpecialElementData::SvgRoot(data)) = self
+                .nodes
+                .get_mut(root)
+                .and_then(|node| node.element_data_mut())
+                .map(|el| &mut el.special_data)
+            {
+                data.layout = None;
+            }
+        }
     }
 
     /// Flush the image layers of nodes whose style changed during the last
