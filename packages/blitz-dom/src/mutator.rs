@@ -1440,19 +1440,9 @@ impl<'doc> DocumentMutator<'doc> {
             return;
         };
         let raw_src = if element.name.ns == ns!(svg) {
-            // SVG 2: an unprefixed `href` takes precedence over `xlink:href`
-            let href = |namespace| {
-                element
-                    .attrs()
-                    .iter()
-                    .find(|attr| {
-                        attr.name.local == local_name!("href") && attr.name.ns == namespace
-                    })
-                    .map(|attr| &*attr.value)
-            };
             // usvg resolves `data:` URLs and `#fragment` references itself
-            href(ns!())
-                .or_else(|| href(ns!(xlink)))
+            element
+                .svg_href()
                 .filter(|href| !href.starts_with('#') && !is_data_url(href))
         } else {
             element.attr(local_name!("src"))
