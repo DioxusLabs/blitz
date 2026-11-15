@@ -23,20 +23,6 @@ pub struct NonUniformRoundedRectRadii {
     pub bottom_left: Vec2,
 }
 
-impl NonUniformRoundedRectRadii {
-    pub fn average(&self) -> f64 {
-        (self.top_left.x
-            + self.top_left.y
-            + self.top_right.x
-            + self.top_right.y
-            + self.bottom_left.x
-            + self.bottom_left.y
-            + self.bottom_right.x
-            + self.bottom_right.y)
-            / 8.0
-    }
-}
-
 impl Mul<f64> for NonUniformRoundedRectRadii {
     type Output = Self;
 

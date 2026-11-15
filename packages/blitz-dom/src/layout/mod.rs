@@ -735,12 +735,12 @@ impl LayoutContainingBlock for LayoutPassState<'_> {
 impl taffy::CacheTree for LayoutPassState<'_> {
     #[inline]
     fn cache_get(
-        &mut self,
+        &self,
         node_id: NodeId,
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
-        self.node_from_id_mut(node_id)
-            .try_layout_data_mut()?
+        self.node_from_id(node_id)
+            .try_layout_data()?
             .cache
             .get(inputs)
     }

@@ -10,14 +10,13 @@ use anyrender::ImageRenderer as _;
 use anyrender::PaintScene as _;
 use anyrender_vello::VelloScenePainter;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use anyrender_vello_hybrid::{ImageCache, ImageManager, VelloHybridScenePainter};
+use anyrender_vello_hybrid::{ExternalTextures, ImageCache, ImageManager, VelloHybridScenePainter};
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use reqwest::Url;
-use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -219,6 +218,7 @@ async fn main() {
 
             let (mut renderer, mut resources) = vello_gpu::Renderer::new(
                 &device_handle.device,
+                &device_handle.queue,
                 &vello_gpu::RenderTargetConfig {
                     format: wgpu::TextureFormat::Bgra8Unorm,
                     width: render_width as u16,
@@ -229,11 +229,10 @@ async fn main() {
                 width: render_width as u16,
                 height: render_height as u16,
             };
-            let depth_texture_view =
-                vello_gpu::Renderer::create_depth_texture_view(&device_handle.device, &render_size);
+            let depth_texture_view = renderer.create_depth_texture_view(&render_size);
             let mut scene = vello_gpu::Scene::new(render_width as u16, render_height as u16);
             let mut image_cache = ImageCache::default();
-            let mut texture_bindings = FxHashMap::default();
+            let mut texture_bindings = ExternalTextures::default();
 
             let target_texture = device_handle
                 .device
@@ -260,19 +259,14 @@ async fn main() {
                     .device
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 let image_manager = ImageManager::new(
-                    &mut renderer,
                     &mut resources,
                     &device_handle.device,
                     &device_handle.queue,
-                    &mut encoder,
                     &mut image_cache,
-                );
-                let mut painter = VelloHybridScenePainter::new(
-                    &mut scene,
-                    image_manager,
                     &mut texture_bindings,
-                    &device_handle,
                 );
+                let mut painter =
+                    VelloHybridScenePainter::new(&mut scene, image_manager, &device_handle);
                 painter.reset();
                 paint_scene(
                     &mut painter,
@@ -287,27 +281,27 @@ async fn main() {
                 let encode = encode_start.elapsed().as_micros();
 
                 let raster_start = Instant::now();
-                let mut hybrid_texture_bindings = vello_gpu::TextureBindings::new();
-                for (resource_id, texture_view) in texture_bindings.iter() {
-                    hybrid_texture_bindings.insert(
-                        vello_common::TextureId(resource_id.into_ffi()),
-                        texture_view.clone(),
-                    );
-                }
                 renderer
                     .render(
                         &scene,
                         &mut resources,
-                        &device_handle.device,
-                        &device_handle.queue,
                         &mut encoder,
-                        &render_size,
-                        &target_texture_view,
-                        Some(&depth_texture_view),
-                        &hybrid_texture_bindings,
-                        vello_gpu::TargetInit::Clear(vello_gpu::ClearSettings::default()),
+                        vello_gpu::RenderTarget {
+                            view: &target_texture_view,
+                            depth_view: Some(&depth_texture_view),
+                        },
+                        texture_bindings.bindings(),
+                        vello_gpu::RenderOptions::default(),
                     )
                     .expect("Failed to render to texture");
+                ImageManager::new(
+                    &mut resources,
+                    &device_handle.device,
+                    &device_handle.queue,
+                    &mut image_cache,
+                    &mut texture_bindings,
+                )
+                .finish_frame();
                 device_handle.queue.submit([encoder.finish()]);
                 device_handle
                     .device
