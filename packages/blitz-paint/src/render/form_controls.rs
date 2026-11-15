@@ -1,6 +1,6 @@
 use super::ElementCx;
 use crate::color::{Color, ToColorColor as _};
-use anyrender::PaintScene;
+use anyrender::{AntiAliasing, PaintScene};
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::local_name;
 use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, RoundedRect, Stroke, Vec2};
@@ -54,7 +54,14 @@ fn draw_checkbox(
     scale: f64,
 ) {
     if checked {
-        scene.fill(Fill::NonZero, transform, accent_color, None, &frame);
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            accent_color,
+            None,
+            &frame,
+            AntiAliasing::Enabled,
+        );
         //Tick code derived from masonry
         let mut path = BezPath::new();
         path.move_to((2.0, 9.0));
@@ -73,10 +80,31 @@ fn draw_checkbox(
             dash_offset: 0.0,
         };
 
-        scene.stroke(&style, transform, Color::WHITE, None, &path);
+        scene.stroke(
+            &style,
+            transform,
+            Color::WHITE,
+            None,
+            &path,
+            AntiAliasing::Enabled,
+        );
     } else {
-        scene.fill(Fill::NonZero, transform, Color::WHITE, None, &frame);
-        scene.stroke(&Stroke::default(), transform, accent_color, None, &frame);
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            Color::WHITE,
+            None,
+            &frame,
+            AntiAliasing::Enabled,
+        );
+        scene.stroke(
+            &Stroke::default(),
+            transform,
+            accent_color,
+            None,
+            &frame,
+            AntiAliasing::Enabled,
+        );
     }
 }
 
@@ -92,12 +120,47 @@ fn draw_radio_button(
     let gap = Circle::new(center, 6.0 * scale);
     let inner_circle = Circle::new(center, 4.0 * scale);
     if checked {
-        scene.fill(Fill::NonZero, transform, accent_color, None, &outer_ring);
-        scene.fill(Fill::NonZero, transform, Color::WHITE, None, &gap);
-        scene.fill(Fill::NonZero, transform, accent_color, None, &inner_circle);
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            accent_color,
+            None,
+            &outer_ring,
+            AntiAliasing::Enabled,
+        );
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            Color::WHITE,
+            None,
+            &gap,
+            AntiAliasing::Enabled,
+        );
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            accent_color,
+            None,
+            &inner_circle,
+            AntiAliasing::Enabled,
+        );
     } else {
         const GRAY: Color = color::palette::css::GRAY;
-        scene.fill(Fill::NonZero, transform, GRAY, None, &outer_ring);
-        scene.fill(Fill::NonZero, transform, Color::WHITE, None, &gap);
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            GRAY,
+            None,
+            &outer_ring,
+            AntiAliasing::Enabled,
+        );
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            Color::WHITE,
+            None,
+            &gap,
+            AntiAliasing::Enabled,
+        );
     }
 }

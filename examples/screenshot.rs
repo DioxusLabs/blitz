@@ -1,6 +1,6 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
-use anyrender::{PaintScene as _, render_to_buffer};
+use anyrender::{AntiAliasing, PaintScene as _, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::{DocumentConfig, util::Color};
 use blitz_html::HtmlDocument;
@@ -114,6 +114,7 @@ async fn main() {
                 Color::WHITE,
                 Default::default(),
                 &Rect::new(0.0, 0.0, render_width as f64, render_height as f64),
+                AntiAliasing::Enabled,
             );
 
             // Render document

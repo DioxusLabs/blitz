@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 
 use html_escape::{encode_quoted_attribute_to_string, encode_text_to_string};
-use markup5ever::{QualName, local_name, ns};
+use markup5ever::{Namespace, QualName, local_name, ns};
 use style_traits::values::ToCss;
 use stylo_taffy::CopyStyleGetters;
 
@@ -22,8 +22,9 @@ struct SerializeOpts {
     /// `currentColor` keyword the way usvg expects, so that usvg resolves `currentColor`
     /// (including inherited `currentColor` paint) against the element that uses it
     resolve_current_color: bool,
-    /// Declare the `xlink` prefix on the root element so that the output is well-formed XML
-    declare_xlink_ns: bool,
+    /// Write the `xmlns` declarations that XML needs and HTML serialization leaves out, so that
+    /// the element and attribute namespaces in the output match the DOM
+    xml_namespaces: bool,
     /// Leave out the root element's `transform` attribute, which is applied as a CSS transform
     skip_root_transform: bool,
 }
@@ -33,7 +34,7 @@ impl SerializeOpts {
         Self {
             style,
             resolve_current_color: false,
-            declare_xlink_ns: false,
+            xml_namespaces: false,
             skip_root_transform: false,
         }
     }
@@ -79,9 +80,54 @@ fn normalize_current_color_keyword(value: &str) -> Cow<'_, str> {
     Cow::Owned(normalized)
 }
 
-fn is_xlink_ns_decl(name: &QualName) -> bool {
-    (name.ns == ns!(xmlns) && name.local.as_str() == "xlink")
-        || name.local.as_str() == "xmlns:xlink"
+/// Writes an attribute's name for XML output. An attribute in a namespace other than the
+/// predeclared `xml` and `xlink` ones gets a prefix declared on its element, recorded in
+/// `declared` so that each prefix is declared once per element. Returns `false` for attributes
+/// that can't be written as XML: namespace declarations, which are written from the element and
+/// attribute namespaces instead, and names that aren't valid XML names.
+fn write_xml_attr_name(
+    name: &QualName,
+    declared: &mut Vec<(String, Namespace)>,
+    writer: &mut String,
+) -> bool {
+    match name.ns {
+        ns!(xmlns) => return false,
+        ns!() if name.local.contains(':') || name.local.as_str() == "xmlns" => return false,
+        ns!() => {}
+        ns!(xml) => writer.push_str("xml:"),
+        ns!(xlink) => writer.push_str("xlink:"),
+        _ => {
+            let prefix = match declared.iter().find(|(_, ns)| *ns == name.ns) {
+                Some((prefix, _)) => prefix.clone(),
+                None => {
+                    let mut prefix = name
+                        .prefix
+                        .as_deref()
+                        .filter(|prefix| !matches!(*prefix, "xml" | "xmlns" | "xlink"))
+                        .unwrap_or("ns")
+                        .to_string();
+                    let base_len = prefix.len();
+                    let mut suffix = 0;
+                    while declared.iter().any(|(declared, _)| *declared == prefix) {
+                        suffix += 1;
+                        prefix.truncate(base_len);
+                        prefix.push_str(&suffix.to_string());
+                    }
+                    writer.push_str("xmlns:");
+                    writer.push_str(&prefix);
+                    writer.push_str("=\"");
+                    encode_quoted_attribute_to_string(&name.ns, writer);
+                    writer.push_str("\" ");
+                    declared.push((prefix.clone(), name.ns.clone()));
+                    prefix
+                }
+            };
+            writer.push_str(&prefix);
+            writer.push(':');
+        }
+    }
+    writer.push_str(&name.local);
+    true
 }
 
 impl Node {
@@ -135,7 +181,7 @@ impl Node {
         let opts = SerializeOpts {
             style: OutputStyle::Normal,
             resolve_current_color: true,
-            declare_xlink_ns: true,
+            xml_namespaces: true,
             skip_root_transform: true,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
@@ -209,15 +255,24 @@ impl Node {
                 writer.push('<');
                 writer.push_str(&data.name.local);
 
-                if opts.declare_xlink_ns
-                    && nesting == 0
-                    && !data.attrs().iter().any(|attr| is_xlink_ns_decl(&attr.name))
-                {
-                    writer.push_str(" xmlns:xlink=\"");
-                    writer.push_str(XLINK_NS);
-                    writer.push('"');
+                if opts.xml_namespaces {
+                    let parent_ns = (nesting > 0)
+                        .then(|| self.parent.and_then(|id| self.tree()[id].element_data()))
+                        .flatten()
+                        .map(|parent| &parent.name.ns);
+                    if data.name.ns != *parent_ns.unwrap_or(&ns!()) {
+                        writer.push_str(" xmlns=\"");
+                        encode_quoted_attribute_to_string(&data.name.ns, writer);
+                        writer.push('"');
+                    }
+                    if nesting == 0 {
+                        writer.push_str(" xmlns:xlink=\"");
+                        writer.push_str(XLINK_NS);
+                        writer.push('"');
+                    }
                 }
 
+                let mut declared_prefixes = Vec::new();
                 for attr in data.attrs() {
                     if opts.skip_root_transform
                         && nesting == 0
@@ -233,7 +288,14 @@ impl Node {
                         continue;
                     }
                     writer.push(' ');
-                    write_attr_name(&attr.name, writer);
+                    if opts.xml_namespaces {
+                        if !write_xml_attr_name(&attr.name, &mut declared_prefixes, writer) {
+                            writer.pop();
+                            continue;
+                        }
+                    } else {
+                        write_attr_name(&attr.name, writer);
+                    }
                     writer.push_str("=\"");
                     if opts.resolve_current_color {
                         let value = normalize_current_color_keyword(&attr.value);
@@ -275,5 +337,55 @@ impl Node {
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "svg"))]
+mod tests {
+    use markup5ever::{LocalName, Namespace, Prefix, QualName, local_name, ns};
+
+    use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData};
+
+    fn qual_name(prefix: Option<&str>, ns: Namespace, local: &str) -> QualName {
+        QualName::new(prefix.map(Prefix::from), ns, LocalName::from(local))
+    }
+
+    #[test]
+    fn svg_source_declares_namespaces() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let mut element = |name: QualName, attrs: Vec<Attribute>| {
+            doc.create_node(NodeData::Element(Box::new(ElementData::new(name, attrs))))
+        };
+        let svg = element(qual_name(None, ns!(svg), "svg"), vec![]);
+        let foreign = element(
+            qual_name(None, Namespace::from("urn:notsvg"), "rect"),
+            vec![],
+        );
+        let rect = element(
+            QualName::new(None, ns!(svg), local_name!("rect")),
+            vec![
+                Attribute {
+                    name: qual_name(Some("svg"), ns!(svg), "href"),
+                    value: "#a".into(),
+                },
+                Attribute {
+                    name: qual_name(Some("xlink"), Namespace::from("urn:notxlink"), "href"),
+                    value: "#b".into(),
+                },
+            ],
+        );
+        doc.mutate().append_children(svg, &[foreign, rect]);
+
+        let source = doc.get_node(svg).unwrap().svg_source();
+        assert_eq!(
+            source,
+            concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">"#,
+                r#"<rect xmlns="urn:notsvg" />"#,
+                r##"<rect xmlns:svg="http://www.w3.org/2000/svg" svg:href="#a" xmlns:ns="urn:notxlink" ns:href="#b" />"##,
+                "</svg>",
+            )
+        );
+        assert!(crate::util::parse_svg_image(source.as_bytes()).is_ok());
     }
 }

@@ -1,6 +1,6 @@
 //! Utility functions for capturing screenshots
 
-use anyrender::PaintScene;
+use anyrender::{AntiAliasing, PaintScene};
 use blitz_paint::paint_scene;
 use peniko::Fill;
 use peniko::kurbo::Rect;
@@ -92,6 +92,7 @@ fn render_scene(
         blitz_dom::util::Color::WHITE,
         Default::default(),
         &Rect::new(0.0, 0.0, render_width as f64, render_height as f64),
+        AntiAliasing::Enabled,
     );
     paint_scene(scene, doc, scale, render_width, render_height, 0, 0);
 
