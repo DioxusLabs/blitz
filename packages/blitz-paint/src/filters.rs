@@ -10,10 +10,8 @@ pub(crate) fn convert_filters(filters: &[StyloFilter], bounds: Rect) -> Option<F
         return None;
     }
 
-    Some(Filter::linear_list(
-        filters.iter().filter_map(convert_single_filter),
-        bounds,
-    ))
+    let filter = Filter::linear_list(filters.iter().filter_map(convert_single_filter), bounds);
+    (!filter.nodes().is_empty()).then_some(filter)
 }
 
 pub(crate) fn convert_single_filter(filter: &StyloFilter) -> Option<FilterEffect> {
