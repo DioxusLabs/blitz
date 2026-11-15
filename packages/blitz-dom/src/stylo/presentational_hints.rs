@@ -50,11 +50,6 @@ fn parse_pixels(value: &str) -> Option<u32> {
     style::servo::attr::parse_unsigned_integer(value.chars()).ok()
 }
 
-/// The four border widths, all set to `width`.
-fn border_widths(width: BorderSideWidth) -> [PropertyDeclaration; 4] {
-    apply_to_all!(width => BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth)
-}
-
 /// The declaration block that collects an element's hints.
 struct Hints(PropertyDeclarationBlock);
 
@@ -497,9 +492,10 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
                 && let Some(hr_size) = parse_pixels(value)
             {
                 if is_solid_hr {
-                    hints.extend(border_widths(BorderSideWidth::from_px(
-                        hr_size as f32 / 2.0,
-                    )));
+                    let width = BorderSideWidth::from_px(hr_size as f32 / 2.0);
+                    hints.extend(apply_to_all!(width =>
+                        BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth,
+                    ));
                 } else if hr_size == 1 {
                     hints.push(PropertyDeclaration::BorderBottomWidth(
                         BorderSideWidth::from_px(0.0),
@@ -565,7 +561,9 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             && let Some(width) = parse_pixels(value)
         {
             use style::values::specified::BorderStyle;
-            hints.extend(border_widths(BorderSideWidth::from_px(width as f32)));
+            hints.extend(apply_to_all!(BorderSideWidth::from_px(width as f32) =>
+                BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth,
+            ));
             hints.extend(apply_to_all!(BorderStyle::Solid =>
                 BorderTopStyle, BorderRightStyle, BorderBottomStyle, BorderLeftStyle,
             ));
