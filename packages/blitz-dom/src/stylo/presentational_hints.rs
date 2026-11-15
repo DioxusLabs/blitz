@@ -282,9 +282,22 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             attr.name.local == local_name!("type") && attr.value.eq_ignore_ascii_case("image")
         });
 
+    // An `hr` with `color` or `noshade` takes its `size` as border widths
+    // rather than as a height.
+    let is_solid_hr = *tag == local_name!("hr")
+        && (elem.has_attr(local_name!("color")) || elem.has_attr(local_name!("noshade")));
+
     // https://html.spec.whatwg.org/multipage/#the-lang-and-xml:lang-attributes
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
+
+    #[cfg(feature = "svg")]
+    let svg_url_data =
+        (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
+    // Stack buffer large enough for one declaration (or one expanded
+    // shorthand), reused for every presentation attribute on the element.
+    #[cfg(feature = "svg")]
+    let mut svg_hint = style::properties::SourcePropertyDeclaration::default();
 
     for attr in elem.attrs() {
         let name = &attr.name.local;
@@ -455,14 +468,54 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             }
         }
 
+        // `hr`'s `color` maps to `color` as a legacy colour value, and its
+        // `size` to the border widths (with `color` or `noshade` present)
+        // or to the height. The solid border style that `color` and
+        // `noshade` also ask for is a UA rule in default.css.
+        // https://html.spec.whatwg.org/multipage/rendering.html#the-hr-element-2
+        if *tag == local_name!("hr") {
+            if *name == local_name!("color") {
+                use style::values::specified::{Color, ColorPropertyValue};
+                if let Ok(color) = style::servo::attr::parse_legacy_color(value) {
+                    push_style(PropertyDeclaration::Color(ColorPropertyValue(
+                        Color::from_absolute_color(color),
+                    )));
+                }
+            }
+            if *name == local_name!("size") {
+                if let Ok(size) = style::servo::attr::parse_unsigned_integer(value.chars()) {
+                    use style::values::specified::{BorderSideWidth, NoCalcLength};
+                    if is_solid_hr {
+                        let width = BorderSideWidth::from_px(size as f32 / 2.0);
+                        push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
+                        push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
+                        push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
+                        push_style(PropertyDeclaration::BorderLeftWidth(width));
+                    } else if size == 1 {
+                        push_style(PropertyDeclaration::BorderBottomWidth(
+                            BorderSideWidth::from_px(0.0),
+                        ));
+                    } else if size > 1 {
+                        use style::values::generics::{NonNegative, length::Size};
+                        use style::values::specified::LengthPercentage;
+                        let height =
+                            LengthPercentage::Length(NoCalcLength::from_px((size - 2) as f32));
+                        push_style(PropertyDeclaration::Height(Size::LengthPercentage(
+                            NonNegative(height),
+                        )));
+                    }
+                }
+            }
+        }
+
         // https://svgwg.org/svg2-draft/geometry.html#Sizing
         // The `width` and `height` attributes on an `<svg>` element are
         // presentation attributes that map to the CSS `width`/`height`
         // properties, so e.g. `width="1em"` must resolve against the
         // element's font-size like any other CSS length.
-        if *tag == local_name!("svg")
-            && (*name == local_name!("width") || *name == local_name!("height"))
-        {
+        let is_svg_root_size = *tag == local_name!("svg")
+            && (*name == local_name!("width") || *name == local_name!("height"));
+        if is_svg_root_size {
             if let Some(size) = parse_svg_size_attr(value) {
                 use style::values::generics::{NonNegative, length::Size};
                 let size = Size::LengthPercentage(NonNegative(size));
@@ -471,6 +524,26 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
                 } else {
                     PropertyDeclaration::Height(size)
                 });
+            }
+        }
+
+        // usvg paints the outermost `<svg>`'s `transform`, `opacity`, `filter`,
+        // `clip-path` and `mask` attributes itself, so mapping them onto its
+        // CSS box as well would apply them twice. Its `transform` is still
+        // mapped below, for the box: the serialized source drops it.
+        #[cfg(feature = "svg")]
+        if let Some(url_data) = &svg_url_data
+            && attr.name.ns == ns!()
+            && !is_svg_root_size
+            && !(is_outermost_svg
+                && matches!(
+                    name.as_ref(),
+                    "transform" | "opacity" | "filter" | "clip-path" | "mask"
+                ))
+        {
+            super::svg_attrs::svg_presentation_hint(tag, name, value, url_data, &mut svg_hint);
+            for decl in svg_hint.drain().declarations {
+                push_style(decl);
             }
         }
 
