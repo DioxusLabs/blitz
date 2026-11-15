@@ -96,14 +96,21 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
         // `marker-*`, `text-anchor`, ...) name properties Stylo only parses
         // for Gecko, so they are left out until Servo's Stylo supports them.
         "alignment-baseline" | "baseline-shift" | "clip-path" | "color" | "cursor"
-        | "direction" | "display" | "fill" | "fill-opacity" | "fill-rule" | "filter"
-        | "font-family" | "font-size" | "font-size-adjust" | "font-stretch" | "font-style"
-        | "font-variant" | "font-weight" | "image-rendering" | "letter-spacing" | "mask"
-        | "mask-type" | "opacity" | "overflow" | "pointer-events" | "stroke"
-        | "stroke-dasharray" | "stroke-dashoffset" | "stroke-linecap" | "stroke-linejoin"
-        | "stroke-miterlimit" | "stroke-opacity" | "stroke-width" | "text-decoration"
-        | "text-overflow" | "text-rendering" | "transform" | "transform-origin"
-        | "unicode-bidi" | "visibility" | "white-space" | "word-spacing" | "writing-mode" => true,
+        | "direction" | "display" | "fill-opacity" | "fill-rule" | "filter" | "font-family"
+        | "font-size" | "font-size-adjust" | "font-stretch" | "font-style" | "font-variant"
+        | "font-weight" | "image-rendering" | "letter-spacing" | "mask" | "mask-type"
+        | "opacity" | "overflow" | "pointer-events" | "stroke" | "stroke-dasharray"
+        | "stroke-dashoffset" | "stroke-linecap" | "stroke-linejoin" | "stroke-miterlimit"
+        | "stroke-opacity" | "stroke-width" | "text-decoration" | "text-overflow"
+        | "text-rendering" | "transform-origin" | "unicode-bidi" | "visibility" | "white-space"
+        | "word-spacing" | "writing-mode" => true,
+        // On animation elements `fill` is the animation fill mode.
+        "fill" => !matches!(
+            tag,
+            "animate" | "animateMotion" | "animateTransform" | "set"
+        ),
+        // Patterns and gradients spell it `patternTransform` / `gradientTransform`.
+        "transform" => !matches!(tag, "pattern" | "linearGradient" | "radialGradient"),
         "cx" | "cy" => matches!(tag, "circle" | "ellipse"),
         "r" => tag == "circle",
         "rx" | "ry" => matches!(tag, "ellipse" | "rect"),
