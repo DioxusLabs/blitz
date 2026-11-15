@@ -267,7 +267,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     /// An SVG `transform` attribute (SVG transform-list syntax, e.g. unitless
     /// `translate(20, 30)`) as a CSS `transform` declaration. Translations are
     /// written as `px` lengths so that `zoom` scales them as it would CSS ones.
-    #[cfg(feature = "svg")]
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
     fn parse_svg_transform_attr(value: &str) -> Option<PropertyDeclaration> {
         use std::fmt::Write;
         use svgtypes::{TransformListParser, TransformListToken as Token};
@@ -298,7 +298,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     // The outermost `<svg>` is a CSS box, so its `transform` attribute transforms
     // the box like the CSS `transform` property it maps to.
     // https://svgwg.org/svg2-draft/coords.html#TransformProperty
-    #[cfg(feature = "svg")]
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
     let is_outermost_svg = *tag == local_name!("svg")
         && elem.name.ns == ns!(svg)
         && node
@@ -324,13 +324,17 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
 
-    #[cfg(feature = "svg")]
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
     let svg_url_data =
         (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
     // Stack buffer large enough for one declaration (or one expanded
     // shorthand), reused for every presentation attribute on the element.
-    #[cfg(feature = "svg")]
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
     let mut svg_hint = style::properties::SourcePropertyDeclaration::default();
+    // usvg paints the outermost `<svg>`'s `opacity`, `filter`, `clip-path` and
+    // `mask` attributes itself; natively they apply to its CSS box.
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
+    let usvg_paints_root = !node.tree().native_svg();
 
     for attr in elem.attrs() {
         let name = &attr.name.local;
@@ -526,22 +530,21 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // usvg paints the outermost `<svg>`'s `transform`, `opacity`, `filter`,
         // `clip-path` and `mask` attributes itself, so mapping them onto its
         // CSS box as well would apply them twice. Its `transform` is still
-        // mapped below, for the box: the serialized source drops it.
-        #[cfg(feature = "svg")]
+        // mapped below, for the box, with either backend.
+        #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
         if let Some(url_data) = &svg_url_data
             && attr.name.ns == ns!()
             && !is_svg_root_size
             && !(is_outermost_svg
-                && matches!(
-                    name.as_ref(),
-                    "transform" | "opacity" | "filter" | "clip-path" | "mask"
-                ))
+                && (*name == local_name!("transform")
+                    || (usvg_paints_root
+                        && matches!(name.as_ref(), "opacity" | "filter" | "clip-path" | "mask"))))
         {
             super::svg_attrs::svg_presentation_hint(tag, name, value, url_data, &mut svg_hint);
             hints.extend(svg_hint.drain().declarations);
         }
 
-        #[cfg(feature = "svg")]
+        #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
         if is_outermost_svg
             && attr.name.ns == ns!()
             && *name == local_name!("transform")

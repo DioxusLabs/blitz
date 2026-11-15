@@ -1,5 +1,5 @@
 use blitz_traits::node_id::NodeId;
-#[cfg(feature = "svg")]
+#[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
 use markup5ever::local_name;
 use stylo_taffy::CopyStyleGetters;
 
@@ -118,16 +118,31 @@ impl BaseDocument {
             damage_for_parent.insert(CONSTRUCT_DESCENDENT);
         }
 
-        // An inline `<svg>` is rendered from a snapshot of its subtree (with
+        // A usvg-rendered inline `<svg>` is a snapshot of its subtree (with
         // `currentColor` resolved) taken during box construction, so it must be
         // rebuilt whenever the style of the `<svg>` or any descendant changes.
-        #[cfg(feature = "svg")]
-        if !damage.is_empty()
+        //
+        // A natively rendered one paints from the live DOM: its descendants have
+        // no boxes, so their damage (most SVG properties are `affects = "layout"`
+        // in stylo) must not relayout the HTML ancestors. Only the root's own
+        // damage and a repaint cross the `<svg>` boundary.
+        #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
+        if self.nodes[node_id]
+            .data
+            .is_element_with_tag_name(&local_name!("svg"))
             && self.nodes[node_id]
-                .data
-                .is_element_with_tag_name(&local_name!("svg"))
+                .element_data()
+                .is_some_and(|el| el.name.ns == markup5ever::ns!(svg))
         {
-            damage.insert(CONSTRUCT_BOX);
+            if self.native_svg {
+                damage = own_damage | (damage_from_children & RestyleDamage::REPAINT);
+                if damage.contains(CONSTRUCT_BOX) {
+                    damage.insert(RestyleDamage::RELAYOUT);
+                }
+                damage_for_parent = damage;
+            } else if !damage.is_empty() {
+                damage.insert(CONSTRUCT_BOX);
+            }
         }
 
         // Reconstruction replaces the anonymous boxes with freshly styled ones.
@@ -637,5 +652,112 @@ impl BaseDocument {
             // Element will always exist due to resize_with above
             elem_images[idx] = new_image;
         }
+    }
+}
+
+#[cfg(all(test, any(feature = "svg-usvg", feature = "svg-native")))]
+mod tests {
+    use super::*;
+    use crate::mutator::DocumentMutator;
+    use crate::{Attribute, DocumentConfig, qual_name};
+    use blitz_traits::shell::{ColorScheme, Viewport};
+
+    fn attr(name: crate::QualName, value: &str) -> Attribute {
+        Attribute {
+            name,
+            value: value.to_string(),
+        }
+    }
+
+    /// `<html><body><svg width=50 height=50><circle cx=10 r=5/></svg></body></html>`,
+    /// resolved once. Returns the document and the ids of `body`, `svg` and `circle`.
+    #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
+    fn svg_document(native_svg: bool) -> (BaseDocument, NodeId, NodeId, NodeId) {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(100, 100, 1.0, ColorScheme::Light)),
+            native_svg: Some(native_svg),
+            ..Default::default()
+        });
+        let root = doc.root_node().id;
+        let mut m = doc.mutate();
+        let html = m.create_element(qual_name!("html"), vec![]);
+        // `BaseDocument` has no UA stylesheet, so make `body` a block explicitly.
+        let body = m.create_element(
+            qual_name!("body"),
+            vec![attr(qual_name!("style"), "display: block")],
+        );
+        let svg = m.create_element(
+            qual_name!("svg", svg),
+            vec![
+                attr(qual_name!("width"), "50"),
+                attr(qual_name!("height"), "50"),
+            ],
+        );
+        let circle = m.create_element(
+            qual_name!("circle", svg),
+            vec![attr(qual_name!("cx"), "10"), attr(qual_name!("r"), "5")],
+        );
+        m.append_children(svg, &[circle]);
+        m.append_children(body, &[svg]);
+        m.append_children(html, &[body]);
+        m.append_children(root, &[html]);
+        drop(m);
+        doc.resolve(0.0);
+        assert!(!doc.nodes[body].cache().is_empty());
+        (doc, body, svg, circle)
+    }
+
+    /// Apply `mutate`, then run style resolution and damage propagation (but
+    /// not layout) so that the resulting damage can be inspected.
+    fn propagate(doc: &mut BaseDocument, mutate: impl FnOnce(&mut DocumentMutator<'_>)) {
+        mutate(&mut doc.mutate());
+        doc.resolve_stylist(0.0);
+        let root = doc.root_element().id;
+        doc.propagate_damage_flags(root);
+    }
+
+    #[cfg(feature = "svg-native")]
+    const LAYOUT: RestyleDamage = RestyleDamage::from_bits_retain(
+        ONLY_RELAYOUT.bits()
+            | CONSTRUCT_BOX.bits()
+            | CONSTRUCT_FC.bits()
+            | CONSTRUCT_DESCENDENT.bits(),
+    );
+
+    #[test]
+    #[cfg(feature = "svg-native")]
+    fn native_svg_child_damage_stops_at_the_svg_root() {
+        let (mut doc, body, svg, circle) = svg_document(true);
+        propagate(&mut doc, |m| {
+            m.set_attribute(circle, qual_name!("cx"), "20")
+        });
+        for id in [svg, body] {
+            let node = &doc.nodes[id];
+            let damage = node.damage().unwrap();
+            assert!(damage.contains(RestyleDamage::REPAINT), "{damage:?}");
+            assert!(!damage.intersects(LAYOUT), "{damage:?}");
+            assert!(!node.cache().is_empty(), "layout cache was invalidated");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "svg-native")]
+    fn native_svg_root_sizing_relayouts_the_page() {
+        let (mut doc, body, svg, _) = svg_document(true);
+        propagate(&mut doc, |m| {
+            m.set_attribute(svg, qual_name!("width"), "80")
+        });
+        assert!(doc.nodes[body].damage().unwrap().intersects(LAYOUT));
+        assert!(doc.nodes[body].cache().is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "svg-usvg")]
+    fn usvg_svg_child_damage_reconstructs_the_svg() {
+        let (mut doc, _, svg, circle) = svg_document(false);
+        propagate(&mut doc, |m| {
+            m.set_attribute(circle, qual_name!("cx"), "20")
+        });
+        assert!(doc.nodes[svg].damage().unwrap().contains(CONSTRUCT_BOX));
     }
 }

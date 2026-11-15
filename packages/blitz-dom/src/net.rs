@@ -62,7 +62,7 @@ pub struct FontFaceOverrides {
 #[derive(Clone, Debug)]
 pub enum Resource {
     Image(ImageType, u32, u32, Arc<Vec<u8>>),
-    #[cfg(feature = "svg")]
+    #[cfg(feature = "svg-usvg")]
     Svg(ImageType, crate::node::SvgImageData),
     Css(DocumentStyleSheet),
     /// Stylesheet loaded for an `@import` rule, to be attached to the rule on the document thread
@@ -628,7 +628,7 @@ impl ImageHandler {
             Err(e) => e.to_string(),
         };
 
-        #[cfg(feature = "svg")]
+        #[cfg(feature = "svg-usvg")]
         let svg_err = {
             use crate::util::parse_svg;
             match parse_svg(&bytes, None) {
@@ -636,7 +636,7 @@ impl ImageHandler {
                 Err(e) => e.to_string(),
             }
         };
-        #[cfg(not(feature = "svg"))]
+        #[cfg(not(feature = "svg-usvg"))]
         let svg_err = "svg feature disabled";
 
         Err(format!(
