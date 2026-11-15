@@ -19,6 +19,7 @@ mod checked_attribute;
 mod clipboard;
 mod comment_layout;
 mod custom_widget_layout;
+mod custom_widget_paint;
 mod detached_attribute;
 mod details_element;
 mod device_coalescing;
