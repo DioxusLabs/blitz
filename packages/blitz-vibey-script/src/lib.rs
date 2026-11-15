@@ -39,5 +39,5 @@ mod runtime;
 mod state;
 mod timers;
 
-pub use document::ScriptDocument;
+pub use document::{ScriptDocument, script_src};
 pub use fetch::{DefaultScriptFetcher, FetchError, ScriptFetcher, document_may_load};
