@@ -1,7 +1,7 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 use crate::Color;
-use anyrender::{PaintRef, PaintScene, ResourceId};
+use anyrender::{AntiAliasing, PaintRef, PaintScene, ResourceId};
 use blitz_dom::node::ComputedStyles;
 use blitz_dom::Widget;
 use peniko::kurbo::{Affine, Rect};
@@ -70,6 +70,7 @@ impl Widget for DemoWidget {
                 }),
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
+                AntiAliasing::Enabled,
             );
         } else {
             println!("WARNING: render returned None");

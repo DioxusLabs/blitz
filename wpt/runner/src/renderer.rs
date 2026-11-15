@@ -3,7 +3,7 @@
 #[cfg(not(any(feature = "cpu", feature = "tiny-skia", feature = "gpu")))]
 compile_error!("enable at least one of the `cpu`, `tiny-skia` and `gpu` features");
 
-use anyrender::{ImageRenderer, PaintScene};
+use anyrender::{AntiAliasing, ImageRenderer, PaintScene};
 use blitz_dom::BaseDocument;
 use blitz_dom::util::Color;
 use blitz_paint::paint_scene;
@@ -132,6 +132,7 @@ fn draw(scene: &mut impl PaintScene, document: &mut BaseDocument) {
         Color::WHITE,
         Default::default(),
         &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
+        AntiAliasing::Enabled,
     );
     paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
 }

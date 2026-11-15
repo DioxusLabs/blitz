@@ -1,4 +1,4 @@
-use anyrender::PaintScene;
+use anyrender::{AntiAliasing, PaintScene};
 use blitz_dom::{BaseDocument, NodeId};
 use kurbo::{Affine, Rect, Vec2};
 
@@ -28,6 +28,7 @@ pub(crate) fn render_debug_overlay(
                 fill_color,
                 None,
                 &rect,
+                AntiAliasing::Enabled,
             );
         }
         return;
@@ -93,7 +94,14 @@ pub(crate) fn render_debug_overlay(
     let transform = Affine::translate(base_translation + Vec2::new(scaled_pb.left, scaled_pb.top));
     let rect = Rect::new(0.0, 0.0, content_width, content_height);
     let fill_color = Color::from_rgba8(66, 144, 245, 128); // blue
-    scene.fill(peniko::Fill::NonZero, transform, fill_color, None, &rect);
+    scene.fill(
+        peniko::Fill::NonZero,
+        transform,
+        fill_color,
+        None,
+        &rect,
+        AntiAliasing::Enabled,
+    );
 
     let padding_color = Color::from_rgba8(81, 144, 66, 128); // green
     draw_cutout_rect(
@@ -143,6 +151,7 @@ fn draw_cutout_rect(
             color,
             None,
             &Rect::new(0.0, 0.0, width, height),
+            AntiAliasing::Enabled,
         );
     };
 
