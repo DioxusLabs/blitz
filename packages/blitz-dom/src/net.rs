@@ -596,27 +596,48 @@ impl NetHandler for ResourceHandler<DocumentSrcHandler> {
 
 pub struct ImageHandler {
     kind: ImageType,
-    /// Fetches the external images an SVG image's `<image>` elements reference
+    /// Fetches the external images an SVG image's `<image>` and `<feImage>`
+    /// elements reference. `None` leaves them unloaded.
     #[cfg(feature = "svg")]
-    net_provider: Arc<dyn NetProvider>,
-    #[cfg(feature = "svg")]
-    signal: Option<AbortSignal>,
+    svg_external_images: Option<(Arc<dyn NetProvider>, Option<AbortSignal>)>,
 }
 impl ImageHandler {
-    pub fn new(
-        kind: ImageType,
-        net_provider: Arc<dyn NetProvider>,
-        signal: Option<AbortSignal>,
-    ) -> Self {
-        #[cfg(not(feature = "svg"))]
-        let _ = (net_provider, signal);
+    pub fn new(kind: ImageType) -> Self {
         Self {
             kind,
             #[cfg(feature = "svg")]
-            net_provider,
-            #[cfg(feature = "svg")]
-            signal,
+            svg_external_images: None,
         }
+    }
+
+    /// Load the external images an SVG image references through
+    /// `net_provider`. See [`crate::DocumentConfig::svg_external_images`].
+    #[cfg(feature = "svg")]
+    pub fn with_svg_external_images(
+        mut self,
+        net_provider: Arc<dyn NetProvider>,
+        signal: Option<AbortSignal>,
+    ) -> Self {
+        self.svg_external_images = Some((net_provider, signal));
+        self
+    }
+
+    /// The handler for an image a document loads, given the document's
+    /// [`crate::DocumentConfig::svg_external_images`] setting
+    pub(crate) fn for_document(
+        kind: ImageType,
+        svg_external_images: bool,
+        net_provider: &Arc<dyn NetProvider>,
+        signal: Option<&AbortSignal>,
+    ) -> Self {
+        let handler = Self::new(kind);
+        #[cfg(feature = "svg")]
+        if svg_external_images {
+            return handler.with_svg_external_images(net_provider.clone(), signal.cloned());
+        }
+        #[cfg(not(feature = "svg"))]
+        let _ = (svg_external_images, net_provider, signal);
+        handler
     }
 }
 

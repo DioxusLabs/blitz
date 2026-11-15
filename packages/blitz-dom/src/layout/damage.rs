@@ -624,10 +624,11 @@ impl BaseDocument {
                                 doc_id,
                                 None, // Don't pass node_id, we'll handle via pending_images
                                 self.shell_provider.clone(),
-                                ImageHandler::new(
+                                ImageHandler::for_document(
                                     kind.image_type(idx),
-                                    self.net_provider.clone(),
-                                    self.abort_signal.clone(),
+                                    self.svg_external_images,
+                                    &self.net_provider,
+                                    self.abort_signal.as_ref(),
                                 ),
                             ),
                         );

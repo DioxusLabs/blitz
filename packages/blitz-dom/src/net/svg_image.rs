@@ -21,13 +21,25 @@ use crate::node::{SvgImageData, external_image_hrefs, parse_svg_xml, svg_text};
 use crate::util::{FONT_DB, ImageType};
 
 /// Fetch the external images of the SVG in `bytes` (which failed to decode as
-/// a raster image with `image_err`), then parse it and respond to `handler`.
+/// a raster image with `image_err`) if the handler loads them, then parse it
+/// and respond to `handler`.
 pub(super) fn load(
     handler: Box<ResourceHandler<ImageHandler>>,
     svg_url: String,
     bytes: Bytes,
     image_err: String,
 ) {
+    let kind = handler.data.kind;
+    let parse_now = |handler: Box<ResourceHandler<ImageHandler>>,
+                     svg_url: String,
+                     bytes: Bytes,
+                     image_err: String| {
+        let result = parse(kind, &svg_url, &bytes, &HashMap::new(), &image_err);
+        handler.respond(svg_url, result)
+    };
+    let Some((net_provider, signal)) = handler.data.svg_external_images.clone() else {
+        return parse_now(handler, svg_url, bytes, image_err);
+    };
     let urls = match external_image_urls(&svg_url, &bytes) {
         Ok(urls) => urls,
         Err(svg_err) => {
@@ -35,16 +47,11 @@ pub(super) fn load(
             return handler.respond(svg_url, Err(err));
         }
     };
-
-    let kind = handler.data.kind;
-    let net_provider = handler.data.net_provider.clone();
     if urls.is_empty() || net_provider.is_noop() {
-        let result = parse(kind, &svg_url, &bytes, &HashMap::new(), &image_err);
-        return handler.respond(svg_url, result);
+        return parse_now(handler, svg_url, bytes, image_err);
     }
 
     let doc_id = handler.doc_id;
-    let signal = handler.data.signal.clone();
     let pending = Arc::new(PendingSvgImage {
         kind,
         remaining: AtomicUsize::new(urls.len()),

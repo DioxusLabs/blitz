@@ -218,6 +218,8 @@ pub struct BaseDocument {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub(crate) subdocument_depth: usize,
+    /// See [`DocumentConfig::svg_external_images`]
+    pub(crate) svg_external_images: bool,
 
     // Events
     pub(crate) tx: Sender<DocumentEvent>,
@@ -473,6 +475,7 @@ impl BaseDocument {
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
             subdocument_depth: config.subdocument_depth,
+            svg_external_images: config.svg_external_images,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
             nodes_to_stylesheet: BTreeMap::new(),
