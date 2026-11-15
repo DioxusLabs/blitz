@@ -28,7 +28,7 @@ macro_rules! matches_tag {
 }
 
 /// One declaration per listed longhand, each set to `value`.
-macro_rules! longhands {
+macro_rules! apply_to_all {
     ($value:expr => $($property:ident),+ $(,)?) => {{
         let value = $value;
         [$(PropertyDeclaration::$property(value.clone())),+]
@@ -52,7 +52,7 @@ fn parse_pixels(value: &str) -> Option<u32> {
 
 /// The four border widths, all set to `width`.
 fn border_widths(width: BorderSideWidth) -> [PropertyDeclaration; 4] {
-    longhands!(width => BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth)
+    apply_to_all!(width => BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth)
 }
 
 /// The declaration block that collects an element's hints.
@@ -473,9 +473,9 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         {
             let margin = Margin::LengthPercentage(length);
             if *name == local_name!("hspace") {
-                hints.extend(longhands!(margin => MarginLeft, MarginRight));
+                hints.extend(apply_to_all!(margin => MarginLeft, MarginRight));
             } else {
-                hints.extend(longhands!(margin => MarginTop, MarginBottom));
+                hints.extend(apply_to_all!(margin => MarginTop, MarginBottom));
             }
         }
 
@@ -566,7 +566,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         {
             use style::values::specified::BorderStyle;
             hints.extend(border_widths(BorderSideWidth::from_px(width as f32)));
-            hints.extend(longhands!(BorderStyle::Solid =>
+            hints.extend(apply_to_all!(BorderStyle::Solid =>
                 BorderTopStyle, BorderRightStyle, BorderBottomStyle, BorderLeftStyle,
             ));
         }
@@ -588,12 +588,12 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             match &**name {
                 "marginwidth" => {
                     if let Some(margin) = margin() {
-                        hints.extend(longhands!(margin => MarginLeft, MarginRight));
+                        hints.extend(apply_to_all!(margin => MarginLeft, MarginRight));
                     }
                 }
                 "marginheight" => {
                     if let Some(margin) = margin() {
-                        hints.extend(longhands!(margin => MarginTop, MarginBottom));
+                        hints.extend(apply_to_all!(margin => MarginTop, MarginBottom));
                     }
                 }
                 "leftmargin" => {
@@ -655,7 +655,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         .and_then(parse_pixels)
         .and_then(|padding| {
             let mut block = Hints(PropertyDeclarationBlock::new());
-            block.extend(longhands!(NonNegative(px(padding as f32)) =>
+            block.extend(apply_to_all!(NonNegative(px(padding as f32)) =>
                 PaddingTop, PaddingRight, PaddingBottom, PaddingLeft,
             ));
             wrap(block.0)
