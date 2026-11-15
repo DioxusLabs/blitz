@@ -22,7 +22,7 @@ use crate::render::background::get_cyclic;
 
 use super::background::ImageLayerStyles;
 use super::{ALMOST_OPAQUE, ElementCx};
-use anyrender::{MaskMode, PaintScene};
+use anyrender::{AntiAliasing, MaskMode, PaintScene};
 use peniko::{BlendMode, Color, Compose, Fill, Mix};
 use style::properties::generated::longhands::mask_composite::single_value::computed_value::T as StyloMaskComposite;
 use style::properties::generated::longhands::mask_mode::single_value::computed_value::T as StyloMaskMode;
@@ -148,6 +148,7 @@ impl ElementCx<'_, '_> {
                     Color::WHITE,
                     None,
                     &mask_clip_path,
+                    AntiAliasing::Enabled,
                 );
                 scene.push_mask_layer(
                     Fill::NonZero,

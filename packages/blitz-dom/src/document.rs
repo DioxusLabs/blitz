@@ -1390,6 +1390,7 @@ impl BaseDocument {
                     family_name: overrides.family_name.as_deref(),
                     weight: weight_override,
                     style: overrides.style,
+                    width: overrides.width,
                     ..Default::default()
                 };
 
@@ -3698,6 +3699,7 @@ mod font_face_override_tests {
                     family_name: Some(String::from(ALIAS)),
                     weight: Some(800.0),
                     style: Some(parley::fontique::FontStyle::Italic),
+                    width: None,
                 },
             )),
         };

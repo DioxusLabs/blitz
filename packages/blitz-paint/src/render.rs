@@ -20,7 +20,7 @@ use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
 use crate::text::{DrawTextContext, TextPaintOptions};
 use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
-use anyrender::{PaintScene, Scene};
+use anyrender::{AntiAliasing, PaintScene, Scene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
@@ -315,6 +315,34 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             x: -node.scroll_offset().x * self.scale,
             y: -node.scroll_offset().y * self.scale,
         })
+    }
+
+    /// Paint an SVG image as its own isolated group, so blend modes inside the image
+    /// composite with the image's own content rather than the page behind it.
+    #[cfg(feature = "svg")]
+    pub(crate) fn draw_svg_image(
+        &self,
+        scene: &mut impl PaintScene,
+        tree: &anyrender_svg::usvg::Tree,
+        transform: Affine,
+    ) {
+        // `1.0 - EPSILON` stops the layer from being demoted to a non-isolating clip layer.
+        self.layer_manager.maybe_with_layer(
+            scene,
+            true,
+            BlendMode::default(),
+            1.0 - f32::EPSILON,
+            Affine::IDENTITY,
+            &Rect::new(
+                self.initial_x,
+                self.initial_y,
+                self.initial_x + self.width as f64,
+                self.initial_y + self.height as f64,
+            ),
+            None,
+            None,
+            |scene| anyrender_svg::render_svg_tree(scene, tree, transform),
+        );
     }
 
     fn should_clip_node(&self, node: &Node, styles: &ComputedValues) -> bool {
@@ -625,8 +653,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 // Save it so that the mask can be drawn untransformed by scroll offsets.
                 let unscrolled_transform = cx.transform;
 
-                let filter = convert_filters(&effects.filter.0).map(Arc::new);
-                let backdrop_filter = convert_filters(&effects.backdrop_filter.0).map(Arc::new);
+                let border_box = cx.frame.border_box_path().bounding_box();
+                let filter = convert_filters(&effects.filter.0, border_box).map(Arc::new);
+                let backdrop_filter =
+                    convert_filters(&effects.backdrop_filter.0, border_box).map(Arc::new);
 
                 // Adjust effect layer clip by filter expansion area
                 //
@@ -641,7 +671,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .map(|f| f.expansion_rect())
                     .unwrap_or(Rect::ZERO);
 
-                let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+                let mut effect_layer_clip = border_box;
                 effect_layer_clip.x0 += filter_expansion_area.x0;
                 effect_layer_clip.y0 += filter_expansion_area.y0;
                 effect_layer_clip.x1 += filter_expansion_area.x1;
@@ -950,6 +980,7 @@ impl ElementCx<'_, '_> {
                     track_color.multiply_alpha(opacity),
                     None,
                     &track_rect,
+                    AntiAliasing::Enabled,
                 );
             }
 
@@ -974,6 +1005,7 @@ impl ElementCx<'_, '_> {
                 color.multiply_alpha(opacity),
                 None,
                 &rect.to_rounded_rect(radius),
+                AntiAliasing::Enabled,
             );
             // Contrast stroke, default thumbs only: an author-specified
             // scrollbar-color is rendered exactly as given.
@@ -986,6 +1018,7 @@ impl ElementCx<'_, '_> {
                     stroke_color.multiply_alpha(opacity),
                     None,
                     &stroke_rect.to_rounded_rect(radius - stroke_width / 2.0),
+                    AntiAliasing::Enabled,
                 );
             }
         }
@@ -1081,6 +1114,7 @@ impl ElementCx<'_, '_> {
                         SELECTION_COLOR,
                         None,
                         &convert_rect(rect),
+                        AntiAliasing::Enabled,
                     );
                 }
                 if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
@@ -1096,6 +1130,7 @@ impl ElementCx<'_, '_> {
                         caret_color.as_srgb_color(),
                         None,
                         &convert_rect(&cursor),
+                        AntiAliasing::Enabled,
                     );
                 };
             }
@@ -1297,14 +1332,43 @@ impl ElementCx<'_, '_> {
         let viewport = svg_viewport_affine(svg, paint_size.width, paint_size.height);
         let transform = (self.transform * viewport).then_translate(Vec2 { x, y });
 
-        self.with_replaced_content_clip(
+        // An inline `<svg>`'s `transform` attribute is applied inside the tree, so its
+        // viewport clip is left to `overflow`.
+        if self.node.data.is_element_with_tag_name(&local_name!("svg")) {
+            self.with_replaced_content_clip(
+                scene,
+                container_size,
+                paint_size,
+                x_offset.px(),
+                y_offset.px(),
+                |scene| {
+                    self.draw_svg_image(scene, &svg.tree, transform);
+                },
+            );
+            return;
+        }
+
+        // An SVG image's root viewport clips its content, as does the content box when
+        // the object-fit rect overflows it. The viewport is rounded out to whole pixels
+        // so its clip doesn't anti-alias the content's own edges a second time.
+        let viewport_rect = Rect::new(
+            x,
+            y,
+            x + paint_size.width as f64,
+            y + paint_size.height as f64,
+        )
+        .expand();
+        self.context.layer_manager.maybe_with_layer(
             scene,
-            container_size,
-            paint_size,
-            x_offset.px(),
-            y_offset.px(),
+            true,
+            BlendMode::default(),
+            1.0,
+            self.transform,
+            &viewport_rect.intersect(content_box),
+            None,
+            None,
             |scene| {
-                anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
+                self.draw_svg_image(scene, &svg.tree, transform);
             },
         );
     }
@@ -1442,7 +1506,14 @@ impl ElementCx<'_, '_> {
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 
-            scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
+            scene.stroke(
+                &stroke,
+                self.transform,
+                stroke_color,
+                None,
+                &shape,
+                AntiAliasing::Enabled,
+            );
         }
     }
 }
