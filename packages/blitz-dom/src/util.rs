@@ -164,10 +164,10 @@ pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData
 }
 
 /// Parse an inline `<svg>` (or the root of an SVG document) from its serialized
-/// `source`. Its `<image>` and `<feImage>` elements fetch their hrefs like
-/// `<img src>` does, so usvg resolves them from `image_cache` and never reads
-/// a local file. Images still loading are left out until they arrive and
-/// reconstruct the `<svg>`.
+/// `source`. The mutator loads the hrefs of its `<image>` and `<feImage>`
+/// elements like `<img src>`, so usvg resolves them from `image_cache` and
+/// never reads a local file. Images still loading are left out until they
+/// arrive and reconstruct the `<svg>`.
 ///
 /// SVG images (`<img src="x.svg">`, CSS images) don't load external
 /// resources, as browsers render them in "secure animated mode", so they use
