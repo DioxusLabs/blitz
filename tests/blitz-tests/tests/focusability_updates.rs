@@ -74,3 +74,58 @@ fn disabling_it_takes_it_out_of_both() {
 
     assert!(!doc.get_node(node).unwrap().is_focussable());
 }
+
+#[test]
+fn tab_traversal_skips_display_none_nodes_and_descendants_in_both_directions() {
+    let mut doc = make_doc(
+        "<html><body><button id=before>Before</button>\
+         <button style='display:none'>Hidden button</button>\
+         <div style='display:none'><div><input type=text></div></div>\
+         <dialog style='display:none'><button>Hidden close</button></dialog>\
+         <button id=after>After</button></body></html>",
+    );
+    let before = node_id(&doc, "#before");
+    let after = node_id(&doc, "#after");
+    doc.set_focus_to(before);
+    assert_eq!(doc.focus_next_node(), Some(after));
+    assert_eq!(doc.focus_prev_node(), Some(before));
+}
+
+#[test]
+fn tab_traversal_observes_ancestor_display_changes() {
+    let mut doc = make_doc(
+        "<html><body><button id=before>Before</button>\
+         <div id=group><input id=middle type=text></div>\
+         <button id=after>After</button></body></html>",
+    );
+    let before = node_id(&doc, "#before");
+    let middle = node_id(&doc, "#middle");
+    let after = node_id(&doc, "#after");
+    let group = node_id(&doc, "#group");
+    doc.set_focus_to(before);
+    assert_eq!(doc.focus_next_node(), Some(middle));
+    doc.set_style_property(group, "display", "none");
+    doc.resolve(0.0);
+    // Search from a focused control that has just become hidden.
+    assert_eq!(doc.focus_next_node(), Some(after));
+    assert_eq!(doc.focus_prev_node(), Some(before));
+    doc.set_style_property(group, "display", "block");
+    doc.resolve(0.0);
+    assert_eq!(doc.focus_next_node(), Some(middle));
+}
+
+#[test]
+fn display_contents_ancestor_does_not_remove_visible_controls_from_tab_order() {
+    let mut doc = make_doc(
+        "<html><body><button id=before>Before</button>\
+         <div style='display:contents'><input id=middle type=text></div>\
+         <button id=after>After</button></body></html>",
+    );
+    let before = node_id(&doc, "#before");
+    let middle = node_id(&doc, "#middle");
+    let after = node_id(&doc, "#after");
+    doc.set_focus_to(before);
+    assert_eq!(doc.focus_next_node(), Some(middle));
+    assert_eq!(doc.focus_next_node(), Some(after));
+    assert_eq!(doc.focus_prev_node(), Some(middle));
+}
