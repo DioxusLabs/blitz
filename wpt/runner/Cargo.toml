@@ -7,10 +7,11 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["cpu", "tiny-skia"]
+default = ["cpu", "tiny-skia", "skia"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 tiny-skia = ["dep:anyrender_tiny_skia"]
+skia = ["dep:anyrender_skia"]
 
 [dependencies]
 mimalloc = "0.1.48"
@@ -23,6 +24,7 @@ anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
 anyrender_tiny_skia = { workspace = true, optional = true }
+anyrender_skia = { workspace = true, optional = true }
 
 taffy = { workspace = true }
 style = { workspace = true }
