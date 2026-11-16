@@ -680,6 +680,17 @@ impl BaseDocument {
             .get(current_id)
             .and_then(|n| n.containing_block())
         {
+            // A fixed-position box whose containing block is the root element is
+            // positioned against the viewport and does not scroll with it (W3C
+            // CSSOM View §6.1; matches `paint_tree::hoisted_child_position`). A
+            // fixed box contained by a transformed ancestor scrolls with it.
+            if self.nodes[current_id].taffy_position() == taffy::Position::Fixed
+                && (self.nodes[parent_id].containing_block().is_none()
+                    || Some(parent_id) == root_id)
+            {
+                return changed;
+            }
+
             let loc = self.nodes[current_id].final_layout().location;
             rect_x += loc.x;
             rect_y += loc.y;

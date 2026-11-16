@@ -775,3 +775,47 @@ fn dioxus_click_and_roving_keydown_handlers_preserve_active_modality() {
     harness.pump();
     assert!(!matches_focus_visible(&harness, "#tab-2"));
 }
+
+#[test]
+fn fixed_overlay_focus_skips_viewport_scroll_in_dioxus_native() {
+    fn app() -> Element {
+        rsx! {
+            div { style: "margin: 0;",
+                div {
+                    id: "scroll-content",
+                    style: "height: 1200px; display: block;",
+                    "Scrollable document body"
+                }
+                div {
+                    id: "fixed-overlay",
+                    style: "position: fixed; top: 250px; left: 0; width: 250px; height: 200px; display: block; background: #fff;",
+                    button {
+                        id: "overlay-action",
+                        style: "margin-top: 100px; height: 30px; display: block;",
+                        "Action"
+                    }
+                }
+            }
+        }
+    }
+
+    let mut harness = Harness::from_vdom(
+        VirtualDom::new(app),
+        HarnessOptions {
+            width: 400,
+            height: 300,
+            ..Default::default()
+        },
+    );
+
+    let action_node = harness.node("#overlay-action");
+    harness.base_mut().set_focus_to_with_options(
+        action_node,
+        FocusSource::Script,
+        FocusOptions::default(),
+    );
+    harness.pump();
+
+    assert_eq!(harness.focused(), Some(action_node));
+    assert_eq!(harness.base().viewport_scroll().y, 0.0);
+}

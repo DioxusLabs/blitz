@@ -4207,6 +4207,146 @@ mod focus_visible_tests {
     }
 
     #[test]
+    fn scroll_into_view_for_focus_skips_viewport_scroll_for_viewport_fixed_box() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body", html),
+            vec![attr(
+                qual_name!("style"),
+                "margin: 0; height: 1200px; display: block;",
+            )],
+        );
+        let fixed_panel = mutator.create_element(
+            qual_name!("div", html),
+            vec![
+                attr(qual_name!("tabindex"), "-1"),
+                attr(
+                    qual_name!("style"),
+                    "position: fixed; top: 250px; left: 0; width: 200px; height: 200px; display: block;",
+                ),
+            ],
+        );
+        let button = mutator.create_element(
+            qual_name!("button", html),
+            vec![attr(
+                qual_name!("style"),
+                "margin-top: 100px; height: 30px; display: block;",
+            )],
+        );
+        mutator.append_children(fixed_panel, &[button]);
+        mutator.append_children(body, &[fixed_panel]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        doc.set_focus_to(button);
+        assert_eq!(doc.viewport_scroll(), crate::Point::ZERO);
+
+        doc.set_focus_to(fixed_panel);
+        assert_eq!(doc.viewport_scroll(), crate::Point::ZERO);
+    }
+
+    #[test]
+    fn scroll_into_view_for_focus_scrolls_inner_container_in_fixed_overlay_without_viewport_scroll()
+    {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body", html),
+            vec![attr(
+                qual_name!("style"),
+                "margin: 0; height: 1200px; display: block;",
+            )],
+        );
+        let fixed_overlay = mutator.create_element(
+            qual_name!("div", html),
+            vec![attr(
+                qual_name!("style"),
+                "position: fixed; top: 100px; left: 0; width: 200px; height: 150px; display: block;",
+            )],
+        );
+        let scroller = mutator.create_element(
+            qual_name!("div", html),
+            vec![attr(
+                qual_name!("style"),
+                "height: 100px; overflow-y: auto; display: block;",
+            )],
+        );
+        let spacer = mutator.create_element(
+            qual_name!("div", html),
+            vec![attr(qual_name!("style"), "height: 250px; display: block;")],
+        );
+        let inner_button = mutator.create_element(
+            qual_name!("button", html),
+            vec![attr(qual_name!("style"), "display: block; height: 24px;")],
+        );
+        mutator.append_children(scroller, &[spacer, inner_button]);
+        mutator.append_children(fixed_overlay, &[scroller]);
+        mutator.append_children(body, &[fixed_overlay]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        doc.set_focus_to(inner_button);
+        assert!(doc.get_node(scroller).unwrap().scroll_offset().y > 0.0);
+        assert_eq!(doc.viewport_scroll(), crate::Point::ZERO);
+    }
+
+    #[test]
+    fn scroll_into_view_for_focus_scrolls_viewport_when_fixed_box_has_transformed_ancestor() {
+        let mut doc = BaseDocument::new(DocumentConfig {
+            viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+            ..Default::default()
+        });
+        let root_id = doc.root_node().id;
+        let mut mutator = doc.mutate();
+        let html = mutator.create_element(qual_name!("html", html), vec![]);
+        let body = mutator.create_element(
+            qual_name!("body", html),
+            vec![attr(
+                qual_name!("style"),
+                "margin: 0; height: 1200px; display: block;",
+            )],
+        );
+        let transformed_parent = mutator.create_element(
+            qual_name!("div", html),
+            vec![attr(
+                qual_name!("style"),
+                "margin-top: 600px; transform: translateX(0px); display: block;",
+            )],
+        );
+        let fixed_child = mutator.create_element(
+            qual_name!("button", html),
+            vec![attr(
+                qual_name!("style"),
+                "position: fixed; display: block; height: 40px;",
+            )],
+        );
+        mutator.append_children(transformed_parent, &[fixed_child]);
+        mutator.append_children(body, &[transformed_parent]);
+        mutator.append_children(html, &[body]);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        doc.resolve(0.0);
+
+        doc.set_focus_to(fixed_child);
+        assert!(doc.viewport_scroll().y > 0.0);
+    }
+
+    #[test]
     fn refocusing_same_node_updates_focus_ring_in_place() {
         let shell = Arc::new(CountingShell::default());
         let mut doc = BaseDocument::new(DocumentConfig {
