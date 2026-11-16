@@ -1,7 +1,9 @@
 use std::collections::HashSet;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
 use dioxus_native::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
 use nucleo::{
     Config, Nucleo,
     pattern::{CaseMatching, Normalization},
@@ -67,6 +69,7 @@ impl UrlSuggester {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn new_history_matcher(notify: Arc<dyn Fn() + Send + Sync>) -> Nucleo<HistoryEntry> {
     Nucleo::new(Config::DEFAULT, notify, None, 1)
 }
@@ -89,6 +92,7 @@ fn dedup_by_url(entries: &[HistoryEntry]) -> Vec<HistoryEntry> {
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn top_history_entries(snapshot: &nucleo::Snapshot<HistoryEntry>) -> Vec<HistoryEntry> {
     let take = snapshot
         .matched_item_count()
@@ -134,6 +138,7 @@ fn assemble_suggestions(query: &str, history_entries: &[HistoryEntry]) -> Vec<Su
     result
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn inject_entries(nucleo: &mut Nucleo<HistoryEntry>, entries: &[HistoryEntry]) {
     let injector = nucleo.injector();
     for entry in dedup_by_url(entries) {
@@ -146,6 +151,7 @@ fn inject_entries(nucleo: &mut Nucleo<HistoryEntry>, entries: &[HistoryEntry]) {
 
 /// Drive the matcher loop. Reads commands from `cmd_rx` and calls `publish`
 /// whenever a tick produces a new snapshot. Exits when `cmd_rx` closes.
+#[cfg(not(target_arch = "wasm32"))]
 async fn run_worker(
     mut cmd_rx: mpsc::UnboundedReceiver<WorkerMessage>,
     mut publish: impl FnMut(Vec<Suggestion>) + 'static,
@@ -200,6 +206,31 @@ async fn run_worker(
         if status.running {
             notify.notify_one();
         }
+    }
+}
+
+/// nucleo matches on a rayon thread pool, which wasm32-unknown-unknown can't
+/// spawn, so wasm does a case-insensitive substring match instead.
+#[cfg(target_arch = "wasm32")]
+async fn run_worker(
+    mut cmd_rx: mpsc::UnboundedReceiver<WorkerMessage>,
+    mut publish: impl FnMut(Vec<Suggestion>) + 'static,
+) {
+    let mut entries: Vec<HistoryEntry> = Vec::new();
+    let mut query = String::new();
+    while let Some(cmd) = cmd_rx.recv().await {
+        match cmd {
+            WorkerMessage::SetQuery(new_query) => query = new_query,
+            WorkerMessage::ReplaceEntries(new_entries) => entries = dedup_by_url(&new_entries),
+        }
+        let needle = query.to_lowercase();
+        let matches: Vec<HistoryEntry> = entries
+            .iter()
+            .filter(|e| haystack_for(e).to_lowercase().contains(&needle))
+            .take(MAX_HISTORY_SUGGESTIONS)
+            .cloned()
+            .collect();
+        publish(assemble_suggestions(&query, &matches));
     }
 }
 

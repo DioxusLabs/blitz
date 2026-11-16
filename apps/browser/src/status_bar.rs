@@ -45,7 +45,7 @@ pub fn StatusBar(tabs: Store<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Element
     use_hook(move || {
         spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                crate::timer::sleep(Duration::from_millis(100)).await;
 
                 let tab = active_tab(tabs, active_tab_id());
                 let raw_href = hovered_href(tab);

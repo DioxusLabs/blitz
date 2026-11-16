@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use blitz_dom::Widget;
 use dioxus_native::{CustomWidgetAttr, prelude::*};
@@ -105,7 +107,7 @@ pub fn FpsOverlay() -> Element {
     use_hook(move || {
         spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_millis(250)).await;
+                crate::timer::sleep(Duration::from_millis(250)).await;
                 let snap = stats_for_poll
                     .lock()
                     .map(|s| s.snapshot())

@@ -22,7 +22,7 @@ mod shortcut;
 #[cfg(feature = "prelude")]
 pub mod prelude;
 
-#[cfg(all(feature = "net", not(target_arch = "wasm32")))]
+#[cfg(feature = "net")]
 use blitz_traits::net::NetProvider;
 #[doc(inline)]
 pub use dioxus_native_dom::*;
@@ -185,7 +185,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         vdom.insert_any_root_context(context());
     }
 
-    #[cfg(all(feature = "net", not(target_arch = "wasm32")))]
+    #[cfg(feature = "net")]
     let net_provider = {
         let net_waker = Some(Arc::new(proxy.clone()) as _);
         let inner_net_provider = Arc::new(blitz_net::Provider::new(net_waker));
@@ -197,7 +197,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         )) as Arc<dyn NetProvider>
     };
 
-    #[cfg(any(not(feature = "net"), target_arch = "wasm32"))]
+    #[cfg(not(feature = "net"))]
     let net_provider = DioxusNativeNetProvider::shared(proxy.clone());
 
     vdom.provide_root_context(Arc::clone(&net_provider));

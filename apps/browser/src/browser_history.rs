@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+
+use web_time::SystemTime;
 
 use blitz_traits::net::Url;
 use dioxus_native::prelude::*;
@@ -148,6 +150,7 @@ impl HistoryService {
 // If no runtime is bound we drop the write rather than blocking the caller —
 // history is best-effort, and silently running sync I/O on the UI thread
 // would mask the bug. `debug_assert!` surfaces it in development.
+#[cfg(not(target_arch = "wasm32"))]
 fn dispatch_disk_write(f: impl FnOnce() + Send + 'static) {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => {
@@ -161,6 +164,12 @@ fn dispatch_disk_write(f: impl FnOnce() + Send + 'static) {
             tracing::warn!("history: no tokio runtime; dropping disk write");
         }
     }
+}
+
+// `HistoryStore` is a no-op on wasm, so there is no I/O to move off-thread
+#[cfg(target_arch = "wasm32")]
+fn dispatch_disk_write(f: impl FnOnce() + Send + 'static) {
+    f()
 }
 
 #[cfg(test)]
