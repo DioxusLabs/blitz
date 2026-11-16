@@ -301,7 +301,7 @@ static XML_ENCODING_RE: LazyLock<regex::bytes::Regex> =
 
 /// Decodes a test file using its BOM, else the encoding its XML declaration
 /// names, else UTF-8. Returns `None` if it isn't valid in that encoding.
-fn decode_test_file(data: &[u8]) -> Option<Cow<'_, str>> {
+pub(crate) fn decode_test_file(data: &[u8]) -> Option<Cow<'_, str>> {
     let encoding = XML_ENCODING_RE
         .captures(data)
         .and_then(|caps| encoding_rs::Encoding::for_label(&caps[1]))
