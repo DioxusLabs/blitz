@@ -166,11 +166,12 @@ fn radial_gradient(
     let (shape, position, items, flags) = gradient;
     let repeating = flags.contains(GradientFlags::REPEATING);
 
-    let mut gradient = peniko::Gradient::new_radial((0.0, 0.0), 1.0).with_extend(if repeating {
+    let mut gradient = peniko::Gradient::default().with_extend(if repeating {
         peniko::Extend::Repeat
     } else {
         peniko::Extend::Pad
     });
+    let mut radial_position = peniko::RadialGradientPosition::new(Point::ZERO, 1.0);
 
     let (width_px, height_px) = (
         resolve_gradient_length(&position.horizontal, rect.width()),
@@ -246,13 +247,8 @@ fn radial_gradient(
             );
             if repeating && gradient.stops.len() >= 2 {
                 let period = last_offset - first_offset;
-                let start_radius = first_offset.rem_euclid(period);
-                gradient.kind = peniko::GradientKind::Radial(peniko::RadialGradientPosition {
-                    start_center: Point::ZERO,
-                    start_radius,
-                    end_center: Point::ZERO,
-                    end_radius: start_radius + period,
-                });
+                radial_position.start_radius = first_offset.rem_euclid(period);
+                radial_position.end_radius = radial_position.start_radius + period;
             }
             Some(
                 Affine::scale_non_uniform(gradient_scale.x, gradient_scale.y)
@@ -262,6 +258,7 @@ fn radial_gradient(
             None
         }
     };
+    gradient.kind = radial_position.into();
 
     (gradient, gradient_transform)
 }
