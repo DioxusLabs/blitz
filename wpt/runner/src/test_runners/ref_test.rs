@@ -137,17 +137,8 @@ fn render_reference_and_compare(
         return None;
     };
 
-    if ctx.float_re.is_match(&ref_html) {
-        *flags |= TestFlags::USES_FLOAT;
-    }
     if ctx.intrinsic_re.is_match(&ref_html) {
         *flags |= TestFlags::USES_INTRINSIC_SIZE;
-    }
-    if ctx.calc_re.is_match(&ref_html) {
-        *flags |= TestFlags::USES_CALC;
-    }
-    if ctx.direction_re.is_match(&ref_html) {
-        *flags |= TestFlags::USES_DIRECTION;
     }
     if ctx.writing_mode_re.is_match(&ref_html) {
         *flags |= TestFlags::USES_WRITING_MODE;

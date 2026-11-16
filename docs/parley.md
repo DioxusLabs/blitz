@@ -141,7 +141,7 @@ You should get a line per test:
 
 ```text
 [0011/1902] FAIL (0/1) css/css-text/bidi/bidi-lines-001.html (4ms) REF
-[0012/1902] FAIL (0/1) css/css-text/bidi/bidi-lines-002.html (4ms) REF (D)
+[0012/1902] FAIL (0/1) css/css-text/bidi/bidi-lines-002.html (4ms) REF
 [0013/1902] PASS (1/1) css/css-text/bidi/bidi-tab-001.html (2ms) REF
 [0014/1902] FAIL (0/1) css/css-text/bidi/empty-span-001.html (19ms) REF
 [0015/1902] PASS (1/1) css/css-text/boundary-shaping/boundary-shaping-001.html (6ms) REF
@@ -158,8 +158,7 @@ At the end of a run, you get a summary:
   65 tests FAILED (62.50% of run; 61.90% of found)
 
 Of those tests which failed:
-  22 do not use unsupported features
-   4 use floats (F)
+  26 do not use unsupported features
    9 use intrinsic size keywords (I)
   30 use script (X)
 ```
