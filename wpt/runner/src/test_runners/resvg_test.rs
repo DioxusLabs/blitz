@@ -29,9 +29,6 @@ const PARITY_TOLERANCE: Tolerance = Tolerance {
     max_pixels: 90,
 };
 
-static ENCODING_RE: LazyLock<regex::bytes::Regex> =
-    LazyLock::new(|| regex::bytes::Regex::new(r#"^\s*<\?xml[^>]*encoding="([^"]+)""#).unwrap());
-
 /// Renderings match if at most `max_pixels` pixels differ by more than
 /// `threshold` in any channel. Unlike WPT's fuzzy tolerance it ignores small
 /// differences entirely, which comparing against another rasterizer's output
@@ -192,15 +189,6 @@ fn save_png(path: &Path, buffer: &[u8]) {
     image.save_with_format(path, ImageFormat::Png).unwrap();
 }
 
-/// Decodes an SVG with the encoding its XML declaration names, as usvg does.
-pub fn decode_xml(data: &[u8]) -> String {
-    let encoding = ENCODING_RE
-        .captures(data)
-        .and_then(|caps| encoding_rs::Encoding::for_label(&caps[1]))
-        .unwrap_or(encoding_rs::UTF_8);
-    encoding.decode_without_bom_handling(data).0.into_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,15 +208,5 @@ mod tests {
         assert!(!tolerance.matches(&a, &[65, 0, 0, 255, 200, 0, 0, 255]));
         assert_eq!(Tolerance::parse("256;1"), None);
         assert_eq!(Tolerance::parse("64"), None);
-    }
-
-    #[test]
-    fn decodes_declared_encoding() {
-        let data = b"<?xml version=\"1.0\" encoding=\"windows-1251\"?><svg>\xcf</svg>";
-        assert_eq!(
-            decode_xml(data),
-            "<?xml version=\"1.0\" encoding=\"windows-1251\"?><svg>П</svg>"
-        );
-        assert_eq!(decode_xml("<svg>é</svg>".as_bytes()), "<svg>é</svg>");
     }
 }

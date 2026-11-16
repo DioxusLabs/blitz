@@ -28,7 +28,7 @@ pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
 pub use js_wrapper::wrapper_html_for_js_test;
 pub use ref_test::process_ref_test;
-pub use resvg_test::{decode_xml, process_resvg_test};
+pub use resvg_test::process_resvg_test;
 
 static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let mut tests = HashMap::new();
@@ -201,22 +201,16 @@ pub fn process_test_file(
 
     let file_bytes = fs::read(ctx.wpt_dir.join(relative_path))
         .unwrap_or_else(|err| panic!("Failed to read {relative_path}: {err}"));
-    let file_contents = match test_type {
-        TestType::Resvg(_) => decode_xml(&file_bytes),
-        _ => match String::from_utf8(file_bytes) {
-            Ok(contents) => contents,
-            Err(_) => {
-                // Tests encoded as UTF-16 or a legacy encoding are not supported: skip them.
-                warn!("Skipping {relative_path}: not valid UTF-8");
-                return (
-                    TestKind::Unknown,
-                    TestFlags::empty(),
-                    TestStatus::Skip,
-                    SubtestCounts::ZERO_OF_ZERO,
-                    Vec::new(),
-                );
-            }
-        },
+    let Some(file_contents) = decode_test_file(&file_bytes) else {
+        // Tests that aren't valid in their encoding are not supported: skip them.
+        warn!("Skipping {relative_path}: not valid in its encoding");
+        return (
+            TestKind::Unknown,
+            TestFlags::empty(),
+            TestStatus::Skip,
+            SubtestCounts::ZERO_OF_ZERO,
+            Vec::new(),
+        );
     };
 
     // Compute flags
@@ -301,6 +295,20 @@ pub fn process_test_file(
     }
 }
 
+static XML_ENCODING_RE: LazyLock<regex::bytes::Regex> =
+    LazyLock::new(|| regex::bytes::Regex::new(r#"^\s*<\?xml[^>]*encoding="([^"]+)""#).unwrap());
+
+/// Decodes a test file using its BOM, else the encoding its XML declaration
+/// names, else UTF-8. Returns `None` if it isn't valid in that encoding.
+fn decode_test_file(data: &[u8]) -> Option<String> {
+    let encoding = XML_ENCODING_RE
+        .captures(data)
+        .and_then(|caps| encoding_rs::Encoding::for_label(&caps[1]))
+        .unwrap_or(encoding_rs::UTF_8);
+    let (text, _, had_errors) = encoding.decode(data);
+    (!had_errors).then(|| text.into_owned())
+}
+
 fn parse_and_resolve_document(
     ctx: &mut ThreadCtx,
     html: &str,
@@ -357,6 +365,21 @@ pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_test_file_encoding() {
+        let data = b"<?xml version=\"1.0\" encoding=\"windows-1251\"?><svg>\xcf</svg>";
+        assert_eq!(
+            decode_test_file(data).unwrap(),
+            "<?xml version=\"1.0\" encoding=\"windows-1251\"?><svg>\u{41f}</svg>"
+        );
+        assert_eq!(
+            decode_test_file("<p>\u{e9}</p>".as_bytes()).unwrap(),
+            "<p>\u{e9}</p>"
+        );
+        assert_eq!(decode_test_file(b"\xff\xfe<\0p\0>\0").unwrap(), "<p>");
+        assert_eq!(decode_test_file(b"<p>\xcf</p>"), None);
+    }
 
     #[test]
     fn timeout_quarantine_is_valid() {
