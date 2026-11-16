@@ -19,7 +19,15 @@ fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
     offset: Point<f32>,
     viewport_scroll: Point<f64>,
+    local_point: Option<Point<f32>>,
 ) {
+    if let Some(point) = local_point {
+        coords.client_x = point.x;
+        coords.client_y = point.y;
+        coords.page_x = point.x + viewport_scroll.x as f32;
+        coords.page_y = point.y + viewport_scroll.y as f32;
+        return;
+    }
     coords.page_x -= offset.x - viewport_scroll.x as f32;
     coords.page_y -= offset.y - viewport_scroll.y as f32;
     coords.client_x -= offset.x;
@@ -30,30 +38,56 @@ fn map_dom_event_to_ui_event(
     event: &mut DomEvent,
     node_offset: Point<f32>,
     viewport_scroll: Point<f64>,
+    local_point: Option<Point<f32>>,
 ) -> Option<UiEvent> {
     // TODO: eliminate clone
     match event.data.clone() {
         DomEventData::PointerMove(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                node_offset,
+                viewport_scroll,
+                local_point,
+            );
             Some(UiEvent::PointerMove(event))
         }
         DomEventData::PointerDown(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                node_offset,
+                viewport_scroll,
+                local_point,
+            );
             Some(UiEvent::PointerDown(event))
         }
         DomEventData::PointerUp(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                node_offset,
+                viewport_scroll,
+                local_point,
+            );
             Some(UiEvent::PointerUp(event))
         }
         DomEventData::PointerCancel(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                node_offset,
+                viewport_scroll,
+                local_point,
+            );
             Some(UiEvent::PointerCancel(event))
         }
 
         // The sub-document receives no further move events once the pointer
         // has left it, so the leave must be forwarded for it to end its hover
         DomEventData::PointerLeave(mut event) => {
-            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            adjust_coords_for_subdocument(
+                &mut event.coords,
+                node_offset,
+                viewport_scroll,
+                local_point,
+            );
             Some(UiEvent::PointerLeave(event))
         }
 
@@ -90,7 +124,17 @@ fn map_dom_event_to_ui_event(
         DomEventData::ContextMenu(_) => None,
         DomEventData::DoubleClick(_) => None,
         DomEventData::Input(_) => None,
-        DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
+        DomEventData::Wheel(mut data) => {
+            if local_point.is_some() {
+                adjust_coords_for_subdocument(
+                    &mut data.coords,
+                    node_offset,
+                    viewport_scroll,
+                    local_point,
+                );
+            }
+            Some(UiEvent::Wheel(data))
+        }
         DomEventData::Scroll(_) => None,
         DomEventData::Focus(_) => None,
         DomEventData::Blur(_) => None,
@@ -102,12 +146,16 @@ fn map_dom_event_to_ui_event(
 pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
-    _hit: Option<HitResult>,
+    hit: Option<HitResult>,
     mut dispatch_event: F,
 ) {
     let target_node_id = event.target;
     let node = &mut doc.nodes[target_node_id];
     let pos = node.absolute_position(0.0, 0.0);
+    let local_point = hit.map(|hit| Point {
+        x: hit.x - node.final_layout().border.left - node.final_layout().padding.left,
+        y: hit.y - node.final_layout().border.top - node.final_layout().padding.top,
+    });
 
     // Whether this event can move the caret/selection (or change the text) of a text input,
     // in which case we need to update the input's scroll offset afterwards.
@@ -130,7 +178,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             &event.data,
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
-        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
+        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll, local_point);
 
         if let Some(ui_event) = ui_event {
             sub_doc.handle_ui_event(ui_event);
@@ -151,10 +199,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
     // Handle event forwarding for custom widget
     #[cfg(feature = "custom-widget")]
-    let widget_point = _hit.map(|hit| Point {
-        x: hit.x - node.final_layout().border.left - node.final_layout().padding.left,
-        y: hit.y - node.final_layout().border.top - node.final_layout().padding.top,
-    });
+    let widget_point = local_point;
     #[cfg(feature = "custom-widget")]
     if let Some(widget_data) = node
         .element_data_mut()
@@ -165,7 +210,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
-        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
+        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll, None);
 
         if let Some(mut ui_event) = ui_event {
             let pointer_coords = match &mut ui_event {
