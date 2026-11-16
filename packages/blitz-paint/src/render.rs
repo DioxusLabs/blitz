@@ -681,7 +681,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     backdrop_filter,
                     |scene| {
                         if paints_own_box {
-                            cx.draw_background(scene);
+                            // The root SVG background is propagated to the canvas.
+                            if self.root_element_id != Some(node.id)
+                                || !node.data.is_element_with_tag_name(&local_name!("svg"))
+                            {
+                                cx.draw_background(scene);
+                            }
                             cx.draw_inset_box_shadow(scene);
                         }
                         cx.draw_table_row_backgrounds(scene);
