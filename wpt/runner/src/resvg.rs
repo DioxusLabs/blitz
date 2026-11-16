@@ -300,7 +300,8 @@ fn fill_with_png(buffer: &mut Vec<u8>, png: &RgbaImage) {
 
 /// Sets the pixels of `buffer` outside the top-left `width`x`height` to white.
 fn clear_outside(buffer: &mut [u8], width: u32, height: u32) {
-    for (y, row) in buffer.chunks_exact_mut((WIDTH * 4) as usize).enumerate() {
+    let rows = buffer.as_chunks_mut::<{ (WIDTH * 4) as usize }>().0;
+    for (y, row) in rows.iter_mut().enumerate() {
         let start = if (y as u32) < height { width } else { 0 };
         row[(start * 4) as usize..].fill(255);
     }
