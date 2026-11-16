@@ -4,7 +4,10 @@
 mod accessibility_description;
 mod accessibility_hidden;
 mod accessibility_label;
+mod accessibility_placeholder;
+mod accessibility_presentational;
 mod accessibility_roles;
+mod accessibility_tree;
 mod animations;
 mod anonymous_block_cache_invalidation;
 mod anonymous_block_leak;
