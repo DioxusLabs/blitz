@@ -131,6 +131,38 @@ fn pointer_coordinates_use_the_transformed_content_box() {
 }
 
 #[test]
+fn offset_widget_uses_content_box_local_coordinates() {
+    for scale in [1.0, 2.0] {
+        let (mut harness, state) = widget("position:absolute;left:70px;top:40px", scale);
+        let layout = *harness
+            .base()
+            .get_node(harness.node("#widget"))
+            .unwrap()
+            .final_layout();
+        assert_eq!(layout.location.x, 70.0);
+        assert_eq!(layout.location.y, 40.0);
+        let scene = paint(&mut harness, scale as f64);
+        let origin = scene
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                RenderCommand::Fill(fill) if fill.brush == MARKER.into() => {
+                    Some(fill.transform.translation())
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert!((origin.x - 85.0 * scale as f64).abs() < 0.001);
+        assert!((origin.y - 55.0 * scale as f64).abs() < 0.001);
+        harness.click_at(105.0, 65.0);
+        for &(x, y) in state.lock().unwrap().points.last().unwrap() {
+            assert!((x - 20.0).abs() < 0.001, "{x}");
+            assert!((y - 10.0).abs() < 0.001, "{y}");
+        }
+    }
+}
+
+#[test]
 fn empty_content_box_is_not_painted() {
     let (mut harness, state) = widget("width:0;height:0", 1.0);
     paint(&mut harness, 1.0);

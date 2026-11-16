@@ -152,8 +152,8 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     // Handle event forwarding for custom widget
     #[cfg(feature = "custom-widget")]
     let widget_point = _hit.map(|hit| Point {
-        x: hit.x - node.final_layout().content_box_x(),
-        y: hit.y - node.final_layout().content_box_y(),
+        x: hit.x - node.final_layout().border.left - node.final_layout().padding.left,
+        y: hit.y - node.final_layout().border.top - node.final_layout().padding.top,
     });
     #[cfg(feature = "custom-widget")]
     if let Some(widget_data) = node
