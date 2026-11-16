@@ -244,13 +244,18 @@ fn radial_gradient(
                 &mut gradient,
                 repeating,
             );
-            let scale = if repeating && gradient.stops.len() >= 2 {
-                (last_offset - first_offset) as f64
-            } else {
-                1.0
-            };
+            if repeating && gradient.stops.len() >= 2 {
+                let period = last_offset - first_offset;
+                let start_radius = first_offset.rem_euclid(period);
+                gradient.kind = peniko::GradientKind::Radial(peniko::RadialGradientPosition {
+                    start_center: Point::ZERO,
+                    start_radius,
+                    end_center: Point::ZERO,
+                    end_radius: start_radius + period,
+                });
+            }
             Some(
-                Affine::scale_non_uniform(gradient_scale.x * scale, gradient_scale.y * scale)
+                Affine::scale_non_uniform(gradient_scale.x, gradient_scale.y)
                     .then_translate(get_translation(position, rect)),
             )
         } else {
@@ -444,6 +449,37 @@ fn resolve_color_stops<T>(
     if repeating && gradient.stops.len() > 1 {
         let first_offset = gradient.stops.first().unwrap().offset;
         let last_offset = gradient.stops.last().unwrap().offset;
+        if first_offset == last_offset {
+            let mut average = [0.0; 4];
+            let intervals = (gradient.stops.len() - 1) as f32;
+            for pair in gradient.stops.windows(2) {
+                let midpoint = pair[0]
+                    .color
+                    .interpolate(
+                        pair[1].color,
+                        gradient.interpolation_cs,
+                        gradient.hue_direction,
+                    )
+                    .eval(0.5)
+                    .to_alpha_color::<color::Srgb>()
+                    .components;
+                for channel in 0..3 {
+                    average[channel] += midpoint[channel] * midpoint[3] / intervals;
+                }
+                average[3] += midpoint[3] / intervals;
+            }
+            if average[3] > 0.0 {
+                for channel in 0..3 {
+                    average[channel] /= average[3];
+                }
+            }
+            gradient.stops.clear();
+            gradient.stops.push(ColorStop {
+                color: DynamicColor::from_alpha_color(Color::new(average)),
+                offset: 0.0,
+            });
+            return (0.0, 1.0);
+        }
         if first_offset != 0.0 || last_offset != 1.0 {
             let scale_inv = 1e-7_f32.max(1.0 / (last_offset - first_offset));
             for stop in &mut *gradient.stops {
@@ -517,6 +553,63 @@ fn get_translation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn resolve_repeating_stops(stops: &[(f32, [f32; 4])]) -> Gradient {
+        let mut gradient = Gradient::new_linear((0.0, 0.0), (1.0, 0.0));
+        for &(offset, components) in stops {
+            gradient.stops.push(ColorStop {
+                offset,
+                color: DynamicColor::from_alpha_color(Color::new(components)),
+            });
+        }
+        resolve_color_stops::<()>(
+            &AbsoluteColor::srgb_legacy(0, 0, 0, 1.0),
+            &[],
+            CSSPixelLength::new(1.0),
+            &mut gradient,
+            true,
+            |_, _| None,
+        );
+        gradient
+    }
+
+    #[test]
+    fn zero_period_averages_premultiplied_colors() {
+        for (colors, expected) in [
+            (
+                vec![[1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]],
+                [0.5, 0.0, 0.5, 1.0],
+            ),
+            (
+                vec![[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 1.0]],
+                [0.0, 0.0, 1.0, 0.5],
+            ),
+            (vec![[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]], [0.0; 4]),
+            (
+                vec![
+                    [1.0, 0.0, 0.0, 1.0],
+                    [0.0, 1.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0, 1.0],
+                ],
+                [0.25, 0.5, 0.25, 1.0],
+            ),
+        ] {
+            let stops: Vec<_> = colors.into_iter().map(|color| (0.2, color)).collect();
+            let gradient = resolve_repeating_stops(&stops);
+            assert_eq!(gradient.stops.len(), 1);
+            assert_eq!(gradient.stops[0].color.components, expected);
+            assert_eq!(gradient.stops[0].offset, 0.0);
+        }
+    }
+
+    #[test]
+    fn repeating_stops_normalize_nonzero_period_and_allow_empty() {
+        let gradient =
+            resolve_repeating_stops(&[(0.2, [1.0, 0.0, 0.0, 1.0]), (0.4, [0.0, 0.0, 1.0, 1.0])]);
+        assert_eq!(gradient.stops[0].offset, 0.0);
+        assert_eq!(gradient.stops[1].offset, 1.0);
+        assert!(resolve_repeating_stops(&[]).stops.is_empty());
+    }
 
     #[test]
     fn gradient_percentage_overflow_is_clamped() {
