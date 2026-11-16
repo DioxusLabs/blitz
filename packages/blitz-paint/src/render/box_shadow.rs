@@ -28,7 +28,10 @@ impl ElementCx<'_, '_> {
         // Only paint the shadow outside of the border box if it could otherwise be seen
         // through the element
         let bg_is_opaque = bg_color.components[3] >= 1.0;
-        let clip_to_box = opacity < 1.0 || !bg_is_opaque || !bg_covers_border_box;
+        let clip_to_box = opacity < 1.0
+            || !bg_is_opaque
+            || !bg_covers_border_box
+            || self.context.canvas_background_node_id == Some(self.node.id);
 
         let border_box = self.frame.border_box_shape();
         for shadow in box_shadow.iter().filter(|s| !s.inset).rev() {
