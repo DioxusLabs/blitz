@@ -21,13 +21,14 @@ pub mod fuzzy;
 mod harness_test;
 mod js_wrapper;
 mod ref_test;
+mod resvg_test;
 
 pub use attr_test::process_attr_test;
 pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
 pub use js_wrapper::wrapper_html_for_js_test;
 pub use ref_test::process_ref_test;
-pub(crate) use ref_test::render_html_to_buffer;
+pub use resvg_test::process_resvg_test;
 
 static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let mut tests = HashMap::new();
@@ -199,7 +200,7 @@ pub fn process_test_file(
     }
 
     if let TestType::Resvg(mode) = test_type {
-        let counts = crate::resvg::process_test(ctx, relative_path, test_url, *mode);
+        let counts = process_resvg_test(ctx, relative_path, test_url, *mode);
         return (
             TestKind::Ref,
             TestFlags::empty(),
