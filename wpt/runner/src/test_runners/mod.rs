@@ -28,7 +28,7 @@ pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
 pub use js_wrapper::wrapper_html_for_js_test;
 pub use ref_test::process_ref_test;
-pub use resvg_test::process_resvg_test;
+pub use resvg_test::{decode_xml, process_resvg_test};
 
 static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let mut tests = HashMap::new();
@@ -199,31 +199,24 @@ pub fn process_test_file(
         );
     }
 
-    if let TestType::Resvg(mode) = test_type {
-        let counts = process_resvg_test(ctx, relative_path, test_url, *mode);
-        return (
-            TestKind::Ref,
-            TestFlags::empty(),
-            counts.as_status(),
-            counts,
-            Vec::new(),
-        );
-    }
-
-    let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
-            // Tests encoded as UTF-16 or a legacy encoding are not supported: skip them.
-            warn!("Skipping {relative_path}: not valid UTF-8");
-            return (
-                TestKind::Unknown,
-                TestFlags::empty(),
-                TestStatus::Skip,
-                SubtestCounts::ZERO_OF_ZERO,
-                Vec::new(),
-            );
-        }
-        Err(err) => panic!("Failed to read {relative_path}: {err}"),
+    let file_bytes = fs::read(ctx.wpt_dir.join(relative_path))
+        .unwrap_or_else(|err| panic!("Failed to read {relative_path}: {err}"));
+    let file_contents = match test_type {
+        TestType::Resvg(_) => decode_xml(&file_bytes),
+        _ => match String::from_utf8(file_bytes) {
+            Ok(contents) => contents,
+            Err(_) => {
+                // Tests encoded as UTF-16 or a legacy encoding are not supported: skip them.
+                warn!("Skipping {relative_path}: not valid UTF-8");
+                return (
+                    TestKind::Unknown,
+                    TestFlags::empty(),
+                    TestStatus::Skip,
+                    SubtestCounts::ZERO_OF_ZERO,
+                    Vec::new(),
+                );
+            }
+        },
     };
 
     // Compute flags
@@ -300,7 +293,11 @@ pub fn process_test_file(
             let (status, counts, results) = process_harness_test(ctx, &file_contents, test_url);
             (TestKind::TestHarness, flags, status, counts, results)
         }
-        TestType::Resvg(_) => unreachable!("resvg tests are processed above"),
+        TestType::Resvg(mode) => {
+            let counts = process_resvg_test(ctx, relative_path, test_url, &file_contents, *mode);
+            let status = counts.as_status();
+            (TestKind::Ref, flags, status, counts, Vec::new())
+        }
     }
 }
 

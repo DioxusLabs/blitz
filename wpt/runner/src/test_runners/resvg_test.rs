@@ -77,12 +77,13 @@ static PNG_TOLERANCE_OVERRIDE: LazyLock<Tolerance> = LazyLock::new(|| {
     })
 });
 
-/// Renders the SVG at `relative_path` (relative to the suite dir) in `mode`
-/// and compares it against its reference.
+/// Renders `svg_source`, the SVG at `relative_path` (relative to the suite
+/// dir), in `mode` and compares it against its reference.
 pub fn process_resvg_test(
     ctx: &mut ThreadCtx,
     relative_path: &str,
     test_url: &str,
+    svg_source: &str,
     mode: Mode,
 ) -> SubtestCounts {
     let svg_path = ctx.wpt_dir.join(relative_path);
@@ -94,9 +95,8 @@ pub fn process_resvg_test(
         width <= WIDTH && height <= HEIGHT,
         "{width}x{height} reference is too large"
     );
-    let svg_data = fs::read(&svg_path).unwrap();
     // resvg's harness renders usvg's size scaled to the PNG's width
-    let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).unwrap();
+    let tree = usvg::Tree::from_str(svg_source, &usvg::Options::default()).unwrap();
     let scale = width as f32 / tree.size().width();
 
     // The test's URL path, which the net provider decodes back to a file path
@@ -106,7 +106,6 @@ pub fn process_resvg_test(
         "<!DOCTYPE html>\n<style>body {{ margin: 0 }} img {{ display: block; width: {width}px; height: {height}px }}</style>\n<img src=\"{}\">\n",
         html_escape::encode_double_quoted_attribute(file_name)
     );
-    let svg_source = decode_xml(&svg_data);
 
     let artifact = artifact_name(test_url);
     let out_path = |suffix: &str| ctx.out_dir.join(format!("{artifact}-{suffix}.png"));
@@ -114,7 +113,7 @@ pub fn process_resvg_test(
 
     let render = |ctx: &mut ThreadCtx, kind: BufferKind, out: &Path, doc: bool| {
         let (path, html, scale) = if doc {
-            (url_path.clone(), svg_source.as_str(), scale)
+            (url_path.clone(), svg_source, scale)
         } else {
             (format!("{url_path}.html"), img_html.as_str(), 1.0)
         };
@@ -194,7 +193,7 @@ fn save_png(path: &Path, buffer: &[u8]) {
 }
 
 /// Decodes an SVG with the encoding its XML declaration names, as usvg does.
-fn decode_xml(data: &[u8]) -> String {
+pub fn decode_xml(data: &[u8]) -> String {
     let encoding = ENCODING_RE
         .captures(data)
         .and_then(|caps| encoding_rs::Encoding::for_label(&caps[1]))
