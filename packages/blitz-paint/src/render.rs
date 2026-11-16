@@ -123,6 +123,7 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
     pub(crate) root_element_id: Option<NodeId>,
+    pub(crate) canvas_background_node_id: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
     pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
@@ -157,6 +158,23 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let layer_manager = LayerManager::default();
         let root_element_id = dom.try_root_element().map(|el| el.id);
+        let canvas_background_node_id = dom.try_root_element().and_then(|root| {
+            let styles = root.primary_styles();
+            let color = styles
+                .as_ref()
+                .map_or(&GenericColor::TRANSPARENT_BLACK, |s| {
+                    s.get_background_color()
+                });
+            if *color == GenericColor::TRANSPARENT_BLACK {
+                root.children.iter().find_map(|id| {
+                    dom.get_node(*id)
+                        .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
+                        .map(|body| body.id)
+                })
+            } else {
+                Some(root.id)
+            }
+        });
 
         Self {
             dom,
@@ -166,6 +184,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             initial_x,
             initial_y,
             root_element_id,
+            canvas_background_node_id,
             #[cfg(feature = "scrollbars")]
             hovered_scrollbar: dom.hovered_scrollbar(),
             #[cfg(feature = "scrollbars")]
@@ -200,35 +219,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_width = (self.width as f32).max(root_element.final_layout().size.width);
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
-        let background_color = {
-            let html_styles = root_element.primary_styles();
-            let html_color = html_styles
-                .as_ref()
-                .map_or(&GenericColor::TRANSPARENT_BLACK, |s| {
-                    s.get_background_color()
-                });
-            if *html_color == GenericColor::TRANSPARENT_BLACK {
-                root_element
-                    .children
-                    .iter()
-                    .find_map(|id| {
-                        self.dom
-                            .as_ref()
-                            .get_node(*id)
-                            .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
-                    })
-                    .and_then(|body| body.primary_styles())
-                    .map(|style| {
-                        let current_color = style.clone_color();
-                        style
-                            .get_background_color()
-                            .resolve_to_absolute(&current_color)
-                    })
-            } else {
-                let current_color = html_styles.as_ref().unwrap().clone_color();
-                Some(html_color.resolve_to_absolute(&current_color))
-            }
-        };
+        let background_color = self
+            .canvas_background_node_id
+            .and_then(|id| self.dom.get_node(id))
+            .and_then(|node| node.primary_styles())
+            .map(|style| {
+                let current_color = style.clone_color();
+                style
+                    .get_background_color()
+                    .resolve_to_absolute(&current_color)
+            });
 
         if let Some(bg_color) = background_color {
             let bg_color = bg_color.as_srgb_color();
@@ -681,12 +681,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     backdrop_filter,
                     |scene| {
                         if paints_own_box {
-                            // The root SVG background is propagated to the canvas.
-                            if self.root_element_id != Some(node.id)
-                                || !node.data.is_element_with_tag_name(&local_name!("svg"))
-                            {
-                                cx.draw_background(scene);
-                            }
+                            cx.draw_background(scene);
                             cx.draw_inset_box_shadow(scene);
                         }
                         cx.draw_table_row_backgrounds(scene);
