@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use anyrender_vello_hybrid::VelloHybridWebGlWindowRenderer;
+use anyrender_vello_gpu::VelloGpuWebGlWindowRenderer;
 use blitz_dom::{DocumentConfig, FontContext, decode_font_bytes};
 use blitz_html::HtmlDocument;
 use blitz_shell::{BlitzApplication, BlitzShellProxy, WindowConfig};
@@ -30,7 +30,7 @@ const HTML: &str = r#"<!doctype html>
     <h1>blitz-shell, running in your browser</h1>
     <p class="lede">
       Laid out by <strong>blitz-dom</strong>, painted by <strong>blitz-paint</strong>,
-      rendered through <strong>anyrender</strong>'s vello hybrid backend &mdash;
+      rendered through <strong>anyrender</strong>'s vello GPU backend &mdash;
       driven by the same <code>BlitzApplication</code> that runs natively.
     </p>
     <ul>
@@ -120,7 +120,7 @@ pub fn start() -> Result<(), JsValue> {
     let event_loop = EventLoop::new().map_err(|e| JsValue::from_str(&format!("{e}")))?;
     let (proxy, rx) = BlitzShellProxy::new(event_loop.create_proxy());
 
-    let renderer = VelloHybridWebGlWindowRenderer::new();
+    let renderer = VelloGpuWebGlWindowRenderer::new();
     let doc = HtmlDocument::from_html(
         HTML,
         DocumentConfig {
@@ -137,7 +137,7 @@ pub fn start() -> Result<(), JsValue> {
     ));
     let window_config = WindowConfig::with_attributes(Box::new(doc), renderer, attrs);
 
-    let mut app = BlitzApplication::<VelloHybridWebGlWindowRenderer>::new(proxy, rx);
+    let mut app = BlitzApplication::<VelloGpuWebGlWindowRenderer>::new(proxy, rx);
     app.add_window(window_config);
 
     event_loop
