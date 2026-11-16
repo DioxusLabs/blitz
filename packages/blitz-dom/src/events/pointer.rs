@@ -217,7 +217,11 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     let mut changed = doc.set_hover_to(x, y);
 
     // Check if we've moved enough to be considered a selection drag (2px threshold)
-    if buttons != MouseEventButtons::None && doc.drag_mode == DragMode::None {
+    if buttons != MouseEventButtons::None
+        && (matches!(event.id, BlitzPointerId::Finger(_))
+            || buttons.contains(MouseEventButtons::Primary))
+        && doc.drag_mode == DragMode::None
+    {
         let dx = x - doc.mousedown_position.x;
         let dy = y - doc.mousedown_position.y;
         if dx.abs() > 2.0 || dy.abs() > 2.0 {
@@ -319,7 +323,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     let node = &mut doc.nodes[target];
     let Some(el) = node.data.downcast_element_mut() else {
         // Handle text selection extension for non-element nodes
-        if buttons != MouseEventButtons::None
+        if buttons.contains(MouseEventButtons::Primary)
             && doc.drag_mode == DragMode::Selecting
             && doc.extend_text_selection_to_point(x, y)
         {
@@ -335,7 +339,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
 
     let final_layout = el.layout_data().final_layout;
     if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
-        if buttons == MouseEventButtons::None {
+        if !buttons.contains(MouseEventButtons::Primary) {
             return changed;
         }
 
@@ -371,7 +375,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
 
         changed = true;
     } else if event.is_mouse()
-        && buttons != MouseEventButtons::None
+        && buttons.contains(MouseEventButtons::Primary)
         && doc.drag_mode == DragMode::Selecting
         && doc.extend_text_selection_to_point(x, y)
     {
