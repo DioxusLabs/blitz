@@ -1,7 +1,7 @@
 use crate::Document;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, Point, PointerCoords,
-    UiEvent,
+    BlitzPointerEvent, BlitzPointerId, BlitzWheelEvent, DomEvent, DomEventData, EventState, Point,
+    PointerCoords, UiEvent,
 };
 use blitz_traits::node_id::NodeId;
 use std::collections::VecDeque;
@@ -276,7 +276,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             // Out/leave events were dispatched by `handle_pointer_leave`
             UiEvent::PointerLeave(_) => {}
             UiEvent::Wheel(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
+                self.dispatch_wheel_event(target, data);
             }
             UiEvent::KeyUp(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::KeyUp(data)))
@@ -314,6 +314,39 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         if !is_leave && doc.hover_state() != prev_hover {
             doc.update_cursor();
         }
+    }
+
+    /// Handle a wheel event, returning the part of its delta which no scroller in the
+    /// document could consume.
+    pub fn handle_wheel_event(&mut self, event: BlitzWheelEvent) -> crate::util::Point<f64> {
+        let target = {
+            let doc = self.doc.inner();
+            doc.hover_node_id
+                .or_else(|| doc.try_root_element().map(|el| el.id))
+        };
+        match target {
+            Some(target) => self.dispatch_wheel_event(target, event),
+            None => crate::util::Point::ZERO,
+        }
+    }
+
+    fn dispatch_wheel_event(
+        &mut self,
+        target: NodeId,
+        event: BlitzWheelEvent,
+    ) -> crate::util::Point<f64> {
+        let mut dom_event = DomEvent::new(target, DomEventData::Wheel(event));
+        let event_state = self.run_handler_event(&mut dom_event, EventState::default());
+        let remainder = if event_state.is_cancelled() {
+            crate::util::Point::ZERO
+        } else {
+            let mut doc = self.doc.inner_mut();
+            super::handle_wheel_default_action(&mut doc, &mut dom_event, |new_evt| {
+                self.queue.push_back(new_evt)
+            })
+        };
+        self.process_queue();
+        remainder
     }
 
     pub fn handle_dom_event(&mut self, event: DomEvent) {

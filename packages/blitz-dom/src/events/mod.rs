@@ -5,7 +5,8 @@ mod keyboard;
 mod pointer;
 
 use crate::util::Point;
-use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
+use blitz_traits::events::{BlitzWheelEvent, DomEvent, DomEventData, PointerCoords, UiEvent};
+use blitz_traits::node_id::NodeId;
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
@@ -99,12 +100,79 @@ fn map_dom_event_to_ui_event(
     }
 }
 
+/// Forward a wheel event to the sub-document of `target_node_id`, chaining the scroll it
+/// could not consume to the scrollers around the sub-document. Returns the part of the
+/// delta which nothing consumed, or `None` if the node has no sub-document.
+fn forward_wheel_to_subdocument<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    target_node_id: NodeId,
+    event: BlitzWheelEvent,
+    dispatch_event: &mut F,
+) -> Option<Point<f64>> {
+    let remainder = doc.nodes[target_node_id]
+        .subdoc_mut()?
+        .handle_wheel_event(event);
+    if remainder == Point::ZERO {
+        return Some(remainder);
+    }
+
+    let parent_id = doc.nodes[target_node_id].parent;
+    let (has_changed, remainder) =
+        doc.scroll_chain_by_with_remainder(parent_id, remainder.x, remainder.y, dispatch_event);
+    if has_changed {
+        doc.shell_provider.request_redraw();
+    }
+    Some(remainder)
+}
+
+/// Run the default action of a wheel event, returning the part of its delta which no
+/// scroller could consume.
+pub(crate) fn handle_wheel_default_action<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    event: &mut DomEvent,
+    mut dispatch_event: F,
+) -> Point<f64> {
+    let target_node_id = event.target;
+    let DomEventData::Wheel(data) = &event.data else {
+        handle_dom_event(doc, event, dispatch_event);
+        return Point::ZERO;
+    };
+    let data = data.clone();
+
+    if let Some(remainder) =
+        forward_wheel_to_subdocument(doc, target_node_id, data.clone(), &mut dispatch_event)
+    {
+        return remainder;
+    }
+
+    #[cfg(feature = "custom-widget")]
+    if doc.nodes[target_node_id]
+        .element_data()
+        .and_then(|el| el.custom_widget_data())
+        .is_some()
+    {
+        handle_dom_event(doc, event, dispatch_event);
+        return Point::ZERO;
+    }
+
+    handle_wheel(doc, target_node_id, data, dispatch_event)
+}
+
 pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
     mut dispatch_event: F,
 ) {
     let target_node_id = event.target;
+
+    if let DomEventData::Wheel(data) = &event.data {
+        if forward_wheel_to_subdocument(doc, target_node_id, data.clone(), &mut dispatch_event)
+            .is_some()
+        {
+            return;
+        }
+    }
+
     let node = &mut doc.nodes[target_node_id];
     let pos = node.absolute_position(0.0, 0.0);
 

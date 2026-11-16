@@ -8,9 +8,9 @@ use crate::mutation_writer::DioxusState;
 use crate::qual_name;
 use blitz_dom::{
     Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
-    EventHandler, Node,
+    EventHandler, Node, Point,
 };
-use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
+use blitz_traits::events::{BlitzWheelEvent, DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::{PlatformEventData, set_event_converter};
 use futures_util::task::noop_waker;
@@ -258,6 +258,15 @@ impl Document for DioxusDocument {
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
+    }
+
+    fn handle_wheel_event(&mut self, event: BlitzWheelEvent) -> Point<f64> {
+        let handler = DioxusEventHandler {
+            vdom: &mut self.vdom,
+            vdom_state: &mut self.vdom_state,
+        };
+        let mut driver = EventDriver::new(&mut self.inner, handler);
+        driver.handle_wheel_event(event)
     }
 }
 
