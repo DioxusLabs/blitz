@@ -116,15 +116,15 @@ skrifa = { version = "0.49", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
-anyrender_tiny_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "02799143c4dc90040ce4afd90a49a33eae8a1817" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
+anyrender_vello_gpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
+anyrender_tiny_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "1ffc97610b618857391de51eed9e4d9657c0173e" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -267,7 +267,7 @@ log-phase-times = ["dioxus-native/log-phase-times"]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"] }
-anyrender_vello_hybrid = { workspace = true }
+anyrender_vello_gpu = { workspace = true }
 blitz-dom = { workspace = true, features = ["default"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }
@@ -278,7 +278,7 @@ blitz-vibey-script = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
 dioxus = { workspace = true }
 dioxus-native = { workspace = true, features = [
-    "vello-hybrid",
+    "vello-gpu",
     "floats",
     "svg",
     "prelude",
@@ -306,7 +306,7 @@ wgpu_context = { workspace = true }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
 # anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
 # anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
-# anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
+# anyrender_vello_gpu = { path = "../anyrender/crates/anyrender_vello_gpu" }
 # anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
 # wgpu_context = { path = "../anyrender/crates/wgpu_context" }
 

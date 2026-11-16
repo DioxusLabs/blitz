@@ -13,9 +13,57 @@ use style::servo_arc::Arc as ServoArc;
 use style::shared_lock::Locked;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::values::computed::text::TextAlign as StyloTextAlign;
-use style::values::specified::{NoCalcPercentage, XLang};
+use style::values::generics::{NonNegative, length::Size};
+use style::values::specified::{
+    BorderSideWidth, LengthPercentage, Margin, NoCalcLength, NoCalcPercentage, XLang,
+};
 
 use crate::node::{ElementData, Node};
+
+/// Whether the local name `$tag` is one of the listed names.
+macro_rules! matches_tag {
+    ($tag:expr, $($name:tt)|+) => {
+        matches!(*$tag, $(local_name!($name))|+)
+    };
+}
+
+/// One declaration per listed longhand, each set to `value`.
+macro_rules! apply_to_all {
+    ($value:expr => $($property:ident),+ $(,)?) => {{
+        let value = $value;
+        [$(PropertyDeclaration::$property(value.clone())),+]
+    }};
+}
+
+/// A length of `px` CSS pixels.
+fn px(px: f32) -> LengthPercentage {
+    LengthPercentage::Length(NoCalcLength::from_px(px))
+}
+
+/// The value of a `width`/`height` property for a `<length-percentage>`.
+fn size(length: LengthPercentage) -> Size<NonNegative<LengthPercentage>> {
+    Size::LengthPercentage(NonNegative(length))
+}
+
+/// The HTML "rules for parsing non-negative integers", which most pixel-valued attributes use.
+fn parse_pixels(value: &str) -> Option<u32> {
+    style::servo::attr::parse_unsigned_integer(value.chars()).ok()
+}
+
+/// The declaration block that collects an element's hints.
+struct Hints(PropertyDeclarationBlock);
+
+impl Hints {
+    fn push(&mut self, declaration: PropertyDeclaration) {
+        self.0.push(declaration, Importance::Normal);
+    }
+
+    fn extend(&mut self, declarations: impl IntoIterator<Item = PropertyDeclaration>) {
+        for declaration in declarations {
+            self.push(declaration);
+        }
+    }
+}
 
 /// The declaration blocks an element's presentational attributes map to.
 #[derive(Default)]
@@ -36,8 +84,7 @@ where
         return;
     };
     let element_hints = presentational_hints(node, elem);
-    let tag = &elem.name.local;
-    let cell_padding = if *tag == local_name!("td") || *tag == local_name!("th") {
+    let cell_padding = if matches_tag!(&elem.name.local, "td" | "th") {
         table_of_cell(node)
             .and_then(|table| Some(presentational_hints(table, table.data.downcast_element()?)))
             .and_then(|table| table.cell_padding.as_ref())
@@ -69,11 +116,7 @@ fn table_of_cell(cell: &Node) -> Option<&Node> {
     let mut ancestor = cell.parent_node();
     while let Some(node) = ancestor {
         let name = &node.data.downcast_element()?.name.local;
-        let is_table_internal = *name == local_name!("tr")
-            || *name == local_name!("tbody")
-            || *name == local_name!("thead")
-            || *name == local_name!("tfoot");
-        if !is_table_internal {
+        if !matches_tag!(name, "tr" | "tbody" | "thead" | "tfoot") {
             return (*name == local_name!("table")).then_some(node);
         }
         ancestor = node.parent_node();
@@ -84,10 +127,7 @@ fn table_of_cell(cell: &Node) -> Option<&Node> {
 fn compute_presentational_hints(node: &Node, elem: &ElementData) -> PresentationalHints {
     let tag = &elem.name.local;
 
-    let mut declarations = PropertyDeclarationBlock::new();
-    let mut push_style = |decl: PropertyDeclaration| {
-        declarations.push(decl, Importance::Normal);
-    };
+    let mut hints = Hints(PropertyDeclarationBlock::new());
 
     fn parse_color_attr(value: &str) -> Option<(u8, u8, u8, f32)> {
         if !value.starts_with('#') {
@@ -119,21 +159,15 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     /// zero value is dropped rather than honoured.
     ///
     /// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-dimension-values
-    fn parse_size_attr(
-        value: &str,
-        ignoring_zero: bool,
-    ) -> Option<style::values::specified::LengthPercentage> {
+    fn parse_size_attr(value: &str, ignoring_zero: bool) -> Option<LengthPercentage> {
         use style::servo::attr::{LengthOrPercentageOrAuto, parse_length, parse_nonzero_length};
-        use style::values::specified::{LengthPercentage, NoCalcLength};
         let parsed = if ignoring_zero {
             parse_nonzero_length(value)
         } else {
             parse_length(value)
         };
         match parsed {
-            LengthOrPercentageOrAuto::Length(length) => Some(LengthPercentage::Length(
-                NoCalcLength::from_px(length.to_f32_px()),
-            )),
+            LengthOrPercentageOrAuto::Length(length) => Some(px(length.to_f32_px())),
             LengthOrPercentageOrAuto::Percentage(fraction) => Some(LengthPercentage::Percentage(
                 NoCalcPercentage::new(fraction),
             )),
@@ -145,8 +179,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     /// Unlike the legacy HTML dimension attributes, these accept any CSS
     /// <length-percentage> (e.g. `1em`), and a unitless number means user
     /// units, which map to CSS px.
-    fn parse_svg_size_attr(value: &str) -> Option<style::values::specified::LengthPercentage> {
-        use style::values::specified::{LengthPercentage, NoCalcLength};
+    fn parse_svg_size_attr(value: &str) -> Option<LengthPercentage> {
         use style_traits::ParsingMode;
 
         let value = value.trim();
@@ -199,16 +232,15 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         Some(size.clamp(1, 7) as u8)
     }
 
-    /// The `face` attribute's value parsed as a `font-family` list, as Gecko and
-    /// Blink parse it: CSS-wide keywords and `var()` are not family lists.
-    fn parse_font_face_attr(value: &str) -> Option<PropertyDeclaration> {
+    /// `value` parsed as a declaration of `property`, as an author style would be.
+    fn parse_declaration(property: &str, value: &str) -> Option<PropertyDeclaration> {
         use style::properties::{
             PropertyId, SourcePropertyDeclaration, parse_one_declaration_into,
         };
         use style::stylesheets::{CssRuleType, Origin};
         use style_traits::ParsingMode;
 
-        let property = PropertyId::parse_enabled_for_all_content("font-family").ok()?;
+        let property = PropertyId::parse_enabled_for_all_content(property).ok()?;
         let mut declarations = SourcePropertyDeclaration::default();
         parse_one_declaration_into(
             &mut declarations,
@@ -222,11 +254,57 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             CssRuleType::Style,
         )
         .ok()?;
-        declarations
-            .drain()
-            .declarations
-            .find(|declaration| matches!(declaration, PropertyDeclaration::FontFamily(_)))
+        declarations.drain().declarations.next()
     }
+
+    /// The `face` attribute's value parsed as a `font-family` list, as Gecko and
+    /// Blink parse it: CSS-wide keywords and `var()` are not family lists.
+    fn parse_font_face_attr(value: &str) -> Option<PropertyDeclaration> {
+        parse_declaration("font-family", value)
+            .filter(|declaration| matches!(declaration, PropertyDeclaration::FontFamily(_)))
+    }
+
+    /// An SVG `transform` attribute (SVG transform-list syntax, e.g. unitless
+    /// `translate(20, 30)`) as a CSS `transform` declaration. Translations are
+    /// written as `px` lengths so that `zoom` scales them as it would CSS ones.
+    #[cfg(feature = "svg")]
+    fn parse_svg_transform_attr(value: &str) -> Option<PropertyDeclaration> {
+        use std::fmt::Write;
+        use svgtypes::{TransformListParser, TransformListToken as Token};
+
+        let mut css = String::new();
+        for token in TransformListParser::from(value) {
+            match token.ok()? {
+                Token::Matrix { a, b, c, d, e, f } => {
+                    write!(
+                        css,
+                        "translate({e}px, {f}px) matrix({a}, {b}, {c}, {d}, 0, 0) "
+                    )
+                }
+                Token::Translate { tx, ty } => write!(css, "translate({tx}px, {ty}px) "),
+                Token::Scale { sx, sy } => write!(css, "scale({sx}, {sy}) "),
+                Token::Rotate { angle } => write!(css, "rotate({angle}deg) "),
+                Token::SkewX { angle } => write!(css, "skewX({angle}deg) "),
+                Token::SkewY { angle } => write!(css, "skewY({angle}deg) "),
+            }
+            .ok()?;
+        }
+        if css.is_empty() {
+            return None;
+        }
+        parse_declaration("transform", &css)
+    }
+
+    // The outermost `<svg>` is a CSS box, so its `transform` attribute transforms
+    // the box like the CSS `transform` property it maps to.
+    // https://svgwg.org/svg2-draft/coords.html#TransformProperty
+    #[cfg(feature = "svg")]
+    let is_outermost_svg = *tag == local_name!("svg")
+        && elem.name.ns == ns!(svg)
+        && node
+            .parent_node()
+            .and_then(|parent| parent.data.downcast_element())
+            .is_none_or(|parent| parent.name.ns != ns!(svg));
 
     // `<input type=image>` is the only input type that is replaced
     // content, and it is the only one that takes the embedded-content
@@ -237,9 +315,22 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             attr.name.local == local_name!("type") && attr.value.eq_ignore_ascii_case("image")
         });
 
+    // An `hr` with `color` or `noshade` takes its `size` as border widths
+    // rather than as a height.
+    let is_solid_hr = *tag == local_name!("hr")
+        && (elem.has_attr(local_name!("color")) || elem.has_attr(local_name!("noshade")));
+
     // https://html.spec.whatwg.org/multipage/#the-lang-and-xml:lang-attributes
     let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
     let mut lang = None;
+
+    #[cfg(feature = "svg")]
+    let svg_url_data =
+        (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
+    // Stack buffer large enough for one declaration (or one expanded
+    // shorthand), reused for every presentation attribute on the element.
+    #[cfg(feature = "svg")]
+    let mut svg_hint = style::properties::SourcePropertyDeclaration::default();
 
     for attr in elem.attrs() {
         let name = &attr.name.local;
@@ -260,11 +351,11 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             if *name == local_name!("face")
                 && let Some(family) = parse_font_face_attr(value)
             {
-                push_style(family);
+                hints.push(family);
             } else if *name == local_name!("size")
                 && let Some(size) = parse_legacy_font_size(value)
             {
-                push_style(PropertyDeclaration::FontSize(
+                hints.push(PropertyDeclaration::FontSize(
                     style::values::specified::FontSize::from_html_size(size),
                 ));
             }
@@ -280,7 +371,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             };
 
             if let Some(keyword) = keyword {
-                push_style(PropertyDeclaration::TextAlign(TextAlign::Keyword(keyword)));
+                hints.push(PropertyDeclaration::TextAlign(TextAlign::Keyword(keyword)));
             }
         }
 
@@ -291,15 +382,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
         if *name == local_name!("valign")
             && elem.name.ns == ns!(html)
-            && matches!(
-                *tag,
-                local_name!("thead")
-                    | local_name!("tbody")
-                    | local_name!("tfoot")
-                    | local_name!("tr")
-                    | local_name!("td")
-                    | local_name!("th")
-            )
+            && matches_tag!(tag, "thead" | "tbody" | "tfoot" | "tr" | "td" | "th")
         {
             use style::values::generics::box_::BaselineShiftKeyword;
             use style::values::specified::{AlignmentBaseline, BaselineShift, BaselineSource};
@@ -322,9 +405,9 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             };
 
             if let Some((alignment_baseline, baseline_shift)) = longhands {
-                push_style(PropertyDeclaration::BaselineSource(BaselineSource::Auto));
-                push_style(PropertyDeclaration::AlignmentBaseline(alignment_baseline));
-                push_style(PropertyDeclaration::BaselineShift(baseline_shift));
+                hints.push(PropertyDeclaration::BaselineSource(BaselineSource::Auto));
+                hints.push(PropertyDeclaration::AlignmentBaseline(alignment_baseline));
+                hints.push(PropertyDeclaration::BaselineShift(baseline_shift));
             }
         }
 
@@ -337,31 +420,23 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // The elements whose width/height attributes map to the dimension
         // properties. `input` only joins them as type=image, which is the
         // one replaced input type.
-        let is_embedded = *tag == local_name!("iframe")
-            || *tag == local_name!("embed")
-            || *tag == local_name!("video")
-            || *tag == local_name!("object")
-            || *tag == local_name!("img")
-            || *tag == local_name!("marquee")
-            || is_image_input;
+        let is_embedded = is_image_input
+            || matches_tag!(
+                tag,
+                "iframe" | "embed" | "video" | "object" | "img" | "marquee"
+            );
         let maps_to_dimension = if is_width {
             is_embedded
-                || *tag == local_name!("table")
-                || *tag == local_name!("col")
-                || *tag == local_name!("colgroup")
-                || *tag == local_name!("tr")
-                || *tag == local_name!("td")
-                || *tag == local_name!("th")
-                || *tag == local_name!("hr")
+                || matches_tag!(
+                    tag,
+                    "table" | "col" | "colgroup" | "tr" | "td" | "th" | "hr"
+                )
         } else if is_height {
             is_embedded
-                || *tag == local_name!("table")
-                || *tag == local_name!("thead")
-                || *tag == local_name!("tbody")
-                || *tag == local_name!("tfoot")
-                || *tag == local_name!("tr")
-                || *tag == local_name!("td")
-                || *tag == local_name!("th")
+                || matches_tag!(
+                    tag,
+                    "table" | "thead" | "tbody" | "tfoot" | "tr" | "td" | "th"
+                )
         } else {
             false
         };
@@ -369,15 +444,13 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             // Three of these use the "(ignoring zero)" variant of the
             // mapping, where a zero is dropped instead of honoured:
             // `table width`, and `td`/`th` in both axes.
-            let is_cell = *tag == local_name!("td") || *tag == local_name!("th");
+            let is_cell = matches_tag!(tag, "td" | "th");
             let ignoring_zero = is_cell || (is_width && *tag == local_name!("table"));
-            if let Some(size) = parse_size_attr(value, ignoring_zero) {
-                use style::values::generics::{NonNegative, length::Size};
-                let size = Size::LengthPercentage(NonNegative(size));
-                push_style(if is_width {
-                    PropertyDeclaration::Width(size)
+            if let Some(length) = parse_size_attr(value, ignoring_zero) {
+                hints.push(if is_width {
+                    PropertyDeclaration::Width(size(length))
                 } else {
-                    PropertyDeclaration::Height(size)
+                    PropertyDeclaration::Height(size(length))
                 });
             }
         }
@@ -387,25 +460,48 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // takes width/height: `iframe` and `video` take width and height
         // but not hspace/vspace, and html/rendering/unmapped-attributes
         // checks exactly that -- browsers have got it wrong before.
-        let takes_spacing = *tag == local_name!("embed")
-            || *tag == local_name!("img")
-            || *tag == local_name!("object")
-            || *tag == local_name!("marquee")
-            || is_image_input;
-        if takes_spacing {
-            let is_hspace = *name == local_name!("hspace");
-            let is_vspace = *name == local_name!("vspace");
-            if is_hspace || is_vspace {
-                if let Some(size) = parse_size_attr(value, false) {
-                    use style::values::generics::length::GenericMargin;
-                    let margin = GenericMargin::LengthPercentage(size);
-                    if is_hspace {
-                        push_style(PropertyDeclaration::MarginLeft(margin.clone()));
-                        push_style(PropertyDeclaration::MarginRight(margin));
-                    } else {
-                        push_style(PropertyDeclaration::MarginTop(margin.clone()));
-                        push_style(PropertyDeclaration::MarginBottom(margin));
-                    }
+        let takes_spacing =
+            is_image_input || matches_tag!(tag, "embed" | "img" | "object" | "marquee");
+        if takes_spacing
+            && matches_tag!(name, "hspace" | "vspace")
+            && let Some(length) = parse_size_attr(value, false)
+        {
+            let margin = Margin::LengthPercentage(length);
+            if *name == local_name!("hspace") {
+                hints.extend(apply_to_all!(margin => MarginLeft, MarginRight));
+            } else {
+                hints.extend(apply_to_all!(margin => MarginTop, MarginBottom));
+            }
+        }
+
+        // `hr`'s `color` maps to `color` as a legacy colour value, and its
+        // `size` to the border widths (with `color` or `noshade` present)
+        // or to the height. The solid border style that `color` and
+        // `noshade` also ask for is a UA rule in default.css.
+        // https://html.spec.whatwg.org/multipage/rendering.html#the-hr-element-2
+        if *tag == local_name!("hr") {
+            if *name == local_name!("color") {
+                use style::values::specified::{Color, ColorPropertyValue};
+                if let Ok(color) = style::servo::attr::parse_legacy_color(value) {
+                    hints.push(PropertyDeclaration::Color(ColorPropertyValue(
+                        Color::from_absolute_color(color),
+                    )));
+                }
+            }
+            if *name == local_name!("size")
+                && let Some(hr_size) = parse_pixels(value)
+            {
+                if is_solid_hr {
+                    let width = BorderSideWidth::from_px(hr_size as f32 / 2.0);
+                    hints.extend(apply_to_all!(width =>
+                        BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth,
+                    ));
+                } else if hr_size == 1 {
+                    hints.push(PropertyDeclaration::BorderBottomWidth(
+                        BorderSideWidth::from_px(0.0),
+                    ));
+                } else if hr_size > 1 {
+                    hints.push(PropertyDeclaration::Height(size(px((hr_size - 2) as f32))));
                 }
             }
         }
@@ -415,18 +511,43 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // presentation attributes that map to the CSS `width`/`height`
         // properties, so e.g. `width="1em"` must resolve against the
         // element's font-size like any other CSS length.
-        if *tag == local_name!("svg")
-            && (*name == local_name!("width") || *name == local_name!("height"))
-        {
-            if let Some(size) = parse_svg_size_attr(value) {
-                use style::values::generics::{NonNegative, length::Size};
-                let size = Size::LengthPercentage(NonNegative(size));
-                push_style(if *name == local_name!("width") {
-                    PropertyDeclaration::Width(size)
+        let is_svg_root_size = *tag == local_name!("svg")
+            && (*name == local_name!("width") || *name == local_name!("height"));
+        if is_svg_root_size {
+            if let Some(length) = parse_svg_size_attr(value) {
+                hints.push(if *name == local_name!("width") {
+                    PropertyDeclaration::Width(size(length))
                 } else {
-                    PropertyDeclaration::Height(size)
+                    PropertyDeclaration::Height(size(length))
                 });
             }
+        }
+
+        // usvg paints the outermost `<svg>`'s `transform`, `opacity`, `filter`,
+        // `clip-path` and `mask` attributes itself, so mapping them onto its
+        // CSS box as well would apply them twice. Its `transform` is still
+        // mapped below, for the box: the serialized source drops it.
+        #[cfg(feature = "svg")]
+        if let Some(url_data) = &svg_url_data
+            && attr.name.ns == ns!()
+            && !is_svg_root_size
+            && !(is_outermost_svg
+                && matches!(
+                    name.as_ref(),
+                    "transform" | "opacity" | "filter" | "clip-path" | "mask"
+                ))
+        {
+            super::svg_attrs::svg_presentation_hint(tag, name, value, url_data, &mut svg_hint);
+            hints.extend(svg_hint.drain().declarations);
+        }
+
+        #[cfg(feature = "svg")]
+        if is_outermost_svg
+            && attr.name.ns == ns!()
+            && *name == local_name!("transform")
+            && let Some(transform) = parse_svg_transform_attr(value)
+        {
+            hints.push(transform);
         }
 
         // The `border` attribute maps to the four border widths as a
@@ -436,20 +557,16 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // `embed`, `iframe`, `marquee` and non-image `input` all have a
         // `border` attribute that must stay unmapped.
         if *name == local_name!("border")
-            && (*tag == local_name!("img") || *tag == local_name!("object") || is_image_input)
+            && (is_image_input || matches_tag!(tag, "img" | "object"))
+            && let Some(width) = parse_pixels(value)
         {
-            if let Ok(px) = style::servo::attr::parse_unsigned_integer(value.chars()) {
-                use style::values::specified::{BorderSideWidth, BorderStyle};
-                let width = BorderSideWidth::from_px(px as f32);
-                push_style(PropertyDeclaration::BorderTopWidth(width.clone()));
-                push_style(PropertyDeclaration::BorderRightWidth(width.clone()));
-                push_style(PropertyDeclaration::BorderBottomWidth(width.clone()));
-                push_style(PropertyDeclaration::BorderLeftWidth(width));
-                push_style(PropertyDeclaration::BorderTopStyle(BorderStyle::Solid));
-                push_style(PropertyDeclaration::BorderRightStyle(BorderStyle::Solid));
-                push_style(PropertyDeclaration::BorderBottomStyle(BorderStyle::Solid));
-                push_style(PropertyDeclaration::BorderLeftStyle(BorderStyle::Solid));
-            }
+            use style::values::specified::BorderStyle;
+            hints.extend(apply_to_all!(BorderSideWidth::from_px(width as f32) =>
+                BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth,
+            ));
+            hints.extend(apply_to_all!(BorderStyle::Solid =>
+                BorderTopStyle, BorderRightStyle, BorderBottomStyle, BorderLeftStyle,
+            ));
         }
 
         // `body` carries four legacy margin attributes, as pixel lengths:
@@ -464,49 +581,50 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         if *tag == local_name!("body") {
             // Matched as strings: these are not in the static atom set,
             // so `local_name!` will not compile for them.
-            let sides: &[u8] = match &**name {
-                "marginwidth" => b"lr",
-                "marginheight" => b"tb",
-                "leftmargin" => b"l",
-                "topmargin" => b"t",
-                _ => b"",
-            };
-            if !sides.is_empty() {
-                if let Ok(px) = style::servo::attr::parse_unsigned_integer(value.chars()) {
-                    use style::values::generics::length::GenericMargin;
-                    use style::values::specified::{LengthPercentage, NoCalcLength};
-                    let margin = GenericMargin::LengthPercentage(LengthPercentage::Length(
-                        NoCalcLength::from_px(px as f32),
-                    ));
-                    for side in sides {
-                        push_style(match side {
-                            b'l' => PropertyDeclaration::MarginLeft(margin.clone()),
-                            b'r' => PropertyDeclaration::MarginRight(margin.clone()),
-                            b't' => PropertyDeclaration::MarginTop(margin.clone()),
-                            b'b' => PropertyDeclaration::MarginBottom(margin.clone()),
-                            _ => unreachable!("side table above only yields lrtb"),
-                        });
+            let margin =
+                || parse_pixels(value).map(|margin| Margin::LengthPercentage(px(margin as f32)));
+            match &**name {
+                "marginwidth" => {
+                    if let Some(margin) = margin() {
+                        hints.extend(apply_to_all!(margin => MarginLeft, MarginRight));
                     }
                 }
+                "marginheight" => {
+                    if let Some(margin) = margin() {
+                        hints.extend(apply_to_all!(margin => MarginTop, MarginBottom));
+                    }
+                }
+                "leftmargin" => {
+                    if let Some(margin) = margin() {
+                        hints.push(PropertyDeclaration::MarginLeft(margin));
+                    }
+                }
+                "topmargin" => {
+                    if let Some(margin) = margin() {
+                        hints.push(PropertyDeclaration::MarginTop(margin));
+                    }
+                }
+                _ => {}
             }
         }
 
         // https://html.spec.whatwg.org/multipage/rendering.html#tables-2
-        if *name == local_name!("cellspacing") && *tag == local_name!("table") {
-            if let Ok(px) = style::servo::attr::parse_unsigned_integer(value.chars()) {
-                use style::values::specified::{BorderSpacing, NonNegativeLength};
-                let spacing = NonNegativeLength::from_px(px as f32);
-                push_style(PropertyDeclaration::BorderSpacing(BorderSpacing::new(
-                    spacing.clone(),
-                    spacing,
-                )));
-            }
+        if *name == local_name!("cellspacing")
+            && *tag == local_name!("table")
+            && let Some(spacing) = parse_pixels(value)
+        {
+            use style::values::specified::{BorderSpacing, NonNegativeLength};
+            let spacing = NonNegativeLength::from_px(spacing as f32);
+            hints.push(PropertyDeclaration::BorderSpacing(BorderSpacing::new(
+                spacing.clone(),
+                spacing,
+            )));
         }
 
         if *name == local_name!("bgcolor") {
             use style::values::specified::Color;
             if let Some((r, g, b, a)) = parse_color_attr(value) {
-                push_style(PropertyDeclaration::BackgroundColor(
+                hints.push(PropertyDeclaration::BackgroundColor(
                     Color::from_absolute_color(AbsoluteColor::srgb_legacy(r, g, b, a)),
                 ));
             }
@@ -514,12 +632,12 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
 
         if *name == local_name!("hidden") {
             use style::values::specified::Display;
-            push_style(PropertyDeclaration::Display(Display::None));
+            hints.push(PropertyDeclaration::Display(Display::None));
         }
     }
 
     if let Some(lang) = lang {
-        push_style(PropertyDeclaration::XLang(XLang(Atom::from(lang))));
+        hints.push(PropertyDeclaration::XLang(XLang(Atom::from(lang))));
     }
 
     let wrap = |block: PropertyDeclarationBlock| {
@@ -532,25 +650,17 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let cell_padding = (*tag == local_name!("table"))
         .then(|| elem.attr(local_name!("cellpadding")))
         .flatten()
-        .and_then(|value| style::servo::attr::parse_unsigned_integer(value.chars()).ok())
-        .and_then(|px| {
-            use style::values::generics::NonNegative;
-            use style::values::specified::{LengthPercentage, NoCalcLength};
-            let padding = NonNegative(LengthPercentage::Length(NoCalcLength::from_px(px as f32)));
-            let mut block = PropertyDeclarationBlock::new();
-            for decl in [
-                PropertyDeclaration::PaddingTop(padding.clone()),
-                PropertyDeclaration::PaddingRight(padding.clone()),
-                PropertyDeclaration::PaddingBottom(padding.clone()),
-                PropertyDeclaration::PaddingLeft(padding),
-            ] {
-                block.push(decl, Importance::Normal);
-            }
-            wrap(block)
+        .and_then(parse_pixels)
+        .and_then(|padding| {
+            let mut block = Hints(PropertyDeclarationBlock::new());
+            block.extend(apply_to_all!(NonNegative(px(padding as f32)) =>
+                PaddingTop, PaddingRight, PaddingBottom, PaddingLeft,
+            ));
+            wrap(block.0)
         });
 
     PresentationalHints {
-        own: wrap(declarations),
+        own: wrap(hints.0),
         cell_padding,
     }
 }

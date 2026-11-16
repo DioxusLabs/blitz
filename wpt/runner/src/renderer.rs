@@ -1,9 +1,14 @@
 //! The renderers compiled into the runner, chosen at runtime with `--renderer`.
 
-#[cfg(not(any(feature = "cpu", feature = "tiny-skia", feature = "gpu")))]
-compile_error!("enable at least one of the `cpu`, `tiny-skia` and `gpu` features");
+#[cfg(not(any(
+    feature = "cpu",
+    feature = "tiny-skia",
+    feature = "skia",
+    feature = "gpu"
+)))]
+compile_error!("enable at least one of the `cpu`, `tiny-skia`, `skia` and `gpu` features");
 
-use anyrender::{ImageRenderer, PaintScene};
+use anyrender::{AntiAliasing, ImageRenderer, PaintScene};
 use blitz_dom::BaseDocument;
 use blitz_dom::util::Color;
 use blitz_paint::paint_scene;
@@ -18,6 +23,8 @@ pub enum RendererKind {
     VelloCpu,
     #[cfg(feature = "tiny-skia")]
     TinySkia,
+    #[cfg(feature = "skia")]
+    Skia,
     #[cfg(feature = "gpu")]
     Vello,
 }
@@ -30,6 +37,8 @@ impl RendererKind {
             Self::VelloCpu,
             #[cfg(feature = "tiny-skia")]
             Self::TinySkia,
+            #[cfg(feature = "skia")]
+            Self::Skia,
             #[cfg(feature = "gpu")]
             Self::Vello,
         ]
@@ -41,6 +50,8 @@ impl RendererKind {
             Self::VelloCpu => "vello-cpu",
             #[cfg(feature = "tiny-skia")]
             Self::TinySkia => "tiny-skia",
+            #[cfg(feature = "skia")]
+            Self::Skia => "skia",
             #[cfg(feature = "gpu")]
             Self::Vello => "vello",
         }
@@ -90,6 +101,12 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> (Vec<RendererKind>,
     (kinds, rest)
 }
 
+#[cfg(feature = "skia")]
+thread_local! {
+    static SKIA_RENDERER: std::cell::RefCell<Option<anyrender_skia::SkiaImageRenderer>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 // One per worker thread, so the size difference between variants doesn't matter.
 #[allow(clippy::large_enum_variant)]
 pub enum Renderer {
@@ -97,6 +114,9 @@ pub enum Renderer {
     VelloCpu(anyrender_vello_cpu::VelloCpuImageRenderer),
     #[cfg(feature = "tiny-skia")]
     TinySkia(anyrender_tiny_skia::TinySkiaImageRenderer),
+    /// The Skia renderer isn't `Send`, so it lives in [`SKIA_RENDERER`] instead.
+    #[cfg(feature = "skia")]
+    Skia { width: u32, height: u32 },
     #[cfg(feature = "gpu")]
     Vello(anyrender_vello::VelloImageRenderer),
 }
@@ -108,6 +128,8 @@ impl Renderer {
             RendererKind::VelloCpu => Self::VelloCpu(ImageRenderer::new(width, height)),
             #[cfg(feature = "tiny-skia")]
             RendererKind::TinySkia => Self::TinySkia(ImageRenderer::new(width, height)),
+            #[cfg(feature = "skia")]
+            RendererKind::Skia => Self::Skia { width, height },
             #[cfg(feature = "gpu")]
             RendererKind::Vello => Self::Vello(ImageRenderer::new(width, height)),
         }
@@ -124,6 +146,12 @@ impl Renderer {
             Self::TinySkia(renderer) => {
                 renderer.render_to_vec(|scene| draw(scene, document), buffer)
             }
+            #[cfg(feature = "skia")]
+            Self::Skia { width, height } => SKIA_RENDERER.with_borrow_mut(|renderer| {
+                renderer
+                    .get_or_insert_with(|| ImageRenderer::new(*width, *height))
+                    .render_to_vec(|scene| draw(scene, document), buffer)
+            }),
             #[cfg(feature = "gpu")]
             Self::Vello(renderer) => renderer.render_to_vec(|scene| draw(scene, document), buffer),
         }
@@ -138,6 +166,7 @@ fn draw(scene: &mut impl PaintScene, document: &mut BaseDocument) {
         Color::WHITE,
         Default::default(),
         &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
+        AntiAliasing::Enabled,
     );
     paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
 }
