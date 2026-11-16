@@ -18,6 +18,8 @@ pub enum TestType {
         mismatch_references: Vec<String>,
         fuzzy: Vec<FuzzySpec>,
     },
+    /// A test from resvg's suite, compared against resvg's PNG (see `resvg.rs`)
+    Resvg(crate::resvg::Mode),
 }
 
 pub struct Test {

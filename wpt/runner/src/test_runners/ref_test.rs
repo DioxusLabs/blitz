@@ -208,7 +208,7 @@ fn resolve_reference_url(test_url: &Url, ref_file: &str) -> Result<Url, url::Par
     test_url.join(ref_file)
 }
 
-fn render_html_to_buffer(
+pub(crate) fn render_html_to_buffer(
     ctx: &mut ThreadCtx,
     buffer_kind: BufferKind,
     relative_path: &str,

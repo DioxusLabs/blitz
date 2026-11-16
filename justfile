@@ -18,6 +18,12 @@ small:
 wpt *ARGS:
   cargo run --release --package wpt -- {{ARGS}}
 
+# resvg's test suite at wpt/RESVG_COMMIT, compared against its PNGs (see wpt/runner/src/resvg.rs).
+# Prefix with BLITZ_NATIVE_SVG=1 to render top-level SVG with the native backend, and with
+# RESVG_PNG_FUZZY=<threshold>;<pixels> to compare against resvg's PNGs at another tolerance.
+resvg *ARGS:
+  cargo run --release --package wpt -- resvg {{ARGS}}
+
 browser *ARGS:
   cargo run --release --package browser --features log-frame-times,log-phase-times {{ARGS}}
 

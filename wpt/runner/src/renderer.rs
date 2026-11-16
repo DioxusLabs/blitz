@@ -15,7 +15,7 @@ use blitz_paint::paint_scene;
 use peniko::Fill;
 use peniko::kurbo::Rect;
 
-use crate::{HEIGHT, SCALE, WIDTH};
+use crate::{HEIGHT, WIDTH};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RendererKind {
@@ -162,5 +162,6 @@ fn draw(scene: &mut impl PaintScene, document: &mut BaseDocument) {
         &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
         AntiAliasing::Enabled,
     );
-    paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
+    let scale = document.viewport().scale_f64();
+    paint_scene(scene, document, scale, WIDTH, HEIGHT, 0, 0);
 }

@@ -27,6 +27,7 @@ pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
 pub use js_wrapper::wrapper_html_for_js_test;
 pub use ref_test::process_ref_test;
+pub(crate) use ref_test::render_html_to_buffer;
 
 static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let mut tests = HashMap::new();
@@ -197,6 +198,17 @@ pub fn process_test_file(
         );
     }
 
+    if let TestType::Resvg(mode) = test_type {
+        let counts = crate::resvg::process_test(ctx, relative_path, test_url, *mode);
+        return (
+            TestKind::Ref,
+            TestFlags::empty(),
+            counts.as_status(),
+            counts,
+            Vec::new(),
+        );
+    }
+
     let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
@@ -287,6 +299,7 @@ pub fn process_test_file(
             let (status, counts, results) = process_harness_test(ctx, &file_contents, test_url);
             (TestKind::TestHarness, flags, status, counts, results)
         }
+        TestType::Resvg(_) => unreachable!("resvg tests are processed above"),
     }
 }
 

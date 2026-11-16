@@ -10759,6 +10759,7 @@ dependencies = [
  "blitz-vibey-script",
  "data-url",
  "dify",
+ "encoding_rs",
  "env_logger",
  "glob",
  "html-escape",
@@ -10770,6 +10771,7 @@ dependencies = [
  "owo-colors",
  "parley",
  "peniko",
+ "percent-encoding",
  "png 0.17.16",
  "pollster",
  "rayon",
@@ -10783,6 +10785,7 @@ dependencies = [
  "terminal-link",
  "thread_local",
  "url",
+ "usvg",
  "wpt_manifest",
  "wptreport",
 ]
