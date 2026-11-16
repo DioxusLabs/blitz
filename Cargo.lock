@@ -295,7 +295,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "image_filters_types",
  "kurbo",
@@ -308,7 +308,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "image",
@@ -326,7 +326,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "ash",
@@ -358,7 +358,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "image",
@@ -370,7 +370,7 @@ dependencies = [
 [[package]]
 name = "anyrender_tiny_skia"
 version = "0.1.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -386,7 +386,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -404,7 +404,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -420,9 +420,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyrender_vello_hybrid"
+name = "anyrender_vello_gpu"
 version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -991,7 +991,7 @@ dependencies = [
  "anyrender",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz",
  "blitz-dom",
  "blitz-html",
@@ -2724,7 +2724,7 @@ dependencies = [
  "anyrender_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -4469,7 +4469,7 @@ dependencies = [
 [[package]]
 name = "image_filters_types"
 version = "0.1.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "kurbo",
  "peniko",
@@ -6437,7 +6437,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6956,7 +6956,7 @@ dependencies = [
  "anyrender_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -7625,7 +7625,7 @@ dependencies = [
 name = "seven_guis"
 version = "0.1.0"
 dependencies = [
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "console_error_panic_hook",
  "dioxus-native",
  "futures-timer",
@@ -7962,7 +7962,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8687,7 +8687,7 @@ name = "todomvc"
 version = "0.1.0"
 dependencies = [
  "android-activity",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "console_error_panic_hook",
  "dioxus-native",
  "idna_adapter",
@@ -9483,7 +9483,7 @@ dependencies = [
 name = "wasm_hello"
 version = "0.0.0"
 dependencies = [
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-shell",
@@ -10077,7 +10077,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=f749ad59226ddf0529eca739ad67c842a4f3bcb5#f749ad59226ddf0529eca739ad67c842a4f3bcb5"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=1ffc97610b618857391de51eed9e4d9657c0173e#1ffc97610b618857391de51eed9e4d9657c0173e"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
@@ -10091,7 +10091,7 @@ version = "0.0.0"
 dependencies = [
  "anyrender",
  "anyrender_vello",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-paint",

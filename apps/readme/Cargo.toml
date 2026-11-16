@@ -10,11 +10,11 @@ repository.workspace = true
 publish = true
 
 [features]
-default = ["hybrid", "comrak", "floats", "scrollbars"]
+default = ["vello-gpu", "comrak", "floats", "scrollbars"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]
-hybrid = ["dep:anyrender_vello_hybrid"]
+vello-gpu = ["dep:anyrender_vello_gpu"]
 skia = ["dep:anyrender_skia"]
 skia-pixels = ["dep:anyrender_skia", "anyrender_skia/pixels_window_renderer"]
 skia-softbuffer = ["dep:anyrender_skia", "anyrender_skia/softbuffer_window_renderer"]
@@ -34,7 +34,7 @@ cache = ["blitz-net/cache"]
 log-times = ["log-frame-times", "log-phase-times"]
 log-frame-times = [
   "anyrender_vello_cpu?/log_frame_times",
-  "anyrender_vello_hybrid?/log_frame_times",
+  "anyrender_vello_gpu?/log_frame_times",
   "anyrender_vello?/log_frame_times",
   "anyrender_skia?/log_frame_times",
 ]
@@ -53,7 +53,7 @@ blitz-shell = { workspace = true, features = ["default"] }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_skia = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }
-anyrender_vello_hybrid = { workspace = true, optional = true }
+anyrender_vello_gpu = { workspace = true, optional = true }
 
 tokio = { workspace = true, features = ["rt"] }
 reqwest = { workspace = true }
