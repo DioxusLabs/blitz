@@ -27,6 +27,8 @@ struct SerializeOpts {
     xml_namespaces: bool,
     /// Leave out the root element's `transform` attribute, which is applied as a CSS transform
     skip_root_transform: bool,
+    /// Leave the root background to CSS box painting rather than usvg
+    skip_root_background: bool,
 }
 
 impl SerializeOpts {
@@ -36,6 +38,7 @@ impl SerializeOpts {
             resolve_current_color: false,
             xml_namespaces: false,
             skip_root_transform: false,
+            skip_root_background: false,
         }
     }
 }
@@ -183,6 +186,7 @@ impl Node {
             resolve_current_color: true,
             xml_namespaces: true,
             skip_root_transform: true,
+            skip_root_background: true,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
         output
@@ -303,12 +307,28 @@ impl Node {
                     } else {
                         encode_quoted_attribute_to_string(&attr.value, writer);
                     }
+                    if opts.skip_root_background
+                        && nesting == 0
+                        && attr.name.ns == ns!()
+                        && attr.name.local == local_name!("style")
+                    {
+                        if !attr.value.trim().is_empty() {
+                            writer.push(';');
+                        }
+                        writer.push_str("background-color:initial!important");
+                    }
                     writer.push('"');
                 }
                 if let Some(color) = &current_color {
                     writer.push_str(" color=\"");
                     encode_quoted_attribute_to_string(color, writer);
                     writer.push('"');
+                }
+                if opts.skip_root_background
+                    && nesting == 0
+                    && data.attr(local_name!("style")).is_none()
+                {
+                    writer.push_str(" style=\"background-color:initial!important\"");
                 }
                 if !has_children {
                     writer.push_str(" /");
@@ -380,12 +400,44 @@ mod tests {
         assert_eq!(
             source,
             concat!(
-                r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">"#,
+                r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="background-color:initial!important">"#,
                 r#"<rect xmlns="urn:notsvg" />"#,
                 r##"<rect xmlns:svg="http://www.w3.org/2000/svg" svg:href="#a" xmlns:ns="urn:notxlink" ns:href="#b" />"##,
                 "</svg>",
             )
         );
-        assert!(crate::util::parse_svg_image(source.as_bytes()).is_ok());
+        assert!(crate::util::parse_svg(source.as_bytes(), None).is_ok());
+    }
+
+    #[test]
+    fn svg_source_leaves_root_background_to_css() {
+        for background in [None, Some(""), Some("background-color:red")] {
+            let mut doc = BaseDocument::new(DocumentConfig::default());
+            let mut attrs = vec![Attribute {
+                name: qual_name(None, ns!(), "background-color"),
+                value: "blue".into(),
+            }];
+            if let Some(value) = background {
+                attrs.push(Attribute {
+                    name: qual_name(None, ns!(), "style"),
+                    value: value.into(),
+                });
+            }
+            let svg = doc.create_node(NodeData::Element(Box::new(ElementData::new(
+                qual_name(None, ns!(svg), "svg"),
+                attrs,
+            ))));
+            let style = doc.create_node(NodeData::Element(Box::new(ElementData::new(
+                qual_name(None, ns!(svg), "style"),
+                vec![],
+            ))));
+            let text = doc.create_text_node("svg { background-color: green }");
+            doc.mutate().append_children(style, &[text]);
+            doc.mutate().append_children(svg, &[style]);
+
+            let source = doc.get_node(svg).unwrap().svg_source();
+            let image = crate::util::parse_svg(source.as_bytes(), None).unwrap();
+            assert!(image.tree.root().children().is_empty(), "{source}");
+        }
     }
 }
