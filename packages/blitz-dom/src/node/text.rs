@@ -89,6 +89,24 @@ pub enum GeneratedTextInputEvent {
     Submit,
 }
 
+/// What the user may do with a text control's value, from its element's attributes.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TextInputMode {
+    /// `readonly`: the value can be selected and copied, but not edited.
+    pub read_only: bool,
+    /// `type=password`: the value can't be copied or cut.
+    pub password: bool,
+}
+
+impl TextInputMode {
+    pub(crate) fn of(element: &crate::node::ElementData) -> Self {
+        Self {
+            read_only: element.is_read_only_text_control(),
+            password: element.is_password_input(),
+        }
+    }
+}
+
 pub struct TextInputData {
     /// A parley TextEditor instance
     pub editor: Box<parley::PlainEditor<TextBrush>>,
@@ -130,9 +148,11 @@ impl TextInputData {
         layout_ctx: &mut LayoutContext<TextBrush>,
         text: &str,
     ) {
+        // Like HTML's value setter: a new value moves the caret to its end and clears
+        // the selection.
         if self.editor.text() != text {
             self.editor.set_text(text);
-            self.editor.driver(font_ctx, layout_ctx).refresh_layout();
+            self.editor.driver(font_ctx, layout_ctx).move_to_text_end();
         }
     }
 
@@ -238,6 +258,7 @@ impl TextInputData {
         layout_ctx: &mut LayoutContext<TextBrush>,
         shell_provider: &dyn ShellProvider,
         event: BlitzKeyEvent,
+        mode: TextInputMode,
     ) -> Option<GeneratedTextInputEvent> {
         // Do nothing if it is a keyup event
         if !event.state.is_pressed() {
@@ -253,7 +274,13 @@ impl TextInputData {
         let mut driver = editor.driver(font_ctx, layout_ctx);
         match event.key {
             Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
-                match c.to_lowercase().as_str() {
+                let lower = c.to_lowercase();
+                let copies = matches!(lower.as_str(), "c" | "x");
+                let edits = matches!(lower.as_str(), "x" | "v");
+                if (copies && mode.password) || (edits && mode.read_only) {
+                    return None;
+                }
+                match lower.as_str() {
                     // Copying leaves the value as it was: no `input` event.
                     "c" => {
                         if let Some(text) = driver.editor.selected_text() {
@@ -356,6 +383,7 @@ impl TextInputData {
                 }
                 return Some(GeneratedTextInputEvent::Select);
             }
+            Key::Named(NamedKey::Delete) if mode.read_only => {}
             Key::Named(NamedKey::Delete) => {
                 if action_mod {
                     driver.delete_word()
@@ -366,6 +394,8 @@ impl TextInputData {
             }
 
             // On macOS this is handled by the apple standard keybindings
+            #[cfg(not(target_os = "macos"))]
+            Key::Named(NamedKey::Backspace) if mode.read_only => {}
             #[cfg(not(target_os = "macos"))]
             Key::Named(NamedKey::Backspace) => {
                 if action_mod {
@@ -378,6 +408,9 @@ impl TextInputData {
 
             Key::Character(c) if c == "\n" => {
                 if is_multiline {
+                    if mode.read_only {
+                        return None;
+                    }
                     driver.insert_or_replace_selection("\n");
                     return Some(GeneratedTextInputEvent::Input);
                 } else {
@@ -386,6 +419,9 @@ impl TextInputData {
             }
             Key::Named(NamedKey::Enter) => {
                 if is_multiline {
+                    if mode.read_only {
+                        return None;
+                    }
                     driver.insert_or_replace_selection("\n");
                     return Some(GeneratedTextInputEvent::Input);
                 } else {
@@ -393,7 +429,9 @@ impl TextInputData {
                 }
             }
             Key::Character(s)
-                if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::META) =>
+                if !mods.contains(Modifiers::CONTROL)
+                    && !mods.contains(Modifiers::META)
+                    && !mode.read_only =>
             {
                 driver.insert_or_replace_selection(&s);
                 return Some(GeneratedTextInputEvent::Input);
@@ -410,7 +448,13 @@ impl TextInputData {
         layout_ctx: &mut LayoutContext<TextBrush>,
         shell_provider: &dyn ShellProvider,
         command: &str,
+        mode: TextInputMode,
     ) -> Option<GeneratedTextInputEvent> {
+        let edits = command.starts_with("insert") || command.starts_with("delete");
+        let cuts = command == "yank:";
+        if (mode.read_only && (edits || cuts)) || (mode.password && cuts) {
+            return None;
+        }
         let editor = &mut self.editor;
         let mut driver = editor.driver(font_ctx, layout_ctx);
         let is_multiline = self.is_multiline;
@@ -800,7 +844,19 @@ impl TextInputData {
         font_ctx: &mut FontContext,
         layout_ctx: &mut LayoutContext<TextBrush>,
         event: BlitzImeEvent,
+        mode: TextInputMode,
     ) -> Option<GeneratedTextInputEvent> {
+        if mode.read_only
+            && matches!(
+                event,
+                BlitzImeEvent::Commit(_)
+                    | BlitzImeEvent::Preedit(..)
+                    | BlitzImeEvent::DeleteSurrounding { .. }
+            )
+        {
+            return None;
+        }
+        let is_multiline = self.is_multiline;
         let editor = &mut self.editor;
         let mut driver = editor.driver(font_ctx, layout_ctx);
 
@@ -815,7 +871,11 @@ impl TextInputData {
             }
             BlitzImeEvent::Commit(text) => {
                 driver.clear_compose();
-                driver.insert_or_replace_selection(&text);
+                if is_multiline {
+                    driver.insert_or_replace_selection(&text);
+                } else {
+                    driver.insert_or_replace_selection(&single_line_text(&text));
+                }
                 Some(GeneratedTextInputEvent::Input)
             }
             BlitzImeEvent::Preedit(text, cursor) => {
@@ -839,6 +899,19 @@ impl TextInputData {
     }
 }
 
+/// Text inserted into a single-line control (a paste or IME commit) without its line breaks,
+/// as browsers do: trailing ones are dropped and the rest become spaces.
+fn single_line_text(text: &str) -> std::borrow::Cow<'_, str> {
+    let is_line_break = |c: char| c == '\n' || c == '\r';
+    if !text.contains(is_line_break) {
+        return text.into();
+    }
+    text.trim_end_matches(is_line_break)
+        .replace("\r\n", " ")
+        .replace(is_line_break, " ")
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,14 +927,21 @@ mod tests {
                     &mut font_ctx,
                     &mut layout_ctx,
                     BlitzImeEvent::Preedit("仮".into(), cursor),
+                    TextInputMode::default(),
                 );
                 input.apply_ime_event(
                     &mut font_ctx,
                     &mut layout_ctx,
                     BlitzImeEvent::Commit(committed.into()),
+                    TextInputMode::default(),
                 );
                 assert_eq!(input.editor.text(), committed);
-                input.apply_ime_event(&mut font_ctx, &mut layout_ctx, BlitzImeEvent::Disabled);
+                input.apply_ime_event(
+                    &mut font_ctx,
+                    &mut layout_ctx,
+                    BlitzImeEvent::Disabled,
+                    TextInputMode::default(),
+                );
                 assert_eq!(input.editor.text(), committed);
             }
         }
@@ -874,6 +954,7 @@ mod tests {
             &mut FontContext::new(),
             &mut LayoutContext::new(),
             BlitzImeEvent::Commit("text".into()),
+            TextInputMode::default(),
         );
         assert_eq!(input.editor.text(), "text");
     }
