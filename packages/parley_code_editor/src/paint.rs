@@ -214,7 +214,7 @@ fn draw_layout(
             let glyph_transform = run
                 .synthesis()
                 .skew()
-                .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+                .map(|angle| Affine::skew(-angle.to_radians().tan() as f64, 0.0));
             let normalized_coords: &[i16] = bytemuck::cast_slice(run.normalized_coords());
             scene.draw_glyphs(
                 run.font(),

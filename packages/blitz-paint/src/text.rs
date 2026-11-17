@@ -306,7 +306,7 @@ pub(crate) fn draw_glyph_run(
     let glyph_xform = run
         .synthesis()
         .skew()
-        .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+        .map(|angle| Affine::skew(-angle.to_radians().tan() as f64, 0.0));
 
     let embolden = if FONT_EMBOLDEN_ENABLED {
         font_embolden(font_size as f64, color, transform)
@@ -409,4 +409,116 @@ fn embolden_scale(color: Color) -> f64 {
         prev = *point;
     }
     prev.1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use parley::LayoutContext;
+    use parley::style::{FontStyle, StyleProperty};
+
+    struct GlyphTransformRecorder(Vec<Option<Affine>>);
+    impl anyrender::RenderContext for GlyphTransformRecorder {}
+    impl anyrender::PaintScene for GlyphTransformRecorder {
+        fn reset(&mut self) {
+            self.0.clear();
+        }
+        fn push_layer(
+            &mut self,
+            _: peniko::Fill,
+            _: impl Into<peniko::BlendMode>,
+            _: f32,
+            _: Affine,
+            _: &impl kurbo::Shape,
+            _: Option<std::sync::Arc<anyrender::Filter>>,
+            _: Option<std::sync::Arc<anyrender::Filter>>,
+        ) {
+        }
+        fn push_clip_layer(&mut self, _: peniko::Fill, _: Affine, _: &impl kurbo::Shape) {}
+        fn push_mask_layer(
+            &mut self,
+            _: peniko::Fill,
+            _: anyrender::MaskMode,
+            _: Affine,
+            _: &impl kurbo::Shape,
+        ) {
+        }
+        fn pop_layer(&mut self) {}
+        fn stroke<'a>(
+            &mut self,
+            _: &kurbo::Stroke,
+            _: Affine,
+            _: impl Into<anyrender::PaintRef<'a>>,
+            _: Option<Affine>,
+            _: &impl kurbo::Shape,
+            _: anyrender::AntiAliasing,
+        ) {
+        }
+        fn fill<'a>(
+            &mut self,
+            _: peniko::Fill,
+            _: Affine,
+            _: impl Into<anyrender::PaintRef<'a>>,
+            _: Option<Affine>,
+            _: &impl kurbo::Shape,
+            _: anyrender::AntiAliasing,
+        ) {
+        }
+        fn draw_glyphs<'a, 's: 'a>(
+            &'s mut self,
+            _: &'a peniko::FontData,
+            _: f32,
+            _: bool,
+            _: &'a [anyrender::NormalizedCoord],
+            _: kurbo::Vec2,
+            _: impl Into<peniko::StyleRef<'a>>,
+            _: impl Into<anyrender::PaintRef<'a>>,
+            _: f32,
+            _: Affine,
+            glyph_transform: Option<Affine>,
+            _: impl Iterator<Item = anyrender::Glyph> + Clone,
+            _: anyrender::AntiAliasing,
+        ) {
+            self.0.push(glyph_transform);
+        }
+        fn draw_box_shadow(
+            &mut self,
+            _: Affine,
+            _: &anyrender::NonUniformRoundedRect,
+            _: kurbo::Vec2,
+            _: f64,
+            _: f64,
+            _: peniko::Color,
+            _: anyrender::BoxShadowKind,
+        ) {
+        }
+    }
+
+    #[test]
+    fn synthetic_italic_glyph_transform_skews_forward() {
+        let font_data = include_bytes!("../../blitz-dom/assets/moz-bullet-font.otf");
+        let mut font_ctx = blitz_dom::build_single_font_ctx(font_data);
+        let mut layout_ctx = LayoutContext::new();
+        let mut builder = layout_ctx.ranged_builder(&mut font_ctx, "\u{2022}", 1.0, true);
+        builder.push_default(StyleProperty::FontStyle(FontStyle::Italic));
+        builder.push_default(StyleProperty::Brush(TextBrush::default()));
+        let mut layout = builder.build("\u{2022}");
+        layout.break_all_lines(None);
+
+        let mut recorder = GlyphTransformRecorder(Vec::new());
+        for line in layout.lines() {
+            for run in glyph_runs(&line) {
+                draw_glyph_run(&mut recorder, &run, Color::BLACK, Affine::IDENTITY);
+            }
+        }
+
+        assert_eq!(recorder.0.len(), 1);
+        let glyph_xform = recorder.0[0].expect("synthetic italic should emit glyph_transform");
+        let coeffs = glyph_xform.as_coeffs();
+        assert!(
+            coeffs[2] < 0.0,
+            "synthetic italic horizontal shear coeff must be negative in Y-down coordinates to lean right: got {}",
+            coeffs[2]
+        );
+    }
 }
