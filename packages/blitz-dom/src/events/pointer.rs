@@ -13,7 +13,7 @@ use blitz_traits::{
 };
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
-use style::values::computed::{Overflow, TouchAction, UserSelect};
+use style::values::computed::{Overflow, TouchAction};
 use style_dom::ElementState;
 use taffy::AbsoluteAxis;
 
@@ -220,26 +220,11 @@ pub(crate) fn handle_pointermove(
         if dx.abs() > 2.0 || dy.abs() > 2.0 {
             match event.id {
                 BlitzPointerId::Mouse | BlitzPointerId::Pen => {
-                    if let Some(mousedown_node_id) = doc.mousedown_node_id {
-                        let node = &doc.nodes[mousedown_node_id];
-                        if let Some(style) = node.primary_styles() {
-                            let user_select = style.clone_user_select();
-                            if user_select == UserSelect::None {
-                                // Do nothing. Continue with rest of function
-                            } else if user_select == UserSelect::Auto {
-                                if let Some(parent) = node.parent {
-                                    let node = &doc.nodes[parent];
-                                    if let Some(style) = node.primary_styles() {
-                                        let user_select = style.clone_user_select();
-                                        if user_select == UserSelect::None {
-                                            // Do nothing. Continue with rest of function
-                                        } else {
-                                            doc.drag_mode = DragMode::Selecting;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    if doc
+                        .mousedown_node_id
+                        .is_some_and(|id| doc.nodes[id].is_user_selectable())
+                    {
+                        doc.drag_mode = DragMode::Selecting;
                     }
                 }
                 BlitzPointerId::Finger(_) => {
@@ -389,7 +374,7 @@ pub(crate) fn record_pointerdown(doc: &mut BaseDocument, x: f32, y: f32) {
         && (doc.mousedown_position.x - x).abs() <= 2.0
         && (doc.mousedown_position.y - y).abs() <= 2.0
     {
-        doc.click_count + 1
+        doc.click_count.saturating_add(1)
     } else {
         1
     };
@@ -498,8 +483,14 @@ pub(crate) fn handle_pointerdown(
     match click_target {
         ClickTarget::Disabled => (),
         ClickTarget::SelectableText => {
-            // Handle text selection for non-input elements
-            if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
+            // Handle text selection for non-input elements: a double click selects a
+            // word, a triple click a line.
+            if button == MouseEventButton::Main
+                && doc.click_count >= 2
+                && doc.select_text_unit_at_point(x, y, doc.click_count)
+            {
+                doc.shell_provider.request_redraw();
+            } else if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
                 doc.set_text_selection(inline_root_id, byte_offset, inline_root_id, byte_offset);
                 doc.shell_provider.request_redraw();
             } else {

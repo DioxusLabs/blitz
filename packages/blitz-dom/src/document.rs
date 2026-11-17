@@ -2704,6 +2704,28 @@ impl BaseDocument {
         Some((inline_root.id, byte_offset))
     }
 
+    /// Selects the word (`clicks == 2`) or the line between hard breaks (any other count)
+    /// at a point, as a double or triple click does. Returns false when there is no
+    /// selectable text there.
+    pub fn select_text_unit_at_point(&mut self, x: f32, y: f32, clicks: u16) -> bool {
+        let Some((root, range)) = self
+            .hit(x, y)
+            .and_then(|hit| {
+                let node = self.get_node(hit.node_id)?;
+                if !node.is_user_selectable() {
+                    return None;
+                }
+                let root = node.inline_root_ancestor()?;
+                Some((root.id, root.text_unit_at_point(hit.x, hit.y, clicks)?))
+            })
+            .filter(|(_, range)| !range.is_empty())
+        else {
+            return false;
+        };
+        self.set_text_selection(root, range.start, root, range.end);
+        true
+    }
+
     /// Set the text selection range (creates a new selection from anchor to focus)
     pub fn set_text_selection(
         &mut self,
