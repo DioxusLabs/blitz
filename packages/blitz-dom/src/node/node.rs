@@ -785,14 +785,19 @@ impl Node {
             .and_then(|elem| elem.text_input_data())
             .is_some()
         {
-            shell_provider.set_ime_enabled(true);
-            let mut pos = self.absolute_position(0.0, 0.0);
-            pos.x += self.final_layout().content_box_x();
-            pos.y += self.final_layout().content_box_y();
-            let width = self.final_layout().content_box_width();
-            let height = self.final_layout().content_box_height();
-            shell_provider.set_ime_cursor_area(pos.x, pos.y, width, height);
+            self.enable_ime(&*shell_provider);
         }
+    }
+
+    /// Enable IME for this (text input) node and point it at the node's content box.
+    pub(crate) fn enable_ime(&self, shell_provider: &dyn ShellProvider) {
+        shell_provider.set_ime_enabled(true);
+        let mut pos = self.absolute_position(0.0, 0.0);
+        pos.x += self.final_layout().content_box_x();
+        pos.y += self.final_layout().content_box_y();
+        let width = self.final_layout().content_box_width();
+        let height = self.final_layout().content_box_height();
+        shell_provider.set_ime_cursor_area(pos.x, pos.y, width, height);
     }
 
     pub fn blur(&mut self, shell_provider: Arc<dyn ShellProvider>) {
