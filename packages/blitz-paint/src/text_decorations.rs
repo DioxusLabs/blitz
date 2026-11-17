@@ -306,9 +306,16 @@ fn draw_decoration_line(
     if w <= 0.0 {
         return;
     }
-    let y = (baseline - offset + size / 2.0) as f64;
+    let top_y = (baseline - offset) as f64;
+    let y = top_y + (size / 2.0) as f64;
     let size = size as f64;
     let butt_stroke = Stroke::new(size).with_caps(Cap::Butt);
+    let [_a, b, c, d, _tx, ty] = transform.as_coeffs();
+    let is_axis_aligned = b == 0.0 && c == 0.0 && d != 0.0;
+    let snap_y = |local_y: f64| -> f64 {
+        let snapped_device_y = (ty + d * local_y).round();
+        (snapped_device_y - ty) / d
+    };
 
     match deco_style {
         TextDecorationStyle::None => {
@@ -316,24 +323,19 @@ fn draw_decoration_line(
         }
         // `solid`
         TextDecorationStyle::Solid => {
-            let line = kurbo::Line::new((x, y), (x + w, y));
-            scene.stroke(
-                &butt_stroke,
-                transform,
-                brush,
-                None,
-                &line,
-                AntiAliasing::Enabled,
-            );
-        }
-        // Two lines, each `size` thick, separated by a 1px (CSS) gap. This
-        // matches Chrome, where the second line is offset by `thickness + 1px`
-        // and sits further from the text (below for underline, above for
-        // overline).
-        TextDecorationStyle::Double => {
-            let one_css_px = scale;
-            for cy in [y, y + double_dir * (size + one_css_px)] {
-                let line = kurbo::Line::new((x, cy), (x + w, cy));
+            if is_axis_aligned {
+                let y_top = snap_y(top_y);
+                let rect = Rect::new(x, y_top, x + w, y_top + size);
+                scene.fill(
+                    Fill::NonZero,
+                    transform,
+                    brush,
+                    None,
+                    &rect,
+                    AntiAliasing::Enabled,
+                );
+            } else {
+                let line = kurbo::Line::new((x, y), (x + w, y));
                 scene.stroke(
                     &butt_stroke,
                     transform,
@@ -342,6 +344,39 @@ fn draw_decoration_line(
                     &line,
                     AntiAliasing::Enabled,
                 );
+            }
+        }
+        // Two lines, each `size` thick, separated by a 1px (CSS) gap. This
+        // matches Chrome, where the second line is offset by `thickness + 1px`
+        // and sits further from the text (below for underline, above for
+        // overline).
+        TextDecorationStyle::Double => {
+            let one_css_px = scale.round().max(1.0);
+            if is_axis_aligned {
+                for line_top in [top_y, top_y + double_dir * (size + one_css_px)] {
+                    let y_top = snap_y(line_top);
+                    let rect = Rect::new(x, y_top, x + w, y_top + size);
+                    scene.fill(
+                        Fill::NonZero,
+                        transform,
+                        brush,
+                        None,
+                        &rect,
+                        AntiAliasing::Enabled,
+                    );
+                }
+            } else {
+                for cy in [y, y + double_dir * (size + one_css_px)] {
+                    let line = kurbo::Line::new((x, cy), (x + w, cy));
+                    scene.stroke(
+                        &butt_stroke,
+                        transform,
+                        brush,
+                        None,
+                        &line,
+                        AntiAliasing::Enabled,
+                    );
+                }
             }
         }
         // Round dots (diameter = line thickness) spaced one dot apart.
@@ -737,5 +772,53 @@ pub(crate) fn draw_line_text_shadows(
         }
 
         start = end;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyrender::Scene;
+    use anyrender::recording::RenderCommand;
+    use kurbo::Shape;
+
+    #[test]
+    fn text_decorations_snap_to_device_pixels() {
+        let brush = anyrender::Paint::from(Color::BLACK);
+        for scale in [1.0, 2.0] {
+            let transform = Affine::scale(scale);
+            for style in [TextDecorationStyle::Solid, TextDecorationStyle::Double] {
+                for (baseline, offset, double_dir) in [(16.3, 4.2, 1.0), (20.7, 0.0, 1.0)] {
+                    let mut scene = Scene::new();
+                    draw_decoration_line(
+                        &mut scene, transform, scale, 10.0, 100.0, baseline, offset, 1.0, &brush,
+                        double_dir, style, 0.0, 0.0,
+                    );
+
+                    let fill_cmds: Vec<_> = scene
+                        .commands
+                        .iter()
+                        .filter_map(|cmd| match cmd {
+                            RenderCommand::Fill(f) => Some(f),
+                            _ => None,
+                        })
+                        .collect();
+
+                    let expected_count = if style == TextDecorationStyle::Solid {
+                        1
+                    } else {
+                        2
+                    };
+                    assert_eq!(fill_cmds.len(), expected_count);
+
+                    for cmd in fill_cmds {
+                        let rect = cmd.shape.bounding_box();
+                        let dev_y =
+                            cmd.transform.as_coeffs()[5] + cmd.transform.as_coeffs()[3] * rect.y0;
+                        assert_eq!(dev_y.fract(), 0.0);
+                    }
+                }
+            }
+        }
     }
 }
