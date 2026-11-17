@@ -721,15 +721,39 @@ pub(crate) fn handle_click(
                         }
                     }
                 }
-                // Clicking labels triggers click, and possibly input event, of associated input
                 local_name!("label") => {
                     if let Some(target_node_id) =
                         doc.label_bound_input_element(node_id).map(|n| n.id)
                     {
-                        // Apply default click event action for target node
+                        let mut current = Some(target);
+                        while let Some(id) = current
+                            && id != node_id
+                        {
+                            if id == target_node_id
+                                || doc.nodes[id]
+                                    .element_data()
+                                    .is_some_and(|el| el.is_interactive())
+                            {
+                                break 'matched true;
+                            }
+                            current = doc.nodes[id].parent;
+                        }
+
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
                         let syn_event = target_node.synthetic_click_event_data(event.mods);
                         handle_click(doc, target_node_id, &syn_event, dispatch_event);
+                        let target_node = &doc.nodes[target_node_id];
+                        if target_node.is_focussable()
+                            && !target_node.element_state().contains(ElementState::DISABLED)
+                        {
+                            generate_focus_events(
+                                doc,
+                                &mut |doc| {
+                                    doc.set_focus_to(target_node_id);
+                                },
+                                dispatch_event,
+                            );
+                        }
                         break 'matched true;
                     }
                 }

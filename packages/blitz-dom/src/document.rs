@@ -701,42 +701,26 @@ impl BaseDocument {
         self
     }
 
-    /// Find the label's bound input elements:
-    /// the element id referenced by the "for" attribute of a given label element
-    /// or the first input element which is nested in the label
-    /// Note that although there should only be one bound element,
-    /// we return all possibilities instead of just the first
-    /// in order to allow the caller to decide which one is correct
+    /// Find the `<label>` element's labeled control.
     pub fn label_bound_input_element(&self, label_node_id: NodeId) -> Option<&Node> {
         let label_element = self.nodes[label_node_id].element_data()?;
         if let Some(target_element_dom_id) = label_element.attr(local_name!("for")) {
+            if target_element_dom_id.is_empty() {
+                return None;
+            }
             TreeTraverser::new(self)
-                .filter_map(|id| {
-                    let node = self.get_node(id)?;
-                    let element_data = node.element_data()?;
-                    if element_data.name.local != local_name!("input") {
-                        return None;
-                    }
-                    let id = element_data.id.as_ref()?;
-                    if *id == *target_element_dom_id {
-                        Some(node)
-                    } else {
-                        None
-                    }
+                .filter_map(|id| self.get_node(id))
+                .find(|node| {
+                    node.element_data()
+                        .and_then(|el| el.id.as_ref())
+                        .is_some_and(|id| *id == *target_element_dom_id)
                 })
-                .next()
+                .filter(|node| node.element_data().is_some_and(ElementData::is_labelable))
         } else {
             TreeTraverser::new_with_root(self, label_node_id)
-                .filter_map(|child_id| {
-                    let node = self.get_node(child_id)?;
-                    let element_data = node.element_data()?;
-                    if element_data.name.local == local_name!("input") {
-                        Some(node)
-                    } else {
-                        None
-                    }
-                })
-                .next()
+                .skip(1)
+                .filter_map(|id| self.get_node(id))
+                .find(|node| node.element_data().is_some_and(ElementData::is_labelable))
         }
     }
 
