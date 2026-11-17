@@ -21,6 +21,9 @@ use anyrender::{PaintScene, Scene};
 use blitz_dom::{BaseDocument, NodeId, util::Color};
 use render::BlitzDomPainter;
 
+pub use kurbo_css::{CssBox, NonUniformRoundedRectRadii};
+pub use render::create_css_rect;
+
 const FONT_EMBOLDEN_ENABLED: bool = cfg!(any(
     feature = "font-embolden",
     all(feature = "apple-font-embolden", target_os = "macos"),
@@ -60,6 +63,8 @@ pub fn paint_scene(
     #[cfg(feature = "custom-widget")]
     build_custom_widget_scenes(&mut custom_widget_scenes, doc, scene, scale);
 
+    prepare_paint_hooks(doc, scene);
+
     let generator = BlitzDomPainter::new(
         doc,
         scale,
@@ -77,6 +82,19 @@ pub fn paint_scene(
     //     CLIP_DEPTH_USED.load(atomic::Ordering::SeqCst),
     //     CLIPS_WANTED.load(atomic::Ordering::SeqCst)
     // );
+}
+
+/// Give the paint hook of the document (and of all subdocuments) the render context, before
+/// anything is painted.
+fn prepare_paint_hooks(doc: &mut BaseDocument, render_ctx: &mut dyn anyrender::RenderContext) {
+    if let Some(hook) = doc.paint_hook() {
+        hook.prepare(render_ctx);
+    }
+    for node_id in doc.sub_document_node_ids() {
+        if let Some(sub_doc) = doc.get_node_mut(node_id).and_then(|node| node.subdoc_mut()) {
+            prepare_paint_hooks(&mut sub_doc.inner_mut(), render_ctx);
+        }
+    }
 }
 
 #[cfg(feature = "custom-widget")]
