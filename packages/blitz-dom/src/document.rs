@@ -453,7 +453,6 @@ impl BaseDocument {
 
         let (tx, rx) = channel();
         let font_face_loader = Arc::new(crate::font_face::FontFaceLoader::new(
-            font_ctx.clone(),
             net_provider.clone(),
             shell_provider.clone(),
             tx.clone(),
@@ -1459,14 +1458,17 @@ impl BaseDocument {
             }
         });
         drop(global);
-        if updates.iter().any(|update| update.has_bytes()) {
-            if let Some(root) = self.try_root_element().map(|node| node.id) {
-                self.nodes[root].set_restyle_hint(RestyleHint::recascade_subtree());
-            }
-            self.stylist
-                .force_stylesheet_origins_dirty(style::stylesheets::OriginSet::all());
-            self.mark_all_damaged();
+        // A failed face was already being skipped in favour of its fallback,
+        // so removing it changes neither style nor layout.
+        if !updates.iter().any(|update| update.has_bytes()) {
+            return;
         }
+        if let Some(root) = self.try_root_element().map(|node| node.id) {
+            self.nodes[root].set_restyle_hint(RestyleHint::recascade_subtree());
+        }
+        self.stylist
+            .force_stylesheet_origins_dirty(style::stylesheets::OriginSet::all());
+        self.mark_all_damaged();
         self.invalidate_inline_contexts();
     }
 
