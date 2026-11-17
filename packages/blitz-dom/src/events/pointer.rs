@@ -1,8 +1,7 @@
 use blitz_traits::node_id::NodeId;
-use std::collections::VecDeque;
 use stylo_taffy::CopyStyleGetters;
 
-use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use web_time::{Duration, Instant};
 
 use blitz_traits::{
     events::{
@@ -20,10 +19,12 @@ use taffy::AbsoluteAxis;
 use crate::{
     BaseDocument,
     node::{ScrollbarRef, SpecialElementData},
-    scrolling::{FlingState, ScrollAnimationState},
+    scrolling::{CarriedFling, FlingState, ScrollAnimationState},
+    util::Point,
 };
 
 use super::focus::generate_focus_events;
+use super::velocity::VelocityTracker;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PanState {
@@ -34,14 +35,7 @@ pub(crate) struct PanState {
     pub(crate) allow_x: bool,
     /// Whether vertical panning is permitted by the `touch-action` property.
     pub(crate) allow_y: bool,
-    pub(crate) samples: VecDeque<PanSample>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PanSample {
-    pub(crate) time: u64,
-    pub(crate) dx: f32,
-    pub(crate) dy: f32,
+    tracker: VelocityTracker,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -71,7 +65,7 @@ impl DragMode {
 }
 
 impl PanState {
-    fn update(&mut self, time_ms: u64, screen_x: f32, screen_y: f32) -> (f64, f64) {
+    fn update(&mut self, now: Instant, screen_x: f32, screen_y: f32) -> (f64, f64) {
         // Constrain panning to the axes permitted by the `touch-action` property. Positions are
         // still tracked on both axes so that deltas remain correct after a disallowed movement.
         let dx = if self.allow_x {
@@ -87,72 +81,35 @@ impl PanState {
         self.last_x = screen_x;
         self.last_y = screen_y;
 
-        self.samples.push_back(PanSample {
-            time: time_ms,
-            // TODO: account for scroll delta not applied due to clamping
-            dx: dx as f32,
-            dy: dy as f32,
-        });
-
-        // Remove samples older than 100ms
-        if self.samples.len() > 50 && time_ms - self.samples.front().unwrap().time > 100 {
-            let idx = self
-                .samples
-                .partition_point(|sample| time_ms - sample.time > 100);
-            // FIXME: use truncate_front once stable
-            for _ in 0..idx {
-                self.samples.pop_front();
-            }
-        }
+        self.tracker.record(now, dx, dy);
 
         (dx, dy)
     }
 
-    fn generate_fling(&self, time_ms: u64) -> Option<FlingState> {
-        // Generate "fling"
-        if let Some(last_sample) = self.samples.back()
-            && time_ms - last_sample.time < 100
-        {
-            let idx = self
-                .samples
-                .partition_point(|sample| time_ms - sample.time > 100);
-
-            // Compute pan_time. Will always be <= 100ms as we ignore samples older than that.
-            let pan_start_time = self.samples[idx].time;
-            let pan_time = (time_ms - pan_start_time) as f32;
-
-            // Avoid division by 0
-            if pan_time > 0.0 {
-                let (pan_x, pan_y) = self
-                    .samples
-                    .iter()
-                    .skip(idx)
-                    .fold((0.0, 0.0), |(dx, dy), sample| {
-                        (dx + sample.dx, dy + sample.dy)
-                    });
-
-                let x_velocity = if pan_x.abs() > pan_y.abs() {
-                    pan_x / pan_time
-                } else {
-                    0.0
-                };
-
-                let y_velocity = if pan_y.abs() > pan_x.abs() {
-                    pan_y / pan_time
-                } else {
-                    0.0
-                };
-
-                return Some(FlingState {
-                    target: self.target,
-                    last_seen_time: time_ms as f64,
-                    x_velocity: x_velocity as f64 * 2.0,
-                    y_velocity: y_velocity as f64 * 2.0,
-                });
-            }
+    fn generate_fling(&self, now: Instant, carried: Option<&CarriedFling>) -> Option<FlingState> {
+        let mut velocity = self.tracker.velocity(now)?;
+        velocity = Point {
+            x: if velocity.x.abs() > velocity.y.abs() {
+                velocity.x
+            } else {
+                0.0
+            },
+            y: if velocity.y.abs() > velocity.x.abs() {
+                velocity.y
+            } else {
+                0.0
+            },
+        };
+        if velocity.x.hypot(velocity.y) < 50.0 {
+            return None;
         }
-
-        None
+        if let Some(carried) = carried {
+            velocity = carried.boost(now, velocity);
+        }
+        let scale = (8000.0 / velocity.x.hypot(velocity.y)).min(1.0);
+        velocity.x *= scale;
+        velocity.y *= scale;
+        Some(FlingState::new(self.target, now, velocity))
     }
 }
 
@@ -256,7 +213,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
                             last_y: event.screen_y(),
                             allow_x,
                             allow_y,
-                            samples: VecDeque::with_capacity(200),
+                            tracker: VelocityTracker::new(Instant::now()),
                         });
                     }
                 }
@@ -265,13 +222,8 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     }
 
     if let DragMode::Panning(state) = &mut doc.drag_mode {
-        let time_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
         let target = state.target;
-        let (dx, dy) = state.update(time_ms, event.screen_x(), event.screen_y());
+        let (dx, dy) = state.update(Instant::now(), event.screen_x(), event.screen_y());
 
         let has_changed = doc.scroll_chain_by(Some(target), dx, dy, &mut dispatch_event);
         return has_changed;
@@ -409,6 +361,14 @@ pub(crate) fn handle_pointerdown(
     doc.last_mousedown_time = Some(Instant::now());
     doc.mousedown_position = taffy::Point { x, y };
     doc.drag_mode = DragMode::None;
+    let now = Instant::now();
+    doc.carried_fling = match &doc.scroll_animation {
+        ScrollAnimationState::Fling(fling) => Some(CarriedFling {
+            time: now,
+            velocity: fling.velocity_at(now),
+        }),
+        _ => None,
+    };
     doc.scroll_animation = ScrollAnimationState::None;
 
     let Some(hit) = doc.hit(x, y) else {
@@ -586,13 +546,9 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
         doc.shell_provider.request_redraw();
     }
 
-    let time_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
-
+    let carried = doc.carried_fling.take();
     if let DragMode::Panning(state) = &drag_mode {
-        if let Some(fling) = state.generate_fling(time_ms) {
+        if let Some(fling) = state.generate_fling(Instant::now(), carried.as_ref()) {
             doc.scroll_animation = ScrollAnimationState::Fling(fling);
             doc.shell_provider.request_redraw();
         }
@@ -846,5 +802,40 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     );
     if has_changed {
         doc.shell_provider.request_redraw();
+    }
+}
+
+#[cfg(test)]
+mod fling_tests {
+    use super::*;
+
+    #[test]
+    fn fling_threshold_axis_mask_and_boost() {
+        let now = Instant::now();
+        let mut pan = PanState {
+            target: NodeId::default(),
+            last_x: 0.0,
+            last_y: 0.0,
+            allow_x: true,
+            allow_y: false,
+            tracker: VelocityTracker::new(now),
+        };
+        assert!(pan.generate_fling(now, None).is_none());
+        let release = now + Duration::from_millis(10);
+        pan.update(release, 0.1, 100.0);
+        assert!(pan.generate_fling(release, None).is_none());
+        pan.update(now + Duration::from_millis(20), 200.0, 200.0);
+        let release = now + Duration::from_millis(20);
+        let carried = CarriedFling {
+            time: now,
+            velocity: Point { x: 1000.0, y: 0.0 },
+        };
+        let fling = pan.generate_fling(release, Some(&carried)).unwrap();
+        assert!((fling.velocity_at(release).x - 8000.0).abs() < 1e-8);
+        assert_eq!(fling.velocity_at(release).y, 0.0);
+        assert!(
+            pan.generate_fling(release + Duration::from_millis(41), Some(&carried))
+                .is_none()
+        );
     }
 }
