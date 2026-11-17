@@ -308,24 +308,52 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
 pub(crate) struct FontFaceHandler {
     pub format: FontFaceSourceFormatKeyword,
     pub url: Url,
+    failure: Option<ResourceHandler<()>>,
 }
 impl NetHandler for ResourceHandler<FontFaceHandler> {
     fn bytes(mut self: Box<Self>, resolved_url: String, bytes: Bytes) {
         let bytes = self.data.parse(bytes);
+        self.data.failure = None;
         self.respond(
             resolved_url,
             Ok(Resource::FontFaceLoaded(self.data.url.clone(), bytes)),
         )
     }
 
-    fn error(self: Box<Self>, resolved_url: String, _error: String) {
+    fn error(mut self: Box<Self>, resolved_url: String, _error: String) {
+        self.data.failure = None;
         self.respond(
             resolved_url,
             Ok(Resource::FontFaceLoaded(self.data.url.clone(), None)),
         );
     }
 }
+impl Drop for FontFaceHandler {
+    fn drop(&mut self) {
+        if let Some(failure) = &self.failure {
+            failure.respond(
+                self.url.to_string(),
+                Ok(Resource::FontFaceLoaded(self.url.clone(), None)),
+            );
+        }
+    }
+}
 impl FontFaceHandler {
+    pub fn new(
+        format: FontFaceSourceFormatKeyword,
+        url: Url,
+        tx: Sender<DocumentEvent>,
+        doc_id: usize,
+        node_id: Option<NodeId>,
+        shell: Arc<dyn ShellProvider>,
+    ) -> Self {
+        Self {
+            format,
+            url,
+            failure: Some(ResourceHandler::new(tx, doc_id, node_id, shell, ())),
+        }
+    }
+
     fn parse(&mut self, bytes: Bytes) -> Option<Bytes> {
         if self.format == FontFaceSourceFormatKeyword::None && bytes.len() >= 4 {
             self.format = match &bytes.as_ref()[0..4] {

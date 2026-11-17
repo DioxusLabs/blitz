@@ -39,6 +39,7 @@ fn query_for_font_styles<'a>(
 #[derive(Clone)]
 pub(crate) struct BlitzFontMetricsProvider {
     pub(crate) font_ctx: Arc<Mutex<FontContext>>,
+    pub(crate) font_face_loader: Arc<crate::font_face::FontFaceLoader>,
 }
 
 impl core::fmt::Debug for BlitzFontMetricsProvider {
@@ -65,6 +66,8 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
 
         // Query fontique for the font that matches the font styles
         let mut query = query_for_font_styles(font_ctx, font_styles);
+        let mut pending = Vec::new();
+        query.first_available_font_with(|key| pending.push(key));
         // let fb_script = crate::swash_convert::script_to_fontique(script);
         // let fb_language = locale.and_then(crate::swash_convert::locale_to_fontique);
         // query.set_fallbacks(fontique::FallbackKey::new(fb_script, fb_language.as_ref()));
@@ -154,6 +157,9 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
         let (ascent, x_height, cap_height) =
             metrics_of(&mut query, ' ', Size::new(font_size.px()), &variations)
                 .unwrap_or((0.0, None, None));
+        drop(query);
+        self.font_face_loader
+            .request(pending.into_iter(), font_ctx, true);
 
         FontMetrics {
             ascent: CSSPixelLength::new(ascent),

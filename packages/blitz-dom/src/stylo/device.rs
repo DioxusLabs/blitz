@@ -65,10 +65,14 @@ pub(crate) fn make_device(
     viewport: &Viewport,
     media_type: MediaType,
     font_ctx: Arc<Mutex<FontContext>>,
+    font_face_loader: Arc<crate::font_face::FontFaceLoader>,
 ) -> Device {
     Device::new(
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
-        Box::new(BlitzFontMetricsProvider { font_ctx }),
+        Box::new(BlitzFontMetricsProvider {
+            font_ctx,
+            font_face_loader,
+        }),
         "Submit Query".into(),
         make_media_data(viewport, media_type),
     )

@@ -245,7 +245,7 @@ pub struct BaseDocument {
     // Parley contexts
     /// A Parley font context
     pub(crate) font_ctx: Arc<Mutex<parley::FontContext>>,
-    pub(crate) font_face_loader: crate::font_face::FontFaceLoader,
+    pub(crate) font_face_loader: Arc<crate::font_face::FontFaceLoader>,
     #[cfg(feature = "parallel-construct")]
     /// Thread-and-document-local copies to the font context
     pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
@@ -428,8 +428,6 @@ impl BaseDocument {
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
-        let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(NodeTree::new());
         let guard = SharedRwLock::new();
@@ -454,6 +452,21 @@ impl BaseDocument {
             .unwrap_or_else(|| Arc::new(DummyHtmlParserProvider));
 
         let (tx, rx) = channel();
+        let font_face_loader = Arc::new(crate::font_face::FontFaceLoader::new(
+            font_ctx.clone(),
+            net_provider.clone(),
+            shell_provider.clone(),
+            tx.clone(),
+            id,
+            config.abort_signal.clone(),
+        ));
+        let device = make_device(
+            &viewport,
+            media_type.clone(),
+            font_ctx.clone(),
+            font_face_loader.clone(),
+        );
+        let stylist = Stylist::new(device, QuirksMode::NoQuirks);
 
         let mut doc = Self {
             id,
@@ -478,14 +491,7 @@ impl BaseDocument {
             url: base_url,
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
-            font_face_loader: crate::font_face::FontFaceLoader::new(
-                font_ctx.clone(),
-                net_provider.clone(),
-                shell_provider.clone(),
-                tx.clone(),
-                id,
-                config.abort_signal.clone(),
-            ),
+            font_face_loader,
             font_ctx,
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
@@ -1453,6 +1459,14 @@ impl BaseDocument {
             }
         });
         drop(global);
+        if updates.iter().any(|update| update.has_bytes()) {
+            if let Some(root) = self.try_root_element().map(|node| node.id) {
+                self.nodes[root].set_restyle_hint(RestyleHint::recascade_subtree());
+            }
+            self.stylist
+                .force_stylesheet_origins_dirty(style::stylesheets::OriginSet::all());
+            self.mark_all_damaged();
+        }
         self.invalidate_inline_contexts();
     }
 

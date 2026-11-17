@@ -17,23 +17,32 @@ use crate::net::{
 pub(crate) struct FontUpdate {
     key: Option<u64>,
     font: Option<Blob<u8>>,
-    overrides: FontFaceOverrides,
+    overrides: Option<FontFaceOverrides>,
 }
 
 impl FontUpdate {
     pub fn apply(&self, ctx: &mut FontContext) {
         if let Some(key) = self.key {
+            if let Some(font) = &self.font {
+                if ctx.collection.resolve_pending_font(key, font.clone()) {
+                    return;
+                }
+            }
             ctx.collection.unregister_pending_font(key);
-        }
-        if let Some(font) = &self.font {
+        } else if let (Some(font), Some(overrides)) = (&self.font, &self.overrides) {
             ctx.collection
-                .register_fonts(font.clone(), Some(self.overrides.as_font_info()));
+                .register_fonts(font.clone(), Some(overrides.as_font_info()));
         }
+    }
+
+    pub fn has_bytes(&self) -> bool {
+        self.font.is_some()
     }
 }
 
 struct PendingFace {
-    declaration: FontFaceDeclaration,
+    url: Url,
+    format: style::font_face::FontFaceSourceFormatKeyword,
     node_id: Option<NodeId>,
 }
 
@@ -100,13 +109,14 @@ impl FontFaceLoader {
             state.updates.push(FontUpdate {
                 key: Some(key),
                 font,
-                overrides: declaration.overrides,
+                overrides: None,
             });
         } else {
             state.faces.insert(
                 key,
                 PendingFace {
-                    declaration,
+                    url: declaration.url,
+                    format: declaration.format,
                     node_id,
                 },
             );
@@ -141,8 +151,8 @@ impl FontFaceLoader {
                 let Some(face) = state.faces.get(&key) else {
                     continue;
                 };
-                let url = face.declaration.url.clone();
-                let format = face.declaration.format;
+                let url = face.url.clone();
+                let format = face.format;
                 let node_id = face.node_id;
                 let source = state.sources.get_mut(&url).unwrap();
                 if source.loading {
@@ -170,7 +180,14 @@ impl FontFaceLoader {
                     self.doc_id,
                     node_id,
                     self.shell.clone(),
-                    FontFaceHandler { format, url },
+                    FontFaceHandler::new(
+                        format,
+                        url,
+                        self.tx.clone(),
+                        self.doc_id,
+                        node_id,
+                        self.shell.clone(),
+                    ),
                 ),
             );
         }
@@ -180,17 +197,18 @@ impl FontFaceLoader {
         let font = bytes.map(|bytes| Blob::new(Arc::new(bytes)));
         let mut state = self.state.lock().unwrap();
         state.sources.entry(url.clone()).or_default().result = Some(font.clone());
-        let keys: Vec<_> = state
+        let mut keys: Vec<_> = state
             .faces
             .iter()
-            .filter_map(|(key, face)| (face.declaration.url == url).then_some(*key))
+            .filter_map(|(key, face)| (face.url == url).then_some(*key))
             .collect();
+        keys.sort_unstable();
         for key in keys {
-            let face = state.faces.remove(&key).unwrap();
+            state.faces.remove(&key);
             state.updates.push(FontUpdate {
                 key: Some(key),
                 font: font.clone(),
-                overrides: face.declaration.overrides,
+                overrides: None,
             });
         }
     }
@@ -199,7 +217,7 @@ impl FontFaceLoader {
         self.state.lock().unwrap().updates.push(FontUpdate {
             key: None,
             font: Some(Blob::new(Arc::new(bytes))),
-            overrides,
+            overrides: Some(overrides),
         });
     }
 
@@ -339,5 +357,32 @@ mod tests {
             .request([0].into_iter(), &mut doc.font_ctx.lock().unwrap(), true);
         doc.font_face_loader.start_requests();
         assert!(net.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn dropped_font_handler_completes_as_failure() {
+        let net = Arc::new(Network::default());
+        let mut doc = BaseDocument::new(DocumentConfig {
+            net_provider: Some(net.clone()),
+            ..Default::default()
+        });
+        doc.register_font_faces(vec![face("A", "https://example.com/dropped.otf")], None);
+        doc.font_face_loader
+            .request([0].into_iter(), &mut doc.font_ctx.lock().unwrap(), true);
+        doc.font_face_loader.start_requests();
+        assert!(doc.has_pending_font_loads());
+        let (_, handler) = net.0.lock().unwrap().pop().unwrap();
+        drop(handler);
+        doc.handle_messages();
+        doc.flush_pending_fonts();
+        assert!(!doc.has_pending_font_loads());
+        assert_eq!(
+            doc.font_ctx
+                .lock()
+                .unwrap()
+                .collection
+                .pending_font_state(0),
+            None
+        );
     }
 }
