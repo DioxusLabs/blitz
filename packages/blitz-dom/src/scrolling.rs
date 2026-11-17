@@ -188,7 +188,7 @@ impl BaseDocument {
         }
     }
 
-    pub(crate) fn clamp_scroll_after_layout(&mut self) {
+    pub(crate) fn clamp_viewport_scroll(&mut self) {
         let (current, min, max) = self.scroll_state(ScrollTarget::Viewport, false);
         let clamped = Point {
             x: current.x.clamp(min.x, max.x),
@@ -197,7 +197,9 @@ impl BaseDocument {
         if clamped != current {
             self.set_viewport_scroll(clamped);
         }
+    }
 
+    pub(crate) fn clamp_scroll_animation(&mut self) {
         if let ScrollAnimationState::ScrollTo(state) = &self.scroll_animation {
             let state = state.clone();
             let (_, min, max) = self.scroll_state(state.target, true);
