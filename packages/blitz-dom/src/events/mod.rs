@@ -62,6 +62,8 @@ fn map_dom_event_to_ui_event(
         DomEventData::PointerEnter(_) => None,
         DomEventData::PointerOver(_) => None,
         DomEventData::PointerOut(_) => None,
+        DomEventData::GotPointerCapture(_) => None,
+        DomEventData::LostPointerCapture(_) => None,
 
         // Mouse events will be recreated by sub-document's event driver
         // based pointer events
@@ -104,8 +106,20 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     event: &mut DomEvent,
     mut dispatch_event: F,
 ) {
+    let pending_click_target = doc.pending_click_target.take();
     let target_node_id = event.target;
-    let node = &mut doc.nodes[target_node_id];
+    let Some(node) = doc.nodes.get_mut(target_node_id) else {
+        if let DomEventData::PointerUp(event) = &event.data {
+            handle_pointerup(
+                doc,
+                target_node_id,
+                pending_click_target.flatten(),
+                event,
+                dispatch_event,
+            );
+        }
+        return;
+    };
     let pos = node.absolute_position(0.0, 0.0);
 
     // Whether this event can move the caret/selection (or change the text) of a text input,
@@ -203,7 +217,8 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (handled in PointerDown)
         }
         DomEventData::PointerUp(event) => {
-            handle_pointerup(doc, target_node_id, event, dispatch_event);
+            let click_target = pending_click_target.unwrap_or(Some(target_node_id));
+            handle_pointerup(doc, target_node_id, click_target, event, dispatch_event);
         }
         DomEventData::MouseUp(_) => {
             // Do nothing (handled in PointerUp)
@@ -258,6 +273,12 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (no default action)
         }
         DomEventData::PointerOut(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::GotPointerCapture(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::LostPointerCapture(_) => {
             // Do nothing (no default action)
         }
         DomEventData::MouseEnter(_) => {

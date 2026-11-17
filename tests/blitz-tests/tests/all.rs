@@ -55,6 +55,7 @@ mod outset_box_shadow_shape;
 mod paint_order;
 mod paint_tree_bench;
 mod paint_tree_incremental;
+mod pointer_capture;
 mod pointer_events;
 mod pointer_leave;
 mod pre_overflow_scroll;

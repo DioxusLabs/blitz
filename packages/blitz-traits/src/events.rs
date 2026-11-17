@@ -123,6 +123,8 @@ pub enum DomEventKind {
     PointerLeave,
     PointerOver,
     PointerOut,
+    GotPointerCapture,
+    LostPointerCapture,
 
     MouseMove,
     MouseDown,
@@ -174,6 +176,8 @@ impl FromStr for DomEventKind {
             "pointerleave" => Ok(Self::PointerLeave),
             "pointerover" => Ok(Self::PointerOver),
             "pointerout" => Ok(Self::PointerOut),
+            "gotpointercapture" => Ok(Self::GotPointerCapture),
+            "lostpointercapture" => Ok(Self::LostPointerCapture),
 
             "mousemove" => Ok(Self::MouseMove),
             "mousedown" => Ok(Self::MouseDown),
@@ -221,6 +225,8 @@ pub enum DomEventData {
     PointerLeave(BlitzPointerEvent),
     PointerOver(BlitzPointerEvent),
     PointerOut(BlitzPointerEvent),
+    GotPointerCapture(BlitzPointerEvent),
+    LostPointerCapture(BlitzPointerEvent),
 
     MouseMove(BlitzPointerEvent),
     MouseDown(BlitzPointerEvent),
@@ -276,6 +282,8 @@ impl DomEventData {
             Self::PointerLeave { .. } => "pointerleave",
             Self::PointerOver { .. } => "pointerover",
             Self::PointerOut { .. } => "pointerout",
+            Self::GotPointerCapture { .. } => "gotpointercapture",
+            Self::LostPointerCapture { .. } => "lostpointercapture",
 
             Self::MouseMove { .. } => "mousemove",
             Self::MouseDown { .. } => "mousedown",
@@ -322,6 +330,8 @@ impl DomEventData {
             Self::PointerLeave { .. } => DomEventKind::PointerLeave,
             Self::PointerOver { .. } => DomEventKind::PointerOver,
             Self::PointerOut { .. } => DomEventKind::PointerOut,
+            Self::GotPointerCapture { .. } => DomEventKind::GotPointerCapture,
+            Self::LostPointerCapture { .. } => DomEventKind::LostPointerCapture,
 
             Self::MouseMove { .. } => DomEventKind::MouseMove,
             Self::MouseDown { .. } => DomEventKind::MouseDown,
@@ -368,6 +378,8 @@ impl DomEventData {
             Self::PointerLeave { .. } => false,
             Self::PointerOver { .. } => true,
             Self::PointerOut { .. } => true,
+            Self::GotPointerCapture { .. } => false,
+            Self::LostPointerCapture { .. } => false,
 
             Self::MouseMove { .. } => true,
             Self::MouseDown { .. } => true,
@@ -414,6 +426,8 @@ impl DomEventData {
             Self::PointerLeave { .. } => false,
             Self::PointerOver { .. } => true,
             Self::PointerOut { .. } => true,
+            Self::GotPointerCapture { .. } => true,
+            Self::LostPointerCapture { .. } => true,
 
             Self::MouseMove { .. } => true,
             Self::MouseDown { .. } => true,
@@ -463,11 +477,41 @@ pub struct HitResult {
     pub y: f32,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PointerCaptureError {
+    NotFound,
+    InvalidState,
+}
+
+impl std::fmt::Display for PointerCaptureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => f.write_str("No active pointer with the given id is found."),
+            Self::InvalidState => {
+                f.write_str("Failed to execute pointer capture on a disconnected node.")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PointerCaptureError {}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BlitzPointerId {
     Mouse,
     Pen,
     Finger(u64),
+}
+
+impl BlitzPointerId {
+    #[inline]
+    pub fn to_dom_pointer_id(self) -> i32 {
+        match self {
+            Self::Mouse => 1,
+            Self::Pen => 2,
+            Self::Finger(id) => 3_i32.saturating_add(id.min((i32::MAX - 3) as u64) as i32),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -779,4 +823,81 @@ pub enum BlitzImeEvent {
     /// also stop issuing IME related requests like `Window::set_ime_cursor_area` and clear
     /// pending preedit text.
     Disabled,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_pointer_event(id: BlitzPointerId) -> BlitzPointerEvent {
+        BlitzPointerEvent {
+            id,
+            is_primary: true,
+            coords: PointerCoords {
+                page_x: 0.0,
+                page_y: 0.0,
+                screen_x: 0.0,
+                screen_y: 0.0,
+                client_x: 0.0,
+                client_y: 0.0,
+            },
+            button: MouseEventButton::Main,
+            buttons: MouseEventButtons::None,
+            mods: Modifiers::default(),
+            details: PointerDetails::default(),
+            element: Point::default(),
+            active_pointers: Default::default(),
+        }
+    }
+
+    #[test]
+    fn pointer_capture_event_metadata_and_discriminants() {
+        let ptr = sample_pointer_event(BlitzPointerId::Mouse);
+        let got = DomEventData::GotPointerCapture(ptr.clone());
+        let lost = DomEventData::LostPointerCapture(ptr.clone());
+        let mouse_move = DomEventData::MouseMove(ptr.clone());
+        let click = DomEventData::Click(ptr);
+        let keybinding = DomEventData::AppleStandardKeybinding(SmolStr::new_static("noop"));
+
+        assert_eq!(got.name(), "gotpointercapture");
+        assert_eq!(lost.name(), "lostpointercapture");
+        assert!(got.bubbles());
+        assert!(lost.bubbles());
+        assert!(!got.cancelable());
+        assert!(!lost.cancelable());
+
+        assert_eq!(
+            "gotpointercapture".parse::<DomEventKind>(),
+            Ok(DomEventKind::GotPointerCapture)
+        );
+        assert_eq!(
+            "ongotpointercapture".parse::<DomEventKind>(),
+            Ok(DomEventKind::GotPointerCapture)
+        );
+        assert_eq!(
+            "lostpointercapture".parse::<DomEventKind>(),
+            Ok(DomEventKind::LostPointerCapture)
+        );
+        assert_eq!(
+            "onlostpointercapture".parse::<DomEventKind>(),
+            Ok(DomEventKind::LostPointerCapture)
+        );
+
+        for data in [&got, &lost, &mouse_move, &click, &keybinding] {
+            assert_eq!(data.discriminant(), data.kind().discriminant());
+            assert!((data.discriminant() as usize) < 64);
+        }
+    }
+
+    #[test]
+    fn dom_pointer_id_mapping_is_disjoint() {
+        assert_eq!(BlitzPointerId::Mouse.to_dom_pointer_id(), 1);
+        assert_eq!(BlitzPointerId::Pen.to_dom_pointer_id(), 2);
+        assert_eq!(BlitzPointerId::Finger(0).to_dom_pointer_id(), 3);
+        assert_eq!(BlitzPointerId::Finger(1).to_dom_pointer_id(), 4);
+        assert_eq!(
+            BlitzPointerId::Finger(u64::MAX).to_dom_pointer_id(),
+            i32::MAX
+        );
+    }
 }
