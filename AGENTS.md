@@ -28,7 +28,12 @@ WPT is the main correctness signal; results are deterministic.
 - CI posts a WPT diff into the PR description between `<!-- wpt-results-start -->` / `<!-- wpt-results-end -->`. Don't remove those markers when you edit a PR body.
 - To check what browsers do: `https://wpt.fyi/api/search?q=<path>&label=master&label=stable&product=chrome&product=firefox&product=safari`.
 
+## Other tests
+- Where a change needs a test WPT doesn't provide, put it in `tests/blitz-tests` rather than in crate unit tests, wherever possible.
+- Keep tests minimal: a few focused cases, not a generated suite.
+
 ## Engine gotchas
+- Avoid whole-tree passes (loops over every node) where possible, especially on hot paths like `resolve()`. Incremental rendering performance depends on doing work proportional to what changed: track dirty nodes or use existing damage/flags instead.
 - Attribute changes only get layout damage from the computed-style diff. If box construction or layout reads an attribute directly (inline SVG source, `<col span>`, form attributes, ...), add it to the `read_by_layout` list in `restyle_for_attribute_change` (`mutator.rs`), or invalidation silently breaks. The `*-change`/`*-invalidation` reftests catch this.
 - Facts about a node derived from its children belong in box-tree construction flags (`NodeFlags`, reset in `reset_construction_flags`), not recomputed at paint time.
 - There's no CSS 2.1 block-in-inline split: an inline box containing blocks is laid out as a block. Inline `img`/`svg`/`input` still paint through `render_element`.
@@ -43,4 +48,5 @@ WPT is the main correctness signal; results are deterministic.
 - Human-written PR descriptions are preferred. Write a short plain-prose explanation of what changed and why, the way a person would. Skip generated boilerplate, heading templates and file-by-file change lists.
 - One feature per PR; follow-ups go in a new PR. Don't implement unrelated features to fix WPT losses. Note the losses in the PR description instead.
 - Search existing PRs before starting on a missing feature (`gh pr list --state all --search <feature>`); there are often stacks already open.
+- Don't add `Co-Authored-By: Claude` or similar AI-attribution git trailers to commits.
 - Fixes in Taffy/Parley/anyrender/Stylo go upstream in those repos, not patched in Blitz.
