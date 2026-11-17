@@ -158,7 +158,7 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
             metrics_of(&mut query, ' ', Size::new(font_size.px()), &variations)
                 .unwrap_or((0.0, None, None));
         drop(query);
-        self.font_face_loader.request(pending.into_iter());
+        self.font_face_loader.request(font_ctx, pending.into_iter());
 
         FontMetrics {
             ascent: CSSPixelLength::new(ascent),

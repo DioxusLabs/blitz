@@ -108,8 +108,10 @@ impl BaseDocument {
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
-        self.font_face_loader
-            .request(self.layout_ctx.drain_pending_font_requests());
+        self.font_face_loader.request(
+            &mut self.font_ctx.lock().unwrap(),
+            self.layout_ctx.drain_pending_font_requests(),
+        );
         self.font_face_loader.start_requests();
         timer.record_time("layout");
         self.nodes.bump_geometry_generation();
@@ -400,7 +402,7 @@ impl BaseDocument {
                         task.node_id,
                     );
                     self.font_face_loader
-                        .request(layout_ctx_mut.drain_pending_font_requests());
+                        .request(font_ctx_mut, layout_ctx_mut.drain_pending_font_requests());
 
                     #[cfg(feature = "parallel-construct")]
                     {

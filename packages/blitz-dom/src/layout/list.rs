@@ -104,7 +104,7 @@ fn node_list_item_child(
 
             let mut layout = builder.build().0;
             doc.font_face_loader
-                .request(doc.layout_ctx.drain_pending_font_requests());
+                .request(&mut font_ctx, doc.layout_ctx.drain_pending_font_requests());
             let width = layout.calculate_content_widths().max;
             layout.break_all_lines(Some(width));
 
