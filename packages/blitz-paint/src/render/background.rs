@@ -138,19 +138,27 @@ impl ElementCx<'_, '_> {
         let background_clip: BoxModelBox = last_clip.into();
         let background_clip_path = self.box_path(background_clip);
 
+        // The canvas background is not narrowed by `background-clip`, so a
+        // `text` clip paints the whole canvas instead of the glyphs
+        // (<https://drafts.csswg.org/css-backgrounds-3/#background-painting-area>).
+        let canvas = self.canvas_background_paint_area.is_some();
+
         // Draw background color (if any)
-        let mut text_run = last_clip == StyloBackgroundClip::Text;
+        let mut text_run = !canvas && last_clip == StyloBackgroundClip::Text;
         if text_run {
             self.begin_text_clip_group(scene);
         }
-        // The canvas already paints this element's background color.
-        if self.context.canvas_background_node_id != Some(self.node.id) {
+        // The canvas pass paints this element's background color over the whole
+        // canvas; the element pass skips this element's background entirely
+        // (see `canvas_background_node_id` in `render.rs`), so the color is
+        // painted exactly once.
+        if canvas || self.context.canvas_background_node_id != Some(self.node.id) {
             self.draw_solid_bg(scene, &background_clip_path);
         }
 
         for idx in (0..layer_count).rev() {
             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
-            if layer.text_clip != text_run {
+            if !canvas && layer.text_clip != text_run {
                 if text_run {
                     self.end_text_clip_group(scene);
                 } else {
@@ -216,6 +224,15 @@ impl ElementCx<'_, '_> {
 
     /// The path of the given CSS box model box for this element
     pub(super) fn box_path(&self, css_box: BoxModelBox) -> NonUniformRoundedRect {
+        // The canvas background paints over the canvas rather than over the
+        // element's own box, so every clip resolves to the canvas
+        // (<https://drafts.csswg.org/css-backgrounds-3/#background-painting-area>).
+        if let Some(area) = self.canvas_background_paint_area {
+            return NonUniformRoundedRect::new(
+                area,
+                anyrender::NonUniformRoundedRectRadii::default(),
+            );
+        }
         match css_box {
             BoxModelBox::BorderBox => self.frame.border_box_shape(),
             BoxModelBox::PaddingBox => self.frame.padding_box_shape(),
@@ -550,10 +567,19 @@ impl ElementCx<'_, '_> {
 
         let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
 
+        // The tiles cover the clip box as well as the positioning box. They
+        // coincide for an element's own background, but the canvas background
+        // clips to the canvas while positioning against the root element's box.
+        let clip_rect = self
+            .canvas_background_paint_area
+            .unwrap_or_else(|| self.box_rect(layer.clip));
+
         let x = raster_axis_tiling(
             *repeat_x,
             origin_rect.x0,
             origin_rect.width(),
+            clip_rect.x0,
+            clip_rect.width(),
             bg_pos.x,
             bg_size.width,
             image_width,
@@ -563,6 +589,8 @@ impl ElementCx<'_, '_> {
             *repeat_y,
             origin_rect.y0,
             origin_rect.height(),
+            clip_rect.y0,
+            clip_rect.height(),
             bg_pos.y,
             bg_size.height,
             image_height,
@@ -612,7 +640,8 @@ impl ElementCx<'_, '_> {
             (
                 self.box_rect(layer.origin),
                 self.transform,
-                self.box_rect(layer.clip),
+                self.canvas_background_paint_area
+                    .unwrap_or_else(|| self.box_rect(layer.clip)),
             )
         };
 
@@ -905,6 +934,8 @@ fn raster_axis_tiling(
     repeat: BackgroundRepeatKeyword,
     origin_start: f64,
     origin_len: f64,
+    clip_start: f64,
+    clip_len: f64,
     bg_pos: f64,
     tile_len: f64,
     image_len: f64,
@@ -914,22 +945,39 @@ fn raster_axis_tiling(
 
     match repeat {
         Repeat | Round => {
-            let extend_len = extend(bg_pos, tile_len);
+            // The image sampler repeats inside one quad, so the quad must
+            // cover the union of the positioning and clip boxes. The pattern's
+            // phase stays anchored at the positioning box: the quad starts at
+            // the tile boundary at or before the covered area.
+            if tile_len <= 0.0 {
+                return AxisTiling {
+                    translate: origin_start,
+                    rect_len: 0.0,
+                    count: 1,
+                    stride: 0.0,
+                };
+            }
+            let start = origin_start.min(clip_start);
+            let end = (origin_start + origin_len).max(clip_start + clip_len);
+            let anchor = origin_start + bg_pos;
+            let translate = anchor - ((anchor - start) / tile_len).ceil() * tile_len;
             AxisTiling {
-                translate: origin_start - extend_len,
-                rect_len: (origin_len + extend_len) / ratio,
+                translate,
+                rect_len: (end - translate) / ratio,
                 count: 1,
                 stride: 0.0,
             }
         }
         Space => {
             let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            let base = origin_start + if count == 1 { bg_pos } else { 0.0 };
             AxisTiling {
-                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                translate: base,
                 rect_len: image_len,
                 count,
                 stride,
             }
+            .extended_to(clip_start, clip_len, tile_len, stride)
         }
         NoRepeat => AxisTiling {
             translate: origin_start + bg_pos,
@@ -977,12 +1025,14 @@ fn gradient_axis_tiling(
         }
         Space => {
             let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            let base = origin_start + if count == 1 { bg_pos } else { 0.0 };
             AxisTiling {
-                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                translate: base,
                 rect_len: tile_len,
                 count,
                 stride,
             }
+            .extended_to(clip_start, clip_len, tile_len, stride)
         }
         NoRepeat => AxisTiling {
             translate: origin_start + bg_pos,
@@ -990,6 +1040,34 @@ fn gradient_axis_tiling(
             count: 1,
             stride: 0.0,
         },
+    }
+}
+
+impl AxisTiling {
+    /// Continues a `space` pattern over the painting area. `space` fits and
+    /// spaces the images within the positioning area, then repeats that
+    /// pattern to fill the painting area when that is larger
+    /// (<https://drafts.csswg.org/css-backgrounds-3/#background-repeat>).
+    fn extended_to(self, clip_start: f64, clip_len: f64, tile_len: f64, stride: f64) -> AxisTiling {
+        // One image is placed, not repeated
+        // (<https://drafts.csswg.org/css-backgrounds-3/#background-repeat>).
+        if self.count == 1 || stride <= 0.0 || tile_len <= 0.0 {
+            return self;
+        }
+        // Tiles are placed at `translate + n * stride`; keep those that
+        // intersect `[clip_start, clip_start + clip_len)`.
+        let first = ((clip_start - self.translate - tile_len) / stride).floor() + 1.0;
+        let last = ((clip_start + clip_len - self.translate) / stride).ceil() - 1.0;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the tile counts are small and bounded by the painting area"
+        )]
+        let count = (last - first + 1.0).max(1.0) as u32;
+        AxisTiling {
+            translate: self.translate + first * stride,
+            count,
+            ..self
+        }
     }
 }
 

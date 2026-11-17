@@ -44,7 +44,6 @@ use style::{
 use kurbo::{self, Affine, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
 use peniko::{self, BlendMode, Fill, ImageData, ImageSampler};
 use style::computed_values::isolation::T as Isolation;
-use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
 /// An opacity just below 1.0, used to force the renderer to allocate an isolated
@@ -123,6 +122,9 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
     pub(crate) root_element_id: Option<NodeId>,
+    /// The element whose background paints over the whole canvas: the root
+    /// element, or one of its `body` children when the root's background is
+    /// empty (<https://drafts.csswg.org/css-backgrounds-3/#body-background>).
     pub(crate) canvas_background_node_id: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
@@ -158,23 +160,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let layer_manager = LayerManager::default();
         let root_element_id = dom.try_root_element().map(|el| el.id);
-        let canvas_background_node_id = dom.try_root_element().and_then(|root| {
-            let styles = root.primary_styles();
-            let color = styles
-                .as_ref()
-                .map_or(&GenericColor::TRANSPARENT_BLACK, |s| {
-                    s.get_background_color()
-                });
-            if *color == GenericColor::TRANSPARENT_BLACK {
-                root.children.iter().find_map(|id| {
-                    dom.get_node(*id)
-                        .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
-                        .map(|body| body.id)
-                })
-            } else {
-                Some(root.id)
-            }
-        });
+        let canvas_background_node_id =
+            canvas_background_node(dom, root_element_id).map(|node| node.id);
 
         Self {
             dom,
@@ -194,6 +181,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             selection_ranges,
             custom_widget_scenes,
         }
+    }
+
+    /// The node whose background is painted over the whole canvas.
+    fn canvas_background_node(&self) -> Option<&'dom Node> {
+        canvas_background_node(self.dom, self.root_element_id)
     }
 
     /// Draw the current tree to current render surface
@@ -216,34 +208,36 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         };
         let root_id = root_element.id;
-        let bg_width = (self.width as f32).max(root_element.final_layout().size.width);
-        let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
+        // The canvas background's painting area always covers the viewport, and
+        // grows to cover the root element's box when that is larger. Layouts
+        // are in CSS pixels and the scene is in device pixels.
+        let bg_width =
+            (self.width as f64).max(root_element.final_layout().size.width as f64 * self.scale);
+        let bg_height =
+            (self.height as f64).max(root_element.final_layout().size.height as f64 * self.scale);
 
-        let background_color = self
-            .canvas_background_node_id
-            .and_then(|id| self.dom.get_node(id))
-            .and_then(|node| node.primary_styles())
-            .map(|style| {
-                let current_color = style.clone_color();
-                style
-                    .get_background_color()
-                    .resolve_to_absolute(&current_color)
-            });
-
-        if let Some(bg_color) = background_color {
-            let bg_color = bg_color.as_srgb_color();
-            let rect = Rect::from_origin_size(
-                (self.initial_x, self.initial_y),
-                (bg_width as f64, bg_height as f64),
-            );
-            scene.fill(
-                Fill::NonZero,
-                Affine::IDENTITY,
-                bg_color,
+        // The canvas background is the root element's background, or the first
+        // `body` child's when the root has no background image and a transparent
+        // colour, and it covers the whole canvas: its background painting area
+        // extends beyond the element's own box
+        // (<https://drafts.csswg.org/css-backgrounds-3/#body-background>). The
+        // propagated values replace the source element's own, which is why the
+        // source does not paint its background again below.
+        if let Some(node) = self.canvas_background_node() {
+            // Images are sized and positioned as if painted for the root
+            // element alone, while the painting area covers the canvas
+            // (<https://drafts.csswg.org/css-backgrounds-3/#background-painting-area>).
+            let mut cx = self.element_cx(
+                node,
+                *root_element.final_layout(),
+                Affine::translate(Vec2 {
+                    x: self.initial_x,
+                    y: self.initial_y,
+                }),
                 None,
-                &rect,
-                AntiAliasing::Enabled,
             );
+            cx.canvas_background_paint_area = Some(Rect::new(0.0, 0.0, bg_width, bg_height));
+            cx.draw_background(scene);
         }
 
         // The root clip rectangle is the viewport (in screen coordinates, with the
@@ -681,7 +675,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     backdrop_filter,
                     |scene| {
                         if paints_own_box {
-                            cx.draw_background(scene);
+                            // The propagated canvas background already covers
+                            // this element, whose own background values are the
+                            // initial ones
+                            // (<https://drafts.csswg.org/css-backgrounds-3/#body-background>).
+                            if self.canvas_background_node_id != Some(node_id) {
+                                cx.draw_background(scene);
+                            }
                             cx.draw_inset_box_shadow(scene);
                         }
                         cx.draw_table_row_backgrounds(scene);
@@ -818,6 +818,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
             custom_widget_scene,
+            canvas_background_paint_area: None,
         }
     }
 }
@@ -872,6 +873,10 @@ struct ElementCx<'dom, 'a> {
     devtools: &'dom DevtoolSettings,
     #[cfg_attr(not(feature = "custom-widget"), expect(unused))]
     custom_widget_scene: Option<&'a Scene>,
+    /// Set when this element's background is the canvas background: the rect,
+    /// in scene coordinates, that the background paints over. `background-clip`
+    /// does not narrow it, and the element's own box only positions the images.
+    canvas_background_paint_area: Option<Rect>,
 }
 
 /// Converts parley BoundingBox into peniko Rect
@@ -1515,6 +1520,48 @@ fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
         x1: input.right,
         y1: input.bottom,
     }
+}
+
+/// The element whose background paints over the whole canvas: the root
+/// element, unless its computed `background-image` is `none` and its
+/// `background-color` is transparent, in which case the first HTML `body`
+/// child's background is propagated instead and treated as if it were
+/// specified on the root element
+/// (<https://drafts.csswg.org/css-backgrounds-3/#body-background>).
+fn canvas_background_node<'a>(dom: &'a BaseDocument, root_id: Option<NodeId>) -> Option<&'a Node> {
+    let root = dom.get_node(root_id?)?;
+    let node = if root_has_background(root) {
+        root
+    } else {
+        root.children
+            .iter()
+            .filter_map(|id| dom.get_node(*id))
+            .find(|node| node.data.is_element_with_tag_name(&local_name!("body")))
+            .unwrap_or(root)
+    };
+    // An element that generates no box paints no background, so the canvas
+    // stays transparent. `display: contents` generates no box of its own, so
+    // the body's background neither propagates to the canvas nor paints
+    // (<https://drafts.csswg.org/css-backgrounds-3/#special-backgrounds>).
+    node.has_boxes().then_some(node)
+}
+
+/// Whether `node`'s own background covers the canvas: it has a background
+/// image, or a non-transparent background colour. Only then is the `body`
+/// child's background left alone
+/// (<https://drafts.csswg.org/css-backgrounds-3/#body-background>).
+fn root_has_background(node: &Node) -> bool {
+    let Some(style) = node.primary_styles() else {
+        return false;
+    };
+    let background = style.get_background();
+    background
+        .background_image
+        .0
+        .iter()
+        .any(|image| !matches!(image, style::values::generics::image::Image::None))
+        || background.background_color
+            != style::values::generics::color::GenericColor::TRANSPARENT_BLACK
 }
 
 /// Convert Stylo and Taffy types into Kurbo types

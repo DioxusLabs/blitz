@@ -28,6 +28,11 @@ impl ElementCx<'_, '_> {
         // Only paint the shadow outside of the border box if it could otherwise be seen
         // through the element
         let bg_is_opaque = bg_color.components[3] >= 1.0;
+        // The shadow is clipped to the box's interior only when the element's
+        // own background cannot cover it: its background covers the border
+        // box, or it is the element whose background paints over the canvas
+        // and is therefore painted before it
+        // (<https://drafts.csswg.org/css-backgrounds-3/#shadow-shape>).
         let clip_to_box = opacity < 1.0
             || !bg_is_opaque
             || !bg_covers_border_box
