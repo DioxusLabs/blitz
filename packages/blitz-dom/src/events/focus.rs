@@ -1,4 +1,4 @@
-use blitz_traits::events::{BlitzFocusEvent, DomEvent, DomEventData};
+use blitz_traits::events::{BlitzFocusEvent, BlitzInputEvent, DomEvent, DomEventData};
 
 use crate::BaseDocument;
 
@@ -17,6 +17,17 @@ pub(crate) fn generate_focus_events(
     }
 
     if let Some(old_focus) = old_focus {
+        if let Some(value) = doc
+            .get_node_mut(old_focus)
+            .and_then(|node| node.element_data_mut())
+            .and_then(|el| el.text_input_data_mut())
+            .and_then(|input| input.commit_change())
+        {
+            dispatch_event(DomEvent::new(
+                old_focus,
+                DomEventData::Change(BlitzInputEvent { value }),
+            ));
+        }
         dispatch_event(DomEvent::new(
             old_focus,
             DomEventData::Blur(BlitzFocusEvent),

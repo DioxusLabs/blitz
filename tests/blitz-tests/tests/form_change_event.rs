@@ -1,7 +1,8 @@
 use blitz_dom::{Document, EventDriver, EventHandler};
-use blitz_test_harness::{Harness, mouse_pointer_event};
-use blitz_traits::events::{DomEvent, DomEventData, DomEventKind, EventState, UiEvent};
+use blitz_test_harness::{Harness, key_event, mouse_pointer_event};
+use blitz_traits::events::{DomEvent, DomEventData, DomEventKind, EventState, KeyState, UiEvent};
 use blitz_traits::node_id::NodeId;
+use keyboard_types::{Key, Modifiers, NamedKey};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -63,6 +64,35 @@ fn click_form_events(harness: &mut Harness, selector: &str) -> Vec<RecordedFormE
         harness,
         [UiEvent::PointerDown(ptr.clone()), UiEvent::PointerUp(ptr)],
     )
+}
+
+fn press_key(harness: &mut Harness, key: Key) -> Vec<RecordedFormEvent> {
+    dispatch_form_events(
+        harness,
+        [
+            UiEvent::KeyDown(key_event(
+                key.clone(),
+                KeyState::Pressed,
+                Modifiers::empty(),
+            )),
+            UiEvent::KeyUp(key_event(key, KeyState::Released, Modifiers::empty())),
+        ],
+    )
+}
+
+fn type_chars(harness: &mut Harness, text: &str) -> Vec<RecordedFormEvent> {
+    let events = text.chars().flat_map(|ch| {
+        let key = Key::Character(ch.to_string());
+        [
+            UiEvent::KeyDown(key_event(
+                key.clone(),
+                KeyState::Pressed,
+                Modifiers::empty(),
+            )),
+            UiEvent::KeyUp(key_event(key, KeyState::Released, Modifiers::empty())),
+        ]
+    });
+    dispatch_form_events(harness, events)
 }
 
 #[test]
@@ -134,4 +164,96 @@ fn radio_click_dispatches_input_and_change_only_when_newly_checked() {
             .collect::<Vec<_>>(),
         [("input", r2, "true"), ("change", r2, "true")]
     );
+}
+
+#[test]
+fn text_input_and_textarea_commit_change_on_blur() {
+    let mut harness = Harness::from_html(
+        r#"<html><body>
+            <input id="txt" type="text" style="width:80px;height:20px">
+            <textarea id="area" style="width:80px;height:40px"></textarea>
+            <div id="out" style="width:40px;height:20px">out</div>
+        </body></html>"#,
+    );
+    let txt = harness.node("#txt");
+    let area = harness.node("#area");
+
+    assert!(click_form_events(&mut harness, "#txt").is_empty());
+    let typed = type_chars(&mut harness, "hi");
+    assert!(typed.iter().all(|e| e.name == "input"));
+
+    let focus_area = click_form_events(&mut harness, "#area");
+    assert_eq!(focus_area.len(), 1);
+    assert_eq!(
+        (
+            focus_area[0].name,
+            focus_area[0].target,
+            &focus_area[0].value[..]
+        ),
+        ("change", txt, "hi")
+    );
+
+    type_chars(&mut harness, "a");
+    let newline = press_key(&mut harness, Key::Named(NamedKey::Enter));
+    assert_eq!(newline.len(), 1);
+    assert_eq!(newline[0].name, "input");
+    type_chars(&mut harness, "b");
+
+    let blur_area = click_form_events(&mut harness, "#out");
+    assert_eq!(blur_area.len(), 1);
+    assert_eq!(
+        (
+            blur_area[0].name,
+            blur_area[0].target,
+            &blur_area[0].value[..]
+        ),
+        ("change", area, "a\nb")
+    );
+}
+
+#[test]
+fn reverting_text_input_before_blur_dispatches_no_change() {
+    let mut harness = Harness::from_html(
+        r#"<html><body>
+            <input id="txt" type="text" value="init" style="width:80px;height:20px">
+            <div id="out" style="width:40px;height:20px">out</div>
+        </body></html>"#,
+    );
+
+    click_form_events(&mut harness, "#txt");
+    press_key(&mut harness, Key::Named(NamedKey::Home));
+    type_chars(&mut harness, "x");
+    press_key(&mut harness, Key::Named(NamedKey::ArrowLeft));
+    let reverted = press_key(&mut harness, Key::Named(NamedKey::Delete));
+    assert_eq!(reverted.len(), 1);
+    assert_eq!(
+        (reverted[0].name, &reverted[0].value[..]),
+        ("input", "init")
+    );
+
+    assert!(click_form_events(&mut harness, "#out").is_empty());
+}
+
+#[test]
+fn single_line_input_commits_change_on_enter_without_duplicate_on_blur() {
+    let mut harness = Harness::from_html(
+        r#"<html><body>
+            <input id="txt" type="text" style="width:80px;height:20px">
+            <div id="out" style="width:40px;height:20px">out</div>
+        </body></html>"#,
+    );
+    let txt = harness.node("#txt");
+
+    click_form_events(&mut harness, "#txt");
+    type_chars(&mut harness, "abc");
+
+    let submit = press_key(&mut harness, Key::Named(NamedKey::Enter));
+    assert_eq!(submit.len(), 1);
+    assert_eq!(
+        (submit[0].name, submit[0].target, &submit[0].value[..]),
+        ("change", txt, "abc")
+    );
+
+    assert!(press_key(&mut harness, Key::Named(NamedKey::Enter)).is_empty());
+    assert!(click_form_events(&mut harness, "#out").is_empty());
 }
