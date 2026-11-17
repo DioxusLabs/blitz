@@ -7,8 +7,36 @@ use style::values::computed::Overflow;
 use stylo_taffy::CopyStyleGetters;
 use web_time::{SystemTime, UNIX_EPOCH};
 
-use crate::BaseDocument;
 use crate::util::Point;
+use crate::{BaseDocument, Node};
+
+fn node_scroll_range(node: &Node, include_hidden: bool) -> (Point<f64>, Point<f64>) {
+    let scrollable = |overflow| match overflow {
+        Overflow::Scroll | Overflow::Auto => true,
+        Overflow::Hidden => include_hidden,
+        _ => false,
+    };
+    let (can_x_scroll, can_y_scroll) = node
+        .primary_styles()
+        .map(|styles| {
+            (
+                scrollable(styles.clone_overflow_x()),
+                scrollable(styles.clone_overflow_y()),
+            )
+        })
+        .unwrap_or((false, false));
+    let (min, max) = node.scroll_range();
+    (
+        Point {
+            x: if can_x_scroll { min.x } else { 0.0 },
+            y: if can_y_scroll { min.y } else { 0.0 },
+        },
+        Point {
+            x: if can_x_scroll { max.x } else { 0.0 },
+            y: if can_y_scroll { max.y } else { 0.0 },
+        },
+    )
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScrollBehavior {
@@ -124,6 +152,74 @@ fn ease_in_out_cubic(t: f64) -> f64 {
 }
 
 impl BaseDocument {
+    pub(crate) fn clamp_node_scroll_offset(&mut self, node_id: NodeId) {
+        let node = &self.nodes[node_id];
+        if !node.is_element()
+            || *node.scroll_offset() == Point::ZERO
+            || self
+                .try_root_element()
+                .is_some_and(|root| root.id == node_id)
+        {
+            return;
+        }
+        let (min, max) = node_scroll_range(node, true);
+        let current = *node.scroll_offset();
+        let clamped = Point {
+            x: current.x.clamp(min.x, max.x),
+            y: current.y.clamp(min.y, max.y),
+        };
+        if clamped != current {
+            *self.nodes[node_id].scroll_offset_mut() = clamped;
+            self.nodes.bump_geometry_generation();
+        }
+    }
+
+    pub(crate) fn reset_node_scroll_state(&mut self, node_id: NodeId) {
+        if let Some(layout) = self.nodes[node_id].try_layout_data_mut()
+            && layout.scroll_offset != Point::ZERO
+        {
+            layout.scroll_offset = Point::ZERO;
+            self.nodes.bump_geometry_generation();
+        }
+        if let ScrollAnimationState::ScrollTo(state) = &self.scroll_animation
+            && state.target == ScrollTarget::Node(node_id)
+        {
+            self.scroll_animation = ScrollAnimationState::None;
+        }
+    }
+
+    pub(crate) fn clamp_viewport_scroll(&mut self) {
+        let (current, min, max) = self.scroll_state(ScrollTarget::Viewport, false);
+        let clamped = Point {
+            x: current.x.clamp(min.x, max.x),
+            y: current.y.clamp(min.y, max.y),
+        };
+        if clamped != current {
+            self.set_viewport_scroll(clamped);
+        }
+    }
+
+    pub(crate) fn clamp_scroll_animation(&mut self) {
+        if let ScrollAnimationState::ScrollTo(state) = &self.scroll_animation {
+            let state = state.clone();
+            let (_, min, max) = self.scroll_state(state.target, true);
+            let start = Point {
+                x: state.start.x.clamp(min.x, max.x),
+                y: state.start.y.clamp(min.y, max.y),
+            };
+            let end = Point {
+                x: state.end.x.clamp(min.x, max.x),
+                y: state.end.y.clamp(min.y, max.y),
+            };
+            if start == end {
+                self.scroll_animation = ScrollAnimationState::None;
+            } else if let ScrollAnimationState::ScrollTo(state) = &mut self.scroll_animation {
+                state.start = start;
+                state.end = end;
+            }
+        }
+    }
+
     /// Apply a scroll to the document, returning whether anything moved.
     ///
     /// This is the single scrolling primitive: user-initiated scrolls
@@ -470,37 +566,7 @@ impl BaseDocument {
                     return (Point::ZERO, Point::ZERO, Point::ZERO);
                 };
 
-                // An axis with a non-scrolling overflow value has no scrollable range, even
-                // when its content overflows.
-                let scrollable = |overflow| match overflow {
-                    Overflow::Scroll | Overflow::Auto => true,
-                    Overflow::Hidden => include_hidden,
-                    _ => false,
-                };
-                let (can_x_scroll, can_y_scroll) = node
-                    .primary_styles()
-                    .map(|styles| {
-                        (
-                            scrollable(styles.clone_overflow_x()),
-                            scrollable(styles.clone_overflow_y()),
-                        )
-                    })
-                    .unwrap_or((false, false));
-                let (min, max) = node.scroll_range();
-                let min = Point {
-                    x: if can_x_scroll { min.x } else { 0.0 },
-                    y: if can_y_scroll { min.y } else { 0.0 },
-                };
-                let max = Point {
-                    x: match can_x_scroll {
-                        true => max.x,
-                        false => 0.0,
-                    },
-                    y: match can_y_scroll {
-                        true => max.y,
-                        false => 0.0,
-                    },
-                };
+                let (min, max) = node_scroll_range(node, include_hidden);
                 (*node.scroll_offset(), min, max)
             }
         }

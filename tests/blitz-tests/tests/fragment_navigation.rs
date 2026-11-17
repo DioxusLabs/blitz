@@ -300,6 +300,23 @@ const SCROLLER_HTML: &str = r#"<html><body style="margin:0">
 </body></html>"#;
 
 #[test]
+fn percentage_height_scroller_clamps_after_viewport_resize() {
+    let mut doc = layout_doc(
+        r#"<!DOCTYPE html><style>html,body{height:100%;margin:0}</style>
+        <div id="scroller" style="overflow:auto;height:50%">
+            <div style="height:1000px"></div>
+        </div>"#,
+    );
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+    doc.scroll_to(scroller, 0.0, 1000.0, ScrollBehavior::Instant);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 900.0);
+
+    doc.set_viewport(Viewport::new(800, 400, 1.0, ColorScheme::Light));
+    doc.resolve(0.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 800.0);
+}
+
+#[test]
 fn scroll_to_sets_element_offset_and_clamps() {
     let mut doc = layout_doc(SCROLLER_HTML);
     let scroller = doc.query_selector("#scroller").unwrap().unwrap();
