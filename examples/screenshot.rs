@@ -87,7 +87,7 @@ async fn main() {
 
     loop {
         document.resolve(0.0);
-        if net.is_empty() {
+        if net.is_empty() && !document.as_ref().has_pending_font_loads() {
             break;
         }
     }

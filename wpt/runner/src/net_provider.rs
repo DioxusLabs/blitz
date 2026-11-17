@@ -57,12 +57,19 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         match request.url.scheme() {
             "data" => {
                 let url = request.url.as_str().to_string();
-                let data_url = DataUrl::process(request.url.as_str()).inspect_err(|_| {
-                    callback.queue.record_failure(request_id);
-                })?;
-                let decoded = data_url.decode_to_vec().inspect_err(|_| {
-                    callback.queue.record_failure(request_id);
-                })?;
+                let decoded = match DataUrl::process(request.url.as_str()) {
+                    Ok(data_url) => match data_url.decode_to_vec() {
+                        Ok(decoded) => decoded,
+                        Err(err) => {
+                            handler.error(url, format!("{err:?}"));
+                            return Err(err.into());
+                        }
+                    },
+                    Err(err) => {
+                        handler.error(url, format!("{err:?}"));
+                        return Err(err.into());
+                    }
+                };
                 handler.bytes(url, Bytes::from(decoded.0));
 
                 callback.queue.record_success(None, request_id);
@@ -75,10 +82,13 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                     .strip_prefix('/')
                     .unwrap_or(request.url.path());
                 let path = self.base_path.join(relative_path);
-                let file_content = std::fs::read(&path).inspect_err(|err| {
-                    warn!("Error loading {}: {}", path.display(), err);
-                    callback.queue.record_failure(request_id);
-                })?;
+                let file_content = match std::fs::read(&path) {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        handler.error(request.url.to_string(), err.to_string());
+                        return Err(err.into());
+                    }
+                };
                 catch_unwind(AssertUnwindSafe(|| {
                     handler.bytes(request.url.to_string(), Bytes::from(file_content))
                 }))

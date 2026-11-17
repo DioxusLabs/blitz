@@ -44,6 +44,7 @@ impl BaseDocument {
 
         // Process messages that have been sent to our message channel (e.g. loaded resource)
         self.handle_messages();
+        self.flush_pending_fonts();
 
         // While render-blocking resources (e.g. stylesheets linked from the `<head>`) are
         // still loading, don't resolve styles or layout (matching how browsers block
@@ -98,6 +99,7 @@ impl BaseDocument {
         timer.record_time("construct");
 
         self.resolve_deferred_tasks();
+        self.font_face_loader.start_requests();
         // Flush background/mask images from style to dedicated storage on the
         // nodes whose style changed (queued by the style traversal and by
         // pseudo-element box construction), fetching any not-yet-loaded images.
@@ -106,6 +108,12 @@ impl BaseDocument {
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
+        self.font_face_loader.request(
+            self.layout_ctx.drain_pending_font_requests(),
+            &mut self.font_ctx.lock().unwrap(),
+            true,
+        );
+        self.font_face_loader.start_requests();
         timer.record_time("layout");
         self.nodes.bump_geometry_generation();
 
@@ -393,6 +401,11 @@ impl BaseDocument {
                         &mut layout,
                         self.viewport.scale(),
                         task.node_id,
+                    );
+                    self.font_face_loader.request(
+                        layout_ctx_mut.drain_pending_font_requests(),
+                        font_ctx_mut,
+                        cfg!(not(feature = "parallel-construct")),
                     );
 
                     #[cfg(feature = "parallel-construct")]

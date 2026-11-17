@@ -337,9 +337,12 @@ fn parse_and_resolve_document(
 /// resources being requested.
 pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
     let start = Instant::now();
-    while ctx.net_provider.pending_item_count() > 0 {
+    loop {
         ctx.net_provider.for_each(|_| {});
         document.resolve(0.0);
+        if ctx.net_provider.pending_item_count() == 0 && !document.has_pending_font_loads() {
+            break;
+        }
         if Instant::now().duration_since(start).as_millis() > 500 {
             ctx.net_provider.log_pending_items();
             panic!(
@@ -348,8 +351,6 @@ pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
             );
         }
     }
-
-    document.resolve(0.0);
 }
 
 #[cfg(test)]
