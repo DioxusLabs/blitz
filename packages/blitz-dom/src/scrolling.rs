@@ -3,7 +3,7 @@
 
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
-use style::values::computed::Overflow;
+use style::values::computed::{Overflow, OverscrollBehavior};
 use stylo_taffy::CopyStyleGetters;
 use web_time::{SystemTime, UNIX_EPOCH};
 
@@ -273,10 +273,13 @@ impl BaseDocument {
 
         // Transfer the delta the target could not consume to the next scroller in the chain.
         if request.overflow == ScrollOverflow::Chain {
-            let remainder = Point {
-                x: unclamped.x - end.x,
-                y: unclamped.y - end.y,
-            };
+            let remainder = self.contain_overscroll(
+                target,
+                Point {
+                    x: unclamped.x - end.x,
+                    y: unclamped.y - end.y,
+                },
+            );
             if remainder != Point::ZERO {
                 if let Some(next) = self.next_scroller_in_chain(target) {
                     let request = ScrollRequest {
@@ -337,6 +340,7 @@ impl BaseDocument {
         }
 
         let has_changed = remainder != delta;
+        let remainder = self.contain_overscroll(ScrollTarget::Node(node_id), remainder);
 
         if remainder != Point::ZERO {
             if let Some(next) = self.next_scroller_in_chain(ScrollTarget::Node(node_id)) {
@@ -350,6 +354,43 @@ impl BaseDocument {
         }
 
         Some(has_changed)
+    }
+
+    /// Drop the parts of the scroll `target` could not consume which its `overscroll-behavior`
+    /// keeps from chaining: on each axis, `contain` and `none` stop scroll chaining. Blitz
+    /// draws no overscroll effect, so the two behave the same. The property applies to scroll
+    /// containers only, and the viewport takes the root element's value.
+    fn contain_overscroll(&self, target: ScrollTarget, remainder: Point<f64>) -> Point<f64> {
+        let target = self.canonical_scroll_target(target);
+        let node = match target {
+            ScrollTarget::Viewport => self.try_root_element(),
+            ScrollTarget::Node(node_id) => self.nodes.get(node_id),
+        };
+        let Some(styles) = node.and_then(|node| node.primary_styles()) else {
+            return remainder;
+        };
+        // Text inputs scroll their own content whatever their overflow.
+        let is_scroll_container =
+            |overflow| !matches!(overflow, Overflow::Visible | Overflow::Clip);
+        let is_text_input = node
+            .and_then(|node| node.element_data())
+            .is_some_and(|el| el.text_input_data().is_some());
+        if target != ScrollTarget::Viewport
+            && !is_text_input
+            && !is_scroll_container(styles.clone_overflow_x())
+            && !is_scroll_container(styles.clone_overflow_y())
+        {
+            return remainder;
+        }
+        let overscroll = |behavior, remainder| match behavior {
+            OverscrollBehavior::Contain | OverscrollBehavior::None => 0.0,
+            OverscrollBehavior::Auto | OverscrollBehavior::Chain => remainder,
+        };
+        let box_styles = styles.get_box();
+        Point {
+            x: overscroll(box_styles.overscroll_behavior_x, remainder.x),
+            y: overscroll(box_styles.overscroll_behavior_y, remainder.y),
+        }
     }
 
     /// The scroller which unconsumed scroll is transferred to: the node's parent, or the
