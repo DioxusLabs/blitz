@@ -251,6 +251,7 @@ pub(crate) fn handle_dom_event(
                 event.page_y(),
                 event.button,
                 event.mods,
+                event.is_mouse(),
             );
         }
         DomEventData::MouseDown(_) => {
