@@ -114,6 +114,8 @@ impl BaseDocument {
         match event {
             GeneratedTextInputEvent::Input => {
                 let value = input_data.editor.raw_text().to_string();
+                // The value is in the accessibility tree.
+                self.has_changes = true;
                 dispatch_event(DomEvent::new(
                     node_id,
                     DomEventData::Input(BlitzInputEvent { value }),
