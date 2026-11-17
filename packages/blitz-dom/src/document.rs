@@ -2342,16 +2342,21 @@ impl BaseDocument {
             return Some(CursorIcon::Text);
         }
 
-        // Use "pointer" cursor if any ancestor is a link. Walk DOM parents: an atomic
-        // inline's layout parent is its inline root, which skips the inline elements
-        // (such as `<a>`) between them.
+        // Walk DOM parents: an atomic inline's layout parent is its inline root,
+        // which skips the inline elements (such as `<a>`) between them.
         let mut maybe_node = Some(node);
-        while let Some(node) = maybe_node {
-            if node.data.is_element_with_tag_name(&local_name!("a")) {
+        while let Some(current) = maybe_node {
+            if let Some(style) = current.primary_styles() {
+                let keyword = style.get_cursor().keyword;
+                if keyword != CursorKind::Auto {
+                    return stylo_to_cursor_icon(keyword);
+                }
+            }
+            if current.data.is_element_with_tag_name(&local_name!("a")) {
                 return Some(CursorIcon::Pointer);
             }
 
-            maybe_node = node.parent.map(|node_id| node.with(node_id));
+            maybe_node = current.parent.map(|node_id| current.with(node_id));
         }
 
         // Return text cursor for text nodes
@@ -2989,7 +2994,7 @@ mod hover_state_tests {
     /// The bare text next to a block sibling gets wrapped in an anonymous
     /// block, which becomes the inline root: text hits report the anonymous
     /// block as the hit node.
-    fn make_doc() -> (BaseDocument, NodeId) {
+    fn make_doc_with_container_style(container_style: &str) -> (BaseDocument, NodeId) {
         let mut doc = BaseDocument::new(DocumentConfig {
             viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
             ..Default::default()
@@ -3003,7 +3008,7 @@ mod hover_state_tests {
         let mut mutator = doc.mutate();
         let html = mutator.create_element(qual_name!("html"), vec![]);
         let body = mutator.create_element(qual_name!("body"), vec![style("margin:0")]);
-        let container = mutator.create_element(qual_name!("div"), vec![style("width:300px")]);
+        let container = mutator.create_element(qual_name!("div"), vec![style(container_style)]);
         let text = mutator.create_text_node("some text");
         let block = mutator.create_element(qual_name!("div"), vec![style("height:50px")]);
         mutator.append_children(container, &[text, block]);
@@ -3014,6 +3019,10 @@ mod hover_state_tests {
 
         doc.resolve(0.0);
         (doc, container)
+    }
+
+    fn make_doc() -> (BaseDocument, NodeId) {
+        make_doc_with_container_style("width:300px")
     }
 
     /// Whether text laid out with a real (non-zero-metric) font. Without the
@@ -3065,6 +3074,21 @@ mod hover_state_tests {
         assert!(!doc.hover_node_is_text);
         assert_eq!(doc.get_hover_node_id(), Some(container));
         assert_eq!(doc.get_cursor(), Some(CursorIcon::Default));
+    }
+
+    #[test]
+    fn hovering_text_in_anonymous_block_inherits_ancestor_cursor() {
+        let (mut doc, container) = make_doc_with_container_style("width:300px;cursor:not-allowed");
+        if !text_has_size(&doc, container) {
+            eprintln!("skipping: no usable font (text measures 0x0)");
+            return;
+        }
+
+        doc.set_hover_to(5.0, 8.0);
+        assert_eq!(doc.get_cursor(), Some(CursorIcon::NotAllowed));
+
+        doc.set_hover_to(250.0, 8.0);
+        assert_eq!(doc.get_cursor(), Some(CursorIcon::NotAllowed));
     }
 
     /// Hovering below the content hits no box: default cursor (`None` would hide it).
