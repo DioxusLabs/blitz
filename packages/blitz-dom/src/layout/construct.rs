@@ -409,6 +409,11 @@ fn collect_layout_children_with_wrap(
 ) {
     // Record the `display` the box is being constructed with
     if let Some(display) = doc.nodes[container_node_id].display_style() {
+        if display.is_none() {
+            doc.iter_subtree_mut(container_node_id, |id, doc| doc.reset_node_scroll_state(id));
+        } else if matches!(display.inside(), DisplayInside::Contents) {
+            doc.reset_node_scroll_state(container_node_id);
+        }
         *doc.nodes[container_node_id].display_constructed_as_mut() = display;
     }
 

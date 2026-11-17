@@ -106,6 +106,7 @@ impl BaseDocument {
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
+        self.clamp_scroll_after_layout();
         timer.record_time("layout");
         self.nodes.bump_geometry_generation();
 
