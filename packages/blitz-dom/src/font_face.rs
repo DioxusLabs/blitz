@@ -33,7 +33,7 @@ impl FontUpdate {
                     .as_ref()
                     .is_some_and(|font| ctx.collection.resolve_pending_font(*key, font.clone()));
                 if !resolved {
-                    ctx.collection.unregister_pending_font(*key);
+                    ctx.collection.fail_pending_font(*key);
                 }
             }
             Self::Register { font, overrides } => {
@@ -241,13 +241,19 @@ mod tests {
     use super::*;
     use crate::{BaseDocument, DocumentConfig};
     use blitz_traits::net::{NetHandler, Request};
+    use parley::fontique::PendingFontStatus;
 
     /// `Some(true)` once the family's face has bytes, `Some(false)` while it is pending
-    /// and `None` after it was removed.
+    /// or failed.
     fn loaded(doc: &BaseDocument, family: &str) -> Option<bool> {
         let mut fonts = doc.font_ctx.lock().unwrap();
         let family = fonts.collection.family_by_name(family)?;
         Some(family.default_font()?.load(None).is_some())
+    }
+
+    fn status(doc: &BaseDocument, key: u64) -> Option<PendingFontStatus> {
+        let mut fonts = doc.font_ctx.lock().unwrap();
+        fonts.collection.pending_font_status(key)
     }
 
     #[derive(Default)]
@@ -312,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_fonts_are_removed_without_retrying() {
+    fn failed_fonts_are_marked_failed_without_retrying() {
         let net = Arc::new(Network::default());
         let mut doc = BaseDocument::new(DocumentConfig {
             net_provider: Some(net.clone()),
@@ -326,7 +332,8 @@ mod tests {
         doc.handle_messages();
         doc.flush_pending_fonts();
         assert!(!doc.has_pending_font_loads());
-        assert_eq!(loaded(&doc, "A"), None);
+        assert_eq!(loaded(&doc, "A"), Some(false));
+        assert_eq!(status(&doc, 0), Some(PendingFontStatus::Failed));
         doc.font_face_loader.request([0].into_iter());
         doc.font_face_loader.start_requests();
         assert!(net.0.lock().unwrap().is_empty());
@@ -348,6 +355,7 @@ mod tests {
         doc.handle_messages();
         doc.flush_pending_fonts();
         assert!(!doc.has_pending_font_loads());
-        assert_eq!(loaded(&doc, "A"), None);
+        assert_eq!(loaded(&doc, "A"), Some(false));
+        assert_eq!(status(&doc, 0), Some(PendingFontStatus::Failed));
     }
 }
