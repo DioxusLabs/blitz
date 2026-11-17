@@ -7,7 +7,8 @@ use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use blitz_traits::{
     events::{
         BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent,
-        DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
+        BlitzWheelPhase, BlitzWheelSource, DomEvent, DomEventData, MouseEventButton,
+        MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
@@ -827,6 +828,83 @@ pub(crate) fn handle_click(
     }
 }
 
+/// The axes a wheel event's default scroll moves.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum WheelAxes {
+    #[default]
+    Both,
+    Horizontal,
+    Vertical,
+}
+
+/// Locks a trackpad scroll gesture to its main axis, as browsers do. Swipes are rarely
+/// straight, so without a lock a vertical swipe also nudges horizontal scrollers sideways.
+///
+/// The gesture's first movement decides the lock, which lasts until the gesture ends,
+/// including any momentum scrolling that follows. A clearly diagonal start scrolls both
+/// axes. Events from devices that report no gestures scroll as they come.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct WheelGesture {
+    /// Whether a gesture is under way.
+    active: bool,
+    /// The gesture's axes, once its first movement has decided them.
+    axes: Option<WheelAxes>,
+    /// The axes the wheel event being dispatched scrolls.
+    pub(crate) event_axes: WheelAxes,
+}
+
+impl WheelGesture {
+    /// A gesture locks to an axis when its first movement along that axis is at least this
+    /// many times its movement along the other.
+    const LOCK_RATIO: f64 = 2.0;
+
+    /// Place a wheel event in the gesture, before it is dispatched (so that a script
+    /// cancelling it doesn't lose track of the gesture), and set the axes its default scroll
+    /// moves.
+    pub(crate) fn track(&mut self, event: &BlitzWheelEvent) {
+        self.event_axes = self.axes_for(event);
+    }
+
+    fn axes_for(&mut self, event: &BlitzWheelEvent) -> WheelAxes {
+        if event.source == BlitzWheelSource::Wheel {
+            self.active = false;
+            return WheelAxes::Both;
+        }
+        // Momentum continues the finger gesture before it, keeping its lock.
+        if event.phase == BlitzWheelPhase::Started
+            && !(event.source == BlitzWheelSource::Momentum && self.active)
+        {
+            self.active = true;
+            self.axes = None;
+        }
+        if !self.active {
+            return WheelAxes::Both;
+        }
+
+        let (x, y) = match event.delta {
+            BlitzWheelDelta::Lines(x, y) | BlitzWheelDelta::Pixels(x, y) => (x.abs(), y.abs()),
+        };
+        if self.axes.is_none() && (x != 0.0 || y != 0.0) {
+            self.axes = Some(if y >= x * Self::LOCK_RATIO {
+                WheelAxes::Vertical
+            } else if x >= y * Self::LOCK_RATIO {
+                WheelAxes::Horizontal
+            } else {
+                WheelAxes::Both
+            });
+        }
+        let axes = self.axes.unwrap_or_default();
+
+        // Lifting the fingers may start momentum scrolling, which keeps the gesture going.
+        match event.phase {
+            BlitzWheelPhase::Ended if event.source == BlitzWheelSource::Finger => {}
+            BlitzWheelPhase::Ended | BlitzWheelPhase::Cancelled => self.active = false,
+            BlitzWheelPhase::Started | BlitzWheelPhase::Moved => {}
+        }
+        axes
+    }
+}
+
 pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     _: NodeId,
@@ -836,6 +914,11 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     let (scroll_x, scroll_y) = match event.delta {
         BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
         BlitzWheelDelta::Pixels(x, y) => (x, y),
+    };
+    let (scroll_x, scroll_y) = match doc.wheel_gesture.event_axes {
+        WheelAxes::Both => (scroll_x, scroll_y),
+        WheelAxes::Horizontal => (scroll_x, 0.0),
+        WheelAxes::Vertical => (0.0, scroll_y),
     };
 
     let has_changed = doc.scroll_chain_by(
