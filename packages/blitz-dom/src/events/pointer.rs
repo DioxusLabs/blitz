@@ -654,7 +654,13 @@ pub(crate) fn handle_click(
                     let value = is_checked.to_string();
                     dispatch_event(DomEvent::new(
                         node_id,
-                        DomEventData::Input(BlitzInputEvent { value }),
+                        DomEventData::Input(BlitzInputEvent {
+                            value: value.clone(),
+                        }),
+                    ));
+                    dispatch_event(DomEvent::new(
+                        node_id,
+                        DomEventData::Change(BlitzInputEvent { value }),
                     ));
                     generate_focus_events(
                         doc,
@@ -666,6 +672,7 @@ pub(crate) fn handle_click(
                     break 'matched true;
                 }
                 local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
+                    let was_checked = el.checkbox_input_checked().unwrap_or(false);
                     if let Some(radio_set) = el.attr(local_name!("name")).map(str::to_string) {
                         BaseDocument::toggle_radio(doc, radio_set, node_id);
                     } else if el.checkbox_input_checked().is_some() {
@@ -677,12 +684,23 @@ pub(crate) fn handle_click(
                         });
                     }
 
-                    // TODO: make input event conditional on value actually changing
-                    let value = String::from("true");
-                    dispatch_event(DomEvent::new(
-                        node_id,
-                        DomEventData::Input(BlitzInputEvent { value }),
-                    ));
+                    let is_checked = doc.nodes[node_id]
+                        .element_data()
+                        .and_then(|el| el.checkbox_input_checked())
+                        .unwrap_or(false);
+                    if !was_checked && is_checked {
+                        let value = String::from("true");
+                        dispatch_event(DomEvent::new(
+                            node_id,
+                            DomEventData::Input(BlitzInputEvent {
+                                value: value.clone(),
+                            }),
+                        ));
+                        dispatch_event(DomEvent::new(
+                            node_id,
+                            DomEventData::Change(BlitzInputEvent { value }),
+                        ));
+                    }
 
                     generate_focus_events(
                         doc,
