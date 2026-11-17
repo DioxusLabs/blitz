@@ -846,4 +846,216 @@ mod tests {
             mounted.scroll(Default::default(), ScrollBehavior::Instant)
         ));
     }
+
+    #[test]
+    fn mounted_set_focus_inherits_keyboard_and_pointer_modality() {
+        use blitz_traits::events::{
+            BlitzPointerEvent, BlitzPointerId, MouseEventButton, MouseEventButtons, Point,
+            PointerCoords, PointerDetails,
+        };
+        use blitz_traits::shell::{ColorScheme, Viewport};
+
+        #[derive(Default)]
+        struct State {
+            trigger: RefCell<Option<Rc<MountedData>>>,
+            target: RefCell<Option<Rc<MountedData>>>,
+        }
+
+        fn app() -> Element {
+            let state = consume_context::<Rc<State>>();
+            let state_for_trigger = Rc::clone(&state);
+            let state_for_click = Rc::clone(&state);
+            let state_for_target = Rc::clone(&state);
+            rsx! {
+                div { style: "margin: 0;",
+                    button {
+                        id: "trigger",
+                        style: "display: block; width: 100px; height: 30px;",
+                        onmounted: move |e| *state_for_trigger.trigger.borrow_mut() = Some(e.data()),
+                        onclick: move |_| {
+                            let target = state_for_click.target.borrow().clone().unwrap();
+                            spawn(async move {
+                                target.set_focus(true).await.unwrap();
+                            });
+                        },
+                        "Open"
+                    }
+                    button {
+                        id: "target",
+                        style: "display: block; width: 100px; height: 30px;",
+                        onmounted: move |e| *state_for_target.target.borrow_mut() = Some(e.data()),
+                        "Target"
+                    }
+                }
+            }
+        }
+
+        let state = Rc::new(State::default());
+        let vdom = VirtualDom::new(app).with_root_context(Rc::clone(&state));
+        let mut doc = DioxusDocument::new(
+            vdom,
+            DocumentConfig {
+                viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            },
+        );
+        doc.initial_build();
+        doc.inner.borrow_mut().resolve(0.0);
+
+        let target_mounted = state.target.borrow().clone().unwrap();
+        let target_id = target_mounted.downcast::<NodeHandle>().unwrap().node_id();
+        {
+            let mut cx = TaskContext::from_waker(Waker::noop());
+            let fut = std::pin::pin!(target_mounted.set_focus(true));
+            assert!(matches!(fut.poll(&mut cx), std::task::Poll::Ready(Ok(()))));
+        }
+        assert_eq!(doc.inner.borrow().get_focussed_node_id(), Some(target_id));
+        assert!(doc.inner.borrow().is_focus_visible(target_id));
+
+        let ptr = BlitzPointerEvent {
+            id: BlitzPointerId::Mouse,
+            is_primary: true,
+            coords: PointerCoords {
+                page_x: 20.0,
+                page_y: 15.0,
+                screen_x: 20.0,
+                screen_y: 15.0,
+                client_x: 20.0,
+                client_y: 15.0,
+            },
+            button: MouseEventButton::Main,
+            buttons: MouseEventButtons::from(MouseEventButton::Main),
+            mods: Default::default(),
+            details: PointerDetails::default(),
+            element: Point::default(),
+            active_pointers: Default::default(),
+        };
+        doc.handle_ui_event(UiEvent::PointerDown(ptr.clone()));
+        doc.handle_ui_event(UiEvent::PointerUp(ptr));
+        poll_until_idle(&mut doc);
+        doc.inner.borrow_mut().resolve(0.0);
+
+        assert_eq!(doc.inner.borrow().get_focussed_node_id(), Some(target_id));
+        assert!(!doc.inner.borrow().is_focus_visible(target_id));
+    }
+
+    #[test]
+    fn keydown_prevent_default_arms_modality_and_node_handle_options_override() {
+        use blitz_dom::FocusOptions;
+        use blitz_traits::events::{
+            BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, KeyState, MouseEventButton,
+            MouseEventButtons, Point, PointerCoords, PointerDetails,
+        };
+        use blitz_traits::shell::{ColorScheme, Viewport};
+        use keyboard_types::{Code, Key, Location, Modifiers, NamedKey};
+
+        #[derive(Default)]
+        struct State {
+            first: RefCell<Option<Rc<MountedData>>>,
+            second: RefCell<Option<Rc<MountedData>>>,
+        }
+
+        fn app() -> Element {
+            let state = consume_context::<Rc<State>>();
+            let state_first = Rc::clone(&state);
+            let state_keydown = Rc::clone(&state);
+            let state_second = Rc::clone(&state);
+            rsx! {
+                div { style: "margin: 0;",
+                    button {
+                        id: "first",
+                        style: "display: block; width: 100px; height: 30px;",
+                        onmounted: move |e| *state_first.first.borrow_mut() = Some(e.data()),
+                        onkeydown: move |evt| {
+                            if evt.key() == Key::Named(NamedKey::ArrowRight) {
+                                evt.prevent_default();
+                                let second = state_keydown.second.borrow().clone().unwrap();
+                                spawn(async move {
+                                    second.set_focus(true).await.unwrap();
+                                });
+                            }
+                        },
+                        "Tab 1"
+                    }
+                    button {
+                        id: "second",
+                        style: "display: block; width: 100px; height: 30px;",
+                        onmounted: move |e| *state_second.second.borrow_mut() = Some(e.data()),
+                        "Tab 2"
+                    }
+                }
+            }
+        }
+
+        let state = Rc::new(State::default());
+        let vdom = VirtualDom::new(app).with_root_context(Rc::clone(&state));
+        let mut doc = DioxusDocument::new(
+            vdom,
+            DocumentConfig {
+                viewport: Some(Viewport::new(400, 300, 1.0, ColorScheme::Light)),
+                ..Default::default()
+            },
+        );
+        doc.initial_build();
+        doc.inner.borrow_mut().resolve(0.0);
+
+        let first_mounted = state.first.borrow().clone().unwrap();
+        let second_mounted = state.second.borrow().clone().unwrap();
+        let first_handle = first_mounted.downcast::<NodeHandle>().unwrap();
+        let second_handle = second_mounted.downcast::<NodeHandle>().unwrap();
+
+        let ptr = BlitzPointerEvent {
+            id: BlitzPointerId::Mouse,
+            is_primary: true,
+            coords: PointerCoords {
+                page_x: 20.0,
+                page_y: 15.0,
+                screen_x: 20.0,
+                screen_y: 15.0,
+                client_x: 20.0,
+                client_y: 15.0,
+            },
+            button: MouseEventButton::Main,
+            buttons: MouseEventButtons::from(MouseEventButton::Main),
+            mods: Default::default(),
+            details: PointerDetails::default(),
+            element: Point::default(),
+            active_pointers: Default::default(),
+        };
+        doc.handle_ui_event(UiEvent::PointerDown(ptr.clone()));
+        doc.handle_ui_event(UiEvent::PointerUp(ptr));
+        poll_until_idle(&mut doc);
+        assert_eq!(
+            doc.inner.borrow().get_focussed_node_id(),
+            Some(first_handle.node_id())
+        );
+        assert!(!doc.inner.borrow().is_focus_visible(first_handle.node_id()));
+
+        doc.handle_ui_event(UiEvent::KeyDown(BlitzKeyEvent {
+            key: Key::Named(NamedKey::ArrowRight),
+            code: Code::ArrowRight,
+            modifiers: Modifiers::empty(),
+            location: Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: None,
+        }));
+        poll_until_idle(&mut doc);
+        assert_eq!(
+            doc.inner.borrow().get_focussed_node_id(),
+            Some(second_handle.node_id())
+        );
+        assert!(doc.inner.borrow().is_focus_visible(second_handle.node_id()));
+
+        first_handle.set_focus_with_options(FocusOptions {
+            prevent_scroll: false,
+            focus_visible: Some(false),
+        });
+        assert_eq!(
+            doc.inner.borrow().get_focussed_node_id(),
+            Some(first_handle.node_id())
+        );
+        assert!(!doc.inner.borrow().is_focus_visible(first_handle.node_id()));
+    }
 }

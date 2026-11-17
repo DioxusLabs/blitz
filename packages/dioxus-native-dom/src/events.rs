@@ -1,5 +1,5 @@
 use blitz_dom::{
-    BaseDocument, Node, ScrollBehavior as BlitzScrollBehavior,
+    BaseDocument, FocusOptions, FocusSource, Node, ScrollBehavior as BlitzScrollBehavior,
     ScrollLogicalPosition as BlitzScrollLogicalPosition,
 };
 use blitz_traits::events::{
@@ -181,6 +181,11 @@ impl NodeHandle {
         })
     }
 
+    pub fn set_focus_with_options(&self, options: FocusOptions) -> bool {
+        self.doc_mut()
+            .set_focus_to_with_options(self.node_id, FocusSource::Script, options)
+    }
+
     fn node_not_exist_err<T>(&self) -> Pin<Box<dyn Future<Output = MountedResult<T>>>> {
         let node_id = self.node_id;
         let err = MountedError::OperationFailed(Box::new(NodeNotExistErr(node_id)));
@@ -300,7 +305,7 @@ impl RenderedElementBacking for NodeHandle {
         let mut doc = self.doc_mut();
         if focus {
             // TODO: queue focus events somehow
-            doc.set_focus_to(self.node_id);
+            doc.set_focus_to_with_source(self.node_id, FocusSource::Script);
         } else if doc.get_focussed_node_id() == Some(self.node_id) {
             // Q: Should this only clear focus if the node is focussed?
             // TODO: queue blur events somehow

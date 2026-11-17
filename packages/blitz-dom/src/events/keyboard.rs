@@ -20,7 +20,11 @@ pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
     mut dispatch_event: F,
 ) {
     if let KeyboardOrTextInputEvent::KeyPress(event) = &event {
-        if event.key == Key::Named(NamedKey::Tab) {
+        if event.key == Key::Named(NamedKey::Tab)
+            && !event
+                .modifiers
+                .intersects(Modifiers::CONTROL | Modifiers::ALT | Modifiers::META)
+        {
             let backwards = event.modifiers.contains(Modifiers::SHIFT);
             generate_focus_events(
                 doc,

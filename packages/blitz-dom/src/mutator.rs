@@ -375,6 +375,8 @@ impl DocumentMutator<'_> {
         if name.local == local_name!("tabindex")
             || name.local == local_name!("href")
             || name.local == local_name!("disabled")
+            || name.local == local_name!("contenteditable")
+            || name.local == local_name!("type")
         {
             element.flush_is_focussable();
         }
@@ -418,6 +420,9 @@ impl DocumentMutator<'_> {
 
         if *attr == local_name!("disabled") && element.can_be_disabled() {
             node.disable();
+            if node_is_in_document && self.doc.focus_node_id == Some(node_id) {
+                self.doc.clear_focus();
+            }
             return;
         }
 
@@ -458,6 +463,12 @@ impl DocumentMutator<'_> {
             || (tag, attr) == tag_and_attr!("iframe", "srcdoc")
         {
             self.load_iframe(node_id);
+        }
+
+        if name.local == local_name!("contenteditable")
+            || (name.local == local_name!("type") && self.doc.focus_node_id == Some(node_id))
+        {
+            self.doc.resync_focused_element_focus_ring();
         }
     }
 
@@ -523,6 +534,8 @@ impl DocumentMutator<'_> {
         if name.local == local_name!("tabindex")
             || name.local == local_name!("href")
             || name.local == local_name!("disabled")
+            || name.local == local_name!("contenteditable")
+            || name.local == local_name!("type")
         {
             element.flush_is_focussable();
         }
@@ -566,6 +579,13 @@ impl DocumentMutator<'_> {
         } else if (tag, attr) == tag_and_attr!("iframe", "srcdoc") && node_is_in_document {
             // Fall back to loading from the `src` attribute (if any)
             self.load_iframe(node_id);
+        }
+
+        if node_is_in_document
+            && (name.local == local_name!("contenteditable")
+                || (name.local == local_name!("type") && self.doc.focus_node_id == Some(node_id)))
+        {
+            self.doc.resync_focused_element_focus_ring();
         }
     }
 
@@ -1157,7 +1177,8 @@ impl<'doc> DocumentMutator<'doc> {
         #[cfg(feature = "autofocus")]
         if let Some(node_id) = self.node_to_autofocus.take() {
             if self.doc.get_node(node_id).is_some() {
-                self.doc.set_focus_to(node_id);
+                self.doc
+                    .set_focus_to_with_source(node_id, crate::FocusSource::Script);
             }
         }
 
