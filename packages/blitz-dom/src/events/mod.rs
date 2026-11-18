@@ -117,7 +117,20 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::Wheel(data) => {
                 doc.wheel_gesture.track(data);
             }
-            // The pointer has lifted whether or not the page wanted the default action.
+            // The pointer has pressed or lifted whether or not the page wanted the default
+            // action.
+            DomEventData::PointerDown(data) => {
+                handle_pointerdown(
+                    doc,
+                    event.target,
+                    data.page_x(),
+                    data.page_y(),
+                    data.button,
+                    data.mods,
+                    true,
+                    &mut dispatch_event,
+                );
+            }
             DomEventData::PointerUp(data) => {
                 handle_pointerup(doc, event.target, data, true, dispatch_event);
             }
@@ -218,6 +231,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 event.page_y(),
                 event.button,
                 event.mods,
+                false,
                 &mut dispatch_event,
             );
         }
