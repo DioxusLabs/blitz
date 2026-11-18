@@ -326,10 +326,21 @@ fn smooth_scroll_does_not_reverse_after_viewport_resize() {
             </div>"#,
         );
         let scroller = doc.query_selector("#scroller").unwrap().unwrap();
-        doc.scroll_to(scroller, 0.0, 900.0, ScrollBehavior::Smooth);
-        std::thread::sleep(Duration::from_millis(180));
-        doc.resolve(0.0);
-        let before = doc.get_node(scroller).unwrap().scroll_offset().y;
+        let preparation = Instant::now();
+        let before = loop {
+            doc.scroll_to(scroller, 0.0, 0.0, ScrollBehavior::Instant);
+            doc.scroll_to(scroller, 0.0, 900.0, ScrollBehavior::Smooth);
+            std::thread::sleep(Duration::from_millis(180));
+            doc.resolve(0.0);
+            let offset = doc.get_node(scroller).unwrap().scroll_offset().y;
+            if offset > 450.0 && offset < 900.0 {
+                break offset;
+            }
+            assert!(
+                preparation.elapsed() < Duration::from_secs(10),
+                "could not sample an in-progress scroll animation: {offset}"
+            );
+        };
         assert!(before > 450.0 && before < 900.0, "offset: {before}");
 
         doc.set_viewport(Viewport::new(800, viewport_height, 1.0, ColorScheme::Light));
