@@ -245,6 +245,7 @@ pub struct BaseDocument {
     // Parley contexts
     /// A Parley font context
     pub(crate) font_ctx: Arc<Mutex<parley::FontContext>>,
+    pub(crate) font_face_loader: Arc<crate::font_face::FontFaceLoader>,
     #[cfg(feature = "parallel-construct")]
     /// Thread-and-document-local copies to the font context
     pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
@@ -420,15 +421,13 @@ impl BaseDocument {
                 };
                 font_ctx
                     .collection
-                    .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
+                    .register_all_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
                 font_ctx
             });
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
-        let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(NodeTree::new());
         let guard = SharedRwLock::new();
@@ -453,10 +452,24 @@ impl BaseDocument {
             .unwrap_or_else(|| Arc::new(DummyHtmlParserProvider));
 
         let (tx, rx) = channel();
+        let font_face_loader = Arc::new(crate::font_face::FontFaceLoader::new(
+            net_provider.clone(),
+            shell_provider.clone(),
+            tx.clone(),
+            id,
+            config.abort_signal.clone(),
+        ));
+        let device = make_device(
+            &viewport,
+            media_type.clone(),
+            font_ctx.clone(),
+            font_face_loader.clone(),
+        );
+        let stylist = Stylist::new(device, QuirksMode::NoQuirks);
 
         let mut doc = Self {
             id,
-            tx,
+            tx: tx.clone(),
             rx: Some(rx),
 
             guard,
@@ -477,6 +490,7 @@ impl BaseDocument {
             url: base_url,
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
+            font_face_loader,
             font_ctx,
             #[cfg(feature = "parallel-construct")]
             thread_font_contexts: ThreadLocal::new(),
@@ -1250,17 +1264,8 @@ impl BaseDocument {
             self.stylist.remove_stylesheet(old, &self.guard.read())
         }
 
-        // Fetch @font-face fonts
-        crate::net::fetch_font_face(
-            self.tx.clone(),
-            self.id,
-            Some(node_id),
-            &stylesheet.0,
-            &self.net_provider,
-            &self.shell_provider,
-            &self.guard.read(),
-            self.abort_signal.as_ref(),
-        );
+        let faces = crate::net::collect_font_faces(&stylesheet.0, &self.guard.read());
+        self.register_font_faces(faces, Some(node_id));
 
         // Store data on element
         let element = &mut self.nodes[node_id].element_data_mut().unwrap();
@@ -1310,6 +1315,16 @@ impl BaseDocument {
         !self.pending_critical_resources.is_empty()
     }
 
+    /// Whether deferred font requests or their queued completions still need resolving.
+    pub fn has_pending_font_loads(&self) -> bool {
+        self.font_face_loader.is_pending()
+            || self.sub_document_nodes.iter().any(|id| {
+                self.nodes[*id]
+                    .subdoc()
+                    .is_some_and(|doc| doc.inner().has_pending_font_loads())
+            })
+    }
+
     pub fn load_resource(&mut self, res: ResourceLoadResponse) {
         self.pending_critical_resources.remove(&res.request_id);
 
@@ -1343,6 +1358,8 @@ impl BaseDocument {
                 self.add_stylesheet_for_node(css, node_id);
             }
             Resource::ImportedCss(import_rule, sheet) => {
+                let faces = crate::net::collect_font_faces(&sheet, &self.guard.read());
+                self.register_font_faces(faces, res.node_id);
                 let mut guard = self.guard.write();
                 import_rule.write_with(&mut guard).stylesheet =
                     style::stylesheets::import_rule::ImportSheet::Sheet(sheet);
@@ -1378,48 +1395,79 @@ impl BaseDocument {
                 self.apply_iframe_html(node_id, res.request_id, res.resolved_url, &html);
             }
             Resource::Font(bytes, overrides) => {
-                let font = Blob::new(Arc::new(bytes));
-
-                // Build a `FontInfoOverride` from the `@font-face` descriptors
-                // captured during stylesheet parsing. Without this, parley
-                // reads the family name from the TTF's own metadata, which
-                // means CSS `font-family: 'Avenir Book'` won't match a font
-                // file that internally identifies as `Avenir 45 Book`.
-                let info_override = parley::fontique::FontInfoOverride {
-                    family_name: overrides.family_name.as_deref(),
-                    weight: overrides.weight,
-                    style: overrides.style,
-                    width: overrides.width,
-                    ..Default::default()
-                };
-
-                // TODO: Investigate eliminating double-box
-                let mut global_font_ctx = self.font_ctx.lock().unwrap();
-                global_font_ctx
-                    .collection
-                    .register_fonts(font.clone(), Some(info_override));
-
-                #[cfg(feature = "parallel-construct")]
-                {
-                    rayon::broadcast(|_ctx| {
-                        let mut font_ctx = self
-                            .thread_font_contexts
-                            .get_or(|| RefCell::new(Box::new(global_font_ctx.clone())))
-                            .borrow_mut();
-                        font_ctx
-                            .collection
-                            .register_fonts(font.clone(), Some(info_override));
-                    });
-                }
-                drop(global_font_ctx);
-
-                // TODO: see if we can only invalidate if resolved fonts may have changed
-                self.invalidate_inline_contexts();
+                self.font_face_loader.queue_font(bytes, overrides);
+            }
+            Resource::FontFaceLoaded(url, bytes) => {
+                self.font_face_loader.complete(url, bytes);
             }
             Resource::None => {
                 // Do nothing
             }
         }
+    }
+
+    pub(crate) fn register_font_faces(
+        &mut self,
+        faces: Vec<crate::net::FontFaceDeclaration>,
+        node_id: Option<NodeId>,
+    ) {
+        if faces.is_empty() {
+            return;
+        }
+        let mut global = self.font_ctx.lock().unwrap();
+        let mut registered = Vec::new();
+        for face in faces {
+            let overrides = face.overrides.clone();
+            let key = self.font_face_loader.register(face, node_id);
+            if global
+                .collection
+                .register_pending_font(key, overrides.as_font_info())
+                .is_some()
+            {
+                registered.push((key, overrides));
+            }
+        }
+        #[cfg(feature = "parallel-construct")]
+        rayon::broadcast(|_| {
+            if let Some(ctx) = self.thread_font_contexts.get() {
+                let mut ctx = ctx.borrow_mut();
+                for (key, overrides) in &registered {
+                    ctx.collection
+                        .register_pending_font(*key, overrides.as_font_info());
+                }
+            }
+        });
+    }
+
+    pub(crate) fn flush_pending_fonts(&mut self) {
+        let updates = self.font_face_loader.take_updates();
+        if updates.is_empty() {
+            return;
+        }
+        let mut global = self.font_ctx.lock().unwrap();
+        for update in &updates {
+            update.apply(&mut global);
+        }
+        #[cfg(feature = "parallel-construct")]
+        rayon::broadcast(|_| {
+            if let Some(ctx) = self.thread_font_contexts.get() {
+                let mut ctx = ctx.borrow_mut();
+                for update in &updates {
+                    update.apply(&mut ctx);
+                }
+            }
+        });
+        drop(global);
+        // A failed face also needs a new layout: only the first pending face that
+        // covers some text is requested, so the faces after a failed one are requested
+        // by the next layout.
+        if let Some(root) = self.try_root_element().map(|node| node.id) {
+            self.nodes[root].set_restyle_hint(RestyleHint::recascade_subtree());
+        }
+        self.stylist
+            .force_stylesheet_origins_dirty(style::stylesheets::OriginSet::all());
+        self.mark_all_damaged();
+        self.invalidate_inline_contexts();
     }
 
     /// Cache a loaded image and apply it to all nodes waiting on it
@@ -3699,10 +3747,12 @@ mod font_face_override_tests {
                     weight: Some(parley::fontique::FontWeight::new(800.0).into()),
                     style: Some(parley::fontique::FontStyleRange::Italic),
                     width: None,
+                    unicode_range: None,
                 },
             )),
         };
         document.load_resource(response);
+        document.flush_pending_fonts();
 
         // The override must have taken effect: parley's `Collection` now
         // resolves the CSS-declared alias to a registered family.

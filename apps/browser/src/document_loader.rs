@@ -69,7 +69,7 @@ impl DocumentLoader {
         let mut font_ctx = FontContext::default();
         font_ctx
             .collection
-            .register_fonts(Blob::new(Arc::new(blitz_dom::BULLET_FONT) as _), None);
+            .register_all_fonts(Blob::new(Arc::new(blitz_dom::BULLET_FONT) as _), None);
 
         Self {
             font_ctx,

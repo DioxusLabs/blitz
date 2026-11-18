@@ -37,7 +37,7 @@ pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request
 }
 
 /// Carries `@font-face` descriptors from CSS parsing through to font
-/// registration so `parley::Collection::register_fonts` can alias the bytes
+/// registration so `parley::Collection::register_all_fonts` can alias the bytes
 /// under the `font-family` declared in CSS rather than whatever family name
 /// the TTF's own `name` table reports.
 ///
@@ -54,6 +54,28 @@ pub struct FontFaceOverrides {
     pub style: Option<parley::fontique::FontStyleRange>,
     /// `font-stretch` (`font-width`) descriptor range.
     pub width: Option<parley::fontique::FontWidthRange>,
+    /// Codepoints for which the face is eligible.
+    pub unicode_range: Option<parley::fontique::UnicodeRangeSet>,
+}
+
+impl FontFaceOverrides {
+    pub(crate) fn as_font_info(&self) -> parley::fontique::FontInfoOverride<'_> {
+        parley::fontique::FontInfoOverride {
+            family_name: self.family_name.as_deref(),
+            weight: self.weight,
+            style: self.style,
+            width: self.width,
+            unicode_range: self.unicode_range.as_ref(),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FontFaceDeclaration {
+    pub url: Url,
+    pub format: FontFaceSourceFormatKeyword,
+    pub overrides: FontFaceOverrides,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +87,8 @@ pub enum Resource {
     /// Stylesheet loaded for an `@import` rule, to be attached to the rule on the document thread
     ImportedCss(ServoArc<Locked<ImportRule>>, ServoArc<Stylesheet>),
     Font(Bytes, FontFaceOverrides),
+    /// Completion of a deferred font source, including a failed load.
+    FontFaceLoaded(Url, Option<Bytes>),
     /// HTML fetched for an `<iframe>` element's `src`
     DocumentSrc(String),
     None,
@@ -242,7 +266,6 @@ impl ServoStylesheetLoader for StylesheetLoader {
                     lock: lock.clone(),
                     media,
                     import_rule: import.clone(),
-                    net_provider: self.net_provider.clone(),
                 },
             ),
         );
@@ -257,7 +280,6 @@ struct NestedStylesheetHandler {
     url: ServoArc<Url>,
     media: ServoArc<Locked<MediaList>>,
     import_rule: ServoArc<Locked<ImportRule>>,
-    net_provider: Arc<dyn NetProvider>,
 }
 
 impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
@@ -278,35 +300,61 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
             QuirksMode::NoQuirks,
         ));
 
-        // Fetch @font-face fonts
-        fetch_font_face(
-            self.tx.clone(),
-            self.doc_id,
-            self.node_id,
-            &sheet,
-            &self.data.net_provider,
-            &self.shell_provider,
-            &self.data.lock.read(),
-            self.data.loader.abort_signal.as_ref(),
-        );
-
         let import_rule = self.data.import_rule.clone();
         self.respond(resolved_url, Ok(Resource::ImportedCss(import_rule, sheet)))
     }
 }
 
-struct FontFaceHandler {
-    format: FontFaceSourceFormatKeyword,
-    overrides: FontFaceOverrides,
+pub(crate) struct FontFaceHandler {
+    pub format: FontFaceSourceFormatKeyword,
+    pub url: Url,
+    failure: Option<ResourceHandler<()>>,
 }
 impl NetHandler for ResourceHandler<FontFaceHandler> {
     fn bytes(mut self: Box<Self>, resolved_url: String, bytes: Bytes) {
-        let result = self.data.parse(bytes);
-        self.respond(resolved_url, result)
+        let bytes = self.data.parse(bytes);
+        self.data.failure = None;
+        self.respond(
+            resolved_url,
+            Ok(Resource::FontFaceLoaded(self.data.url.clone(), bytes)),
+        )
+    }
+
+    fn error(mut self: Box<Self>, resolved_url: String, _error: String) {
+        self.data.failure = None;
+        self.respond(
+            resolved_url,
+            Ok(Resource::FontFaceLoaded(self.data.url.clone(), None)),
+        );
+    }
+}
+impl Drop for FontFaceHandler {
+    fn drop(&mut self) {
+        if let Some(failure) = &self.failure {
+            failure.respond(
+                self.url.to_string(),
+                Ok(Resource::FontFaceLoaded(self.url.clone(), None)),
+            );
+        }
     }
 }
 impl FontFaceHandler {
-    fn parse(&mut self, bytes: Bytes) -> Result<Resource, String> {
+    pub fn new(
+        format: FontFaceSourceFormatKeyword,
+        url: Url,
+        tx: Sender<DocumentEvent>,
+        doc_id: usize,
+        node_id: Option<NodeId>,
+        shell: Arc<dyn ShellProvider>,
+    ) -> Self {
+        Self {
+            format,
+            url,
+            failure: Some(ResourceHandler::new(tx, doc_id, node_id, shell, ())),
+        }
+    }
+
+    fn parse(&mut self, bytes: Bytes) -> Option<Bytes> {
         if self.format == FontFaceSourceFormatKeyword::None && bytes.len() >= 4 {
             self.format = match &bytes.as_ref()[0..4] {
                 // WOFF (v1) files begin with 0x774F4646 ('wOFF' in ascii)
@@ -341,14 +389,7 @@ impl FontFaceHandler {
                 tracing::info!("Decompressing woff1 font");
 
                 // Use wuff crate to decompress font
-                let decompressed = wuff::decompress_woff1(&bytes).ok();
-
-                if let Some(decompressed) = decompressed {
-                    bytes = Bytes::from(decompressed);
-                } else {
-                    #[cfg(feature = "tracing")]
-                    tracing::warn!("Failed to decompress woff1 font");
-                }
+                bytes = Bytes::from(wuff::decompress_woff1(&bytes).ok()?);
             }
             #[cfg(feature = "woff")]
             FontFaceSourceFormatKeyword::Woff2 => {
@@ -356,62 +397,35 @@ impl FontFaceHandler {
                 tracing::info!("Decompressing woff2 font");
 
                 // Use wuff crate to decompress font
-                let decompressed = wuff::decompress_woff2(&bytes).ok();
-
-                if let Some(decompressed) = decompressed {
-                    bytes = Bytes::from(decompressed);
-                } else {
-                    #[cfg(feature = "tracing")]
-                    tracing::warn!("Failed to decompress woff2 font");
-                }
+                bytes = Bytes::from(wuff::decompress_woff2(&bytes).ok()?);
             }
             FontFaceSourceFormatKeyword::None => {
                 // Should this be an error?
-                return Ok(Resource::None);
+                return None;
             }
             _ => {}
         }
 
-        Ok(Resource::Font(bytes, std::mem::take(&mut self.overrides)))
+        Some(bytes)
     }
 }
 
-/// Fetch the fonts of all `@font-face` rules in `sheet`
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn fetch_font_face(
-    tx: Sender<DocumentEvent>,
-    doc_id: usize,
-    node_id: Option<NodeId>,
+/// Collect the font faces declared in a stylesheet.
+pub(crate) fn collect_font_faces(
     sheet: &Stylesheet,
-    network_provider: &Arc<dyn NetProvider>,
-    shell_provider: &Arc<dyn ShellProvider>,
     read_guard: &SharedRwLockReadGuard,
-    abort_signal: Option<&AbortSignal>,
-) {
-    fetch_font_face_rules(
+) -> Vec<FontFaceDeclaration> {
+    collect_font_face_rules(
         sheet.contents(read_guard).rules(read_guard).iter(),
-        tx,
-        doc_id,
-        node_id,
-        network_provider,
-        shell_provider,
         read_guard,
-        abort_signal,
     )
 }
 
-/// Fetch the fonts of the `@font-face` rules among `rules`
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn fetch_font_face_rules<'a>(
+/// Collect the font faces among `rules`.
+pub(crate) fn collect_font_face_rules<'a>(
     rules: impl Iterator<Item = &'a CssRule>,
-    tx: Sender<DocumentEvent>,
-    doc_id: usize,
-    node_id: Option<NodeId>,
-    network_provider: &Arc<dyn NetProvider>,
-    shell_provider: &Arc<dyn ShellProvider>,
     read_guard: &SharedRwLockReadGuard,
-    abort_signal: Option<&AbortSignal>,
-) {
+) -> Vec<FontFaceDeclaration> {
     rules
         .filter_map(|rule| match rule {
             CssRule::FontFace(font_face) => {
@@ -438,26 +452,25 @@ pub(crate) fn fetch_font_face_rules<'a>(
                             parley::fontique::FontWidth::from_percentage(range.1.0.to_float()),
                         ))
                     }),
+                    unicode_range: descriptor.unicode_range.as_ref().map(|ranges| {
+                        parley::fontique::UnicodeRangeSet::new(
+                            ranges.iter().map(|range| range.start..=range.end),
+                        )
+                    }),
                 };
                 Some((src, overrides))
             }
             _ => None,
         })
-        .for_each(|(source_list, overrides)| {
-            if let Some((url, format)) = preferred_font_source(source_list) {
-                network_provider.fetch(
-                    doc_id,
-                    stamped_request(url, abort_signal),
-                    ResourceHandler::boxed(
-                        tx.clone(),
-                        doc_id,
-                        node_id,
-                        shell_provider.clone(),
-                        FontFaceHandler { format, overrides },
-                    ),
-                );
-            }
+        .filter_map(|(source_list, overrides)| {
+            let (url, format) = preferred_font_source(source_list)?;
+            Some(FontFaceDeclaration {
+                url,
+                format,
+                overrides,
+            })
         })
+        .collect()
 }
 
 /// The first source in an `@font-face` `src` list that is in a format we

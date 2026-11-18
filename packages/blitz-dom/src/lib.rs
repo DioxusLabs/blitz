@@ -44,6 +44,7 @@ mod config;
 mod cssom;
 mod debug;
 mod events;
+mod font_face;
 mod font_metrics;
 mod form;
 mod html;
@@ -144,7 +145,7 @@ pub fn build_single_font_ctx(font_data: &[u8]) -> FontContext {
     let decoded = decode_font_bytes(font_data).into_owned();
     let registered = ctx
         .collection
-        .register_fonts(Blob::new(Arc::new(decoded) as _), None);
+        .register_all_fonts(Blob::new(Arc::new(decoded) as _), None);
     let family_ids: Vec<_> = registered.iter().map(|(id, _)| *id).collect();
     for generic in [
         GenericFamily::SansSerif,

@@ -85,7 +85,7 @@ fn build_font_context() -> FontContext {
     let font_bytes = decode_font_bytes(DEJAVU_SANS).into_owned();
     let registered = ctx
         .collection
-        .register_fonts(Blob::new(Arc::new(font_bytes) as _), None);
+        .register_all_fonts(Blob::new(Arc::new(font_bytes) as _), None);
     let family_ids: Vec<_> = registered.iter().map(|(id, _)| *id).collect();
     for generic in [
         GenericFamily::SansSerif,
