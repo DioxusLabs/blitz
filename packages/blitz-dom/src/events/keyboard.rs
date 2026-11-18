@@ -1,9 +1,8 @@
 use crate::{BaseDocument, node::GeneratedTextInputEvent, util::ACTION_MOD};
-use blitz_traits::events::EventDispatchSource;
 use blitz_traits::node_id::NodeId;
 use blitz_traits::{
     SmolStr,
-    events::{BlitzInputEvent, BlitzKeyEvent, DomEvent, DomEventData},
+    events::{BlitzInputEvent, BlitzKeyEvent, DomEventData},
 };
 use keyboard_types::{Key, Modifiers, NamedKey};
 use markup5ever::local_name;
@@ -106,11 +105,7 @@ impl BaseDocument {
         match event {
             GeneratedTextInputEvent::Input => {
                 let value = input_data.editor.raw_text().to_string();
-                self.queue_event(DomEvent::new(
-                    node_id,
-                    DomEventData::Input(BlitzInputEvent { value }),
-                    EventDispatchSource::UserAgent,
-                ));
+                self.queue_ua_event(node_id, DomEventData::Input(BlitzInputEvent { value }));
                 self.shell_provider.request_redraw();
             }
             GeneratedTextInputEvent::Select | GeneratedTextInputEvent::PreEditChange => {
