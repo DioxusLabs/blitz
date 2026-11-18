@@ -553,10 +553,14 @@ pub(crate) fn handle_pointerdown(
     }
 }
 
+/// Runs for every `pointerup`, including one whose default action was prevented: the drag
+/// under way still ends and the click is still dispatched, as neither is `pointerup`'s
+/// default action.
 pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: NodeId,
     event: &BlitzPointerEvent,
+    default_prevented: bool,
     mut dispatch_event: F,
 ) {
     if doc.devtools().highlight_hover {
@@ -576,8 +580,9 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     let drag_mode = doc.drag_mode.take();
 
     // Don't dispatch click if we were doing a text selection drag or panning
-    // the document with a touch
-    let do_click = drag_mode == DragMode::None;
+    // the document with a touch. Nor for a prevented touch or pen: that may be a
+    // prevented `touchend`, which does suppress the click.
+    let do_click = drag_mode == DragMode::None && (!default_prevented || event.is_mouse());
 
     // Repaint so a dragged scrollbar thumb drops its active styling, and
     // restart its fade-out delay now that the drag no longer holds it shown
@@ -591,7 +596,9 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
         .unwrap()
         .as_millis() as u64;
 
-    if let DragMode::Panning(state) = &drag_mode {
+    if let DragMode::Panning(state) = &drag_mode
+        && !default_prevented
+    {
         if let Some(fling) = state.generate_fling(time_ms) {
             doc.scroll_animation = ScrollAnimationState::Fling(fling);
             doc.shell_provider.request_redraw();
