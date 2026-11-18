@@ -337,6 +337,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     }
 
     fn should_clip_node(&self, node: &Node, styles: &ComputedValues) -> bool {
+        self.clipped_axes(node, styles).is_some()
+    }
+
+    /// The axes in which a node clips its overflow, or `None` if it does not clip.
+    fn clipped_axes(&self, node: &Node, styles: &ComputedValues) -> Option<(bool, bool)> {
+        if self.root_element_id == Some(node.id) {
+            return None;
+        }
         let box_style = styles.get_box();
         let contain_paint = box_style.slow_clone_contain().contains(Contain::PAINT) && {
             let display = styles.clone_display();
@@ -346,13 +354,18 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             !display.is_inline_flow() && !is_internal_table_box_other_than_cell
         };
         let element = node.element_data();
-        self.root_element_id != Some(node.id)
-            && (element.and_then(|e| e.raster_image_data()).is_some()
-                || element.and_then(|e| e.sub_doc_data()).is_some()
-                || element.and_then(|e| e.text_input_data()).is_some()
-                || contain_paint
-                || !matches!(box_style.overflow_x, Overflow::Visible)
-                || !matches!(box_style.overflow_y, Overflow::Visible))
+        let clips_both_axes = element.and_then(|e| e.raster_image_data()).is_some()
+            || element.and_then(|e| e.sub_doc_data()).is_some()
+            || element.and_then(|e| e.text_input_data()).is_some()
+            || contain_paint;
+        if clips_both_axes {
+            return Some((true, true));
+        }
+        // `overflow: clip` is the only value that leaves the other axis `visible`
+        // (hidden, scroll and auto turn it into `auto`), so clip each axis on its own.
+        let clip_x = !matches!(box_style.overflow_x, Overflow::Visible);
+        let clip_y = !matches!(box_style.overflow_y, Overflow::Visible);
+        (clip_x || clip_y).then_some((clip_x, clip_y))
     }
 
     fn draw_text_mask(
@@ -379,7 +392,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let clip = if cx.text_input.is_some() {
             cx.frame.text_input_clip_shape()
         } else {
-            cx.frame.padding_box_shape()
+            overflow_clip_shape(&cx.frame, self.clipped_axes(node, &styles))
         };
         let pushed = self.layer_manager.maybe_push_layer(
             scene,
@@ -478,7 +491,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         }
         let has_opacity = opacity < 1.0;
 
-        let should_clip = self.should_clip_node(node, &styles);
+        let clipped_axes = self.clipped_axes(node, &styles);
+        let should_clip = clipped_axes.is_some();
         let is_text_input = node
             .element_data()
             .and_then(|el| el.text_input_data())
@@ -568,7 +582,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             let clip_box = if is_text_input {
                 cx.frame.text_input_clip_shape()
             } else {
-                cx.frame.padding_box_shape()
+                overflow_clip_shape(&cx.frame, clipped_axes)
             };
             clip_rect.intersect(screen_transform.transform_rect_bbox(clip_box.bounding_box()))
         } else {
@@ -695,7 +709,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         let clip = if is_text_input {
                             &cx.frame.text_input_clip_shape()
                         } else {
-                            &cx.frame.padding_box_shape()
+                            &overflow_clip_shape(&cx.frame, clipped_axes)
                         };
 
                         // Clip layer if box requires clipping. Opacity set to 1.0
@@ -1546,4 +1560,39 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBo
     };
 
     CssBox::new(border_box, border, padding, outline_width, border_radii)
+}
+
+/// Far enough past any viewport that an unclipped axis never clips, and small enough
+/// that f32 path coordinates keep the clipped edges exact.
+const UNCLIPPED_REACH: f64 = 1.0e6;
+
+/// The overflow clip shape of a frame: its padding box, opened out along any axis
+/// that does not clip.
+fn overflow_clip_shape(
+    frame: &CssBox,
+    clipped_axes: Option<(bool, bool)>,
+) -> anyrender::NonUniformRoundedRect {
+    match clipped_axes {
+        Some((true, false)) => {
+            let rect = frame.padding_box();
+            Rect::new(
+                rect.x0,
+                rect.y0 - UNCLIPPED_REACH,
+                rect.x1,
+                rect.y1 + UNCLIPPED_REACH,
+            )
+            .into()
+        }
+        Some((false, true)) => {
+            let rect = frame.padding_box();
+            Rect::new(
+                rect.x0 - UNCLIPPED_REACH,
+                rect.y0,
+                rect.x1 + UNCLIPPED_REACH,
+                rect.y1,
+            )
+            .into()
+        }
+        _ => frame.padding_box_shape(),
+    }
 }
