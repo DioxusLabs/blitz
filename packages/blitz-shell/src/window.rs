@@ -7,7 +7,7 @@ use crate::convert_events::{
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
-use blitz_paint::paint_scene;
+use blitz_paint::paint_scene_with_safe_area;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase,
     BlitzWheelSource, MouseEventButton, MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
@@ -361,14 +361,16 @@ impl<Rend: WindowRenderer> View<Rend> {
         );
 
         self.renderer.render(|scene| {
-            paint_scene(
+            paint_scene_with_safe_area(
                 scene,
                 &mut inner,
                 scale,
-                width,
-                height,
-                insets.left,
-                insets.top,
+                [width, height],
+                [insets.left, insets.top],
+                [
+                    width + insets.left + insets.right,
+                    height + insets.top + insets.bottom,
+                ],
             )
         });
 
@@ -446,14 +448,16 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         if !is_blocked && is_visible {
             self.renderer.render(|scene| {
-                paint_scene(
+                paint_scene_with_safe_area(
                     scene,
                     &mut inner,
                     scale,
-                    width,
-                    height,
-                    insets.left,
-                    insets.top,
+                    [width, height],
+                    [insets.left, insets.top],
+                    [
+                        width + insets.left + insets.right,
+                        height + insets.top + insets.bottom,
+                    ],
                 )
             });
         }
