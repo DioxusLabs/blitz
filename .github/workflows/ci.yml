@@ -71,7 +71,7 @@ jobs:
           cargo check -p blitz-dom --no-default-features --features winkin,system-fonts,svg
           cargo check -p blitz-paint --no-default-features --features winkin,svg
           cargo check -p blitz --no-default-features --features winkin,net
-          cargo check -p browser --no-default-features --features winkin,hybrid
+          cargo check -p browser --no-default-features --features winkin,vello-gpu
           cargo check -p wpt --no-default-features --features winkin,cpu
       - name: Both (Parley is used)
         run: cargo test -p blitz-dom --features winkin --lib text::tests
