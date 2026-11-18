@@ -1,5 +1,5 @@
 use crate::NodeTree;
-use crate::events::{DragMode, handle_dom_event};
+use crate::events::{DragMode, WheelGesture, handle_dom_event};
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
@@ -285,6 +285,8 @@ pub struct BaseDocument {
     pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
+    /// The trackpad scroll gesture under way, locked to its main axis
+    pub(crate) wheel_gesture: WheelGesture,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -524,6 +526,7 @@ impl BaseDocument {
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
+            wheel_gesture: WheelGesture::default(),
             text_selection: TextSelection::default(),
             scratch: DocumentScratch::default(),
         };
@@ -689,12 +692,15 @@ impl BaseDocument {
         DocumentMutator::new(self)
     }
 
+    /// Run an event's default action. `default_prevented` says whether a handler prevented
+    /// it, in which case only state that must follow every event is updated.
     pub fn handle_dom_event<F: FnMut(DomEvent)>(
         &mut self,
         event: &mut DomEvent,
+        default_prevented: bool,
         dispatch_event: F,
     ) {
-        handle_dom_event(self, event, dispatch_event)
+        handle_dom_event(self, event, default_prevented, dispatch_event)
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {

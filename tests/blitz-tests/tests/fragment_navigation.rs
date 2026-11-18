@@ -76,6 +76,8 @@ fn wheel_at(doc: &mut HtmlDocument, x: f32, y: f32, delta_x: f64, delta_y: f64) 
     doc.handle_ui_event(UiEvent::PointerMove(event.clone()));
     doc.handle_ui_event(UiEvent::Wheel(BlitzWheelEvent {
         delta: BlitzWheelDelta::Pixels(delta_x, delta_y),
+        phase: Default::default(),
+        source: Default::default(),
         coords: event.coords,
         buttons: MouseEventButtons::empty(),
         mods: Default::default(),

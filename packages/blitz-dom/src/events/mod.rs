@@ -10,7 +10,7 @@ pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
-pub(crate) use pointer::DragMode;
+pub(crate) use pointer::{DragMode, WheelGesture};
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 
 use crate::{BaseDocument, events::pointer::handle_wheel};
@@ -102,8 +102,17 @@ fn map_dom_event_to_ui_event(
 pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
+    default_prevented: bool,
     mut dispatch_event: F,
 ) {
+    if default_prevented {
+        // A scroll gesture has to see each of its events to know where it starts and ends.
+        if let DomEventData::Wheel(data) = &event.data {
+            doc.wheel_gesture.track(data);
+        }
+        return;
+    }
+
     let target_node_id = event.target;
     let node = &mut doc.nodes[target_node_id];
     let pos = node.absolute_position(0.0, 0.0);
