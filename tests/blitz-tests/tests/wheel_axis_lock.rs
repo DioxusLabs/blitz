@@ -1,4 +1,4 @@
-//! A trackpad scroll gesture locks to its main axis when it starts, so a slightly crooked
+//! A trackpad scroll gesture locks to the axis it mostly moves along, so a slightly crooked
 //! vertical swipe over a horizontal scroller doesn't move it sideways. Devices that report no
 //! gestures scroll both axes as before.
 
@@ -38,7 +38,7 @@ fn a_mostly_vertical_gesture_and_its_momentum_scroll_only_vertically() {
             (-20.0, -30.0, Moved, Finger),
             (-5.0, -10.0, Ended, Finger),
             (0.0, 0.0, Started, Momentum),
-            (-20.0, -20.0, Moved, Momentum),
+            (-5.0, -20.0, Moved, Momentum),
             (0.0, 0.0, Ended, Momentum),
         ]),
         (0.0, 90.0)
@@ -50,7 +50,7 @@ fn a_mostly_horizontal_gesture_scrolls_only_horizontally() {
     assert_eq!(
         gesture(&[
             (-30.0, -5.0, Started, Finger),
-            (-30.0, -25.0, Moved, Finger),
+            (-30.0, -10.0, Moved, Finger),
         ]),
         (60.0, 0.0)
     );
@@ -77,6 +77,20 @@ fn a_diagonal_gesture_scrolls_both_axes() {
             (-10.0, 0.0, Moved, Finger),
         ]),
         (30.0, 20.0)
+    );
+}
+
+#[test]
+fn a_gesture_that_turns_changes_its_axis() {
+    assert_eq!(
+        gesture(&[
+            (0.0, -30.0, Started, Finger),
+            (-30.0, 0.0, Moved, Finger),
+            (-30.0, 0.0, Moved, Finger),
+            (-30.0, 0.0, Moved, Finger),
+            (-30.0, -5.0, Moved, Finger),
+        ]),
+        (120.0, 30.0)
     );
 }
 

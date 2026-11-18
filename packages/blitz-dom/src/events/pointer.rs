@@ -839,31 +839,29 @@ pub(crate) enum WheelAxes {
 /// Locks a trackpad scroll gesture to its main axis, as browsers do. Swipes are rarely
 /// straight, so without a lock a vertical swipe also nudges horizontal scrollers sideways.
 ///
-/// The gesture's first few pixels of movement decide the lock, which lasts until the gesture
-/// ends, including any momentum scrolling that follows. A clearly diagonal start scrolls
-/// both axes. Events from devices that report no gestures scroll as they come.
+/// Each event is locked by the gesture's recent movement, as in Chromium: to an axis while
+/// the movement mostly follows it, and to neither while it is diagonal. So a gesture that
+/// turns unlocks and can lock again. Momentum scrolling carries on from the gesture it
+/// follows. Events from devices that report no gestures scroll as they come.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) enum WheelGesture {
     /// No gesture is under way: events scroll both axes.
     #[default]
     Idle,
-    /// A gesture is under way and has moved this far along each axis, which isn't yet far
-    /// enough to decide its axes.
-    Deciding { travel: (f64, f64) },
-    /// A gesture is under way and locked to these axes.
-    Locked(WheelAxes),
-    /// The fingers have lifted from a gesture with these axes. Momentum scrolling that
-    /// follows directly keeps them.
-    Lifted(WheelAxes),
+    /// A gesture is under way. `recent` is how far it has moved along each axis, counting
+    /// each event's movement for less as newer events arrive.
+    Active { recent: (f64, f64) },
+    /// The fingers have lifted from a gesture. Momentum scrolling that follows directly
+    /// carries on from its recent movement.
+    Lifted { recent: (f64, f64) },
 }
 
 impl WheelGesture {
-    /// A gesture locks to an axis when its movement along that axis is at least this many
-    /// times its movement along the other.
+    /// An event locks to an axis when the recent movement along that axis is at least this
+    /// many times the movement along the other.
     const LOCK_RATIO: f64 = 2.0;
-    /// How far (in CSS pixels) a gesture moves before its axes are decided. A gesture's first
-    /// events are small and noisy, so they follow the movement so far without fixing the lock.
-    const LOCK_DISTANCE: f64 = 10.0;
+    /// How much of the recent movement is kept each time an event arrives.
+    const DECAY: f64 = 0.8;
 
     /// Place a wheel event in the gesture, returning the axes its default scroll moves.
     ///
@@ -875,48 +873,36 @@ impl WheelGesture {
             return WheelAxes::Both;
         }
 
-        // The state the event arrives in.
         let started = event.phase == BlitzWheelPhase::Started;
-        let state = match *self {
-            Self::Lifted(axes) if started && event.source == BlitzWheelSource::Momentum => {
-                Self::Locked(axes)
+        let recent = match *self {
+            Self::Lifted { recent } if started && event.source == BlitzWheelSource::Momentum => {
+                recent
             }
-            _ if started => Self::Deciding { travel: (0.0, 0.0) },
-            Self::Lifted(_) => Self::Idle,
-            state => state,
-        };
-
-        // The state the event's movement leaves, and the axes it scrolls.
-        let (state, axes) = match state {
-            Self::Idle | Self::Lifted(_) => {
+            _ if started => (0.0, 0.0),
+            Self::Active { recent } => recent,
+            Self::Idle | Self::Lifted { .. } => {
                 *self = Self::Idle;
                 return WheelAxes::Both;
             }
-            Self::Locked(axes) => (state, axes),
-            Self::Deciding { travel } => {
-                let (x, y) = event.delta.to_pixels(WHEEL_LINE_PX);
-                let (x, y) = (travel.0 + x.abs(), travel.1 + y.abs());
-                let axes = if y >= x * Self::LOCK_RATIO {
-                    WheelAxes::Vertical
-                } else if x >= y * Self::LOCK_RATIO {
-                    WheelAxes::Horizontal
-                } else {
-                    WheelAxes::Both
-                };
-                if x.max(y) >= Self::LOCK_DISTANCE {
-                    (Self::Locked(axes), axes)
-                } else {
-                    (Self::Deciding { travel: (x, y) }, axes)
-                }
-            }
+        };
+
+        let (x, y) = event.delta.to_pixels(WHEEL_LINE_PX);
+        let x = recent.0 * Self::DECAY + x.abs();
+        let y = recent.1 * Self::DECAY + y.abs();
+        let axes = if y >= x * Self::LOCK_RATIO {
+            WheelAxes::Vertical
+        } else if x >= y * Self::LOCK_RATIO {
+            WheelAxes::Horizontal
+        } else {
+            WheelAxes::Both
         };
 
         *self = match event.phase {
             BlitzWheelPhase::Ended if event.source == BlitzWheelSource::Finger => {
-                Self::Lifted(axes)
+                Self::Lifted { recent: (x, y) }
             }
             BlitzWheelPhase::Ended | BlitzWheelPhase::Cancelled => Self::Idle,
-            BlitzWheelPhase::Started | BlitzWheelPhase::Moved => state,
+            BlitzWheelPhase::Started | BlitzWheelPhase::Moved => Self::Active { recent: (x, y) },
         };
         axes
     }
