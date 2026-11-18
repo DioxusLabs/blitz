@@ -356,15 +356,26 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     /// none are left. Each event is handed to its handlers and then to the document, either
     /// of which may queue further events.
     ///
+    /// Handlers that keep queueing events (e.g. two focus handlers which each focus the
+    /// other's node) would otherwise never let this return, so it stops after
+    /// `MAX_EVENTS_PER_FLUSH` events and leaves the rest queued for the next flush.
+    ///
     /// [`BaseDocument::queue_event`]: crate::BaseDocument::queue_event
     pub fn flush_pending_events(&mut self) {
-        loop {
+        const MAX_EVENTS_PER_FLUSH: usize = 1024;
+
+        for _ in 0..MAX_EVENTS_PER_FLUSH {
             let Some(mut event) = self.doc.inner_mut().pop_pending_event() else {
-                break;
+                return;
             };
             let event_state = self.run_handler_event(&mut event, EventState::default());
             self.run_default_action(&mut event, event_state.is_cancelled());
         }
+
+        #[cfg(feature = "tracing")]
+        tracing::warn!(
+            "Stopped dispatching events after {MAX_EVENTS_PER_FLUSH}: handlers keep queueing more"
+        );
     }
 
     fn adjust_element_coords(

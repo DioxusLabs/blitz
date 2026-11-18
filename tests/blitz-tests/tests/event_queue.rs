@@ -74,3 +74,45 @@ fn queued_events_for_removed_nodes_are_discarded() {
     EventDriver::new(&mut *doc, handler.clone()).flush_pending_events();
     assert!(handler.0.borrow().is_empty());
 }
+
+/// Focuses the other node whenever one of the two is focused
+struct FocusPingPong {
+    nodes: [NodeId; 2],
+    focus_events: Rc<RefCell<usize>>,
+}
+
+impl EventHandler for FocusPingPong {
+    fn handle_event(
+        &mut self,
+        _chain: &[NodeId],
+        event: &mut DomEvent,
+        doc: &mut dyn Document,
+        _event_state: &mut EventState,
+    ) {
+        if event.name() == "focus" {
+            *self.focus_events.borrow_mut() += 1;
+            let other = self.nodes[(event.target == self.nodes[0]) as usize];
+            doc.inner_mut().set_focus_to(other);
+        }
+    }
+}
+
+#[test]
+fn flush_stops_when_handlers_keep_queueing_events() {
+    let mut harness = Harness::from_html(HTML);
+    let nodes = [node_id(&harness, "#a"), node_id(&harness, "#b")];
+
+    let mut doc = harness.base_mut();
+    doc.set_focus_to(nodes[0]);
+
+    let focus_events = Rc::new(RefCell::new(0));
+    let handler = FocusPingPong {
+        nodes,
+        focus_events: focus_events.clone(),
+    };
+    EventDriver::new(&mut *doc, handler).flush_pending_events();
+
+    // The flush returned, and the events it did not get to are still queued
+    assert!(*focus_events.borrow() > 1);
+    assert!(doc.has_pending_events());
+}
