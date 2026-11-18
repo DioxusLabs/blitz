@@ -298,7 +298,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::AppleStandardKeybinding(data) => {
                 let mut dom_event =
                     DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
-                self.run_default_action(&mut dom_event, None);
+                self.run_default_action(&mut dom_event, None, false);
                 self.process_queue();
             }
         };
@@ -353,18 +353,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             }
         }
 
-        if !event_state.is_cancelled() {
-            self.run_default_action(&mut ptr_event, hit);
-        }
+        self.run_default_action(&mut ptr_event, hit, event_state.is_cancelled());
         self.process_queue();
     }
 
     fn process_queue(&mut self) {
         while let Some(mut event) = self.queue.pop_front() {
             let (event_state, hit) = self.run_handler_event(&mut event, EventState::default());
-            if !event_state.is_cancelled() {
-                self.run_default_action(&mut event, hit);
-            }
+            self.run_default_action(&mut event, hit, event_state.is_cancelled());
         }
     }
 
@@ -440,9 +436,17 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         (event_state, hit)
     }
 
-    fn run_default_action(&mut self, event: &mut DomEvent, hit: Option<HitResult>) {
+    /// Hand an event to the document once its handlers have run. This happens for every
+    /// event, including one whose default action was prevented: the document decides what,
+    /// if anything, it still has to do with it.
+    fn run_default_action(
+        &mut self,
+        event: &mut DomEvent,
+        hit: Option<HitResult>,
+        default_prevented: bool,
+    ) {
         let mut doc = self.doc.inner_mut();
-        super::handle_dom_event(&mut doc, event, hit, |new_evt| {
+        super::handle_dom_event(&mut doc, event, hit, default_prevented, |new_evt| {
             self.queue.push_back(new_evt)
         });
     }

@@ -294,8 +294,9 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "anyrender"
-version = "0.14.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fb671c97c38d56a3cb01f9f7ba1eaaf5dadddcce6c3acda7420bf601050ff77"
 dependencies = [
  "image_filters_types",
  "kurbo",
@@ -307,8 +308,9 @@ dependencies = [
 
 [[package]]
 name = "anyrender_serialize"
-version = "0.8.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23344879884a7ab1027c1068caa391a3eb71b269c7a625f1af26ffdca86e1694"
 dependencies = [
  "anyrender",
  "image",
@@ -316,7 +318,7 @@ dependencies = [
  "read-fonts",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.11.1",
  "skera",
  "ttf2woff2",
  "wuff",
@@ -325,8 +327,9 @@ dependencies = [
 
 [[package]]
 name = "anyrender_skia"
-version = "0.12.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e63f8ff10ad88e9c2dbb66a891e4e011079ea35a70ba599ecef0f8a647cba3a0"
 dependencies = [
  "anyrender",
  "ash",
@@ -357,8 +360,9 @@ dependencies = [
 
 [[package]]
 name = "anyrender_svg"
-version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d548104856232922435812de8ad889d44494c6d076ae06704f9bdd451edeea74"
 dependencies = [
  "anyrender",
  "image",
@@ -370,7 +374,8 @@ dependencies = [
 [[package]]
 name = "anyrender_tiny_skia"
 version = "0.1.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa433cd2dd73c0b912beaf3bd0911285dddd645130de1a72ecd7391cdf35ed3f"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -385,15 +390,16 @@ dependencies = [
 
 [[package]]
 name = "anyrender_vello"
-version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "daca414cad81b20e53b2c7515229d006732c822c1b2ade0bf745bd735af7d7de"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-channel",
  "kurbo",
  "peniko",
- "pollster",
+ "pollster 1.0.1",
  "rustc-hash 2.1.3",
  "vello",
  "wasm-bindgen-futures",
@@ -403,8 +409,9 @@ dependencies = [
 
 [[package]]
 name = "anyrender_vello_cpu"
-version = "0.18.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d67fb8c73caa477541d7a52914bc534feca89d8c20f8a09c9ebe5d32646f8f7"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -420,9 +427,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyrender_vello_hybrid"
-version = "0.11.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+name = "anyrender_vello_gpu"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc1dd34c95c97cbc20645f0c1001d1787d784645da09447986cde1fede4ba4c2"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -430,7 +438,7 @@ dependencies = [
  "glifo",
  "kurbo",
  "peniko",
- "pollster",
+ "pollster 1.0.1",
  "raw-window-handle",
  "rustc-hash 2.1.3",
  "vello_common",
@@ -457,9 +465,6 @@ name = "arbitrary"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
-dependencies = [
- "derive_arbitrary",
-]
 
 [[package]]
 name = "arg_enum_proc_macro"
@@ -991,7 +996,7 @@ dependencies = [
  "anyrender",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz",
  "blitz-dom",
  "blitz-html",
@@ -1583,7 +1588,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sha1 0.10.7",
- "sha2",
+ "sha2 0.10.9",
  "ssri",
  "tempfile",
  "thiserror 1.0.69",
@@ -1960,6 +1965,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-xid",
+]
+
+[[package]]
+name = "constant_time_eq"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb6feb175df65d0a3ccd3e73484e940d0ac664e8034f0519fd49a93db3071d9"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]
@@ -2380,17 +2394,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
-name = "derive_arbitrary"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b034bd7d5f032402a2479444dcc6f74e36a03f31854d41680fb240ef682a1ac"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
 name = "derive_more"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2724,7 +2727,7 @@ dependencies = [
  "anyrender_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -3347,12 +3350,6 @@ name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
-
-[[package]]
-name = "font-types"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b38ad915f6dadd993ced50848a8291a543bd41ca62bc10740d5e64e2ab4cfd7"
 
 [[package]]
 name = "font-types"
@@ -4469,7 +4466,8 @@ dependencies = [
 [[package]]
 name = "image_filters_types"
 version = "0.1.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9184827780888f6c0f664837d309ac0d2f0adb05f313ab9fed8a00c0bb042f21"
 dependencies = [
  "kurbo",
  "peniko",
@@ -5496,6 +5494,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77730ed34f01f4990cb2ea67fec715ecebc6fab9a6396cf83c5529b13f581bdc"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "no_std_io2"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5697,12 +5707,9 @@ dependencies = [
 
 [[package]]
 name = "oaty"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc8f19a1c361e5fb1a57e487b993ff8b3c44321b50ca86c9e2b235e57dc94008"
-dependencies = [
- "font-types 0.11.3",
-]
+checksum = "d5b4c9e1a9da63956c6f69ec69766f89a0f32d86a7aa5cd6714892c08ed7b7fb"
 
 [[package]]
 name = "objc"
@@ -6138,7 +6145,7 @@ checksum = "9cf20a545b305cf1da722b236b5155c9bb35f1d5ceb28c048bd96ca842f41b5b"
 dependencies = [
  "android_system_properties",
  "log",
- "nix",
+ "nix 0.31.3",
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
  "objc2-ui-kit",
@@ -6427,7 +6434,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27af78f16789b973b8b340fe3f68cc2ec9f5e6f4aea64e4d794d5833ac9ca52e"
 dependencies = [
  "bytemuck",
- "pollster",
+ "pollster 0.4.0",
  "raw-window-handle",
  "thiserror 2.0.21",
  "ultraviolet",
@@ -6436,8 +6443,9 @@ dependencies = [
 
 [[package]]
 name = "pixels_window_renderer"
-version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ef9aa28c424400987095646b84e4cea94493d885b38276a800f136557391c01"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6507,6 +6515,12 @@ name = "pollster"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+
+[[package]]
+name = "pollster"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336"
 
 [[package]]
 name = "polycool"
@@ -6956,7 +6970,7 @@ dependencies = [
  "anyrender_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -6982,7 +6996,7 @@ checksum = "bdaa4fffe9ff3ca2c353fa9729792805b9b3e324695ff5a081f860612e81b330"
 dependencies = [
  "bytemuck",
  "foldhash 0.2.0",
- "font-types 0.12.7",
+ "font-types",
  "once_cell",
  "smallvec",
  "yoke",
@@ -7162,7 +7176,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
  "percent-encoding",
- "pollster",
+ "pollster 0.4.0",
  "raw-window-handle",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -7625,7 +7639,7 @@ dependencies = [
 name = "seven_guis"
 version = "0.1.0"
 dependencies = [
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "console_error_panic_hook",
  "dioxus-native",
  "futures-timer",
@@ -7675,6 +7689,17 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest 0.10.7",
+]
+
+[[package]]
+name = "sha2"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -7961,8 +7986,9 @@ dependencies = [
 
 [[package]]
 name = "softbuffer_window_renderer"
-version = "0.9.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f158084076e7d816863157a039a4159e08a7ff4b47c6682eb5e2bd16223fae3e"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -7992,7 +8018,7 @@ dependencies = [
  "miette",
  "serde",
  "sha-1",
- "sha2",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "xxhash-rust",
 ]
@@ -8687,7 +8713,7 @@ name = "todomvc"
 version = "0.1.0"
 dependencies = [
  "android-activity",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "console_error_panic_hook",
  "dioxus-native",
  "idna_adapter",
@@ -9008,6 +9034,12 @@ name = "typed-arena"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
+
+[[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
 
 [[package]]
 name = "typenum"
@@ -9483,7 +9515,7 @@ dependencies = [
 name = "wasm_hello"
 version = "0.0.0"
 dependencies = [
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-shell",
@@ -10076,8 +10108,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu_context"
-version = "0.10.0"
-source = "git+https://github.com/DioxusLabs/anyrender?rev=97d06af9fe8fe1c2cc5916c6d09fba10774d86a6#97d06af9fe8fe1c2cc5916c6d09fba10774d86a6"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "838a8b69a04e949176956b4afa8d13c28f0ce64ce184aa6aa6cd4950834617ea"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
@@ -10091,7 +10124,7 @@ version = "0.0.0"
 dependencies = [
  "anyrender",
  "anyrender_vello",
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-paint",
@@ -10101,7 +10134,7 @@ dependencies = [
  "color",
  "dioxus-native",
  "peniko",
- "pollster",
+ "pollster 0.4.0",
  "wgpu 30.0.1",
  "wgpu_context",
 ]
@@ -10771,7 +10804,7 @@ dependencies = [
  "parley",
  "peniko",
  "png 0.17.16",
- "pollster",
+ "pollster 0.4.0",
  "rayon",
  "regex",
  "serde_json",
@@ -10823,7 +10856,7 @@ version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e91ad74b39f48f456560ed1ccc75959efa19bf6f0817d1560751bb49db84f6c"
 dependencies = [
- "font-types 0.12.7",
+ "font-types",
  "log",
  "read-fonts",
 ]
@@ -11166,6 +11199,20 @@ name = "zeroize"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13084392c5e4bc371903e2935a5eaeed24905a7511356b883835e18a78f6879"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "zerotrie"
@@ -11204,18 +11251,21 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "2.4.2"
+version = "9.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
+checksum = "80cc68510ea7553c30a69c732de5278e94183f68765af6c642dbccefd6ec777e"
 dependencies = [
- "arbitrary",
+ "constant_time_eq",
  "crc32fast",
- "crossbeam-utils",
- "displaydoc",
  "flate2",
+ "getrandom 0.4.3",
  "indexmap",
+ "libc",
  "memchr",
- "thiserror 2.0.21",
+ "nix 0.32.0",
+ "typed-path",
+ "windows-sys 0.61.2",
+ "zeroize",
  "zopfli",
 ]
 

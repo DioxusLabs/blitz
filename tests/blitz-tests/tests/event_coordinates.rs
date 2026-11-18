@@ -47,6 +47,8 @@ fn pointer_and_wheel_element_coordinates_use_the_local_hit_point() {
             let wheel = BlitzWheelEvent {
                 coords: pointer.coords,
                 delta: BlitzWheelDelta::Pixels(0.0, 0.0),
+                phase: Default::default(),
+                source: Default::default(),
                 buttons: pointer.buttons,
                 mods: pointer.mods,
                 element: Default::default(),

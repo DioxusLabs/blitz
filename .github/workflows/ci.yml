@@ -70,9 +70,9 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown
         working-directory: examples/wasm_hello
       - name: Build seven_guis (wasm)
-        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features vello-gpu
       - name: Build todomvc (wasm)
-        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features vello-gpu
 
   fmt:
     name: Rustfmt
