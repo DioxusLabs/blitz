@@ -843,15 +843,18 @@ pub(crate) enum WheelAxes {
 /// ends, including any momentum scrolling that follows. A clearly diagonal start scrolls
 /// both axes. Events from devices that report no gestures scroll as they come.
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct WheelGesture {
-    /// Whether a gesture is under way.
-    active: bool,
-    /// The gesture's axes, once it has moved far enough to decide them.
-    axes: Option<WheelAxes>,
-    /// How far the gesture has moved along each axis, until its axes are decided.
-    travel: (f64, f64),
-    /// Whether the last event lifted the fingers, so momentum scrolling may follow.
-    momentum_may_follow: bool,
+pub(crate) enum WheelGesture {
+    /// No gesture is under way: events scroll both axes.
+    #[default]
+    Idle,
+    /// A gesture is under way and has moved this far along each axis, which isn't yet far
+    /// enough to decide its axes.
+    Deciding { travel: (f64, f64) },
+    /// A gesture is under way and locked to these axes.
+    Locked(WheelAxes),
+    /// The fingers have lifted from a gesture with these axes. Momentum scrolling that
+    /// follows directly keeps them.
+    Lifted(WheelAxes),
 }
 
 impl WheelGesture {
@@ -868,32 +871,31 @@ impl WheelGesture {
     /// scroll is prevented, or the gesture loses track of where it starts and ends.
     pub(crate) fn track(&mut self, event: &BlitzWheelEvent) -> WheelAxes {
         if event.source == BlitzWheelSource::Wheel {
-            self.active = false;
-            self.momentum_may_follow = false;
-            return WheelAxes::Both;
-        }
-        // Momentum that directly follows a finger gesture continues it, keeping its lock.
-        let continues_gesture =
-            event.source == BlitzWheelSource::Momentum && self.momentum_may_follow;
-        self.momentum_may_follow = false;
-        if event.phase == BlitzWheelPhase::Started {
-            self.active = true;
-            if !continues_gesture {
-                self.axes = None;
-                self.travel = (0.0, 0.0);
-            }
-        }
-        if !self.active {
+            *self = Self::Idle;
             return WheelAxes::Both;
         }
 
-        let axes = match self.axes {
-            Some(axes) => axes,
-            None => {
+        // The state the event arrives in.
+        let started = event.phase == BlitzWheelPhase::Started;
+        let state = match *self {
+            Self::Lifted(axes) if started && event.source == BlitzWheelSource::Momentum => {
+                Self::Locked(axes)
+            }
+            _ if started => Self::Deciding { travel: (0.0, 0.0) },
+            Self::Lifted(_) => Self::Idle,
+            state => state,
+        };
+
+        // The state the event's movement leaves, and the axes it scrolls.
+        let (state, axes) = match state {
+            Self::Idle | Self::Lifted(_) => {
+                *self = Self::Idle;
+                return WheelAxes::Both;
+            }
+            Self::Locked(axes) => (state, axes),
+            Self::Deciding { travel } => {
                 let (x, y) = event.delta.to_pixels(WHEEL_LINE_PX);
-                self.travel.0 += x.abs();
-                self.travel.1 += y.abs();
-                let (x, y) = self.travel;
+                let (x, y) = (travel.0 + x.abs(), travel.1 + y.abs());
                 let axes = if y >= x * Self::LOCK_RATIO {
                     WheelAxes::Vertical
                 } else if x >= y * Self::LOCK_RATIO {
@@ -902,20 +904,20 @@ impl WheelGesture {
                     WheelAxes::Both
                 };
                 if x.max(y) >= Self::LOCK_DISTANCE {
-                    self.axes = Some(axes);
+                    (Self::Locked(axes), axes)
+                } else {
+                    (Self::Deciding { travel: (x, y) }, axes)
                 }
-                axes
             }
         };
 
-        match event.phase {
-            BlitzWheelPhase::Ended | BlitzWheelPhase::Cancelled => {
-                self.active = false;
-                self.momentum_may_follow = event.phase == BlitzWheelPhase::Ended
-                    && event.source == BlitzWheelSource::Finger;
+        *self = match event.phase {
+            BlitzWheelPhase::Ended if event.source == BlitzWheelSource::Finger => {
+                Self::Lifted(axes)
             }
-            BlitzWheelPhase::Started | BlitzWheelPhase::Moved => {}
-        }
+            BlitzWheelPhase::Ended | BlitzWheelPhase::Cancelled => Self::Idle,
+            BlitzWheelPhase::Started | BlitzWheelPhase::Moved => state,
+        };
         axes
     }
 }
