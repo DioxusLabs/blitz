@@ -202,16 +202,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
     pub fn paint_scene(&self, scene: &mut impl PaintScene) {
-        self.paint_scene_with_surface(scene, None);
+        self.paint_scene_with_canvas(scene, None);
     }
 
     /// Like [`paint_scene`](Self::paint_scene), but also fills the canvas background
-    /// over a `surface` (width, height) that extends beyond the viewport, such as the
-    /// safe-area insets around a mobile window's content.
-    pub(crate) fn paint_scene_with_surface(
+    /// over `canvas` (`[x0, y0, x1, y1]`), an area that may extend beyond the viewport,
+    /// such as the safe-area insets around a mobile window's content.
+    pub(crate) fn paint_scene_with_canvas(
         &self,
         scene: &mut impl PaintScene,
-        surface: Option<[u32; 2]>,
+        canvas: Option<[u32; 4]>,
     ) {
         if self.dom.has_pending_critical_resources() {
             return;
@@ -247,8 +247,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 (self.initial_x, self.initial_y),
                 (bg_width as f64, bg_height as f64),
             );
-            let rect = surface.map_or(viewport_rect, |[width, height]| {
-                viewport_rect.union(Rect::new(0.0, 0.0, f64::from(width), f64::from(height)))
+            let rect = canvas.map_or(viewport_rect, |[x0, y0, x1, y1]| {
+                let [x0, y0, x1, y1] = [x0, y0, x1, y1].map(f64::from);
+                viewport_rect.union(Rect::new(x0, y0, x1, y1))
             });
             scene.fill(
                 Fill::NonZero,
