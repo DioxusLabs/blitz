@@ -233,42 +233,16 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         match event {
             UiEvent::PointerMove(data) => {
-                self.handle_pointer_event(
-                    target,
-                    data,
-                    DomEventData::PointerMove,
-                    Some(DomEventData::MouseMove),
-                    DomEventData::TouchMove,
-                );
+                self.handle_input_pointer_event(target, DomEventData::PointerMove(data))
             }
             UiEvent::PointerUp(data) => {
-                self.handle_pointer_event(
-                    target,
-                    data,
-                    DomEventData::PointerUp,
-                    Some(DomEventData::MouseUp),
-                    DomEventData::TouchEnd,
-                );
+                self.handle_input_pointer_event(target, DomEventData::PointerUp(data))
             }
             UiEvent::PointerDown(data) => {
-                self.handle_pointer_event(
-                    target,
-                    data,
-                    DomEventData::PointerDown,
-                    Some(DomEventData::MouseDown),
-                    DomEventData::TouchStart,
-                );
+                self.handle_input_pointer_event(target, DomEventData::PointerDown(data))
             }
             UiEvent::PointerCancel(data) => {
-                // `pointercancel` has no mouse-compatibility event, but does
-                // generate a `touchcancel` for touch-like inputs.
-                self.handle_pointer_event(
-                    target,
-                    data,
-                    DomEventData::PointerCancel,
-                    None::<fn(BlitzPointerEvent) -> DomEventData>,
-                    DomEventData::TouchCancel,
-                );
+                self.handle_input_pointer_event(target, DomEventData::PointerCancel(data))
             }
             // Out/leave events were dispatched by `handle_pointer_leave`
             UiEvent::PointerLeave(_) => {}
@@ -317,25 +291,51 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         self.flush_pending_events();
     }
 
-    fn handle_pointer_event(
-        &mut self,
-        target: NodeId,
-        data: BlitzPointerEvent,
-        make_ptr_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
-        make_mouse_data: Option<impl FnOnce(BlitzPointerEvent) -> DomEventData>,
-        make_touch_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
-    ) {
-        let mut ptr_event = DomEvent::new(target, make_ptr_data(data.clone()));
+    fn handle_input_pointer_event(&mut self, target: NodeId, data: DomEventData) {
+        self.doc
+            .inner_mut()
+            .queue_input_event(DomEvent::new(target, data));
+        self.flush_pending_events();
+    }
+
+    /// Dispatch a pointer event that comes from user input, along with its compatibility
+    /// event, and then run its default action.
+    fn dispatch_input_pointer_event(&mut self, mut ptr_event: DomEvent) {
+        type MakeData = fn(BlitzPointerEvent) -> DomEventData;
+        let (data, make_mouse_data, make_touch_data): (_, Option<MakeData>, MakeData) =
+            match &ptr_event.data {
+                DomEventData::PointerMove(data) => (
+                    data.clone(),
+                    Some(DomEventData::MouseMove),
+                    DomEventData::TouchMove,
+                ),
+                DomEventData::PointerDown(data) => (
+                    data.clone(),
+                    Some(DomEventData::MouseDown),
+                    DomEventData::TouchStart,
+                ),
+                DomEventData::PointerUp(data) => (
+                    data.clone(),
+                    Some(DomEventData::MouseUp),
+                    DomEventData::TouchEnd,
+                ),
+                // `pointercancel` has no mouse-compatibility event, but does generate a
+                // `touchcancel` for touch-like inputs.
+                DomEventData::PointerCancel(data) => {
+                    (data.clone(), None, DomEventData::TouchCancel)
+                }
+                _ => return self.dispatch_event(ptr_event),
+            };
+        let target = ptr_event.target;
+
         let mut event_state = EventState::default();
         event_state = self.run_handler_event(&mut ptr_event, event_state);
 
         // Generate the corresponding compatibility event (mouse events for the
         // mouse, touch events for fingers and pen/stylus input) and expose it to
-        // script. The default action is always run on the pointer event so that
-        // the shell layer and default actions remain pointer-based.
-        //
-        // `pointercancel` has no mouse equivalent, so `make_mouse_data` is `None`
-        // in that case and no mouse event is generated.
+        // script. The default action is always run on the pointer event, after the
+        // compatibility event's handlers (which can also prevent it), so that the
+        // shell layer and default actions remain pointer-based.
         if !event_state.is_cancelled() {
             if data.is_mouse() {
                 if let Some(make_mouse_data) = make_mouse_data {
@@ -349,7 +349,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
 
         self.run_default_action(&mut ptr_event, event_state.is_cancelled());
-        self.flush_pending_events();
+    }
+
+    fn dispatch_event(&mut self, mut event: DomEvent) {
+        let event_state = self.run_handler_event(&mut event, EventState::default());
+        self.run_default_action(&mut event, event_state.is_cancelled());
     }
 
     /// Dispatch the events queued on the document (see [`BaseDocument::queue_event`]) until
@@ -365,11 +369,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         const MAX_EVENTS_PER_FLUSH: usize = 1024;
 
         for _ in 0..MAX_EVENTS_PER_FLUSH {
-            let Some(mut event) = self.doc.inner_mut().pop_pending_event() else {
+            let Some(pending) = self.doc.inner_mut().pop_pending_event() else {
                 return;
             };
-            let event_state = self.run_handler_event(&mut event, EventState::default());
-            self.run_default_action(&mut event, event_state.is_cancelled());
+            if pending.from_input {
+                self.dispatch_input_pointer_event(pending.event);
+            } else {
+                self.dispatch_event(pending.event);
+            }
         }
 
         #[cfg(feature = "tracing")]
