@@ -273,6 +273,8 @@ pub struct BaseDocument {
     pub(crate) mousedown_node_id: Option<NodeId>,
     /// The last time a mousedown was made (for double-click detection)
     pub(crate) last_mousedown_time: Option<Instant>,
+    /// The button of the last mousedown: a click with another button starts a new count
+    pub(crate) last_mousedown_button: Option<blitz_traits::events::MouseEventButton>,
     /// The position where mousedown occurred (for selection drags and double-click detection)
     pub(crate) mousedown_position: taffy::Point<f32>,
     /// How many clicks have been made in quick succession
@@ -524,6 +526,7 @@ impl BaseDocument {
             #[cfg(feature = "devtools")]
             devtools_title: None,
             last_mousedown_time: None,
+            last_mousedown_button: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
             drag_mode: DragMode::None,

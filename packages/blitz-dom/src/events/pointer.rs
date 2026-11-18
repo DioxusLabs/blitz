@@ -220,9 +220,14 @@ pub(crate) fn handle_pointermove(
         if dx.abs() > 2.0 || dy.abs() > 2.0 {
             match event.id {
                 BlitzPointerId::Mouse | BlitzPointerId::Pen => {
-                    if doc
-                        .mousedown_node_id
-                        .is_some_and(|id| doc.nodes[id].is_user_selectable())
+                    // After a double or triple click has selected a word or line, a
+                    // drag would extend the selection by characters from the pointer and
+                    // shrink it, so it doesn't start one (browsers extend by whole words
+                    // or lines, which Blitz doesn't yet).
+                    if doc.click_count < 2
+                        && doc
+                            .mousedown_node_id
+                            .is_some_and(|id| doc.nodes[id].is_user_selectable())
                     {
                         doc.drag_mode = DragMode::Selecting;
                     }
@@ -363,7 +368,7 @@ pub(crate) fn handle_pointermove(
 /// Record that the pointer has pressed, for counting clicks and detecting drags, and stop
 /// a scroll that is under way. Runs for every `pointerdown`, including one whose default
 /// action was prevented.
-pub(crate) fn record_pointerdown(doc: &mut BaseDocument, x: f32, y: f32) {
+pub(crate) fn record_pointerdown(doc: &mut BaseDocument, x: f32, y: f32, button: MouseEventButton) {
     // Compute click count using the previous mousedown position (before updating)
     // This handles both double-click detection and text input word/line selection
     // TODO: For text inputs, only increment click count if click maps to the same/similar caret position
@@ -373,6 +378,7 @@ pub(crate) fn record_pointerdown(doc: &mut BaseDocument, x: f32, y: f32) {
         .unwrap_or(false)
         && (doc.mousedown_position.x - x).abs() <= 2.0
         && (doc.mousedown_position.y - y).abs() <= 2.0
+        && doc.last_mousedown_button == Some(button)
     {
         doc.click_count.saturating_add(1)
     } else {
@@ -381,6 +387,7 @@ pub(crate) fn record_pointerdown(doc: &mut BaseDocument, x: f32, y: f32) {
 
     // Update mousedown tracking for next click and selection drag detection
     doc.last_mousedown_time = Some(Instant::now());
+    doc.last_mousedown_button = Some(button);
     doc.mousedown_position = taffy::Point { x, y };
     doc.drag_mode = DragMode::None;
     doc.scroll_animation = ScrollAnimationState::None;

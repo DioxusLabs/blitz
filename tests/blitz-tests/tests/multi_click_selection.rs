@@ -3,6 +3,8 @@
 //! `user-select: none` on an ancestor blocks both.
 
 use blitz_test_harness::Harness;
+use blitz_test_harness::{mouse_pointer_event, pointer_event};
+use blitz_traits::events::{BlitzPointerId, MouseEventButton, MouseEventButtons, UiEvent};
 
 /// "hello world" wraps after "hello": the box is too narrow for both words.
 const STYLE: &str = "margin:0; width:80px; font-size:20px; line-height:20px";
@@ -52,4 +54,31 @@ fn user_select_none_on_an_ancestor_blocks_a_double_click() {
     let mut harness = harness("user-select:none");
     click_first_word(&mut harness, 2);
     assert_eq!(selected_text(&harness).as_deref().unwrap_or(""), "");
+}
+
+#[test]
+fn a_click_after_a_right_click_starts_a_new_count() {
+    let mut harness = harness("");
+    let right = pointer_event(
+        BlitzPointerId::Mouse,
+        10.0,
+        10.0,
+        MouseEventButton::Secondary,
+        MouseEventButtons::from(MouseEventButton::Secondary),
+        Default::default(),
+    );
+    harness.dispatch(UiEvent::PointerDown(right.clone()));
+    harness.dispatch(UiEvent::PointerUp(right));
+    harness.click_at(10.0, 10.0);
+    assert_eq!(selected_text(&harness).as_deref().unwrap_or(""), "");
+}
+
+#[test]
+fn a_small_move_during_a_double_click_keeps_the_word() {
+    let mut harness = harness("");
+    harness.click_at(10.0, 10.0);
+    harness.dispatch(UiEvent::PointerDown(mouse_pointer_event(10.0, 10.0)));
+    harness.dispatch(UiEvent::PointerMove(mouse_pointer_event(14.0, 10.0)));
+    harness.dispatch(UiEvent::PointerUp(mouse_pointer_event(14.0, 10.0)));
+    assert_eq!(selected_text(&harness).as_deref(), Some("hello"));
 }
