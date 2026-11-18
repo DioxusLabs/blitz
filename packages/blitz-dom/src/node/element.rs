@@ -528,6 +528,40 @@ impl ElementData {
         local_names!("button", "input", "select", "textarea").contains(&self.name.local)
     }
 
+    pub fn is_labelable(&self) -> bool {
+        match self.name.local {
+            local_name!("button")
+            | local_name!("meter")
+            | local_name!("output")
+            | local_name!("progress")
+            | local_name!("select")
+            | local_name!("textarea") => true,
+            local_name!("input") => !self
+                .attr(local_name!("type"))
+                .is_some_and(|t| t.eq_ignore_ascii_case("hidden")),
+            _ => false,
+        }
+    }
+
+    pub fn is_interactive(&self) -> bool {
+        match self.name.local {
+            local_name!("a") => self.has_attr(local_name!("href")),
+            local_name!("audio") | local_name!("video") => self.has_attr(local_name!("controls")),
+            local_name!("img") => self.has_attr(local_name!("usemap")),
+            local_name!("button")
+            | local_name!("details")
+            | local_name!("embed")
+            | local_name!("iframe")
+            | local_name!("label")
+            | local_name!("select")
+            | local_name!("textarea") => true,
+            local_name!("input") => !self
+                .attr(local_name!("type"))
+                .is_some_and(|t| t.eq_ignore_ascii_case("hidden")),
+            _ => false,
+        }
+    }
+
     /// Whether this element is a link (an `<a>` or `<area>` element with an `href` attribute)
     pub fn is_link(&self) -> bool {
         (self.name.local == local_name!("a") || self.name.local == local_name!("area"))
