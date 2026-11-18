@@ -291,9 +291,10 @@ impl BaseDocument {
 
         // Transfer the delta the target could not consume to the next scroller in the chain.
         if request.overflow == ScrollOverflow::Chain {
+            let contains = self.contains_scroll(target);
             let remainder = Point {
-                x: unclamped.x - end.x,
-                y: unclamped.y - end.y,
+                x: if contains.x { 0.0 } else { unclamped.x - end.x },
+                y: if contains.y { 0.0 } else { unclamped.y - end.y },
             };
             if remainder != Point::ZERO {
                 if let Some(next) = self.next_scroller_in_chain(target) {
@@ -356,6 +357,15 @@ impl BaseDocument {
 
         let has_changed = remainder != delta;
 
+        // Text inputs scroll their own content, so they need no scroll container check.
+        let contains = self.nodes[node_id].contains_overscroll();
+        if contains.x {
+            remainder.x = 0.0;
+        }
+        if contains.y {
+            remainder.y = 0.0;
+        }
+
         if remainder != Point::ZERO {
             if let Some(next) = self.next_scroller_in_chain(ScrollTarget::Node(node_id)) {
                 let request = ScrollRequest {
@@ -368,6 +378,18 @@ impl BaseDocument {
         }
 
         Some(has_changed)
+    }
+
+    /// Whether `overscroll-behavior` stops scroll chaining out of `target` on the x and y axes.
+    /// The property applies to scroll containers only.
+    fn contains_scroll(&self, target: ScrollTarget) -> Point<bool> {
+        let ScrollTarget::Node(node_id) = target else {
+            return Point { x: false, y: false };
+        };
+        self.nodes
+            .get(node_id)
+            .filter(|node| node.is_scroll_container())
+            .map_or(Point { x: false, y: false }, Node::contains_overscroll)
     }
 
     /// The scroller which unconsumed scroll is transferred to: the node's parent, or the
