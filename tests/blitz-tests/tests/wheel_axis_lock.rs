@@ -4,7 +4,7 @@
 
 use blitz_test_harness::Harness;
 use blitz_traits::events::BlitzWheelPhase::{self, Ended, Moved, Started};
-use blitz_traits::events::BlitzWheelSource::{self, Finger, Momentum, Unknown, Wheel};
+use blitz_traits::events::BlitzWheelSource::{self, Finger, Momentum, Unknown};
 
 /// A page that scrolls vertically, holding a 100px tall row that scrolls horizontally.
 fn page() -> Harness {
@@ -93,12 +93,12 @@ fn events_outside_a_gesture_scroll_both_axes() {
 }
 
 #[test]
-fn a_mouse_wheel_after_a_gesture_scrolls_both_axes() {
+fn events_after_a_gesture_scroll_both_axes() {
     assert_eq!(
         gesture(&[
             (0.0, -30.0, Started, Finger),
             (0.0, 0.0, Ended, Finger),
-            (-10.0, -10.0, Moved, Wheel),
+            (-10.0, -10.0, Moved, Unknown),
         ]),
         (10.0, 40.0)
     );

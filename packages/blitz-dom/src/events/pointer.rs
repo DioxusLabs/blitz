@@ -849,6 +849,8 @@ pub(crate) struct WheelGesture {
     active: bool,
     /// The gesture's axes, once its first movement has decided them.
     axes: Option<WheelAxes>,
+    /// Whether the last event lifted the fingers, so momentum scrolling may follow.
+    momentum_may_follow: bool,
 }
 
 impl WheelGesture {
@@ -863,14 +865,18 @@ impl WheelGesture {
     pub(crate) fn track(&mut self, event: &BlitzWheelEvent) -> WheelAxes {
         if event.source == BlitzWheelSource::Wheel {
             self.active = false;
+            self.momentum_may_follow = false;
             return WheelAxes::Both;
         }
-        // Momentum continues the finger gesture before it, keeping its lock.
-        if event.phase == BlitzWheelPhase::Started
-            && !(event.source == BlitzWheelSource::Momentum && self.active)
-        {
+        // Momentum that directly follows a finger gesture continues it, keeping its lock.
+        let continues_gesture =
+            event.source == BlitzWheelSource::Momentum && self.momentum_may_follow;
+        self.momentum_may_follow = false;
+        if event.phase == BlitzWheelPhase::Started {
             self.active = true;
-            self.axes = None;
+            if !continues_gesture {
+                self.axes = None;
+            }
         }
         if !self.active {
             return WheelAxes::Both;
@@ -890,10 +896,12 @@ impl WheelGesture {
         }
         let axes = self.axes.unwrap_or_default();
 
-        // Lifting the fingers may start momentum scrolling, which keeps the gesture going.
         match event.phase {
-            BlitzWheelPhase::Ended if event.source == BlitzWheelSource::Finger => {}
-            BlitzWheelPhase::Ended | BlitzWheelPhase::Cancelled => self.active = false,
+            BlitzWheelPhase::Ended | BlitzWheelPhase::Cancelled => {
+                self.active = false;
+                self.momentum_may_follow = event.phase == BlitzWheelPhase::Ended
+                    && event.source == BlitzWheelSource::Finger;
+            }
             BlitzWheelPhase::Started | BlitzWheelPhase::Moved => {}
         }
         axes
