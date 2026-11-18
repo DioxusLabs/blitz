@@ -80,6 +80,10 @@ fn node_list_item_child(
         ListStylePosition::Inside => ListItemLayoutPosition::Inside,
         ListStylePosition::Outside => {
             let mut parley_style = stylo_to_parley::style(child_id, &styles);
+            // The UA stylesheet gives `::marker` `white-space: pre` (CSS Lists 3
+            // §3.1). Without it the tree builder collapses the trailing space of
+            // "1. " away and an outside marker ends flush against the item text.
+            parley_style.white_space_collapse = parley::WhiteSpaceCollapse::Preserve;
 
             if let Some(font_family) = font_for_bullet_style(list_style_type) {
                 parley_style.font_family = font_family;
