@@ -2409,13 +2409,14 @@ impl BaseDocument {
         let mut current = Some(node_id);
         while let Some(id) = current {
             let node = &self.nodes[id];
-            pos.x += node.unrounded_layout().location.x;
-            pos.y += node.unrounded_layout().location.y;
             // A scroll offset moves the node's contents, not its own border box.
-            if id != node_id {
-                pos.x -= node.scroll_offset().x as f32;
-                pos.y -= node.scroll_offset().y as f32;
-            }
+            let (scroll_x, scroll_y) = if id == node_id {
+                (0.0, 0.0)
+            } else {
+                (node.scroll_offset().x as f32, node.scroll_offset().y as f32)
+            };
+            pos.x += node.unrounded_layout().location.x - scroll_x;
+            pos.y += node.unrounded_layout().location.y - scroll_y;
             current = node.containing_block();
         }
         (pos, *self.nodes[node_id].unrounded_layout())
