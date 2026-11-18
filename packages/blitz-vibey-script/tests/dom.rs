@@ -2,6 +2,7 @@
 
 use blitz_dom::{Document, DocumentConfig};
 use blitz_traits::events::DomEvent;
+use blitz_traits::events::EventDispatchSource;
 use blitz_vibey_script::ScriptDocument;
 use keyboard_types::Modifiers;
 
@@ -185,6 +186,7 @@ fn click_event_listeners() {
                 .get_node(btn_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event.clone());
@@ -232,6 +234,7 @@ fn click_events_bubble_and_stop_propagation() {
                 .get_node(btn_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -353,6 +356,7 @@ fn checkbox_click_fires_input_and_change_events() {
                 .get_node(check_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -404,6 +408,7 @@ fn on_event_idl_properties_are_dispatched() {
                 .get_node(btn_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -515,6 +520,7 @@ fn event_get_modifier_state() {
                 .get_node(btn_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::SHIFT),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event);

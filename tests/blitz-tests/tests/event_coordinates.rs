@@ -1,7 +1,8 @@
 use blitz_dom::{Document, EventDriver, EventHandler, NodeId};
 use blitz_test_harness::{Harness, HarnessOptions, mouse_pointer_event};
 use blitz_traits::events::{
-    BlitzWheelDelta, BlitzWheelEvent, DomEvent, DomEventData, EventState, UiEvent,
+    BlitzWheelDelta, BlitzWheelEvent, DomEvent, DomEventData, EventDispatchSource, EventState,
+    UiEvent,
 };
 
 struct Coordinates(Vec<(f32, f32)>);
@@ -77,6 +78,7 @@ fn no_hit_keeps_the_existing_element_coordinate_fallback() {
     EventDriver::new(&mut *doc, &mut coordinates).handle_dom_event(DomEvent::new(
         target,
         DomEventData::PointerLeave(mouse_pointer_event(-10.0, -10.0)),
+        EventDispatchSource::Script,
     ));
     assert_eq!(
         coordinates.0,

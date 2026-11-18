@@ -22,7 +22,8 @@ use crate::{
 };
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{DomEvent, HitResult, UiEvent};
+use blitz_traits::events::EventDispatchSource;
+use blitz_traits::events::{BlitzFocusEvent, DomEvent, DomEventData, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -35,7 +36,7 @@ use selectors::matching::QuirksMode;
 use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -285,6 +286,9 @@ pub struct BaseDocument {
     pub(crate) scrollbar_activity: HashMap<NodeId, Instant>,
     /// Whether and what kind of scroll animation is currently in progress
     pub(crate) scroll_animation: ScrollAnimationState,
+    /// Events which have been generated but not yet dispatched. Drained by the
+    /// [`EventDriver`](crate::EventDriver).
+    pub(crate) pending_events: VecDeque<DomEvent>,
     /// The trackpad scroll gesture under way, locked to its main axis
     pub(crate) wheel_gesture: WheelGesture,
 
@@ -526,6 +530,7 @@ impl BaseDocument {
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
+            pending_events: VecDeque::new(),
             wheel_gesture: WheelGesture::default(),
             text_selection: TextSelection::default(),
             scratch: DocumentScratch::default(),
@@ -694,13 +699,45 @@ impl BaseDocument {
 
     /// Run an event's default action. `default_prevented` says whether a handler prevented
     /// it, in which case only state that must follow every event is updated.
-    pub fn handle_dom_event<F: FnMut(DomEvent)>(
-        &mut self,
-        event: &mut DomEvent,
-        default_prevented: bool,
-        dispatch_event: F,
-    ) {
-        handle_dom_event(self, event, None, default_prevented, dispatch_event)
+    ///
+    /// Events generated in the process (focus, input, click, ...) are queued with
+    /// [`queue_event`](Self::queue_event).
+    pub fn handle_dom_event(&mut self, event: &mut DomEvent, default_prevented: bool) {
+        handle_dom_event(self, event, None, default_prevented)
+    }
+
+    /// Queue an event to be dispatched by an [`EventDriver`](crate::EventDriver).
+    ///
+    /// Events are queued rather than dispatched so that anything with access to the
+    /// document (default actions, state changes such as
+    /// [`set_focus_to`](Self::set_focus_to), embedder code) can generate them without
+    /// access to a driver.
+    pub fn queue_event(&mut self, event: DomEvent) {
+        // Bound the queue in case the embedder never drains it
+        const MAX_PENDING_EVENTS: usize = 1024;
+        if self.pending_events.len() >= MAX_PENDING_EVENTS {
+            self.pending_events.pop_front();
+        }
+        self.pending_events.push_back(event);
+    }
+
+    /// Take the next queued event (see [`queue_event`](Self::queue_event)), discarding
+    /// events whose target node has been dropped since they were queued.
+    ///
+    /// A node that was only detached from the tree still exists and still gets its events,
+    /// as an event can be dispatched to a node that is not in the document.
+    pub fn pop_pending_event(&mut self) -> Option<DomEvent> {
+        loop {
+            let event = self.pending_events.pop_front()?;
+            if self.nodes.contains_key(event.target) {
+                return Some(event);
+            }
+        }
+    }
+
+    /// Whether there are queued events waiting to be dispatched
+    pub fn has_pending_events(&self) -> bool {
+        !self.pending_events.is_empty()
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -1760,7 +1797,7 @@ impl BaseDocument {
         Some(id)
     }
 
-    /// Clear the focussed node
+    /// Clear the focussed node, queueing blur and focusout events for it
     pub fn clear_focus(&mut self) {
         if let Some(id) = self.focus_node_id {
             let shell_provider = self.shell_provider.clone();
@@ -1775,12 +1812,26 @@ impl BaseDocument {
             self.focus_node_id = None;
             self.has_changes = true;
             self.shell_provider.request_redraw();
+
+            self.queue_event(DomEvent::new(
+                id,
+                DomEventData::Blur(BlitzFocusEvent),
+                EventDispatchSource::UserAgent,
+            ));
+            self.queue_event(DomEvent::new(
+                id,
+                DomEventData::FocusOut(BlitzFocusEvent),
+                EventDispatchSource::UserAgent,
+            ));
         }
     }
 
     pub fn set_mousedown_node_id(&mut self, node_id: Option<NodeId>) {
         self.mousedown_node_id = node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
     }
+
+    /// Focus the given node, returning whether the focus changed. Queues blur and focusout
+    /// events for the previously focussed node and focus and focusin events for the new one.
     pub fn set_focus_to(&mut self, focus_node_id: NodeId) -> bool {
         let Some(focus_node_id) = self.nearest_non_anonymous_ancestor(focus_node_id) else {
             return false;
@@ -1799,7 +1850,8 @@ impl BaseDocument {
         let shell_provider = self.shell_provider.clone();
 
         // Remove focus from the old node
-        if let Some(id) = self.focus_node_id {
+        let old_focus_node_id = self.focus_node_id;
+        if let Some(id) = old_focus_node_id {
             self.snapshot_node_and(id, ElementState::FOCUS | ElementState::FOCUSRING, |node| {
                 node.blur(shell_provider.clone())
             });
@@ -1838,6 +1890,29 @@ impl BaseDocument {
         // moving it changes what is on screen. Nothing else asks for the
         // frame: a keyboard focus change touches no layout and no content.
         self.shell_provider.request_redraw();
+
+        if let Some(id) = old_focus_node_id {
+            self.queue_event(DomEvent::new(
+                id,
+                DomEventData::Blur(BlitzFocusEvent),
+                EventDispatchSource::UserAgent,
+            ));
+            self.queue_event(DomEvent::new(
+                id,
+                DomEventData::FocusOut(BlitzFocusEvent),
+                EventDispatchSource::UserAgent,
+            ));
+        }
+        self.queue_event(DomEvent::new(
+            focus_node_id,
+            DomEventData::Focus(BlitzFocusEvent),
+            EventDispatchSource::UserAgent,
+        ));
+        self.queue_event(DomEvent::new(
+            focus_node_id,
+            DomEventData::FocusIn(BlitzFocusEvent),
+            EventDispatchSource::UserAgent,
+        ));
 
         true
     }
