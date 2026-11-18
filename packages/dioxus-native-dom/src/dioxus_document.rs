@@ -11,7 +11,7 @@ use blitz_dom::{
     EventDriver, EventHandler, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
-use dioxus_core::{ElementId, Event, VirtualDom};
+use dioxus_core::{ElementId, Event, Runtime, VirtualDom};
 use dioxus_html::{PlatformEventData, set_event_converter};
 use futures_util::task::noop_waker;
 use std::cell::RefCell;
@@ -190,6 +190,7 @@ impl DioxusDocument {
                 let event = Event::new(
                     Rc::new(PlatformEventData::new(Box::new(NodeHandle {
                         doc: Rc::clone(&self.inner),
+                        runtime: self.vdom.runtime(),
                         node_id,
                     }))) as Rc<dyn Any>,
                     false,
@@ -264,8 +265,8 @@ impl Document for DioxusDocument {
 
     fn handle_ui_event(&mut self, event: UiEvent) {
         let handler = DioxusEventHandler {
-            vdom: &mut self.vdom,
-            vdom_state: &mut self.vdom_state,
+            runtime: self.vdom.runtime(),
+            event_handler_counts: Some(self.vdom_state.event_handler_counts),
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
@@ -279,20 +280,32 @@ impl DioxusDocument {
             return false;
         }
         let handler = DioxusEventHandler {
-            vdom: &mut self.vdom,
-            vdom_state: &mut self.vdom_state,
+            runtime: self.vdom.runtime(),
+            event_handler_counts: Some(self.vdom_state.event_handler_counts),
         };
         EventDriver::new(&mut self.inner, handler).flush_pending_events();
         true
     }
 }
 
-pub struct DioxusEventHandler<'v> {
-    vdom: &'v mut VirtualDom,
-    vdom_state: &'v mut DioxusState,
+pub struct DioxusEventHandler {
+    runtime: Rc<Runtime>,
+    /// The number of vdom event handlers of each kind of event, where known
+    event_handler_counts: Option<[u32; 64]>,
 }
 
-impl EventHandler for DioxusEventHandler<'_> {
+impl DioxusEventHandler {
+    /// A handler for events dispatched from inside a vdom event handler (see
+    /// [`NodeHandle::set_focus`](dioxus_html::RenderedElementBacking::set_focus))
+    pub(crate) fn nested(runtime: Rc<Runtime>) -> Self {
+        Self {
+            runtime,
+            event_handler_counts: None,
+        }
+    }
+}
+
+impl EventHandler for DioxusEventHandler {
     fn handle_event(
         &self,
         chain: &[NodeId],
@@ -304,8 +317,9 @@ impl EventHandler for DioxusEventHandler<'_> {
         // As an optimisation we maintain a count of the total number event handlers of a given type
         // If this count is zero then we can skip handling that kind of event entirely.
         let event_kind_idx = event.data.discriminant() as usize;
-        let event_kind_count = self.vdom_state.event_handler_counts[event_kind_idx];
-        if event_kind_count == 0 {
+        if let Some(counts) = &self.event_handler_counts
+            && counts[event_kind_idx] == 0
+        {
             return;
         }
 
@@ -378,8 +392,7 @@ impl EventHandler for DioxusEventHandler<'_> {
 
         // Handle event in vdom
         let dx_event = Event::new(event_data.clone(), event.bubbles);
-        self.vdom
-            .runtime()
+        self.runtime
             .handle_event(event.name(), dx_event.clone(), id);
 
         // Update event state
@@ -872,5 +885,61 @@ mod tests {
         assert!(is_err(
             mounted.scroll(Default::default(), ScrollBehavior::Instant)
         ));
+    }
+
+    #[test]
+    fn set_focus_dispatches_focus_events_before_returning() {
+        #[derive(Default)]
+        struct State {
+            input: RefCell<Option<Rc<MountedData>>>,
+            log: RefCell<Vec<&'static str>>,
+        }
+
+        fn app() -> Element {
+            let state = consume_context::<Rc<State>>();
+            let (mounted, click, focus) = (state.clone(), state.clone(), state.clone());
+            rsx!(
+                button {
+                    id: "button",
+                    onclick: move |_| {
+                        click.log.borrow_mut().push("click start");
+                        let input = click.input.borrow().clone().unwrap();
+                        drop(input.set_focus(true));
+                        click.log.borrow_mut().push("click end");
+                    },
+                }
+                input {
+                    onmounted: move |event| *mounted.input.borrow_mut() = Some(event.data()),
+                    onfocus: move |_| focus.log.borrow_mut().push("focus"),
+                }
+            )
+        }
+
+        let state = Rc::new(State::default());
+        let vdom = VirtualDom::new(app).with_root_context(Rc::clone(&state));
+        let mut doc = DioxusDocument::new(vdom, DocumentConfig::default());
+        doc.initial_build();
+        poll_until_idle(&mut doc);
+
+        let (button, click) = {
+            let inner = doc.inner.borrow();
+            let button = inner.query_selector("#button").unwrap().unwrap();
+            let click = inner
+                .get_node(button)
+                .unwrap()
+                .synthetic_click_event(Default::default());
+            (button, click)
+        };
+        let handler = DioxusEventHandler {
+            runtime: doc.vdom.runtime(),
+            event_handler_counts: Some(doc.vdom_state.event_handler_counts),
+        };
+        EventDriver::new(&mut doc.inner, handler).dispatch_event(DomEvent::new(
+            button,
+            click,
+            blitz_traits::events::EventDispatchSource::UserAgent,
+        ));
+
+        assert_eq!(*state.log.borrow(), ["click start", "focus", "click end"]);
     }
 }
