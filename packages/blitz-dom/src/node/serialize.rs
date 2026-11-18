@@ -109,13 +109,40 @@ fn write_xml_attr_name(
     true
 }
 
+/// HTML void elements, which have no end tag
+/// (<https://html.spec.whatwg.org/multipage/syntax.html#void-elements>), plus the legacy ones the
+/// fragment serialization algorithm also skips.
+fn is_void_element(local: &str) -> bool {
+    matches!(
+        local,
+        "area"
+            | "base"
+            | "basefont"
+            | "bgsound"
+            | "br"
+            | "col"
+            | "embed"
+            | "frame"
+            | "hr"
+            | "img"
+            | "input"
+            | "keygen"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
+}
+
 impl Node {
     /// Renders the HTML of this node and all its children as a `String` without extra whitespace.
     ///
     /// Example output:
     ///
     /// ```text
-    /// <html><head /><body><main id="main"><div class="arbitrary-class" /></main></body></html>
+    /// <html><head></head><body><main id="main"><div class="arbitrary-class"></div></main></body></html>
     /// ```
     pub fn outer_html(&self) -> String {
         let mut output = String::new();
@@ -130,10 +157,12 @@ impl Node {
     ///
     /// ```text
     /// <html>
-    ///   <head />
+    ///   <head>
+    ///   </head>
     ///   <body>
     ///     <main id="main">
-    ///       <div class="arbitrary-class" />
+    ///       <div class="arbitrary-class">
+    ///       </div>
     ///     </main>
     ///   </body>
     /// </html>
@@ -288,7 +317,14 @@ impl Node {
                 {
                     writer.push_str(" style=\"background-color:initial!important\"");
                 }
-                if !has_children {
+                // HTML has no self-closing syntax for HTML elements: `<i />` parses as an
+                // unclosed `<i>`. Self-close only in XML output and for foreign (SVG,
+                // MathML) elements; write void elements without an end tag and every
+                // other empty HTML element as `<x></x>`.
+                let is_html_element = data.name.ns == ns!(html);
+                let self_close = !has_children && (opts.xml_namespaces || !is_html_element);
+                let is_void = is_html_element && is_void_element(&data.name.local);
+                if self_close {
                     writer.push_str(" /");
                 }
                 writer.push('>');
@@ -296,7 +332,7 @@ impl Node {
                     writer.push('\n');
                 }
 
-                if has_children {
+                if !self_close && !is_void {
                     for &child_id in &self.children {
                         self.tree()[child_id].write_outer_html_in_style(writer, opts, nesting + 1);
                     }
@@ -326,6 +362,32 @@ mod tests {
 
     fn qual_name(prefix: Option<&str>, ns: Namespace, local: &str) -> QualName {
         QualName::new(prefix.map(Prefix::from), ns, LocalName::from(local))
+    }
+
+    #[test]
+    fn outer_html_never_self_closes_html_elements() {
+        let mut doc = BaseDocument::new(DocumentConfig::default());
+        let mut element = |ns: Namespace, local: &str| {
+            doc.create_node(NodeData::Element(Box::new(ElementData::new(
+                qual_name(None, ns, local),
+                vec![],
+            ))))
+        };
+        let div = element(ns!(html), "div");
+        let empty_i = element(ns!(html), "i");
+        let br = element(ns!(html), "br");
+        let svg = element(ns!(svg), "svg");
+        let circle = element(ns!(svg), "circle");
+        let mut mutator = doc.mutate();
+        mutator.append_children(svg, &[circle]);
+        mutator.append_children(div, &[empty_i, br, svg]);
+        drop(mutator);
+
+        // `<i />` would re-parse as an unclosed `<i>` that swallows the rest of the page.
+        assert_eq!(
+            doc.get_node(div).unwrap().outer_html(),
+            "<div><i></i><br><svg><circle /></svg></div>"
+        );
     }
 
     #[test]
