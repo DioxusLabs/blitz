@@ -1,3 +1,4 @@
+use blitz_traits::events::EventDispatchSource;
 use blitz_traits::node_id::NodeId;
 use std::collections::VecDeque;
 use stylo_taffy::CopyStyleGetters;
@@ -6,8 +7,8 @@ use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelEvent, BlitzWheelPhase,
-        BlitzWheelSource, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
+        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData,
+        MouseEventButton, MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
@@ -22,8 +23,6 @@ use crate::{
     node::{ScrollbarRef, SpecialElementData},
     scrolling::{FlingState, ScrollAnimationState},
 };
-
-use super::focus::generate_focus_events;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PanState {
@@ -204,11 +203,10 @@ fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
     (allow_x, allow_y)
 }
 
-pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
+pub(crate) fn handle_pointermove(
     doc: &mut BaseDocument,
     target: NodeId,
     event: &BlitzPointerEvent,
-    mut dispatch_event: F,
 ) -> bool {
     let x = event.page_x();
     let y = event.page_y();
@@ -273,7 +271,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         let target = state.target;
         let (dx, dy) = state.update(time_ms, event.screen_x(), event.screen_y());
 
-        let has_changed = doc.scroll_chain_by(Some(target), dx, dy, &mut dispatch_event);
+        let has_changed = doc.scroll_chain_by(Some(target), dx, dy);
         return has_changed;
     }
 
@@ -293,7 +291,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             AbsoluteAxis::Horizontal => (-delta_px * ratio, 0.0),
             AbsoluteAxis::Vertical => (0.0, -delta_px * ratio),
         };
-        let has_changed = doc.scroll_chain_by(Some(node_id), dx, dy, &mut dispatch_event);
+        let has_changed = doc.scroll_chain_by(Some(node_id), dx, dy);
         return has_changed;
     }
 
@@ -302,9 +300,10 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     };
 
     if changed {
-        dispatch_event(DomEvent::new(
+        doc.queue_event(DomEvent::new(
             hit.node_id,
             DomEventData::MouseEnter(event.clone()),
+            EventDispatchSource::UserAgent,
         ));
     }
 
@@ -381,15 +380,10 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     changed
 }
 
-pub(crate) fn handle_pointerdown(
-    doc: &mut BaseDocument,
-    _target: NodeId,
-    x: f32,
-    y: f32,
-    button: MouseEventButton,
-    mods: Modifiers,
-    dispatch_event: &mut dyn FnMut(DomEvent),
-) {
+/// Record that the pointer has pressed, for counting clicks and detecting drags, and stop
+/// a scroll that is under way. Runs for every `pointerdown`, including one whose default
+/// action was prevented.
+pub(crate) fn record_pointerdown(doc: &mut BaseDocument, x: f32, y: f32) {
     // Compute click count using the previous mousedown position (before updating)
     // This handles both double-click detection and text input word/line selection
     // TODO: For text inputs, only increment click count if click maps to the same/similar caret position
@@ -410,7 +404,17 @@ pub(crate) fn handle_pointerdown(
     doc.mousedown_position = taffy::Point { x, y };
     doc.drag_mode = DragMode::None;
     doc.scroll_animation = ScrollAnimationState::None;
+}
 
+/// The default action of a `pointerdown`, which [`record_pointerdown`] has recorded.
+pub(crate) fn handle_pointerdown(
+    doc: &mut BaseDocument,
+    _target: NodeId,
+    x: f32,
+    y: f32,
+    button: MouseEventButton,
+    mods: Modifiers,
+) {
     let Some(hit) = doc.hit(x, y) else {
         // Clear text selection when clicking outside any element
         doc.clear_text_selection();
@@ -542,22 +546,19 @@ pub(crate) fn handle_pointerdown(
                 drop(font_ctx);
             }
 
-            generate_focus_events(
-                doc,
-                &mut |doc| {
-                    doc.set_focus_to(hit.node_id);
-                },
-                dispatch_event,
-            );
+            doc.set_focus_to(hit.node_id);
         }
     }
 }
 
-pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
+/// Runs for every `pointerup`, including one whose default action was prevented: the drag
+/// under way still ends and the click is still dispatched, as neither is `pointerup`'s
+/// default action.
+pub(crate) fn handle_pointerup(
     doc: &mut BaseDocument,
     target: NodeId,
     event: &BlitzPointerEvent,
-    mut dispatch_event: F,
+    default_prevented: bool,
 ) {
     if doc.devtools().highlight_hover {
         let mut node = doc.get_node(target).unwrap();
@@ -576,8 +577,9 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     let drag_mode = doc.drag_mode.take();
 
     // Don't dispatch click if we were doing a text selection drag or panning
-    // the document with a touch
-    let do_click = drag_mode == DragMode::None;
+    // the document with a touch. Nor for a prevented touch or pen: that may be a
+    // prevented `touchend`, which does suppress the click.
+    let do_click = drag_mode == DragMode::None && (!default_prevented || event.is_mouse());
 
     // Repaint so a dragged scrollbar thumb drops its active styling, and
     // restart its fade-out delay now that the drag no longer holds it shown
@@ -591,7 +593,9 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
         .unwrap()
         .as_millis() as u64;
 
-    if let DragMode::Panning(state) = &drag_mode {
+    if let DragMode::Panning(state) = &drag_mode
+        && !default_prevented
+    {
         if let Some(fling) = state.generate_fling(time_ms) {
             doc.scroll_animation = ScrollAnimationState::Fling(fling);
             doc.shell_provider.request_redraw();
@@ -600,24 +604,24 @@ pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
-        dispatch_event(DomEvent::new(target, DomEventData::Click(event.clone())));
+        doc.queue_event(DomEvent::new(
+            target,
+            DomEventData::Click(event.clone()),
+            EventDispatchSource::UserAgent,
+        ));
     }
 
     // Dispatch a context menu event
     if do_click && event.button == MouseEventButton::Secondary {
-        dispatch_event(DomEvent::new(
+        doc.queue_event(DomEvent::new(
             target,
             DomEventData::ContextMenu(event.clone()),
+            EventDispatchSource::UserAgent,
         ));
     }
 }
 
-pub(crate) fn handle_click(
-    doc: &mut BaseDocument,
-    target: NodeId,
-    event: &BlitzPointerEvent,
-    dispatch_event: &mut dyn FnMut(DomEvent),
-) {
+pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &BlitzPointerEvent) {
     let double_click_event = event.clone();
 
     let mut maybe_node_id = Some(target);
@@ -652,17 +656,12 @@ pub(crate) fn handle_click(
                         node.mark_ancestors_dirty();
                     });
                     let value = is_checked.to_string();
-                    dispatch_event(DomEvent::new(
+                    doc.queue_event(DomEvent::new(
                         node_id,
                         DomEventData::Input(BlitzInputEvent { value }),
+                        EventDispatchSource::UserAgent,
                     ));
-                    generate_focus_events(
-                        doc,
-                        &mut |doc| {
-                            doc.set_focus_to(node_id);
-                        },
-                        dispatch_event,
-                    );
+                    doc.set_focus_to(node_id);
                     break 'matched true;
                 }
                 local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
@@ -679,18 +678,13 @@ pub(crate) fn handle_click(
 
                     // TODO: make input event conditional on value actually changing
                     let value = String::from("true");
-                    dispatch_event(DomEvent::new(
+                    doc.queue_event(DomEvent::new(
                         node_id,
                         DomEventData::Input(BlitzInputEvent { value }),
+                        EventDispatchSource::UserAgent,
                     ));
 
-                    generate_focus_events(
-                        doc,
-                        &mut |doc| {
-                            doc.set_focus_to(node_id);
-                        },
-                        dispatch_event,
-                    );
+                    doc.set_focus_to(node_id);
 
                     break 'matched true;
                 }
@@ -710,13 +704,7 @@ pub(crate) fn handle_click(
 
                         if is_first_summary {
                             doc.toggle_details_open(parent_id);
-                            generate_focus_events(
-                                doc,
-                                &mut |doc| {
-                                    doc.set_focus_to(node_id);
-                                },
-                                dispatch_event,
-                            );
+                            doc.set_focus_to(node_id);
                             break 'matched true;
                         }
                     }
@@ -729,7 +717,7 @@ pub(crate) fn handle_click(
                         // Apply default click event action for target node
                         let target_node = doc.get_node_mut(target_node_id).unwrap();
                         let syn_event = target_node.synthetic_click_event_data(event.mods);
-                        handle_click(doc, target_node_id, &syn_event, dispatch_event);
+                        handle_click(doc, target_node_id, &syn_event);
                         break 'matched true;
                     }
                 }
@@ -814,123 +802,16 @@ pub(crate) fn handle_click(
 
     // If nothing is matched then clear focus
     if !matched {
-        generate_focus_events(doc, &mut |doc| doc.clear_focus(), dispatch_event);
+        doc.clear_focus();
     }
 
     // Dispatch double-click event if this is the second click in quick succession
     // (click_count was already computed in handle_mousedown)
     if doc.click_count == 2 {
-        dispatch_event(DomEvent::new(
+        doc.queue_event(DomEvent::new(
             target,
             DomEventData::DoubleClick(double_click_event),
+            EventDispatchSource::UserAgent,
         ));
-    }
-}
-
-/// The axes a wheel event's default scroll moves.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum WheelAxes {
-    #[default]
-    Both,
-    Horizontal,
-    Vertical,
-}
-
-/// Locks a trackpad scroll gesture to its main axis, as browsers do. Swipes are rarely
-/// straight, so without a lock a vertical swipe also nudges horizontal scrollers sideways.
-///
-/// Each event is locked by the gesture's recent movement, as in Chromium: to an axis while
-/// the movement mostly follows it, and to neither while it is diagonal. So a gesture that
-/// turns unlocks and can lock again. Momentum scrolling carries on from the gesture it
-/// follows. Events from devices that report no gestures scroll as they come.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) enum WheelGesture {
-    /// No gesture is under way: events scroll both axes.
-    #[default]
-    Idle,
-    /// A gesture is under way. `recent` is how far it has moved along each axis, counting
-    /// each event's movement for less as newer events arrive.
-    Active { recent: (f64, f64) },
-    /// The fingers have lifted from a gesture. Momentum scrolling that follows directly
-    /// carries on from its recent movement.
-    Lifted { recent: (f64, f64) },
-}
-
-impl WheelGesture {
-    /// An event locks to an axis when the recent movement along that axis is at least this
-    /// many times the movement along the other.
-    const LOCK_RATIO: f64 = 2.0;
-    /// How much of the recent movement is kept each time an event arrives.
-    const DECAY: f64 = 0.8;
-
-    /// Place a wheel event in the gesture, returning the axes its default scroll moves.
-    ///
-    /// Every wheel event must pass through here exactly once, including those whose default
-    /// scroll is prevented, or the gesture loses track of where it starts and ends.
-    pub(crate) fn track(&mut self, event: &BlitzWheelEvent) -> WheelAxes {
-        if event.source == BlitzWheelSource::Wheel {
-            *self = Self::Idle;
-            return WheelAxes::Both;
-        }
-
-        let started = event.phase == BlitzWheelPhase::Started;
-        let recent = match *self {
-            Self::Lifted { recent } if started && event.source == BlitzWheelSource::Momentum => {
-                recent
-            }
-            _ if started => (0.0, 0.0),
-            Self::Active { recent } => recent,
-            Self::Idle | Self::Lifted { .. } => {
-                *self = Self::Idle;
-                return WheelAxes::Both;
-            }
-        };
-
-        let (x, y) = event.delta.to_pixels(WHEEL_LINE_PX);
-        let x = recent.0 * Self::DECAY + x.abs();
-        let y = recent.1 * Self::DECAY + y.abs();
-        let axes = if y >= x * Self::LOCK_RATIO {
-            WheelAxes::Vertical
-        } else if x >= y * Self::LOCK_RATIO {
-            WheelAxes::Horizontal
-        } else {
-            WheelAxes::Both
-        };
-
-        *self = match event.phase {
-            BlitzWheelPhase::Ended if event.source == BlitzWheelSource::Finger => {
-                Self::Lifted { recent: (x, y) }
-            }
-            BlitzWheelPhase::Ended | BlitzWheelPhase::Cancelled => Self::Idle,
-            BlitzWheelPhase::Started | BlitzWheelPhase::Moved => Self::Active { recent: (x, y) },
-        };
-        axes
-    }
-}
-
-/// How far (in CSS pixels) a wheel event scrolls for each line of its delta.
-const WHEEL_LINE_PX: f64 = 20.0;
-
-pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
-    doc: &mut BaseDocument,
-    _: NodeId,
-    event: BlitzWheelEvent,
-    mut dispatch_event: F,
-) {
-    let (scroll_x, scroll_y) = event.delta.to_pixels(WHEEL_LINE_PX);
-    let (scroll_x, scroll_y) = match doc.wheel_gesture.track(&event) {
-        WheelAxes::Both => (scroll_x, scroll_y),
-        WheelAxes::Horizontal => (scroll_x, 0.0),
-        WheelAxes::Vertical => (0.0, scroll_y),
-    };
-
-    let has_changed = doc.scroll_chain_by(
-        doc.get_hover_node_id(),
-        scroll_x,
-        scroll_y,
-        &mut dispatch_event,
-    );
-    if has_changed {
-        doc.shell_provider.request_redraw();
     }
 }

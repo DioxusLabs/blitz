@@ -1,6 +1,7 @@
 //! End-to-end test: run the vendored Preact TodoMVC example (examples/preact)
 //! headlessly and interact with it.
 
+use blitz_traits::events::EventDispatchSource;
 use std::path::PathBuf;
 
 use blitz_dom::{Document, DocumentConfig, NodeId};
@@ -79,6 +80,7 @@ fn click(doc: &mut ScriptDocument, selector: &str) {
                 .get_node(node_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(event);
