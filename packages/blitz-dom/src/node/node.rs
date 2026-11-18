@@ -2105,7 +2105,7 @@ impl Node {
 
     /// Whether the node's `overscroll-behavior` stops scroll chaining on each axis.
     /// `contain` and `none` both do, as Blitz draws no overscroll effect.
-    pub(crate) fn overscroll_contains(&self) -> crate::Point<bool> {
+    pub(crate) fn contains_overscroll(&self) -> crate::Point<bool> {
         use style::values::computed::OverscrollBehavior;
         let contains = |behavior| {
             matches!(

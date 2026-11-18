@@ -358,7 +358,7 @@ impl BaseDocument {
         let has_changed = remainder != delta;
 
         // Text inputs scroll their own content, so they need no scroll container check.
-        let contains = self.nodes[node_id].overscroll_contains();
+        let contains = self.nodes[node_id].contains_overscroll();
         if contains.x {
             remainder.x = 0.0;
         }
@@ -389,7 +389,7 @@ impl BaseDocument {
         self.nodes
             .get(node_id)
             .filter(|node| node.is_scroll_container())
-            .map_or(Point { x: false, y: false }, Node::overscroll_contains)
+            .map_or(Point { x: false, y: false }, Node::contains_overscroll)
     }
 
     /// The scroller which unconsumed scroll is transferred to: the node's parent, or the
