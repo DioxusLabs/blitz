@@ -1,4 +1,3 @@
-use blitz_traits::events::EventDispatchSource;
 use blitz_traits::node_id::NodeId;
 use std::collections::VecDeque;
 use stylo_taffy::CopyStyleGetters;
@@ -7,8 +6,8 @@ use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData,
-        MouseEventButton, MouseEventButtons,
+        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, DomEventData, MouseEventButton,
+        MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
@@ -300,11 +299,7 @@ pub(crate) fn handle_pointermove(
     };
 
     if changed {
-        doc.queue_event(DomEvent::new(
-            hit.node_id,
-            DomEventData::MouseEnter(event.clone()),
-            EventDispatchSource::UserAgent,
-        ));
+        doc.queue_ua_event(hit.node_id, DomEventData::MouseEnter(event.clone()));
     }
 
     // `target` is the event's canonicalized target (never a layout-generated
@@ -604,20 +599,12 @@ pub(crate) fn handle_pointerup(
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
-        doc.queue_event(DomEvent::new(
-            target,
-            DomEventData::Click(event.clone()),
-            EventDispatchSource::UserAgent,
-        ));
+        doc.queue_ua_event(target, DomEventData::Click(event.clone()));
     }
 
     // Dispatch a context menu event
     if do_click && event.button == MouseEventButton::Secondary {
-        doc.queue_event(DomEvent::new(
-            target,
-            DomEventData::ContextMenu(event.clone()),
-            EventDispatchSource::UserAgent,
-        ));
+        doc.queue_ua_event(target, DomEventData::ContextMenu(event.clone()));
     }
 }
 
@@ -656,11 +643,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
                         node.mark_ancestors_dirty();
                     });
                     let value = is_checked.to_string();
-                    doc.queue_event(DomEvent::new(
-                        node_id,
-                        DomEventData::Input(BlitzInputEvent { value }),
-                        EventDispatchSource::UserAgent,
-                    ));
+                    doc.queue_ua_event(node_id, DomEventData::Input(BlitzInputEvent { value }));
                     doc.set_focus_to(node_id);
                     break 'matched true;
                 }
@@ -678,11 +661,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
 
                     // TODO: make input event conditional on value actually changing
                     let value = String::from("true");
-                    doc.queue_event(DomEvent::new(
-                        node_id,
-                        DomEventData::Input(BlitzInputEvent { value }),
-                        EventDispatchSource::UserAgent,
-                    ));
+                    doc.queue_ua_event(node_id, DomEventData::Input(BlitzInputEvent { value }));
 
                     doc.set_focus_to(node_id);
 
@@ -808,10 +787,6 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
     // Dispatch double-click event if this is the second click in quick succession
     // (click_count was already computed in handle_mousedown)
     if doc.click_count == 2 {
-        doc.queue_event(DomEvent::new(
-            target,
-            DomEventData::DoubleClick(double_click_event),
-            EventDispatchSource::UserAgent,
-        ));
+        doc.queue_ua_event(target, DomEventData::DoubleClick(double_click_event));
     }
 }
