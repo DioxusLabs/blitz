@@ -44,10 +44,6 @@ impl FontUpdate {
             }
         }
     }
-
-    pub fn has_bytes(&self) -> bool {
-        !matches!(self, Self::Resolve { font: None, .. })
-    }
 }
 
 #[derive(Default)]
@@ -133,13 +129,19 @@ impl FontFaceLoader {
         key
     }
 
-    /// Queues a fetch for the source of each given pending face that has not been
-    /// requested yet. Callable from any thread; `start_requests` starts the fetches.
+    /// Queues a fetch for the source of each pending face that layout or metrics
+    /// requested from `font_ctx`, the calling thread's font context. Callable from any
+    /// thread; `start_requests` starts the fetches.
     ///
-    /// The faces are marked as loading in `font_ctx`, the calling thread's font context,
-    /// which stops its queries from reporting them. So only a thread's first demand for
-    /// a face gets here and takes the lock shared by all threads.
-    pub fn request(&self, font_ctx: &mut FontContext, keys: impl Iterator<Item = FontId>) {
+    /// The faces are marked as loading in `font_ctx`, which stops its queries from
+    /// requesting them again. So only a thread's first demand for a face takes the lock
+    /// shared by all threads.
+    pub fn request(&self, font_ctx: &mut FontContext) {
+        let keys: Vec<FontId> = font_ctx.collection.take_font_requests().collect();
+        self.request_faces(font_ctx, keys.into_iter());
+    }
+
+    fn request_faces(&self, font_ctx: &mut FontContext, keys: impl Iterator<Item = FontId>) {
         let keys: Vec<FontId> = keys
             .filter(|key| {
                 font_ctx
@@ -274,7 +276,8 @@ mod tests {
 
     fn demand<const N: usize>(doc: &BaseDocument, keys: [FontId; N]) {
         let mut fonts = doc.font_ctx.lock().unwrap();
-        doc.font_face_loader.request(&mut fonts, keys.into_iter());
+        doc.font_face_loader
+            .request_faces(&mut fonts, keys.into_iter());
     }
 
     #[derive(Default)]
@@ -322,7 +325,7 @@ mod tests {
                 let loader = &doc.font_face_loader;
                 let mut fonts = doc.font_ctx.lock().unwrap().clone();
                 scope.spawn(move || {
-                    loader.request(&mut fonts, [a, a, b].into_iter());
+                    loader.request_faces(&mut fonts, [a, a, b].into_iter());
                     let status = fonts.collection.pending_font_status(a);
                     assert_eq!(status, Some(PendingFontStatus::Loading));
                 });

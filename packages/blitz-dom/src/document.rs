@@ -1458,11 +1458,9 @@ impl BaseDocument {
             }
         });
         drop(global);
-        // A failed face was already being skipped in favour of its fallback,
-        // so removing it changes neither style nor layout.
-        if !updates.iter().any(|update| update.has_bytes()) {
-            return;
-        }
+        // A failed face also needs a new layout: only the first pending face that
+        // covers some text is requested, so the faces after a failed one are requested
+        // by the next layout.
         if let Some(root) = self.try_root_element().map(|node| node.id) {
             self.nodes[root].set_restyle_hint(RestyleHint::recascade_subtree());
         }

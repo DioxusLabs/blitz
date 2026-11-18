@@ -66,8 +66,8 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
 
         // Query fontique for the font that matches the font styles
         let mut query = query_for_font_styles(font_ctx, font_styles);
-        let mut pending = Vec::new();
-        query.first_available_font_with(|key| pending.push(key));
+        // Requests the first pending face that would be the first available font.
+        query.first_available_font();
         // let fb_script = crate::swash_convert::script_to_fontique(script);
         // let fb_language = locale.and_then(crate::swash_convert::locale_to_fontique);
         // query.set_fallbacks(fontique::FallbackKey::new(fb_script, fb_language.as_ref()));
@@ -158,7 +158,7 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
             metrics_of(&mut query, ' ', Size::new(font_size.px()), &variations)
                 .unwrap_or((0.0, None, None));
         drop(query);
-        self.font_face_loader.request(font_ctx, pending.into_iter());
+        self.font_face_loader.request(font_ctx);
 
         FontMetrics {
             ascent: CSSPixelLength::new(ascent),
