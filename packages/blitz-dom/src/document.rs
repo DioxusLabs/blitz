@@ -721,7 +721,10 @@ impl BaseDocument {
     }
 
     /// Take the next queued event (see [`queue_event`](Self::queue_event)), discarding
-    /// events whose target node has been removed since they were queued.
+    /// events whose target node has been dropped since they were queued.
+    ///
+    /// A node that was only detached from the tree still exists and still gets its events,
+    /// as an event can be dispatched to a node that is not in the document.
     pub fn pop_pending_event(&mut self) -> Option<DomEvent> {
         loop {
             let event = self.pending_events.pop_front()?;

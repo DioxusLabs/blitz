@@ -62,7 +62,7 @@ fn programmatic_focus_changes_dispatch_focus_events() {
 }
 
 #[test]
-fn queued_events_for_removed_nodes_are_discarded() {
+fn queued_events_for_dropped_nodes_are_discarded() {
     let mut harness = Harness::from_html(HTML);
     let a = node_id(&harness, "#a");
 
