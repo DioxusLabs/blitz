@@ -3,6 +3,7 @@ mod focus;
 mod ime;
 mod keyboard;
 mod pointer;
+mod wheel;
 
 use crate::util::Point;
 use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
@@ -10,10 +11,13 @@ pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
-pub(crate) use pointer::{DragMode, WheelGesture};
+pub(crate) use pointer::DragMode;
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
+pub(crate) use wheel::WheelGesture;
 
-use crate::{BaseDocument, events::pointer::handle_wheel};
+use wheel::handle_wheel;
+
+use crate::BaseDocument;
 
 fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
