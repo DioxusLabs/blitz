@@ -301,8 +301,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             * node.transform().as_deref().copied().unwrap_or_default()
     }
 
+    /// Scroll the contents in the node's own coordinate space, inside its CSS transform.
     fn scrolled_transform(&self, node: &Node, transform: Affine) -> Affine {
-        transform.then_translate(Vec2 {
+        transform.pre_translate(Vec2 {
             x: -node.scroll_offset().x * self.scale,
             y: -node.scroll_offset().y * self.scale,
         })

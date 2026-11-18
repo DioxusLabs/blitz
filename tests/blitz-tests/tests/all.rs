@@ -67,6 +67,7 @@ mod resize_restyle;
 mod rotate_z_axis;
 mod scale_change_overflow;
 mod scoped_query_selector;
+mod scroll_inside_transform;
 mod scrollbar_drag;
 mod scrollbars;
 mod stale_dirty_descendants;

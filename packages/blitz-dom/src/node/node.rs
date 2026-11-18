@@ -1492,14 +1492,19 @@ impl Node {
             .primary_styles()
             .is_some_and(|style| style.clone_pointer_events() == PointerEvents::None);
 
-        let mut x = x - self.final_layout().location.x + self.scroll_offset().x as f32;
-        let mut y = y - self.final_layout().location.y + self.scroll_offset().y as f32;
+        let mut x = x - self.final_layout().location.x;
+        let mut y = y - self.final_layout().location.y;
 
         if let Some(t) = self.transform().as_deref() {
             let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
             x = (p.x / scale) as f32;
             y = (p.y / scale) as f32;
         }
+
+        // The scroll offset moves the contents inside the transform, so it applies
+        // in the node's own (untransformed) coordinate space.
+        x += self.scroll_offset().x as f32;
+        y += self.scroll_offset().y as f32;
 
         let size = self.final_layout().size;
         let matches_self = !(x < self.scroll_offset().x as f32
