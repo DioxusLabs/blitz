@@ -189,8 +189,14 @@ def format_area_lines(areas):
     ]
 
 
-def render(diff, run_url, areas=None):
-    if diff.is_empty:
+def render(diff, run_url, areas=None, revision_mismatch=None):
+    if revision_mismatch:
+        headline = (
+            f"⚠️ WPT comparison skipped: this PR was tested at WPT revision "
+            f"`{revision_mismatch['pr']}`, but `main` was tested at "
+            f"`{revision_mismatch['main']}`. Rebase on `main` for a meaningful comparison."
+        )
+    elif diff.is_empty:
         headline = "No changes in test results compared to `main`."
     else:
         gained, lost = diff.subtests_gained, diff.subtests_lost
@@ -214,7 +220,7 @@ def render(diff, run_url, areas=None):
 
     out = [START_MARKER, "## WPT results", "", headline, ""]
 
-    if areas:
+    if areas and not revision_mismatch:
         noun = "area" if len(areas) == 1 else "areas"
         out.append("<details>")
         out.append(f"<summary>Subtest changes by area ({len(areas)} {noun})</summary>")
@@ -226,7 +232,7 @@ def render(diff, run_url, areas=None):
         out.append("</details>")
         out.append("")
 
-    if not diff.is_empty:
+    if not revision_mismatch and not diff.is_empty:
         lines = format_lines(diff)
         truncated = len(lines) > MAX_DIFF_LINES
         shown = lines[:MAX_DIFF_LINES]
@@ -281,14 +287,16 @@ def main():
     args = parser.parse_args()
 
     with open(args.diff_file, encoding="utf-8") as file:
-        diff = Diff(json.load(file))
+        data = json.load(file)
+    revision_mismatch = data.get("revision_mismatch") if isinstance(data, dict) else None
+    diff = Diff([] if revision_mismatch else data)
 
     areas = None
     if args.areas and os.path.exists(args.areas):
         with open(args.areas, encoding="utf-8") as file:
             areas = json.load(file)
 
-    section = render(diff, args.run_url, areas)
+    section = render(diff, args.run_url, areas, revision_mismatch)
 
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if step_summary:

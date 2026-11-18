@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Tests for wpt_diff_to_pr.py. Run with `python3 -m unittest discover .github/scripts`."""
 
+import contextlib
+import io
+import json
+import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
-from wpt_diff_to_pr import Diff, format_area_lines, format_lines, render, splice
+from wpt_diff_to_pr import Diff, format_area_lines, format_lines, main, render, splice
 
 ENTRIES = [
     {
@@ -126,6 +132,22 @@ class FormatLinesTest(unittest.TestCase):
 
 
 class RenderTest(unittest.TestCase):
+    def test_revision_mismatch_skips_results(self):
+        section = render(
+            Diff(ENTRIES),
+            run_url="https://example.com/run",
+            revision_mismatch={"pr": "pr-revision", "main": "main-revision"},
+        )
+        self.assertIn("WPT comparison skipped", section)
+        self.assertIn("`pr-revision`", section)
+        self.assertIn("`main-revision`", section)
+        self.assertIn("Rebase on `main` for a meaningful comparison.", section)
+        self.assertNotIn("```diff", section)
+        self.assertNotIn("newly passing", section)
+        self.assertTrue(section.startswith("<!-- wpt-results-start -->"))
+        self.assertTrue(section.endswith("<!-- wpt-results-end -->"))
+        self.assertIn("https://example.com/run", section)
+
     def test_headline_counts_each_direction(self):
         section = render(Diff(VERBOSE_ENTRIES), run_url=None)
         self.assertIn("Subtests: **5** newly passing, **3** newly failing (net +2).", section)
@@ -172,6 +194,28 @@ class SpliceTest(unittest.TestCase):
         body = splice("Original body.", section)
         self.assertEqual(splice(body, section), body)
         self.assertTrue(body.startswith("Original body."))
+
+
+class MainTest(unittest.TestCase):
+    def test_revision_mismatch_artifact_dry_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            diff_file = os.path.join(directory, "wptdiff.json")
+            summary_file = os.path.join(directory, "summary.md")
+            with open(diff_file, "w") as file:
+                json.dump({"revision_mismatch": {"pr": "abc", "main": "def"}}, file)
+            output = io.StringIO()
+            with (
+                patch("sys.argv", ["wpt_diff_to_pr.py", "--dry-run", "--areas",
+                                   os.path.join(directory, "wptareas.json"), diff_file]),
+                patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": summary_file}),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(main(), 0)
+            self.assertIn("WPT comparison skipped", output.getvalue())
+            self.assertIn("`abc`", output.getvalue())
+            self.assertIn("`def`", output.getvalue())
+            with open(summary_file) as file:
+                self.assertEqual(file.read(), output.getvalue())
 
 
 if __name__ == "__main__":
