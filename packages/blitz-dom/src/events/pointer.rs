@@ -849,8 +849,6 @@ pub(crate) struct WheelGesture {
     active: bool,
     /// The gesture's axes, once its first movement has decided them.
     axes: Option<WheelAxes>,
-    /// The axes the wheel event being dispatched scrolls.
-    pub(crate) event_axes: WheelAxes,
 }
 
 impl WheelGesture {
@@ -858,14 +856,11 @@ impl WheelGesture {
     /// many times its movement along the other.
     const LOCK_RATIO: f64 = 2.0;
 
-    /// Place a wheel event in the gesture, before it is dispatched (so that a script
-    /// cancelling it doesn't lose track of the gesture), and set the axes its default scroll
-    /// moves.
-    pub(crate) fn track(&mut self, event: &BlitzWheelEvent) {
-        self.event_axes = self.axes_for(event);
-    }
-
-    fn axes_for(&mut self, event: &BlitzWheelEvent) -> WheelAxes {
+    /// Place a wheel event in the gesture, returning the axes its default scroll moves.
+    ///
+    /// Every wheel event must pass through here exactly once, including those whose default
+    /// scroll is prevented, or the gesture loses track of where it starts and ends.
+    pub(crate) fn track(&mut self, event: &BlitzWheelEvent) -> WheelAxes {
         if event.source == BlitzWheelSource::Wheel {
             self.active = false;
             return WheelAxes::Both;
@@ -915,7 +910,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
-    let (scroll_x, scroll_y) = match doc.wheel_gesture.event_axes {
+    let (scroll_x, scroll_y) = match doc.wheel_gesture.track(&event) {
         WheelAxes::Both => (scroll_x, scroll_y),
         WheelAxes::Horizontal => (scroll_x, 0.0),
         WheelAxes::Vertical => (0.0, scroll_y),

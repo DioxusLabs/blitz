@@ -276,7 +276,6 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             // Out/leave events were dispatched by `handle_pointer_leave`
             UiEvent::PointerLeave(_) => {}
             UiEvent::Wheel(data) => {
-                self.doc.inner_mut().wheel_gesture.track(&data);
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
             }
             UiEvent::KeyUp(data) => {
@@ -364,6 +363,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             let event_state = self.run_handler_event(&mut event, EventState::default());
             if !event_state.is_cancelled() {
                 self.run_default_action(&mut event);
+            } else if let DomEventData::Wheel(data) = &event.data {
+                self.doc.inner_mut().wheel_default_prevented(data);
             }
         }
     }

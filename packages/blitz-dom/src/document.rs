@@ -22,7 +22,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{DomEvent, HitResult, UiEvent};
+use blitz_traits::events::{BlitzWheelEvent, DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -698,6 +698,12 @@ impl BaseDocument {
         dispatch_event: F,
     ) {
         handle_dom_event(self, event, dispatch_event)
+    }
+
+    /// Note a wheel event whose default scroll was prevented, so that the scroll gesture it
+    /// belongs to still sees it start, move and end.
+    pub(crate) fn wheel_default_prevented(&mut self, event: &BlitzWheelEvent) {
+        self.wheel_gesture.track(event);
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
