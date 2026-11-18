@@ -63,3 +63,37 @@ fn scrolled_content_is_hit_inside_the_transform() {
     assert_eq!(doc.element_from_point(30.0, 50.0), target);
     assert_eq!(doc.element_from_point(90.0, 50.0), target);
 }
+
+/// The same scaled scroller, but with the green target as the scroller's own
+/// inline content after a 50px spacer, so it paints through the inline layout.
+/// It is about as wide as the scroller, so scrolling it twice would move it out of view.
+fn scrolled_scaled_inline_scroller() -> HtmlDocument {
+    let mut doc = HtmlDocument::from_html(
+        r#"<html><body style="margin:0;background:white">
+        <div id=scroller style="position:absolute;left:20px;top:20px;width:40px;height:40px;
+            overflow:hidden;transform:scale(2);transform-origin:0 0;background:red;
+            white-space:nowrap;font-size:16px;line-height:20px"><span
+            style="display:inline-block;width:50px;height:10px"></span><span id=target
+            style="background:#00cc00;color:#00cc00">MMM</span></div>
+        </body></html>"#,
+        DocumentConfig {
+            viewport: Some(Viewport::new(WIDTH, HEIGHT, 1.0, ColorScheme::Light)),
+            html_parser_provider: Some(Arc::new(HtmlProvider) as _),
+            ..Default::default()
+        },
+    );
+    doc.resolve(0.0);
+    let scroller = doc.get_element_by_id("scroller").unwrap();
+    doc.scroll_to(scroller, 50.0, 0.0, ScrollBehavior::Instant);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().x, 50.0);
+    doc
+}
+
+#[test]
+fn scrolled_inline_content_paints_inside_the_transform() {
+    let mut doc = scrolled_scaled_inline_scroller();
+    // The span starts at the scroller's left edge, page x = 20, and its 20px line
+    // box covers page y = 20..60.
+    assert_eq!(pixel(&mut doc, 30, 40), [0, 204, 0]);
+    assert_eq!(pixel(&mut doc, 50, 40), [0, 204, 0]);
+}
