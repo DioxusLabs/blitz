@@ -32,7 +32,7 @@ impl FontUpdate {
             Self::Resolve { key, font } => {
                 let resolved = font
                     .as_ref()
-                    .is_some_and(|font| ctx.collection.resolve_pending_font(*key, font.clone()));
+                    .is_some_and(|font| ctx.collection.resolve_pending_font(*key, font.clone(), 0));
                 if !resolved {
                     ctx.collection
                         .set_pending_font_status(*key, PendingFontStatus::Failed);
