@@ -1,6 +1,7 @@
-//! A link in an `<iframe>` with `target="_blank"` or `target="_top"` navigates
-//! through the top-level document's navigation provider, as browsers take such
-//! links out of the frame. Other links stay in the frame.
+//! A link in an `<iframe>` whose `target` leaves the frame (`_blank`, `_top`,
+//! `_parent` in a frame of the top-level document, or any other name) navigates
+//! through the top-level document's navigation provider. A link without a target,
+//! or with `_self`, loads into the frame.
 
 use blitz_dom::{Document, DocumentConfig};
 use blitz_html::{HtmlDocument, HtmlProvider};
@@ -10,6 +11,7 @@ use blitz_traits::{
         PointerCoords, PointerDetails, UiEvent,
     },
     navigation::{NavigationOptions, NavigationProvider},
+    net::{NetHandler, NetProvider, Request},
     shell::{ColorScheme, Viewport},
 };
 use std::sync::{Arc, Mutex};
@@ -24,9 +26,26 @@ impl NavigationProvider for Recorder {
     }
 }
 
-/// Clicks a link that fills an iframe at the top left of the page, and returns
-/// what the top-level document navigated to.
-fn click_framed_link(target: &str) -> Vec<String> {
+/// Records the URLs fetched, as when a frame loads a link.
+#[derive(Default)]
+struct Fetches(Mutex<Vec<String>>);
+
+impl NetProvider for Fetches {
+    fn fetch(&self, _doc_id: usize, request: Request, _handler: Box<dyn NetHandler>) {
+        self.0.lock().unwrap().push(request.url.to_string());
+    }
+}
+
+/// Where a click on a framed link went.
+struct Navigated {
+    /// What the top-level document navigated to.
+    top: Vec<String>,
+    /// What was fetched, which is where the frame navigated.
+    fetched: Vec<String>,
+}
+
+/// Clicks a link that fills an iframe at the top left of the page.
+fn click_framed_link(target: &str) -> Navigated {
     let link = format!(
         "<a href='https://example.com/' {target} \
          style='display:block; width:100px; height:100px'>link</a>"
@@ -38,12 +57,14 @@ fn click_framed_link(target: &str) -> Vec<String> {
          </body></html>"
     );
     let recorder = Arc::new(Recorder::default());
+    let fetches = Arc::new(Fetches::default());
     let mut doc = HtmlDocument::from_html(
         &html,
         DocumentConfig {
             viewport: Some(Viewport::new(200, 200, 1.0, ColorScheme::Light)),
             html_parser_provider: Some(Arc::new(HtmlProvider) as _),
             navigation_provider: Some(recorder.clone()),
+            net_provider: Some(fetches.clone()),
             ..Default::default()
         },
     );
@@ -52,9 +73,26 @@ fn click_framed_link(target: &str) -> Vec<String> {
     let event = pointer_event(50.0, 50.0);
     doc.handle_ui_event(UiEvent::PointerDown(event.clone()));
     doc.handle_ui_event(UiEvent::PointerUp(event));
-    doc.resolve(0.0);
+    doc.handle_messages();
 
-    recorder.0.lock().unwrap().clone()
+    Navigated {
+        top: recorder.0.lock().unwrap().clone(),
+        fetched: fetches.0.lock().unwrap().clone(),
+    }
+}
+
+const URL: &str = "https://example.com/";
+
+fn assert_leaves_frame(target: &str) {
+    let navigated = click_framed_link(target);
+    assert_eq!(navigated.top, [URL], "{target}");
+    assert!(navigated.fetched.is_empty(), "{target}");
+}
+
+fn assert_stays_in_frame(target: &str) {
+    let navigated = click_framed_link(target);
+    assert!(navigated.top.is_empty(), "{target}");
+    assert_eq!(navigated.fetched, [URL], "{target}");
 }
 
 fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
@@ -79,19 +117,21 @@ fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
 }
 
 #[test]
-fn target_blank_leaves_the_frame() {
-    assert_eq!(
-        click_framed_link("target='_blank'"),
-        ["https://example.com/"]
-    );
+fn blank_top_and_parent_leave_the_frame() {
+    assert_leaves_frame("target='_blank'");
+    assert_leaves_frame("target='_top'");
+    assert_leaves_frame("target='_parent'");
+    assert_leaves_frame("target='_BLANK'");
 }
 
 #[test]
-fn target_top_leaves_the_frame() {
-    assert_eq!(click_framed_link("target='_top'"), ["https://example.com/"]);
+fn a_named_target_leaves_the_frame() {
+    assert_leaves_frame("target='_new'");
+    assert_leaves_frame("target='article'");
 }
 
 #[test]
-fn a_link_without_a_target_stays_in_the_frame() {
-    assert!(click_framed_link("").is_empty());
+fn no_target_or_self_stays_in_the_frame() {
+    assert_stays_in_frame("");
+    assert_stays_in_frame("target='_self'");
 }
