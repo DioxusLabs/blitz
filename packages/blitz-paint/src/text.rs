@@ -5,6 +5,8 @@ use kurbo::{Affine, Rect};
 use parley::{Affinity, Cursor, GlyphRun, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
 use std::sync::Arc;
+use style::computed_values::position::T as Position;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 
 use crate::color::{Color, ToColorColor as _};
 use crate::text_decorations::{
@@ -87,6 +89,7 @@ pub(crate) struct RunRecord {
 pub(crate) struct DrawTextContext {
     stack: Vec<DecorationStackEntry>,
     path_scratch: Vec<NodeId>,
+    ancestors: Vec<NodeId>,
     deco_boxes: Vec<LineDecoration>,
     run_records: Vec<RunRecord>,
     win_ascent_ratios: WinAscentCache,
@@ -114,6 +117,7 @@ pub(crate) fn stroke_text<'a>(
     let DrawTextContext {
         stack,
         path_scratch,
+        ancestors,
         deco_boxes,
         run_records,
         win_ascent_ratios,
@@ -123,8 +127,32 @@ pub(crate) fn stroke_text<'a>(
     deco_boxes.clear();
     run_records.clear();
 
-    // Persistent stack mirroring the ancestor path (inline root -> current run's
-    // node) as we walk the runs. The `text-decoration-*` properties are *not*
+    // In-flow block children take the decorations of their ancestors, even though each
+    // block has its own inline layout. Atomic inlines, floats and out-of-flow boxes stop
+    // the propagation: they keep their own decorations, but not those of their ancestors.
+    ancestors.clear();
+    let mut walk_id = inline_root_id;
+    while let Some(node) = doc.get_node(walk_id) {
+        if let Some(styles) = node.primary_styles() {
+            let display = styles.clone_display();
+            if (display.outside() == DisplayOutside::Inline
+                && display.inside() != DisplayInside::Flow)
+                || styles.clone_float().is_floating()
+                || matches!(
+                    styles.get_box().position,
+                    Position::Absolute | Position::Fixed
+                )
+            {
+                break;
+            }
+        }
+        let Some(parent) = node.parent else { break };
+        ancestors.push(parent);
+        walk_id = parent;
+    }
+
+    // Persistent stack mirroring the ancestor path (outermost propagating ancestor ->
+    // inline root -> current run's node) as we walk the runs. The `text-decoration-*` properties are *not*
     // inherited; instead a decoration set on an ancestor is propagated to the
     // descendant text it wraps. Rather than re-resolving styles for the whole
     // ancestor chain on every run, we cache each node's resolved values here and,
@@ -166,6 +194,7 @@ pub(crate) fn stroke_text<'a>(
                 }
                 walk_id = doc.get_node(node_id).and_then(|node| node.parent);
             }
+            path_scratch.extend(ancestors.iter().copied());
             path_scratch.reverse();
 
             let shared = stack
