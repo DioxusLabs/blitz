@@ -2096,11 +2096,10 @@ impl Node {
     /// Whether the node is a scroll container: its `overflow` is not `visible` or `clip` on
     /// at least one axis.
     pub fn is_scroll_container(&self) -> bool {
-        if self.primary_styles().is_none() {
-            return false;
-        }
-        let overflow = taffy::CoreStyle::overflow(&self.layout_style());
-        overflow.x.is_scroll_container() || overflow.y.is_scroll_container()
+        self.primary_styles().is_some_and(|styles| {
+            let box_style = styles.get_box();
+            box_style.overflow_x.is_scrollable() || box_style.overflow_y.is_scrollable()
+        })
     }
 
     /// Whether the node's `overscroll-behavior` stops scroll chaining on each axis.
