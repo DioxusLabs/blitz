@@ -12,7 +12,9 @@ use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
 pub(crate) use pointer::DragMode;
-use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
+use pointer::{
+    handle_click, handle_pointerdown, handle_pointermove, handle_pointerup, record_pointerdown,
+};
 pub(crate) use wheel::WheelGesture;
 
 use wheel::handle_wheel;
@@ -120,16 +122,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // The pointer has pressed or lifted whether or not the page wanted the default
             // action.
             DomEventData::PointerDown(data) => {
-                handle_pointerdown(
-                    doc,
-                    event.target,
-                    data.page_x(),
-                    data.page_y(),
-                    data.button,
-                    data.mods,
-                    true,
-                    &mut dispatch_event,
-                );
+                record_pointerdown(doc, data.page_x(), data.page_y());
             }
             DomEventData::PointerUp(data) => {
                 handle_pointerup(doc, event.target, data, true, dispatch_event);
@@ -224,6 +217,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (handled in PointerMove)
         }
         DomEventData::PointerDown(event) => {
+            record_pointerdown(doc, event.page_x(), event.page_y());
             handle_pointerdown(
                 doc,
                 target_node_id,
@@ -231,7 +225,6 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 event.page_y(),
                 event.button,
                 event.mods,
-                false,
                 &mut dispatch_event,
             );
         }

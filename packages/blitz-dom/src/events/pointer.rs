@@ -381,21 +381,10 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     changed
 }
 
-/// Runs for every `pointerdown`, including one whose default action was prevented: the
-/// press is still recorded, for counting clicks and detecting drags, and still stops a
-/// scroll that is under way. Only its default action (selecting, focusing, starting a
-/// scrollbar drag) is skipped.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn handle_pointerdown(
-    doc: &mut BaseDocument,
-    _target: NodeId,
-    x: f32,
-    y: f32,
-    button: MouseEventButton,
-    mods: Modifiers,
-    default_prevented: bool,
-    dispatch_event: &mut dyn FnMut(DomEvent),
-) {
+/// Record that the pointer has pressed, for counting clicks and detecting drags, and stop
+/// a scroll that is under way. Runs for every `pointerdown`, including one whose default
+/// action was prevented.
+pub(crate) fn record_pointerdown(doc: &mut BaseDocument, x: f32, y: f32) {
     // Compute click count using the previous mousedown position (before updating)
     // This handles both double-click detection and text input word/line selection
     // TODO: For text inputs, only increment click count if click maps to the same/similar caret position
@@ -416,11 +405,18 @@ pub(crate) fn handle_pointerdown(
     doc.mousedown_position = taffy::Point { x, y };
     doc.drag_mode = DragMode::None;
     doc.scroll_animation = ScrollAnimationState::None;
+}
 
-    if default_prevented {
-        return;
-    }
-
+/// The default action of a `pointerdown`, which [`record_pointerdown`] has recorded.
+pub(crate) fn handle_pointerdown(
+    doc: &mut BaseDocument,
+    _target: NodeId,
+    x: f32,
+    y: f32,
+    button: MouseEventButton,
+    mods: Modifiers,
+    dispatch_event: &mut dyn FnMut(DomEvent),
+) {
     let Some(hit) = doc.hit(x, y) else {
         // Clear text selection when clicking outside any element
         doc.clear_text_selection();
