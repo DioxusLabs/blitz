@@ -41,7 +41,9 @@ mod inline_bfc_padding;
 mod inline_box_baseline;
 mod inline_box_scrollable_overflow;
 mod inline_fragment_rects;
+#[cfg(not(feature = "svg-native"))]
 mod inline_svg_restyle;
+#[cfg(not(feature = "svg-native"))]
 mod inline_svg_serialize;
 mod inner_html_leak;
 mod interaction_state_canonicalization;
@@ -74,6 +76,8 @@ mod stale_node_mapping;
 mod style_property_invalidation;
 mod svg_attr_sizing;
 mod svg_background_size;
+#[cfg(feature = "svg-native")]
+mod svg_native;
 mod text_selection_anonymous_block;
 mod text_transform;
 mod touch_action;
