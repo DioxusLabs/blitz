@@ -38,6 +38,25 @@ fn node_scroll_range(node: &Node, include_hidden: bool) -> (Point<f64>, Point<f6
     )
 }
 
+/// Whether the node's `overscroll-behavior` stops scroll chaining on the x and y axes.
+/// `contain` and `none` both do, as Blitz draws no overscroll effect.
+fn overscroll_contains(node: &Node) -> (bool, bool) {
+    let Some(styles) = node.primary_styles() else {
+        return (false, false);
+    };
+    let contains = |behavior| {
+        matches!(
+            behavior,
+            OverscrollBehavior::Contain | OverscrollBehavior::None
+        )
+    };
+    let box_styles = styles.get_box();
+    (
+        contains(box_styles.overscroll_behavior_x),
+        contains(box_styles.overscroll_behavior_y),
+    )
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScrollBehavior {
     #[default]
@@ -357,7 +376,8 @@ impl BaseDocument {
 
         let has_changed = remainder != delta;
 
-        let (contain_x, contain_y) = self.contains_scroll(ScrollTarget::Node(node_id));
+        // Text inputs scroll their own content, so they need no scroll container check.
+        let (contain_x, contain_y) = overscroll_contains(&self.nodes[node_id]);
         if contain_x {
             remainder.x = 0.0;
         }
@@ -380,35 +400,21 @@ impl BaseDocument {
     }
 
     /// Whether `overscroll-behavior` stops scroll chaining out of `target` on the x and y axes.
-    /// `contain` and `none` both do, as Blitz draws no overscroll effect. The property applies
-    /// to scroll containers only, and the viewport takes the root element's value.
+    /// The property applies to scroll containers only, and the viewport takes the root
+    /// element's value.
     fn contains_scroll(&self, target: ScrollTarget) -> (bool, bool) {
         let node = match target {
             ScrollTarget::Viewport => self.try_root_element(),
-            ScrollTarget::Node(node_id) => self.nodes.get(node_id),
+            ScrollTarget::Node(node_id) => self.nodes.get(node_id).filter(|node| {
+                let is_scroll_container =
+                    |overflow| !matches!(overflow, Overflow::Visible | Overflow::Clip);
+                node.primary_styles().is_some_and(|styles| {
+                    is_scroll_container(styles.clone_overflow_x())
+                        || is_scroll_container(styles.clone_overflow_y())
+                })
+            }),
         };
-        let Some(styles) = node.and_then(|node| node.primary_styles()) else {
-            return (false, false);
-        };
-        let is_scroll_container =
-            |overflow| !matches!(overflow, Overflow::Visible | Overflow::Clip);
-        if target != ScrollTarget::Viewport
-            && !is_scroll_container(styles.clone_overflow_x())
-            && !is_scroll_container(styles.clone_overflow_y())
-        {
-            return (false, false);
-        }
-        let contains = |behavior| {
-            matches!(
-                behavior,
-                OverscrollBehavior::Contain | OverscrollBehavior::None
-            )
-        };
-        let box_styles = styles.get_box();
-        (
-            contains(box_styles.overscroll_behavior_x),
-            contains(box_styles.overscroll_behavior_y),
-        )
+        node.map_or((false, false), overscroll_contains)
     }
 
     /// The scroller which unconsumed scroll is transferred to: the node's parent, or the
