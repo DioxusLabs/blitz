@@ -7,8 +7,8 @@ use crate::events::{
 use crate::mutation_writer::DioxusState;
 use crate::qual_name;
 use blitz_dom::{
-    Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
-    EventHandler, Node,
+    Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventContext,
+    EventDriver, EventHandler, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
@@ -294,12 +294,13 @@ pub struct DioxusEventHandler<'v> {
 
 impl EventHandler for DioxusEventHandler<'_> {
     fn handle_event(
-        &mut self,
+        &self,
         chain: &[NodeId],
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     ) {
+        let doc = ctx.doc();
         // As an optimisation we maintain a count of the total number event handlers of a given type
         // If this count is zero then we can skip handling that kind of event entirely.
         let event_kind_idx = event.data.discriminant() as usize;

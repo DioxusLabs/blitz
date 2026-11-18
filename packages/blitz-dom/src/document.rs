@@ -289,6 +289,9 @@ pub struct BaseDocument {
     /// Events which have been generated but not yet dispatched. Drained by the
     /// [`EventDriver`](crate::EventDriver).
     pub(crate) pending_events: VecDeque<DomEvent>,
+    /// How deeply event dispatch is currently nested (see
+    /// [`EventContext::dispatch_event`](crate::EventContext::dispatch_event))
+    pub(crate) dispatch_depth: std::cell::Cell<u32>,
     /// The trackpad scroll gesture under way, locked to its main axis
     pub(crate) wheel_gesture: WheelGesture,
 
@@ -531,6 +534,7 @@ impl BaseDocument {
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
             pending_events: VecDeque::new(),
+            dispatch_depth: Default::default(),
             wheel_gesture: WheelGesture::default(),
             text_selection: TextSelection::default(),
             scratch: DocumentScratch::default(),

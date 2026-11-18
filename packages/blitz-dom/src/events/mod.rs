@@ -6,7 +6,7 @@ mod wheel;
 
 use crate::util::Point;
 use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
-pub use driver::{EventDriver, EventHandler, NoopEventHandler};
+pub use driver::{EventContext, EventDriver, EventHandler, NoopEventHandler};
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
 pub(crate) use pointer::DragMode;

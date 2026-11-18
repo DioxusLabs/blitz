@@ -6,11 +6,20 @@ use blitz_traits::events::{
 use blitz_traits::node_id::NodeId;
 
 pub trait EventHandler {
+    /// Handle an event which is being dispatched to the nodes in `chain`.
+    ///
+    /// The [`EventContext`] gives access to the document, and lets the handler dispatch
+    /// further events before it returns (see [`EventContext::dispatch_event`] and
+    /// [`EventContext::set_focus`]).
+    ///
+    /// This takes `&self` because dispatch is re-entrant: an event dispatched from inside
+    /// a handler calls the handler again while it is still running. Handlers which need
+    /// mutable state should use interior mutability.
     fn handle_event(
-        &mut self,
+        &self,
         chain: &[NodeId],
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     );
 }
@@ -18,10 +27,10 @@ pub trait EventHandler {
 pub struct NoopEventHandler;
 impl EventHandler for NoopEventHandler {
     fn handle_event(
-        &mut self,
+        &self,
         _chain: &[NodeId],
         _event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
         // Do nothing
@@ -36,6 +45,31 @@ pub struct EventDriver<'doc, Handler: EventHandler> {
 impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     pub fn new(doc: &'doc mut dyn Document, handler: Handler) -> Self {
         EventDriver { doc, handler }
+    }
+
+    fn context(&mut self) -> EventContext<'_> {
+        EventContext {
+            doc: &mut *self.doc,
+            handler: &self.handler,
+        }
+    }
+
+    /// Dispatch an event to its handlers and then to the document, before returning (see
+    /// [`EventContext::dispatch_event`]). Returns `false` if the event was cancelled.
+    pub fn dispatch_event(&mut self, event: DomEvent) -> bool {
+        self.context().dispatch_event(event)
+    }
+
+    /// Focus a node and dispatch the resulting events before returning (see
+    /// [`EventContext::set_focus`])
+    pub fn set_focus(&mut self, node_id: NodeId) {
+        self.context().set_focus(node_id);
+    }
+
+    /// Clear the focus and dispatch the resulting events before returning (see
+    /// [`EventContext::clear_focus`])
+    pub fn clear_focus(&mut self) {
+        self.context().clear_focus();
     }
 
     pub fn handle_pointer_move(&mut self, event: &BlitzPointerEvent) -> Option<NodeId> {
@@ -345,7 +379,10 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 DomEventData::PointerCancel(data) => {
                     (data.clone(), None, DomEventData::TouchCancel)
                 }
-                _ => return self.dispatch_event(ptr_event),
+                _ => {
+                    self.dispatch_event(ptr_event);
+                    return;
+                }
             };
         let target = ptr_event.target;
 
@@ -374,11 +411,6 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         self.run_default_action(&mut ptr_event, event_state.is_cancelled());
     }
 
-    fn dispatch_event(&mut self, mut event: DomEvent) {
-        let event_state = self.run_handler_event(&mut event, EventState::default());
-        self.run_default_action(&mut event, event_state.is_cancelled());
-    }
-
     /// Dispatch the events queued on the document (see [`BaseDocument::queue_event`]) until
     /// none are left. Each event is handed to its handlers and then to the document, either
     /// of which may queue further events.
@@ -398,7 +430,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             match event.source {
                 EventDispatchSource::Input => self.dispatch_input_pointer_event(event),
                 EventDispatchSource::UserAgent | EventDispatchSource::Script => {
-                    self.dispatch_event(event)
+                    self.dispatch_event(event);
                 }
             }
         }
@@ -409,66 +441,12 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         );
     }
 
-    fn adjust_element_coords(
-        &self,
-        target: NodeId,
-        coords: &PointerCoords,
-        element: &mut Point<f32>,
-    ) {
-        if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
-            element.x = coords.client_x - rect.x as f32;
-            element.y = coords.client_y - rect.y as f32;
-        }
-    }
-
     fn run_handler_event(
         &mut self,
         event: &mut DomEvent,
         initial_event_state: EventState,
     ) -> EventState {
-        let chain = if event.bubbles {
-            let doc = self.doc.inner();
-            doc.node_chain(event.target)
-        } else {
-            vec![event.target]
-        };
-
-        match &mut event.data {
-            DomEventData::PointerMove(data)
-            | DomEventData::PointerDown(data)
-            | DomEventData::PointerUp(data)
-            | DomEventData::PointerCancel(data)
-            | DomEventData::PointerEnter(data)
-            | DomEventData::PointerLeave(data)
-            | DomEventData::PointerOver(data)
-            | DomEventData::PointerOut(data)
-            | DomEventData::MouseMove(data)
-            | DomEventData::MouseDown(data)
-            | DomEventData::MouseUp(data)
-            | DomEventData::MouseEnter(data)
-            | DomEventData::MouseLeave(data)
-            | DomEventData::MouseOver(data)
-            | DomEventData::MouseOut(data)
-            | DomEventData::TouchStart(data)
-            | DomEventData::TouchEnd(data)
-            | DomEventData::TouchMove(data)
-            | DomEventData::TouchCancel(data)
-            | DomEventData::Click(data)
-            | DomEventData::ContextMenu(data)
-            | DomEventData::DoubleClick(data) => {
-                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
-            }
-            DomEventData::Wheel(data) => {
-                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
-            }
-            _ => {}
-        }
-
-        let mut event_state = initial_event_state;
-        self.handler
-            .handle_event(&chain, event, self.doc, &mut event_state);
-
-        event_state
+        run_handlers(&mut *self.doc, &self.handler, event, initial_event_state)
     }
 
     /// Hand an event to the document once its handlers have run. This happens for every
@@ -479,4 +457,158 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             .inner_mut()
             .handle_dom_event(event, default_prevented);
     }
+}
+
+/// Passed to an [`EventHandler`] with each event. As well as giving access to the
+/// document, it lets the handler dispatch further events *nested*: they are handled
+/// completely before the call returns and the current event carries on, like
+/// `dispatchEvent()` and `focus()` called from a listener in a browser.
+pub struct EventContext<'a> {
+    doc: &'a mut dyn Document,
+    handler: &'a dyn EventHandler,
+}
+
+impl EventContext<'_> {
+    /// How deeply dispatches can be nested. A dispatch beyond this is dropped, so that a
+    /// handler which keeps re-dispatching its own event cannot overflow the stack.
+    pub const MAX_DISPATCH_DEPTH: u32 = 64;
+
+    pub fn doc(&self) -> &dyn Document {
+        self.doc
+    }
+
+    /// Mutably access the document.
+    ///
+    /// State changes made through the document (such as
+    /// [`set_focus_to`](crate::BaseDocument::set_focus_to)) queue the events they generate,
+    /// to be dispatched once the current event has been handled. Use the methods of this
+    /// context to have them dispatched before returning instead.
+    pub fn doc_mut(&mut self) -> &mut dyn Document {
+        self.doc
+    }
+
+    /// Dispatch an event to its handlers and then to the document, before returning.
+    /// The events already queued on the document are left there.
+    ///
+    /// Returns `false` if the event was cancelled with `prevent_default`. An event nested
+    /// more than [`MAX_DISPATCH_DEPTH`](Self::MAX_DISPATCH_DEPTH) deep is dropped.
+    pub fn dispatch_event(&mut self, mut event: DomEvent) -> bool {
+        // Tracked on the document so that the limit also holds when a handler dispatches
+        // through a new driver for the same document
+        let depth = self.doc.inner().dispatch_depth.get();
+        if depth >= Self::MAX_DISPATCH_DEPTH {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                "Dropped {} event: event dispatch is nested too deeply",
+                event.name()
+            );
+            return true;
+        }
+
+        self.doc.inner().dispatch_depth.set(depth + 1);
+        let event_state = run_handlers(
+            &mut *self.doc,
+            self.handler,
+            &mut event,
+            EventState::default(),
+        );
+        let cancelled = event_state.is_cancelled();
+        self.doc.inner_mut().handle_dom_event(&mut event, cancelled);
+        self.doc.inner().dispatch_depth.set(depth);
+
+        !cancelled
+    }
+
+    /// Focus a node, dispatching the blur/focusout events of the previously focussed node
+    /// and the focus/focusin events of this one before returning. Does nothing if the node
+    /// is already focussed.
+    pub fn set_focus(&mut self, node_id: NodeId) {
+        self.dispatch_events_generated_by(|doc| {
+            doc.set_focus_to(node_id);
+        });
+    }
+
+    /// Clear the focus, dispatching the blur/focusout events of the focussed node before
+    /// returning
+    pub fn clear_focus(&mut self) {
+        self.dispatch_events_generated_by(|doc| doc.clear_focus());
+    }
+
+    /// Run `operation` and dispatch exactly the events that it queued
+    fn dispatch_events_generated_by(&mut self, operation: impl FnOnce(&mut crate::BaseDocument)) {
+        let generated_events = {
+            let mut doc = self.doc.inner_mut();
+            let queued_len = doc.pending_events.len();
+            operation(&mut doc);
+            doc.pending_events.split_off(queued_len)
+        };
+        for event in generated_events {
+            // A handler for an earlier event may have dropped this event's target
+            if self.doc.inner().get_node(event.target).is_some() {
+                self.dispatch_event(event);
+            }
+        }
+    }
+}
+
+fn adjust_element_coords(
+    doc: &dyn Document,
+    target: NodeId,
+    coords: &PointerCoords,
+    element: &mut Point<f32>,
+) {
+    if let Some(rect) = doc.inner().get_client_bounding_rect(target) {
+        element.x = coords.client_x - rect.x as f32;
+        element.y = coords.client_y - rect.y as f32;
+    }
+}
+
+fn run_handlers(
+    doc: &mut dyn Document,
+    handler: &dyn EventHandler,
+    event: &mut DomEvent,
+    initial_event_state: EventState,
+) -> EventState {
+    let chain = if event.bubbles {
+        doc.inner().node_chain(event.target)
+    } else {
+        vec![event.target]
+    };
+
+    match &mut event.data {
+        DomEventData::PointerMove(data)
+        | DomEventData::PointerDown(data)
+        | DomEventData::PointerUp(data)
+        | DomEventData::PointerCancel(data)
+        | DomEventData::PointerEnter(data)
+        | DomEventData::PointerLeave(data)
+        | DomEventData::PointerOver(data)
+        | DomEventData::PointerOut(data)
+        | DomEventData::MouseMove(data)
+        | DomEventData::MouseDown(data)
+        | DomEventData::MouseUp(data)
+        | DomEventData::MouseEnter(data)
+        | DomEventData::MouseLeave(data)
+        | DomEventData::MouseOver(data)
+        | DomEventData::MouseOut(data)
+        | DomEventData::TouchStart(data)
+        | DomEventData::TouchEnd(data)
+        | DomEventData::TouchMove(data)
+        | DomEventData::TouchCancel(data)
+        | DomEventData::Click(data)
+        | DomEventData::ContextMenu(data)
+        | DomEventData::DoubleClick(data) => {
+            adjust_element_coords(&*doc, event.target, &data.coords, &mut data.element)
+        }
+        DomEventData::Wheel(data) => {
+            adjust_element_coords(&*doc, event.target, &data.coords, &mut data.element)
+        }
+        _ => {}
+    }
+
+    let mut event_state = initial_event_state;
+    let mut ctx = EventContext { doc, handler };
+    handler.handle_event(&chain, event, &mut ctx, &mut event_state);
+
+    event_state
 }

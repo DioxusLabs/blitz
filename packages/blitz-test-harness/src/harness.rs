@@ -148,10 +148,10 @@ impl<D: Document> Harness<D> {
 
         impl EventHandler for RecordingHandler {
             fn handle_event(
-                &mut self,
+                &self,
                 _chain: &[blitz_traits::node_id::NodeId],
                 event: &mut DomEvent,
-                _doc: &mut dyn Document,
+                _ctx: &mut blitz_dom::EventContext<'_>,
                 _event_state: &mut EventState,
             ) {
                 self.events.borrow_mut().push(event.name().to_string());
