@@ -104,6 +104,7 @@ pub struct TextInputData {
     /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
     /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
     pub content_box_subpixel_offset: taffy::Point<f32>,
+    pub(crate) committed_value: String,
 }
 
 // FIXME: Implement Clone for PlainEditor
@@ -121,6 +122,23 @@ impl TextInputData {
             is_multiline,
             scroll_offset: 0.0,
             content_box_subpixel_offset: taffy::Point::ZERO,
+            committed_value: String::new(),
+        }
+    }
+
+    pub(crate) fn sync_committed_value(&mut self) {
+        self.committed_value.clear();
+        self.committed_value.push_str(self.editor.raw_text());
+    }
+
+    pub(crate) fn commit_change(&mut self) -> Option<String> {
+        let current = self.editor.raw_text();
+        if current != self.committed_value {
+            let value = current.to_string();
+            self.committed_value = value.clone();
+            Some(value)
+        } else {
+            None
         }
     }
 

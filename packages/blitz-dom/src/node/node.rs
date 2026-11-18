@@ -776,6 +776,9 @@ impl Node {
         if let Some(data) = self.element_data_mut() {
             data.element_state
                 .insert(ElementState::FOCUS | ElementState::FOCUSRING);
+            if let Some(input_data) = data.text_input_data_mut() {
+                input_data.sync_committed_value();
+            }
         }
         self.mark_ancestors_dirty();
 

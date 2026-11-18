@@ -1,7 +1,7 @@
 //! Event dispatch, window listeners, and uncaught exception reporting.
 
 use blitz_dom::NodeId;
-use blitz_traits::events::{DomEvent, DomEventData, EventState};
+use blitz_traits::events::{DomEvent, EventState};
 use boa_engine::object::JsObject;
 use boa_engine::{Context, JsError, JsResult, JsString, JsValue, js_string};
 
@@ -151,7 +151,7 @@ impl ScriptRuntime {
         event_state: &mut EventState,
     ) -> bool {
         let name = event.name().to_string();
-        let mut any_called = self.dispatch_event_inner(
+        let any_called = self.dispatch_event_inner(
             chain,
             &name,
             event.bubbles,
@@ -168,43 +168,11 @@ impl ScriptRuntime {
             event_state,
         );
 
-        // Browsers fire a `change` event after `input` events on checkbox/radio
-        // inputs. Blitz only generates `input` events, so synthesise the `change`
-        // event here.
-        if matches!(event.data, DomEventData::Input(_))
-            && self.target_is_checkbox_or_radio(event.target)
-        {
-            let mut change_state = EventState::default();
-            any_called |= self.dispatch_event_inner(
-                chain,
-                "change",
-                true,
-                |ctx, target, context| create_event(ctx, "change", true, false, target, context),
-                &mut change_state,
-            );
-            if change_state.redraw_is_requested() {
-                event_state.request_redraw();
-            }
-        }
-
         if any_called {
             self.run_jobs("event microtasks");
         }
 
         any_called
-    }
-
-    fn target_is_checkbox_or_radio(&self, node_id: NodeId) -> bool {
-        let doc = self.ctx.doc.borrow();
-        doc.get_node(node_id)
-            .and_then(|node| node.element_data())
-            .is_some_and(|element| {
-                element.name.local == blitz_dom::local_name!("input")
-                    && matches!(
-                        element.attr(blitz_dom::local_name!("type")),
-                        Some("checkbox") | Some("radio")
-                    )
-            })
     }
 
     /// Dispatch an event named `name` along `chain`, using `make_event` to lazily

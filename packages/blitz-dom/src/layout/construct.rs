@@ -887,8 +887,8 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
-        let editor = &mut text_input_data.editor;
-        editor.set_text(&initial_text);
+        text_input_data.editor.set_text(&initial_text);
+        text_input_data.sync_committed_value();
         element.special_data = SpecialElementData::TextInput(text_input_data);
 
         // An input focused before its editor existed (e.g. focused before the first layout)
