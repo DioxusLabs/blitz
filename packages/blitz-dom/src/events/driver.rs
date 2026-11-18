@@ -4,7 +4,6 @@ use blitz_traits::events::{
     UiEvent,
 };
 use blitz_traits::node_id::NodeId;
-use std::collections::VecDeque;
 
 pub trait EventHandler {
     fn handle_event(
@@ -32,16 +31,11 @@ impl EventHandler for NoopEventHandler {
 pub struct EventDriver<'doc, Handler: EventHandler> {
     doc: &'doc mut dyn Document,
     handler: Handler,
-    queue: VecDeque<DomEvent>,
 }
 
 impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     pub fn new(doc: &'doc mut dyn Document, handler: Handler) -> Self {
-        EventDriver {
-            doc,
-            handler,
-            queue: VecDeque::with_capacity(4),
-        }
+        EventDriver { doc, handler }
     }
 
     pub fn handle_pointer_move(&mut self, event: &BlitzPointerEvent) -> Option<NodeId> {
@@ -166,6 +160,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     }
 
     pub fn handle_ui_event(&mut self, event: UiEvent) {
+        // Events queued on the document since a driver last ran come before the new event
+        self.flush_pending_events();
+
         let doc = self.doc.inner();
 
         // A non-hovering pointer (finger) ends hover once it is lifted or cancelled
@@ -291,15 +288,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 super::ime::handle_ime_event(
                     &mut self.doc.inner_mut(),
                     blitz_traits::events::BlitzImeEvent::Commit(text),
-                    |event| self.queue.push_back(event),
                 );
-                self.process_queue();
+                self.flush_pending_events();
             }
             UiEvent::AppleStandardKeybinding(data) => {
                 let mut dom_event =
                     DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
                 self.run_default_action(&mut dom_event, false);
-                self.process_queue();
+                self.flush_pending_events();
             }
         };
 
@@ -317,8 +313,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     }
 
     pub fn handle_dom_event(&mut self, event: DomEvent) {
-        self.queue.push_back(event);
-        self.process_queue();
+        self.doc.inner_mut().queue_event(event);
+        self.flush_pending_events();
     }
 
     fn handle_pointer_event(
@@ -353,11 +349,19 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
 
         self.run_default_action(&mut ptr_event, event_state.is_cancelled());
-        self.process_queue();
+        self.flush_pending_events();
     }
 
-    fn process_queue(&mut self) {
-        while let Some(mut event) = self.queue.pop_front() {
+    /// Dispatch the events queued on the document (see [`BaseDocument::queue_event`]) until
+    /// none are left. Each event is handed to its handlers and then to the document, either
+    /// of which may queue further events.
+    ///
+    /// [`BaseDocument::queue_event`]: crate::BaseDocument::queue_event
+    pub fn flush_pending_events(&mut self) {
+        loop {
+            let Some(mut event) = self.doc.inner_mut().pop_pending_event() else {
+                break;
+            };
             let event_state = self.run_handler_event(&mut event, EventState::default());
             self.run_default_action(&mut event, event_state.is_cancelled());
         }
@@ -429,9 +433,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     /// event, including one whose default action was prevented: the document decides what,
     /// if anything, it still has to do with it.
     fn run_default_action(&mut self, event: &mut DomEvent, default_prevented: bool) {
-        let mut doc = self.doc.inner_mut();
-        doc.handle_dom_event(event, default_prevented, |new_evt| {
-            self.queue.push_back(new_evt)
-        });
+        self.doc
+            .inner_mut()
+            .handle_dom_event(event, default_prevented);
     }
 }

@@ -259,7 +259,7 @@ fn scroll_moves_hoisted_box_without_resolve() {
         assert_eq!(hoisted_entry(&doc, root, b), Some((1, (0.0, 100.0))));
 
         let generation = doc.tree().geometry_generation();
-        doc.scroll_node_by(s, 0.0, -90.0, |_| {});
+        doc.scroll_node_by(s, 0.0, -90.0);
         assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 90.0);
         assert_ne!(doc.tree().geometry_generation(), generation);
 
@@ -309,7 +309,7 @@ fn hoisted_position_is_memoised_per_generation() {
     assert!(entry(&doc));
 
     // Scrolled: likewise.
-    doc.scroll_node_by(s, 0.0, -90.0, |_| {});
+    doc.scroll_node_by(s, 0.0, -90.0);
     assert!(!entry(&doc));
     assert_eq!(hit(&doc, 50.0, 20.0), b);
     assert!(entry(&doc));
@@ -451,7 +451,7 @@ fn hoisted_children_of_scrolled_sc_root_are_hit() {
         assert_eq!(hoisted_entry(&doc, s, b), Some((1, (0.0, 100.0))));
         assert_ne!(hit(&doc, 50.0, 20.0), b);
 
-        doc.scroll_node_by(s, 0.0, -90.0, |_| {});
+        doc.scroll_node_by(s, 0.0, -90.0);
         assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 90.0);
         // B now spans y=10..30 within the 50px scroller.
         assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
@@ -628,7 +628,7 @@ fn fixed_boxes_scroll_only_with_a_non_viewport_containing_block() {
         assert_eq!(hit(&doc, 20.0, 60.0), g0);
         assert_eq!(hit(&doc, 60.0, 60.0), g1);
 
-        doc.scroll_node_by(s, 0.0, -20.0, |_| {});
+        doc.scroll_node_by(s, 0.0, -20.0);
         assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 20.0);
         let tall = id(&doc, "#tall");
         assert_eq!(
