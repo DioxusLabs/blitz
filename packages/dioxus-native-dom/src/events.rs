@@ -4,7 +4,7 @@ use blitz_dom::{
 };
 use blitz_traits::events::{
     BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent, BlitzWheelDelta,
-    BlitzWheelEvent, MouseEventButton,
+    BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource, MouseEventButton,
 };
 use dioxus_html::{
     AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DragData,
@@ -602,8 +602,26 @@ impl HasScrollData for NativeScrollData {
     }
 }
 
+/// A wheel event's data, with what Dioxus's [`WheelData`] has no field for. Reach it
+/// from an `onwheel` handler with `let data = event.data();` then
+/// `data.downcast::<NativeWheelData>()`.
 #[derive(Clone)]
 pub struct NativeWheelData(pub(crate) BlitzWheelEvent);
+
+impl NativeWheelData {
+    /// Where the event falls in its gesture, as when the fingers land on or lift from
+    /// a trackpad. [`BlitzWheelPhase::Moved`] on a device that reports no gestures.
+    pub fn phase(&self) -> BlitzWheelPhase {
+        self.0.phase
+    }
+
+    /// What drives the event, such as a trackpad's momentum after the fingers lift.
+    /// [`BlitzWheelSource::Unknown`] where the platform doesn't say.
+    pub fn source(&self) -> BlitzWheelSource {
+        self.0.source
+    }
+}
+
 impl HasWheelData for NativeWheelData {
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any
