@@ -57,6 +57,18 @@ fn a_mostly_horizontal_gesture_scrolls_only_horizontally() {
 }
 
 #[test]
+fn a_small_first_movement_does_not_decide_the_axis() {
+    assert_eq!(
+        gesture(&[
+            (-1.0, 0.0, Started, Finger),
+            (0.0, -30.0, Moved, Finger),
+            (-2.0, -30.0, Moved, Finger),
+        ]),
+        (1.0, 60.0)
+    );
+}
+
+#[test]
 fn a_diagonal_gesture_scrolls_both_axes() {
     assert_eq!(
         gesture(&[

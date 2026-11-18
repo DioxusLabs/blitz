@@ -840,23 +840,28 @@ pub(crate) enum WheelAxes {
 /// Locks a trackpad scroll gesture to its main axis, as browsers do. Swipes are rarely
 /// straight, so without a lock a vertical swipe also nudges horizontal scrollers sideways.
 ///
-/// The gesture's first movement decides the lock, which lasts until the gesture ends,
-/// including any momentum scrolling that follows. A clearly diagonal start scrolls both
-/// axes. Events from devices that report no gestures scroll as they come.
+/// The gesture's first few pixels of movement decide the lock, which lasts until the gesture
+/// ends, including any momentum scrolling that follows. A clearly diagonal start scrolls
+/// both axes. Events from devices that report no gestures scroll as they come.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct WheelGesture {
     /// Whether a gesture is under way.
     active: bool,
-    /// The gesture's axes, once its first movement has decided them.
+    /// The gesture's axes, once it has moved far enough to decide them.
     axes: Option<WheelAxes>,
+    /// How far the gesture has moved along each axis, until its axes are decided.
+    travel: (f64, f64),
     /// Whether the last event lifted the fingers, so momentum scrolling may follow.
     momentum_may_follow: bool,
 }
 
 impl WheelGesture {
-    /// A gesture locks to an axis when its first movement along that axis is at least this
-    /// many times its movement along the other.
+    /// A gesture locks to an axis when its movement along that axis is at least this many
+    /// times its movement along the other.
     const LOCK_RATIO: f64 = 2.0;
+    /// How far (in CSS pixels) a gesture moves before its axes are decided. A gesture's first
+    /// events are small and noisy, so they follow the movement so far without fixing the lock.
+    const LOCK_DISTANCE: f64 = 10.0;
 
     /// Place a wheel event in the gesture, returning the axes its default scroll moves.
     ///
@@ -876,25 +881,33 @@ impl WheelGesture {
             self.active = true;
             if !continues_gesture {
                 self.axes = None;
+                self.travel = (0.0, 0.0);
             }
         }
         if !self.active {
             return WheelAxes::Both;
         }
 
-        let (x, y) = match event.delta {
-            BlitzWheelDelta::Lines(x, y) | BlitzWheelDelta::Pixels(x, y) => (x.abs(), y.abs()),
+        let axes = match self.axes {
+            Some(axes) => axes,
+            None => {
+                let (x, y) = wheel_delta_px(&event.delta);
+                self.travel.0 += x.abs();
+                self.travel.1 += y.abs();
+                let (x, y) = self.travel;
+                let axes = if y >= x * Self::LOCK_RATIO {
+                    WheelAxes::Vertical
+                } else if x >= y * Self::LOCK_RATIO {
+                    WheelAxes::Horizontal
+                } else {
+                    WheelAxes::Both
+                };
+                if x.max(y) >= Self::LOCK_DISTANCE {
+                    self.axes = Some(axes);
+                }
+                axes
+            }
         };
-        if self.axes.is_none() && (x != 0.0 || y != 0.0) {
-            self.axes = Some(if y >= x * Self::LOCK_RATIO {
-                WheelAxes::Vertical
-            } else if x >= y * Self::LOCK_RATIO {
-                WheelAxes::Horizontal
-            } else {
-                WheelAxes::Both
-            });
-        }
-        let axes = self.axes.unwrap_or_default();
 
         match event.phase {
             BlitzWheelPhase::Ended | BlitzWheelPhase::Cancelled => {
@@ -908,16 +921,20 @@ impl WheelGesture {
     }
 }
 
+fn wheel_delta_px(delta: &BlitzWheelDelta) -> (f64, f64) {
+    match *delta {
+        BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
+        BlitzWheelDelta::Pixels(x, y) => (x, y),
+    }
+}
+
 pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     _: NodeId,
     event: BlitzWheelEvent,
     mut dispatch_event: F,
 ) {
-    let (scroll_x, scroll_y) = match event.delta {
-        BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
-        BlitzWheelDelta::Pixels(x, y) => (x, y),
-    };
+    let (scroll_x, scroll_y) = wheel_delta_px(&event.delta);
     let (scroll_x, scroll_y) = match doc.wheel_gesture.track(&event) {
         WheelAxes::Both => (scroll_x, scroll_y),
         WheelAxes::Horizontal => (scroll_x, 0.0),
