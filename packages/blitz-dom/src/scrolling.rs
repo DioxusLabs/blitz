@@ -381,21 +381,22 @@ impl BaseDocument {
     }
 
     /// Whether `overscroll-behavior` stops scroll chaining out of `target` on the x and y axes.
-    /// The property applies to scroll containers only, and the viewport takes the root
-    /// element's value.
+    /// The property applies to scroll containers only.
     fn contains_scroll(&self, target: ScrollTarget) -> Point<bool> {
-        let node = match target {
-            ScrollTarget::Viewport => self.try_root_element(),
-            ScrollTarget::Node(node_id) => self.nodes.get(node_id).filter(|node| {
-                let is_scroll_container =
-                    |overflow| !matches!(overflow, Overflow::Visible | Overflow::Clip);
+        let ScrollTarget::Node(node_id) = target else {
+            return Point { x: false, y: false };
+        };
+        let is_scroll_container =
+            |overflow| !matches!(overflow, Overflow::Visible | Overflow::Clip);
+        self.nodes
+            .get(node_id)
+            .filter(|node| {
                 node.primary_styles().is_some_and(|styles| {
                     is_scroll_container(styles.clone_overflow_x())
                         || is_scroll_container(styles.clone_overflow_y())
                 })
-            }),
-        };
-        node.map_or(Point { x: false, y: false }, Node::overscroll_contains)
+            })
+            .map_or(Point { x: false, y: false }, Node::overscroll_contains)
     }
 
     /// The scroller which unconsumed scroll is transferred to: the node's parent, or the
