@@ -575,6 +575,16 @@ pub enum BlitzWheelDelta {
     Pixels(f64, f64),
 }
 
+impl BlitzWheelDelta {
+    /// The delta as `(x, y)` in pixels, counting each line as `line_px` pixels.
+    pub fn to_pixels(&self, line_px: f64) -> (f64, f64) {
+        match *self {
+            Self::Lines(x, y) => (x * line_px, y * line_px),
+            Self::Pixels(x, y) => (x, y),
+        }
+    }
+}
+
 /// Where a [`BlitzWheelEvent`] falls in a scroll gesture.
 ///
 /// Devices that report no gestures (most mouse wheels) send every event as

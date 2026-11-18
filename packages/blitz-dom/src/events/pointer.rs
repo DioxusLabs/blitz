@@ -6,9 +6,8 @@ use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent,
-        BlitzWheelPhase, BlitzWheelSource, DomEvent, DomEventData, MouseEventButton,
-        MouseEventButtons,
+        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelEvent, BlitzWheelPhase,
+        BlitzWheelSource, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
@@ -891,7 +890,7 @@ impl WheelGesture {
         let axes = match self.axes {
             Some(axes) => axes,
             None => {
-                let (x, y) = wheel_delta_px(&event.delta);
+                let (x, y) = event.delta.to_pixels(WHEEL_LINE_PX);
                 self.travel.0 += x.abs();
                 self.travel.1 += y.abs();
                 let (x, y) = self.travel;
@@ -921,12 +920,8 @@ impl WheelGesture {
     }
 }
 
-fn wheel_delta_px(delta: &BlitzWheelDelta) -> (f64, f64) {
-    match *delta {
-        BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
-        BlitzWheelDelta::Pixels(x, y) => (x, y),
-    }
-}
+/// How far (in CSS pixels) a wheel event scrolls for each line of its delta.
+const WHEEL_LINE_PX: f64 = 20.0;
 
 pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
@@ -934,7 +929,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     event: BlitzWheelEvent,
     mut dispatch_event: F,
 ) {
-    let (scroll_x, scroll_y) = wheel_delta_px(&event.delta);
+    let (scroll_x, scroll_y) = event.delta.to_pixels(WHEEL_LINE_PX);
     let (scroll_x, scroll_y) = match doc.wheel_gesture.track(&event) {
         WheelAxes::Both => (scroll_x, scroll_y),
         WheelAxes::Horizontal => (scroll_x, 0.0),
