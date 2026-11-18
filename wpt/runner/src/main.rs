@@ -73,10 +73,7 @@ const SCALE: f64 = 1.0;
 bitflags! {
     #[derive(Copy, Clone)]
     pub struct TestFlags : u32 {
-        const USES_FLOAT = 0b00000001;
         const USES_INTRINSIC_SIZE = 0b00000010;
-        const USES_CALC = 0b00000100;
-        const USES_DIRECTION = 0b00001000;
         const USES_WRITING_MODE = 0b00010000;
         const USES_SUBGRID = 0b00100000;
         const USES_GRID_LANES = 0b01000000;
@@ -222,10 +219,7 @@ struct ThreadCtx {
 
     // Things that aren't really thread-specifc, but are convenient to store here
     attrtest_re: Regex,
-    float_re: Regex,
     intrinsic_re: Regex,
-    calc_re: Regex,
-    direction_re: Regex,
     writing_mode_re: Regex,
     subgrid_re: Regex,
     grid_lanes_re: Regex,
@@ -295,17 +289,8 @@ impl TestResult {
         if !flags.is_empty() {
             write!(out, " {}", "(".bright_black()).unwrap();
 
-            if self.flags.contains(TestFlags::USES_FLOAT) {
-                write!(out, "{}", "F".bright_black()).unwrap();
-            }
             if self.flags.contains(TestFlags::USES_INTRINSIC_SIZE) {
                 write!(out, "{}", "I".bright_black()).unwrap();
-            }
-            if self.flags.contains(TestFlags::USES_CALC) {
-                write!(out, "{}", "C".bright_black()).unwrap();
-            }
-            if self.flags.contains(TestFlags::USES_DIRECTION) {
-                write!(out, "{}", "D".bright_black()).unwrap();
             }
             if self.flags.contains(TestFlags::USES_WRITING_MODE) {
                 write!(out, "{}", "W".bright_black()).unwrap();
@@ -393,9 +378,6 @@ fn main() {
     let grid_lanes_fail_count = AtomicU32::new(0);
     let subgrid_fail_count = AtomicU32::new(0);
     let writing_mode_fail_count = AtomicU32::new(0);
-    let direction_fail_count = AtomicU32::new(0);
-    let float_fail_count = AtomicU32::new(0);
-    let calc_fail_count = AtomicU32::new(0);
     let intrinsic_size_fail_count = AtomicU32::new(0);
     let script_fail_count = AtomicU32::new(0);
     let other_fail_count = AtomicU32::new(0);
@@ -437,11 +419,8 @@ fn main() {
                     );
                     let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
 
-                    let float_re = Regex::new(r#"float:"#).unwrap();
                     let intrinsic_re =
                         Regex::new(r#"(width|height): ?(min|max|fit)-content"#).unwrap();
-                    let calc_re = Regex::new(r#"calc\("#).unwrap();
-                    let direction_re = Regex::new(r#"direction:|directionRTL"#).unwrap();
                     let writing_mode_re = Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
                     let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
                     let grid_lanes_re = Regex::new(r#"grid-lanes"#).unwrap();
@@ -466,10 +445,7 @@ fn main() {
                             ref_buffer,
                         },
                         attrtest_re,
-                        float_re,
                         intrinsic_re,
-                        calc_re,
-                        direction_re,
                         writing_mode_re,
                         subgrid_re,
                         grid_lanes_re,
@@ -525,14 +501,8 @@ fn main() {
                         subgrid_fail_count.fetch_add(1, Ordering::Relaxed);
                     } else if flags.contains(TestFlags::USES_WRITING_MODE) {
                         writing_mode_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_DIRECTION) {
-                        direction_fail_count.fetch_add(1, Ordering::Relaxed);
                     } else if flags.contains(TestFlags::USES_INTRINSIC_SIZE) {
                         intrinsic_size_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_CALC) {
-                        calc_fail_count.fetch_add(1, Ordering::Relaxed);
-                    } else if flags.contains(TestFlags::USES_FLOAT) {
-                        float_fail_count.fetch_add(1, Ordering::Relaxed);
                     } else if kind == TestKind::Ref && flags.contains(TestFlags::USES_SCRIPT) {
                         script_fail_count.fetch_add(1, Ordering::Relaxed);
                     } else {
@@ -626,9 +596,6 @@ fn main() {
     let subgrid_fail_count = subgrid_fail_count.load(Ordering::SeqCst);
     let grid_lanes_fail_count = grid_lanes_fail_count.load(Ordering::SeqCst);
     let writing_mode_fail_count = writing_mode_fail_count.load(Ordering::SeqCst);
-    let direction_fail_count = direction_fail_count.load(Ordering::SeqCst);
-    let float_fail_count = float_fail_count.load(Ordering::SeqCst);
-    let calc_fail_count = calc_fail_count.load(Ordering::SeqCst);
     let intrinsic_size_fail_count = intrinsic_size_fail_count.load(Ordering::SeqCst);
     let script_fail_count = script_fail_count.load(Ordering::SeqCst);
     let other_fail_count = other_fail_count.load(Ordering::SeqCst);
@@ -688,11 +655,8 @@ fn main() {
     println!("{}", "\nOf those tests which failed:".bright_black());
     println!("{other_fail_count:>4} do not use unsupported features");
     println!("{writing_mode_fail_count:>4} use writing-mode (W)");
-    println!("{direction_fail_count:>4} use direction (D)");
-    println!("{float_fail_count:>4} use floats (F)");
     println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords (I)");
     println!("{script_fail_count:>4} use script (X)");
-    println!("{calc_fail_count:>4} use calc (C)");
     if subgrid_fail_count > 0 {
         println!("{subgrid_fail_count:>4} use subgrid (S)");
     }

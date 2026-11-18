@@ -306,7 +306,7 @@ pub(crate) fn draw_glyph_run(
     let glyph_xform = run
         .synthesis()
         .skew()
-        .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+        .map(|angle| Affine::skew(-angle.to_radians().tan() as f64, 0.0));
 
     let embolden = if FONT_EMBOLDEN_ENABLED {
         font_embolden(font_size as f64, color, transform)

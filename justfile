@@ -47,8 +47,8 @@ dev *ARGS:
 cpu *ARGS:
   cargo run --release --package rdme --no-default-features --features cpu,comrak,floats,log-frame-times,log-phase-times {{ARGS}}
 
-hybrid *ARGS:
-  cargo run --release --package rdme --no-default-features --features hybrid,comrak,floats,log-frame-times,log-phase-times {{ARGS}}
+vello-gpu *ARGS:
+  cargo run --release --package rdme --no-default-features --features vello-gpu,comrak,floats,log-frame-times,log-phase-times {{ARGS}}
 
 skia *ARGS:
   cargo run --release --package rdme --no-default-features --features skia,comrak,floats,log-frame-times,log-phase-times {{ARGS}}

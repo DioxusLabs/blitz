@@ -76,6 +76,8 @@ fn wheel_at(doc: &mut HtmlDocument, x: f32, y: f32, delta_x: f64, delta_y: f64) 
     doc.handle_ui_event(UiEvent::PointerMove(event.clone()));
     doc.handle_ui_event(UiEvent::Wheel(BlitzWheelEvent {
         delta: BlitzWheelDelta::Pixels(delta_x, delta_y),
+        phase: Default::default(),
+        source: Default::default(),
         coords: event.coords,
         buttons: MouseEventButtons::empty(),
         mods: Default::default(),
@@ -298,6 +300,70 @@ const SCROLLER_HTML: &str = r#"<html><body style="margin:0">
         <div style="height:1000px"></div>
     </div>
 </body></html>"#;
+
+#[test]
+fn percentage_height_scroller_clamps_after_viewport_resize() {
+    let mut doc = layout_doc(
+        r#"<!DOCTYPE html><style>html,body{height:100%;margin:0}</style>
+        <div id="scroller" style="overflow:auto;height:50%">
+            <div style="height:1000px"></div>
+        </div>"#,
+    );
+    let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+    doc.scroll_to(scroller, 0.0, 1000.0, ScrollBehavior::Instant);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 900.0);
+
+    doc.set_viewport(Viewport::new(800, 400, 1.0, ColorScheme::Light));
+    doc.resolve(0.0);
+    assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 800.0);
+}
+
+#[test]
+fn smooth_scroll_does_not_reverse_after_viewport_resize() {
+    for (viewport_height, expected_max) in [(1900, 50.0), (400, 800.0)] {
+        let mut doc = layout_doc(
+            r#"<!DOCTYPE html><style>html,body{height:100%;margin:0}</style>
+            <div id="scroller" style="overflow:auto;height:50%">
+                <div style="height:1000px"></div>
+            </div>"#,
+        );
+        let scroller = doc.query_selector("#scroller").unwrap().unwrap();
+        let preparation = Instant::now();
+        let before = loop {
+            doc.scroll_to(scroller, 0.0, 0.0, ScrollBehavior::Instant);
+            doc.scroll_to(scroller, 0.0, 900.0, ScrollBehavior::Smooth);
+            std::thread::sleep(Duration::from_millis(180));
+            doc.resolve(0.0);
+            let offset = doc.get_node(scroller).unwrap().scroll_offset().y;
+            if offset > 450.0 && offset < 900.0 {
+                break offset;
+            }
+            assert!(
+                preparation.elapsed() < Duration::from_secs(10),
+                "could not sample an in-progress scroll animation: {offset}"
+            );
+        };
+        assert!(before > 450.0 && before < 900.0, "offset: {before}");
+
+        doc.set_viewport(Viewport::new(800, viewport_height, 1.0, ColorScheme::Light));
+        doc.resolve(0.0);
+        let mut previous = doc.get_node(scroller).unwrap().scroll_offset().y;
+        assert!(previous >= before.min(expected_max));
+        let start = Instant::now();
+        while doc.is_animating() {
+            std::thread::sleep(Duration::from_millis(8));
+            doc.resolve(0.0);
+            let current = doc.get_node(scroller).unwrap().scroll_offset().y;
+            assert!(
+                current >= previous,
+                "smooth scroll reversed after resize: {previous} -> {current} (max {expected_max})"
+            );
+            previous = current;
+            assert!(start.elapsed() < Duration::from_secs(5));
+        }
+        assert_eq!(previous, expected_max);
+    }
+}
 
 #[test]
 fn scroll_to_sets_element_offset_and_clamps() {

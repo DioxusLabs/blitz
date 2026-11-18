@@ -52,6 +52,7 @@ mod link_cursor;
 mod link_rel_attribute;
 mod oof_dynamic_cb;
 mod outset_box_shadow_shape;
+mod overscroll_behavior;
 mod paint_order;
 mod paint_tree_bench;
 mod paint_tree_incremental;
@@ -82,6 +83,7 @@ mod touch_events;
 mod transform_2d_subset;
 mod transform_viewport_scale;
 mod ua_stylesheet_order;
+mod wheel_axis_lock;
 mod whitespace_modes;
 
 #[test]

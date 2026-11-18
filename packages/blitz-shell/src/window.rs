@@ -9,8 +9,8 @@ use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
-    MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
+    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase,
+    BlitzWheelSource, MouseEventButton, MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
 use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
@@ -858,7 +858,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.doc.handle_ui_event(event);
                 self.request_redraw();
             }
-            WindowEvent::MouseWheel { delta, .. } => {
+            WindowEvent::MouseWheel { delta, phase, source, .. } => {
                 let blitz_delta = match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => BlitzWheelDelta::Lines(x as f64, y as f64),
                     winit::event::MouseScrollDelta::PixelDelta(pos) => BlitzWheelDelta::Pixels(pos.x, pos.y),
@@ -871,6 +871,18 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 let event = BlitzWheelEvent {
                     delta: blitz_delta,
+                    phase: match phase {
+                        winit::event::TouchPhase::Started => BlitzWheelPhase::Started,
+                        winit::event::TouchPhase::Moved => BlitzWheelPhase::Moved,
+                        winit::event::TouchPhase::Ended => BlitzWheelPhase::Ended,
+                        winit::event::TouchPhase::Cancelled => BlitzWheelPhase::Cancelled,
+                    },
+                    source: match source {
+                        winit::event::ScrollSource::Wheel => BlitzWheelSource::Wheel,
+                        winit::event::ScrollSource::Finger => BlitzWheelSource::Finger,
+                        winit::event::ScrollSource::Momentum => BlitzWheelSource::Momentum,
+                        _ => BlitzWheelSource::Unknown,
+                    },
                     coords: self.pointer_coords(self.pointer_pos),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),

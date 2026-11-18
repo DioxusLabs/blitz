@@ -143,7 +143,10 @@ impl ElementCx<'_, '_> {
         if text_run {
             self.begin_text_clip_group(scene);
         }
-        self.draw_solid_bg(scene, &background_clip_path);
+        // The canvas already paints this element's background color.
+        if self.context.canvas_background_node_id != Some(self.node.id) {
+            self.draw_solid_bg(scene, &background_clip_path);
+        }
 
         for idx in (0..layer_count).rev() {
             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
