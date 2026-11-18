@@ -712,7 +712,22 @@ impl BaseDocument {
     /// document (default actions, state changes such as
     /// [`set_focus_to`](Self::set_focus_to), embedder code) can generate them without
     /// access to a driver.
+    ///
+    /// A `scroll` event replaces a `scroll` event for the same target at the back of the
+    /// queue, so scrolling a node several times before the queue is drained dispatches
+    /// one event with the latest scroll position. Only the back of the queue is
+    /// considered, which keeps `scroll` events in order relative to other events.
     pub fn queue_event(&mut self, event: DomEvent) {
+        if matches!(event.data, DomEventData::Scroll(_))
+            && let Some(last) = self.pending_events.back_mut()
+            && matches!(last.data, DomEventData::Scroll(_))
+            && last.target == event.target
+            && last.source == event.source
+        {
+            *last = event;
+            return;
+        }
+
         // Bound the queue in case the embedder never drains it
         const MAX_PENDING_EVENTS: usize = 1024;
         if self.pending_events.len() >= MAX_PENDING_EVENTS {

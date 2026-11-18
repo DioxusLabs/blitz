@@ -148,3 +148,46 @@ fn only_input_pointer_events_dispatch_a_mouse_event() {
         assert!(!names.iter().any(|name| name == "mousemove"));
     }
 }
+
+#[test]
+fn scroll_events_for_the_same_target_are_coalesced() {
+    let mut harness = Harness::from_html(
+        r#"<html><body>
+            <div id="scroller" style="width: 100px; height: 100px; overflow: scroll">
+                <div style="height: 1000px"></div>
+            </div>
+            <input id="a" type="text">
+        </body></html>"#,
+    );
+    let scroller = node_id(&harness, "#scroller");
+    let a = node_id(&harness, "#a");
+
+    let mut doc = harness.base_mut();
+    doc.scroll_node_by(scroller, 0.0, -10.0);
+    doc.scroll_node_by(scroller, 0.0, -10.0);
+    // An event in between keeps the scroll events either side of it apart
+    doc.set_focus_to(a);
+    doc.scroll_node_by(scroller, 0.0, -10.0);
+
+    let scroll_tops = Rc::new(RefCell::new(Vec::new()));
+    let handler = ScrollTopRecorder(scroll_tops.clone());
+    EventDriver::new(&mut *doc, handler).flush_pending_events();
+
+    assert_eq!(*scroll_tops.borrow(), [20.0, 30.0]);
+}
+
+struct ScrollTopRecorder(Rc<RefCell<Vec<f64>>>);
+
+impl EventHandler for ScrollTopRecorder {
+    fn handle_event(
+        &mut self,
+        _chain: &[NodeId],
+        event: &mut DomEvent,
+        _doc: &mut dyn Document,
+        _event_state: &mut EventState,
+    ) {
+        if let DomEventData::Scroll(data) = &event.data {
+            self.0.borrow_mut().push(data.scroll_top);
+        }
+    }
+}
