@@ -3,7 +3,7 @@
 
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
-use style::values::computed::{Overflow, OverscrollBehavior};
+use style::values::computed::Overflow;
 use stylo_taffy::CopyStyleGetters;
 use web_time::{SystemTime, UNIX_EPOCH};
 
@@ -35,25 +35,6 @@ fn node_scroll_range(node: &Node, include_hidden: bool) -> (Point<f64>, Point<f6
             x: if can_x_scroll { max.x } else { 0.0 },
             y: if can_y_scroll { max.y } else { 0.0 },
         },
-    )
-}
-
-/// Whether the node's `overscroll-behavior` stops scroll chaining on the x and y axes.
-/// `contain` and `none` both do, as Blitz draws no overscroll effect.
-fn overscroll_contains(node: &Node) -> (bool, bool) {
-    let Some(styles) = node.primary_styles() else {
-        return (false, false);
-    };
-    let contains = |behavior| {
-        matches!(
-            behavior,
-            OverscrollBehavior::Contain | OverscrollBehavior::None
-        )
-    };
-    let box_styles = styles.get_box();
-    (
-        contains(box_styles.overscroll_behavior_x),
-        contains(box_styles.overscroll_behavior_y),
     )
 }
 
@@ -310,10 +291,10 @@ impl BaseDocument {
 
         // Transfer the delta the target could not consume to the next scroller in the chain.
         if request.overflow == ScrollOverflow::Chain {
-            let (contain_x, contain_y) = self.contains_scroll(target);
+            let contains = self.contains_scroll(target);
             let remainder = Point {
-                x: if contain_x { 0.0 } else { unclamped.x - end.x },
-                y: if contain_y { 0.0 } else { unclamped.y - end.y },
+                x: if contains.x { 0.0 } else { unclamped.x - end.x },
+                y: if contains.y { 0.0 } else { unclamped.y - end.y },
             };
             if remainder != Point::ZERO {
                 if let Some(next) = self.next_scroller_in_chain(target) {
@@ -377,11 +358,11 @@ impl BaseDocument {
         let has_changed = remainder != delta;
 
         // Text inputs scroll their own content, so they need no scroll container check.
-        let (contain_x, contain_y) = overscroll_contains(&self.nodes[node_id]);
-        if contain_x {
+        let contains = self.nodes[node_id].overscroll_contains();
+        if contains.x {
             remainder.x = 0.0;
         }
-        if contain_y {
+        if contains.y {
             remainder.y = 0.0;
         }
 
@@ -402,7 +383,7 @@ impl BaseDocument {
     /// Whether `overscroll-behavior` stops scroll chaining out of `target` on the x and y axes.
     /// The property applies to scroll containers only, and the viewport takes the root
     /// element's value.
-    fn contains_scroll(&self, target: ScrollTarget) -> (bool, bool) {
+    fn contains_scroll(&self, target: ScrollTarget) -> Point<bool> {
         let node = match target {
             ScrollTarget::Viewport => self.try_root_element(),
             ScrollTarget::Node(node_id) => self.nodes.get(node_id).filter(|node| {
@@ -414,7 +395,7 @@ impl BaseDocument {
                 })
             }),
         };
-        node.map_or((false, false), overscroll_contains)
+        node.map_or(Point { x: false, y: false }, Node::overscroll_contains)
     }
 
     /// The scroller which unconsumed scroll is transferred to: the node's parent, or the
