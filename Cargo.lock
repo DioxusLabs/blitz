@@ -3386,7 +3386,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.13.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=48251283dde401837a373eb74085668f855158ab#48251283dde401837a373eb74085668f855158ab"
+source = "git+https://github.com/DioxusLabs/parley?rev=7ae59c14387ecea7885283885239d34b9a06f8ed#7ae59c14387ecea7885283885239d34b9a06f8ed"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -6190,7 +6190,7 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.1"
-source = "git+https://github.com/DioxusLabs/parley?rev=48251283dde401837a373eb74085668f855158ab#48251283dde401837a373eb74085668f855158ab"
+source = "git+https://github.com/DioxusLabs/parley?rev=7ae59c14387ecea7885283885239d34b9a06f8ed#7ae59c14387ecea7885283885239d34b9a06f8ed"
 dependencies = [
  "bytemuck",
 ]
@@ -6198,7 +6198,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.13.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=48251283dde401837a373eb74085668f855158ab#48251283dde401837a373eb74085668f855158ab"
+source = "git+https://github.com/DioxusLabs/parley?rev=7ae59c14387ecea7885283885239d34b9a06f8ed#7ae59c14387ecea7885283885239d34b9a06f8ed"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -6228,7 +6228,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.13.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=48251283dde401837a373eb74085668f855158ab#48251283dde401837a373eb74085668f855158ab"
+source = "git+https://github.com/DioxusLabs/parley?rev=7ae59c14387ecea7885283885239d34b9a06f8ed#7ae59c14387ecea7885283885239d34b9a06f8ed"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6237,12 +6237,12 @@ dependencies = [
 [[package]]
 name = "parley_emoji"
 version = "0.13.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=48251283dde401837a373eb74085668f855158ab#48251283dde401837a373eb74085668f855158ab"
+source = "git+https://github.com/DioxusLabs/parley?rev=7ae59c14387ecea7885283885239d34b9a06f8ed#7ae59c14387ecea7885283885239d34b9a06f8ed"
 
 [[package]]
 name = "parley_engine"
 version = "0.13.0"
-source = "git+https://github.com/DioxusLabs/parley?rev=48251283dde401837a373eb74085668f855158ab#48251283dde401837a373eb74085668f855158ab"
+source = "git+https://github.com/DioxusLabs/parley?rev=7ae59c14387ecea7885283885239d34b9a06f8ed#7ae59c14387ecea7885283885239d34b9a06f8ed"
 dependencies = [
  "harfrust",
  "hashbrown 0.17.1",

@@ -37,7 +37,7 @@ pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request
 }
 
 /// Carries `@font-face` descriptors from CSS parsing through to font
-/// registration so `parley::Collection::register_fonts` can alias the bytes
+/// registration so `parley::Collection::register_all_fonts` can alias the bytes
 /// under the `font-family` declared in CSS rather than whatever family name
 /// the TTF's own `name` table reports.
 ///

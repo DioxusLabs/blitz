@@ -40,7 +40,7 @@ impl FontUpdate {
             }
             Self::Register { font, overrides } => {
                 ctx.collection
-                    .register_fonts(font.clone(), Some(overrides.as_font_info()));
+                    .register_all_fonts(font.clone(), Some(overrides.as_font_info()));
             }
         }
     }
