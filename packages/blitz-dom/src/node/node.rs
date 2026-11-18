@@ -2093,6 +2093,16 @@ impl Node {
         )
     }
 
+    /// Whether the node is a scroll container: its `overflow` is not `visible` or `clip` on
+    /// at least one axis.
+    pub fn is_scroll_container(&self) -> bool {
+        if self.primary_styles().is_none() {
+            return false;
+        }
+        let overflow = taffy::CoreStyle::overflow(&self.layout_style());
+        overflow.x.is_scroll_container() || overflow.y.is_scroll_container()
+    }
+
     /// Whether the node's `overscroll-behavior` stops scroll chaining on each axis.
     /// `contain` and `none` both do, as Blitz draws no overscroll effect.
     pub(crate) fn overscroll_contains(&self) -> crate::Point<bool> {

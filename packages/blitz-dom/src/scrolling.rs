@@ -386,16 +386,9 @@ impl BaseDocument {
         let ScrollTarget::Node(node_id) = target else {
             return Point { x: false, y: false };
         };
-        let is_scroll_container =
-            |overflow| !matches!(overflow, Overflow::Visible | Overflow::Clip);
         self.nodes
             .get(node_id)
-            .filter(|node| {
-                node.primary_styles().is_some_and(|styles| {
-                    is_scroll_container(styles.clone_overflow_x())
-                        || is_scroll_container(styles.clone_overflow_y())
-                })
-            })
+            .filter(|node| node.is_scroll_container())
             .map_or(Point { x: false, y: false }, Node::overscroll_contains)
     }
 
