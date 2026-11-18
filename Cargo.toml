@@ -333,8 +333,8 @@ wgpu_context = { workspace = true }
 # fontique = { path = "../parley/fontique" }
 
 [patch.crates-io]
-parley = { git = "https://github.com/DioxusLabs/parley", rev = "60c4c19dda9647c7271094f10ebadc8bfa78a0c8" }
-fontique = { git = "https://github.com/DioxusLabs/parley", rev = "60c4c19dda9647c7271094f10ebadc8bfa78a0c8" }
-parlance = { git = "https://github.com/DioxusLabs/parley", rev = "60c4c19dda9647c7271094f10ebadc8bfa78a0c8" }
-parley_engine = { git = "https://github.com/DioxusLabs/parley", rev = "60c4c19dda9647c7271094f10ebadc8bfa78a0c8" }
-parley_data = { git = "https://github.com/DioxusLabs/parley", rev = "60c4c19dda9647c7271094f10ebadc8bfa78a0c8" }
+parley = { git = "https://github.com/DioxusLabs/parley", rev = "31fdcb89c8bc186f0f6b5306371c0937b0a8b4ae" }
+fontique = { git = "https://github.com/DioxusLabs/parley", rev = "31fdcb89c8bc186f0f6b5306371c0937b0a8b4ae" }
+parlance = { git = "https://github.com/DioxusLabs/parley", rev = "31fdcb89c8bc186f0f6b5306371c0937b0a8b4ae" }
+parley_engine = { git = "https://github.com/DioxusLabs/parley", rev = "31fdcb89c8bc186f0f6b5306371c0937b0a8b4ae" }
+parley_data = { git = "https://github.com/DioxusLabs/parley", rev = "31fdcb89c8bc186f0f6b5306371c0937b0a8b4ae" }
