@@ -58,6 +58,7 @@ mod paint_tree_bench;
 mod paint_tree_incremental;
 mod pointer_events;
 mod pointer_leave;
+mod pointerup_cancelled;
 mod pre_overflow_scroll;
 mod pseudo_element_flow_classification;
 mod pseudo_element_update;

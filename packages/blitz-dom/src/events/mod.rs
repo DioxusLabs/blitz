@@ -110,9 +110,18 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     mut dispatch_event: F,
 ) {
     if default_prevented {
-        // A scroll gesture has to see each of its events to know where it starts and ends.
-        if let DomEventData::Wheel(data) = &event.data {
-            doc.wheel_gesture.track(data);
+        // What the document still has to do with an event whose default action was
+        // prevented: follow the input, without applying its effects.
+        match &event.data {
+            // A scroll gesture has to see each of its events to know where it starts and ends.
+            DomEventData::Wheel(data) => {
+                doc.wheel_gesture.track(data);
+            }
+            // The pointer has lifted whether or not the page wanted the default action.
+            DomEventData::PointerUp(data) => {
+                handle_pointerup(doc, event.target, data, true, dispatch_event);
+            }
+            _ => {}
         }
         return;
     }
@@ -216,7 +225,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (handled in PointerDown)
         }
         DomEventData::PointerUp(event) => {
-            handle_pointerup(doc, target_node_id, event, dispatch_event);
+            handle_pointerup(doc, target_node_id, event, false, dispatch_event);
         }
         DomEventData::MouseUp(_) => {
             // Do nothing (handled in PointerUp)
