@@ -146,6 +146,7 @@ impl HtmlEventConverter for NativeConverter {
 pub struct NodeHandle {
     pub(crate) doc: Rc<RefCell<BaseDocument>>,
     pub(crate) runtime: Rc<dioxus_core::Runtime>,
+    pub(crate) event_handler_counts: crate::mutation_writer::EventHandlerCounts,
     pub(crate) node_id: NodeId,
 }
 
@@ -302,7 +303,10 @@ impl RenderedElementBacking for NodeHandle {
         // event handlers before this returns
         let is_focussed = self.doc().get_focussed_node_id() == Some(self.node_id);
         let mut doc = Rc::clone(&self.doc);
-        let handler = crate::dioxus_document::DioxusEventHandler::nested(self.runtime.clone());
+        let handler = crate::dioxus_document::DioxusEventHandler::new(
+            self.runtime.clone(),
+            self.event_handler_counts.clone(),
+        );
         let mut driver = blitz_dom::EventDriver::new(&mut doc, handler);
         if focus {
             driver.set_focus(self.node_id);

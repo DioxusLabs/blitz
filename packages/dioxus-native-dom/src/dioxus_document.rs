@@ -4,7 +4,7 @@ use crate::events::{
     BlitzKeyboardData, NativeConverter, NativeFocusData, NativeFormData, NativePointerData,
     NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
 };
-use crate::mutation_writer::DioxusState;
+use crate::mutation_writer::{DioxusState, EventHandlerCounts};
 use crate::qual_name;
 use blitz_dom::{
     Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventContext,
@@ -191,6 +191,7 @@ impl DioxusDocument {
                     Rc::new(PlatformEventData::new(Box::new(NodeHandle {
                         doc: Rc::clone(&self.inner),
                         runtime: self.vdom.runtime(),
+                        event_handler_counts: self.vdom_state.event_handler_counts.clone(),
                         node_id,
                     }))) as Rc<dyn Any>,
                     false,
@@ -264,10 +265,10 @@ impl Document for DioxusDocument {
     }
 
     fn handle_ui_event(&mut self, event: UiEvent) {
-        let handler = DioxusEventHandler {
-            runtime: self.vdom.runtime(),
-            event_handler_counts: Some(self.vdom_state.event_handler_counts),
-        };
+        let handler = DioxusEventHandler::new(
+            self.vdom.runtime(),
+            self.vdom_state.event_handler_counts.clone(),
+        );
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
     }
@@ -279,10 +280,10 @@ impl DioxusDocument {
         if !self.inner.borrow().has_pending_events() {
             return false;
         }
-        let handler = DioxusEventHandler {
-            runtime: self.vdom.runtime(),
-            event_handler_counts: Some(self.vdom_state.event_handler_counts),
-        };
+        let handler = DioxusEventHandler::new(
+            self.vdom.runtime(),
+            self.vdom_state.event_handler_counts.clone(),
+        );
         EventDriver::new(&mut self.inner, handler).flush_pending_events();
         true
     }
@@ -290,17 +291,14 @@ impl DioxusDocument {
 
 pub struct DioxusEventHandler {
     runtime: Rc<Runtime>,
-    /// The number of vdom event handlers of each kind of event, where known
-    event_handler_counts: Option<[u32; 64]>,
+    event_handler_counts: EventHandlerCounts,
 }
 
 impl DioxusEventHandler {
-    /// A handler for events dispatched from inside a vdom event handler (see
-    /// [`NodeHandle::set_focus`](dioxus_html::RenderedElementBacking::set_focus))
-    pub(crate) fn nested(runtime: Rc<Runtime>) -> Self {
+    pub(crate) fn new(runtime: Rc<Runtime>, event_handler_counts: EventHandlerCounts) -> Self {
         Self {
             runtime,
-            event_handler_counts: None,
+            event_handler_counts,
         }
     }
 }
@@ -317,9 +315,7 @@ impl EventHandler for DioxusEventHandler {
         // As an optimisation we maintain a count of the total number event handlers of a given type
         // If this count is zero then we can skip handling that kind of event entirely.
         let event_kind_idx = event.data.discriminant() as usize;
-        if let Some(counts) = &self.event_handler_counts
-            && counts[event_kind_idx] == 0
-        {
+        if self.event_handler_counts[event_kind_idx].get() == 0 {
             return;
         }
 
@@ -930,10 +926,10 @@ mod tests {
                 .synthetic_click_event(Default::default());
             (button, click)
         };
-        let handler = DioxusEventHandler {
-            runtime: doc.vdom.runtime(),
-            event_handler_counts: Some(doc.vdom_state.event_handler_counts),
-        };
+        let handler = DioxusEventHandler::new(
+            doc.vdom.runtime(),
+            doc.vdom_state.event_handler_counts.clone(),
+        );
         EventDriver::new(&mut doc.inner, handler).dispatch_event(DomEvent::new(
             button,
             click,
