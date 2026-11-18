@@ -1,6 +1,7 @@
 //! Scrolling: user-initiated (interactive) and programmatic scrolling of nodes and the
 //! viewport, and the scroll animations (smooth scrolls and flings) which drive them.
 
+use blitz_traits::events::EventDispatchSource;
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
 use style::values::computed::Overflow;
@@ -435,7 +436,11 @@ impl BaseDocument {
                         client_width: (self.viewport.window_size.0 as f64 / scale) as i32,
                         client_height: (self.viewport.window_size.1 as f64 / scale) as i32,
                     };
-                    self.queue_event(DomEvent::new(root_id, DomEventData::Scroll(event)));
+                    self.queue_event(DomEvent::new(
+                        root_id,
+                        DomEventData::Scroll(event),
+                        EventDispatchSource::UserAgent,
+                    ));
                 }
 
                 self.shell_provider.request_redraw();
@@ -464,7 +469,11 @@ impl BaseDocument {
                     client_width: layout.size.width as i32,
                     client_height: layout.size.height as i32,
                 };
-                self.queue_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
+                self.queue_event(DomEvent::new(
+                    node_id,
+                    DomEventData::Scroll(event),
+                    EventDispatchSource::UserAgent,
+                ));
 
                 self.show_scrollbars(node_id);
                 self.shell_provider.request_redraw();

@@ -4,7 +4,7 @@
 
 use blitz_dom::{Document, EventDriver, EventHandler, NodeId};
 use blitz_test_harness::Harness;
-use blitz_traits::events::{DomEvent, EventState};
+use blitz_traits::events::{DomEvent, DomEventData, EventDispatchSource, EventState};
 use std::{cell::RefCell, rc::Rc};
 
 #[derive(Clone, Default)]
@@ -115,4 +115,36 @@ fn flush_stops_when_handlers_keep_queueing_events() {
     // The flush returned, and the events it did not get to are still queued
     assert!(*focus_events.borrow() > 1);
     assert!(doc.has_pending_events());
+}
+
+#[test]
+fn only_input_pointer_events_dispatch_a_mouse_event() {
+    let mut harness = Harness::from_html(HTML);
+    let a = node_id(&harness, "#a");
+
+    let mut doc = harness.base_mut();
+    let data = doc
+        .get_node(a)
+        .unwrap()
+        .synthetic_click_event_data(Default::default());
+
+    let names_for = |doc: &mut blitz_dom::BaseDocument, source| {
+        let event = DomEvent::new(a, DomEventData::PointerMove(data.clone()), source);
+        assert_eq!(event.is_trusted(), source != EventDispatchSource::Script);
+        doc.queue_event(event);
+        let handler = RecordingHandler::default();
+        EventDriver::new(doc, handler.clone()).flush_pending_events();
+        let names: Vec<String> = handler.0.borrow().iter().map(|e| e.1.clone()).collect();
+        names
+    };
+
+    // The default action can add hover events after these
+    let input = names_for(&mut doc, EventDispatchSource::Input);
+    assert_eq!(input[..2], ["pointermove", "mousemove"]);
+
+    for source in [EventDispatchSource::UserAgent, EventDispatchSource::Script] {
+        let names = names_for(&mut doc, source);
+        assert_eq!(names[0], "pointermove");
+        assert!(!names.iter().any(|name| name == "mousemove"));
+    }
 }

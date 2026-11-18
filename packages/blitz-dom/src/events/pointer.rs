@@ -1,3 +1,4 @@
+use blitz_traits::events::EventDispatchSource;
 use blitz_traits::node_id::NodeId;
 use std::collections::VecDeque;
 use stylo_taffy::CopyStyleGetters;
@@ -302,6 +303,7 @@ pub(crate) fn handle_pointermove(
         doc.queue_event(DomEvent::new(
             hit.node_id,
             DomEventData::MouseEnter(event.clone()),
+            EventDispatchSource::UserAgent,
         ));
     }
 
@@ -602,7 +604,11 @@ pub(crate) fn handle_pointerup(
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
-        doc.queue_event(DomEvent::new(target, DomEventData::Click(event.clone())));
+        doc.queue_event(DomEvent::new(
+            target,
+            DomEventData::Click(event.clone()),
+            EventDispatchSource::UserAgent,
+        ));
     }
 
     // Dispatch a context menu event
@@ -610,6 +616,7 @@ pub(crate) fn handle_pointerup(
         doc.queue_event(DomEvent::new(
             target,
             DomEventData::ContextMenu(event.clone()),
+            EventDispatchSource::UserAgent,
         ));
     }
 }
@@ -652,6 +659,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
                     doc.queue_event(DomEvent::new(
                         node_id,
                         DomEventData::Input(BlitzInputEvent { value }),
+                        EventDispatchSource::UserAgent,
                     ));
                     doc.set_focus_to(node_id);
                     break 'matched true;
@@ -673,6 +681,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
                     doc.queue_event(DomEvent::new(
                         node_id,
                         DomEventData::Input(BlitzInputEvent { value }),
+                        EventDispatchSource::UserAgent,
                     ));
 
                     doc.set_focus_to(node_id);
@@ -802,6 +811,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
         doc.queue_event(DomEvent::new(
             target,
             DomEventData::DoubleClick(double_click_event),
+            EventDispatchSource::UserAgent,
         ));
     }
 }

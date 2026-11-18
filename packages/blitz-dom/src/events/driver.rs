@@ -1,7 +1,7 @@
 use crate::Document;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, Point, PointerCoords,
-    UiEvent,
+    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventDispatchSource, EventState,
+    Point, PointerCoords, UiEvent,
 };
 use blitz_traits::node_id::NodeId;
 
@@ -101,9 +101,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             self.handle_dom_event(DomEvent::new(
                 target,
                 DomEventData::PointerOut(event.clone()),
+                EventDispatchSource::Input,
             ));
             if is_mouse {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOut(event.clone())));
+                self.handle_dom_event(DomEvent::new(
+                    target,
+                    DomEventData::MouseOut(event.clone()),
+                    EventDispatchSource::Input,
+                ));
             }
 
             // Send an mouseleave event to all old elements on the chain
@@ -115,11 +120,13 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_dom_event(DomEvent::new(
                     *node_id,
                     DomEventData::PointerLeave(event.clone()),
+                    EventDispatchSource::Input,
                 ));
                 if is_mouse {
                     self.handle_dom_event(DomEvent::new(
                         *node_id,
                         DomEventData::MouseLeave(event.clone()),
+                        EventDispatchSource::Input,
                     ));
                 }
             }
@@ -129,12 +136,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             self.handle_dom_event(DomEvent::new(
                 target,
                 DomEventData::PointerOver(event.clone()),
+                EventDispatchSource::Input,
             ));
 
             if is_mouse {
                 self.handle_dom_event(DomEvent::new(
                     target,
                     DomEventData::MouseOver(event.clone()),
+                    EventDispatchSource::Input,
                 ));
             }
 
@@ -147,12 +156,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_dom_event(DomEvent::new(
                     *node_id,
                     DomEventData::PointerEnter(event.clone()),
+                    EventDispatchSource::Input,
                 ));
 
                 if is_mouse {
                     self.handle_dom_event(DomEvent::new(
                         *node_id,
                         DomEventData::MouseEnter(event.clone()),
+                        EventDispatchSource::Input,
                     ));
                 }
             }
@@ -246,18 +257,26 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             }
             // Out/leave events were dispatched by `handle_pointer_leave`
             UiEvent::PointerLeave(_) => {}
-            UiEvent::Wheel(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
-            }
-            UiEvent::KeyUp(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::KeyUp(data)))
-            }
-            UiEvent::KeyDown(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::KeyDown(data)))
-            }
-            UiEvent::Ime(data) => {
-                self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
-            }
+            UiEvent::Wheel(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::Wheel(data),
+                EventDispatchSource::Input,
+            )),
+            UiEvent::KeyUp(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::KeyUp(data),
+                EventDispatchSource::Input,
+            )),
+            UiEvent::KeyDown(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::KeyDown(data),
+                EventDispatchSource::Input,
+            )),
+            UiEvent::Ime(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::Ime(data),
+                EventDispatchSource::Input,
+            )),
             UiEvent::Paste(text) => {
                 super::ime::handle_ime_event(
                     &mut self.doc.inner_mut(),
@@ -266,8 +285,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.flush_pending_events();
             }
             UiEvent::AppleStandardKeybinding(data) => {
-                let mut dom_event =
-                    DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
+                let mut dom_event = DomEvent::new(
+                    target,
+                    DomEventData::AppleStandardKeybinding(data),
+                    EventDispatchSource::Input,
+                );
                 self.run_default_action(&mut dom_event, false);
                 self.flush_pending_events();
             }
@@ -292,9 +314,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     }
 
     fn handle_input_pointer_event(&mut self, target: NodeId, data: DomEventData) {
-        self.doc
-            .inner_mut()
-            .queue_input_event(DomEvent::new(target, data));
+        let event = DomEvent::new(target, data, EventDispatchSource::Input);
+        self.doc.inner_mut().queue_event(event);
         self.flush_pending_events();
     }
 
@@ -339,11 +360,13 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         if !event_state.is_cancelled() {
             if data.is_mouse() {
                 if let Some(make_mouse_data) = make_mouse_data {
-                    let mut mouse_event = DomEvent::new(target, make_mouse_data(data));
+                    let mut mouse_event =
+                        DomEvent::new(target, make_mouse_data(data), EventDispatchSource::Input);
                     event_state = self.run_handler_event(&mut mouse_event, event_state);
                 }
             } else if data.is_finger() || data.is_pen() {
-                let mut touch_event = DomEvent::new(target, make_touch_data(data));
+                let mut touch_event =
+                    DomEvent::new(target, make_touch_data(data), EventDispatchSource::Input);
                 event_state = self.run_handler_event(&mut touch_event, event_state);
             }
         }
@@ -369,13 +392,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         const MAX_EVENTS_PER_FLUSH: usize = 1024;
 
         for _ in 0..MAX_EVENTS_PER_FLUSH {
-            let Some(pending) = self.doc.inner_mut().pop_pending_event() else {
+            let Some(event) = self.doc.inner_mut().pop_pending_event() else {
                 return;
             };
-            if pending.from_input {
-                self.dispatch_input_pointer_event(pending.event);
-            } else {
-                self.dispatch_event(pending.event);
+            match event.source {
+                EventDispatchSource::Input => self.dispatch_input_pointer_event(event),
+                EventDispatchSource::UserAgent | EventDispatchSource::Script => {
+                    self.dispatch_event(event)
+                }
             }
         }
 

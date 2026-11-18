@@ -1,4 +1,5 @@
 use crate::{BaseDocument, node::GeneratedTextInputEvent, util::ACTION_MOD};
+use blitz_traits::events::EventDispatchSource;
 use blitz_traits::node_id::NodeId;
 use blitz_traits::{
     SmolStr,
@@ -108,6 +109,7 @@ impl BaseDocument {
                 self.queue_event(DomEvent::new(
                     node_id,
                     DomEventData::Input(BlitzInputEvent { value }),
+                    EventDispatchSource::UserAgent,
                 ));
                 self.shell_provider.request_redraw();
             }
