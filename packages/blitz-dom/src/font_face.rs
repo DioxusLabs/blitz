@@ -6,7 +6,7 @@ use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::ShellProvider;
 use linebender_resource_handle::Blob;
 use parley::FontContext;
-use parley::fontique::PendingFontStatus;
+use parley::fontique::{FontId, PendingFontStatus};
 use style::font_face::FontFaceSourceFormatKeyword;
 use url::Url;
 
@@ -18,7 +18,7 @@ use crate::net::{
 /// A change to apply to every font context between `resolve()` calls.
 pub(crate) enum FontUpdate {
     /// The source of a pending face finished loading (`None` if it failed).
-    Resolve { key: u64, font: Option<Blob<u8>> },
+    Resolve { key: FontId, font: Option<Blob<u8>> },
     /// Font bytes that were never registered as a pending face.
     Register {
         font: Blob<u8>,
@@ -66,14 +66,13 @@ struct FontSource {
     format: FontFaceSourceFormatKeyword,
     node_id: Option<NodeId>,
     /// Pending faces to resolve when the source completes, in registration order.
-    faces: Vec<u64>,
+    faces: Vec<FontId>,
 }
 
 #[derive(Default)]
 struct State {
-    next_key: u64,
     /// The source of each pending face.
-    faces: HashMap<u64, Url>,
+    faces: HashMap<FontId, Url>,
     sources: HashMap<Url, FontSource>,
     updates: Vec<FontUpdate>,
     /// Sources that became `Loading` and whose fetch has not been started yet.
@@ -107,11 +106,10 @@ impl FontFaceLoader {
         }
     }
 
-    pub fn register(&self, declaration: FontFaceDeclaration, node_id: Option<NodeId>) -> u64 {
+    pub fn register(&self, declaration: FontFaceDeclaration, node_id: Option<NodeId>) -> FontId {
         let mut state = self.state.lock().unwrap();
         let state = &mut *state;
-        let key = state.next_key;
-        state.next_key += 1;
+        let key = FontId::new();
         let source = state
             .sources
             .entry(declaration.url.clone())
@@ -141,8 +139,8 @@ impl FontFaceLoader {
     /// The faces are marked as loading in `font_ctx`, the calling thread's font context,
     /// which stops its queries from reporting them. So only a thread's first demand for
     /// a face gets here and takes the lock shared by all threads.
-    pub fn request(&self, font_ctx: &mut FontContext, keys: impl Iterator<Item = u64>) {
-        let keys: Vec<u64> = keys
+    pub fn request(&self, font_ctx: &mut FontContext, keys: impl Iterator<Item = FontId>) {
+        let keys: Vec<FontId> = keys
             .filter(|key| {
                 font_ctx
                     .collection
@@ -262,12 +260,19 @@ mod tests {
         Some(family.default_font()?.load(None).is_some())
     }
 
-    fn status(doc: &BaseDocument, key: u64) -> Option<PendingFontStatus> {
+    fn status(doc: &BaseDocument, key: FontId) -> Option<PendingFontStatus> {
         let mut fonts = doc.font_ctx.lock().unwrap();
         fonts.collection.pending_font_status(key)
     }
 
-    fn demand<const N: usize>(doc: &BaseDocument, keys: [u64; N]) {
+    /// The id of the family's face.
+    fn id(doc: &BaseDocument, family: &str) -> FontId {
+        let mut fonts = doc.font_ctx.lock().unwrap();
+        let family = fonts.collection.family_by_name(family).unwrap();
+        family.fonts()[0].id()
+    }
+
+    fn demand<const N: usize>(doc: &BaseDocument, keys: [FontId; N]) {
         let mut fonts = doc.font_ctx.lock().unwrap();
         doc.font_face_loader.request(&mut fonts, keys.into_iter());
     }
@@ -310,22 +315,23 @@ mod tests {
         assert!(net.0.lock().unwrap().is_empty());
         assert!(!doc.has_pending_font_loads());
         demand(&doc, []);
+        let (a, b, unused) = (id(&doc, "A"), id(&doc, "B"), id(&doc, "Unused"));
         // Each layout thread has its own copy of the font context.
         std::thread::scope(|scope| {
             for _ in 0..4 {
                 let loader = &doc.font_face_loader;
                 let mut fonts = doc.font_ctx.lock().unwrap().clone();
                 scope.spawn(move || {
-                    loader.request(&mut fonts, [0, 0, 1].into_iter());
-                    let status = fonts.collection.pending_font_status(0);
+                    loader.request(&mut fonts, [a, a, b].into_iter());
+                    let status = fonts.collection.pending_font_status(a);
                     assert_eq!(status, Some(PendingFontStatus::Loading));
                 });
             }
         });
-        assert_eq!(status(&doc, 0), Some(PendingFontStatus::Unloaded));
-        demand(&doc, [0]);
-        assert_eq!(status(&doc, 0), Some(PendingFontStatus::Loading));
-        assert_eq!(status(&doc, 2), Some(PendingFontStatus::Unloaded));
+        assert_eq!(status(&doc, a), Some(PendingFontStatus::Unloaded));
+        demand(&doc, [a]);
+        assert_eq!(status(&doc, a), Some(PendingFontStatus::Loading));
+        assert_eq!(status(&doc, unused), Some(PendingFontStatus::Unloaded));
         doc.font_face_loader.start_requests();
         assert_eq!(net.0.lock().unwrap().len(), 1);
         assert!(doc.has_pending_font_loads());
@@ -351,7 +357,8 @@ mod tests {
             ..Default::default()
         });
         doc.register_font_faces(vec![face("A", "https://example.com/missing.otf")], None);
-        demand(&doc, [0]);
+        let a = id(&doc, "A");
+        demand(&doc, [a]);
         doc.font_face_loader.start_requests();
         let (request, handler) = net.0.lock().unwrap().pop().unwrap();
         handler.error(request.url.to_string(), "missing".into());
@@ -359,8 +366,8 @@ mod tests {
         doc.flush_pending_fonts();
         assert!(!doc.has_pending_font_loads());
         assert_eq!(loaded(&doc, "A"), Some(false));
-        assert_eq!(status(&doc, 0), Some(PendingFontStatus::Failed));
-        demand(&doc, [0]);
+        assert_eq!(status(&doc, a), Some(PendingFontStatus::Failed));
+        demand(&doc, [a]);
         doc.font_face_loader.start_requests();
         assert!(net.0.lock().unwrap().is_empty());
     }
@@ -373,7 +380,8 @@ mod tests {
             ..Default::default()
         });
         doc.register_font_faces(vec![face("A", "https://example.com/dropped.otf")], None);
-        demand(&doc, [0]);
+        let a = id(&doc, "A");
+        demand(&doc, [a]);
         doc.font_face_loader.start_requests();
         assert!(doc.has_pending_font_loads());
         let (_, handler) = net.0.lock().unwrap().pop().unwrap();
@@ -382,6 +390,6 @@ mod tests {
         doc.flush_pending_fonts();
         assert!(!doc.has_pending_font_loads());
         assert_eq!(loaded(&doc, "A"), Some(false));
-        assert_eq!(status(&doc, 0), Some(PendingFontStatus::Failed));
+        assert_eq!(status(&doc, a), Some(PendingFontStatus::Failed));
     }
 }
