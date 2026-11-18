@@ -28,6 +28,7 @@ mod flex_grid_order;
 mod focus_redraw;
 mod focus_within;
 mod focusability_updates;
+mod focused_input_resize;
 mod font_element_attributes;
 mod font_family_fallback;
 mod fragment_navigation;

@@ -108,6 +108,7 @@ impl BaseDocument {
         self.resolve_layout();
         self.clamp_viewport_scroll();
         self.clamp_scroll_animation();
+        self.reveal_focused_input_after_resize();
         timer.record_time("layout");
         self.nodes.bump_geometry_generation();
 
