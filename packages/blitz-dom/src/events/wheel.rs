@@ -1,5 +1,5 @@
 use blitz_traits::{
-    events::{BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource, DomEvent},
+    events::{BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource},
     node_id::NodeId,
 };
 
@@ -89,12 +89,7 @@ impl WheelGesture {
 /// How far (in CSS pixels) a wheel event scrolls for each line of its delta.
 const WHEEL_LINE_PX: f64 = 20.0;
 
-pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
-    doc: &mut BaseDocument,
-    _: NodeId,
-    event: BlitzWheelEvent,
-    mut dispatch_event: F,
-) {
+pub(crate) fn handle_wheel(doc: &mut BaseDocument, _: NodeId, event: BlitzWheelEvent) {
     let (scroll_x, scroll_y) = event.delta.to_pixels(WHEEL_LINE_PX);
     let (scroll_x, scroll_y) = match doc.wheel_gesture.track(&event) {
         WheelAxes::Both => (scroll_x, scroll_y),
@@ -102,12 +97,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         WheelAxes::Vertical => (0.0, scroll_y),
     };
 
-    let has_changed = doc.scroll_chain_by(
-        doc.get_hover_node_id(),
-        scroll_x,
-        scroll_y,
-        &mut dispatch_event,
-    );
+    let has_changed = doc.scroll_chain_by(doc.get_hover_node_id(), scroll_x, scroll_y);
     if has_changed {
         doc.shell_provider.request_redraw();
     }

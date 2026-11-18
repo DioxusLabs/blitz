@@ -441,6 +441,17 @@ impl Document for ScriptDocument {
         }
 
         ran |= self.runtime.run_due_timers();
+
+        // Dispatch events queued on the document by scripts (e.g. focus events from
+        // `element.focus()`) or by the embedder since it was last driven
+        if self.inner.borrow().has_pending_events() {
+            let handler = ScriptEventHandler {
+                runtime: &mut self.runtime,
+            };
+            EventDriver::new(&mut self.inner, handler).flush_pending_events();
+            ran = true;
+        }
+
         self.arm_timer_thread();
         ran
     }
