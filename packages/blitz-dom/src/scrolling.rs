@@ -131,6 +131,20 @@ pub(crate) struct ScrollToState {
     pub(crate) duration: f64,
 }
 
+impl ScrollToState {
+    fn progress(&self) -> f64 {
+        let time_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64 as f64;
+        if self.duration <= 0.0 {
+            1.0
+        } else {
+            ((time_ms - self.start_time) / self.duration).clamp(0.0, 1.0)
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ScrollAnimationState {
     None,
@@ -202,20 +216,24 @@ impl BaseDocument {
     pub(crate) fn clamp_scroll_animation(&mut self) {
         if let ScrollAnimationState::ScrollTo(state) = &self.scroll_animation {
             let state = state.clone();
-            let (_, min, max) = self.scroll_state(state.target, true);
-            let start = Point {
-                x: state.start.x.clamp(min.x, max.x),
-                y: state.start.y.clamp(min.y, max.y),
-            };
+            let (current, min, max) = self.scroll_state(state.target, true);
             let end = Point {
                 x: state.end.x.clamp(min.x, max.x),
                 y: state.end.y.clamp(min.y, max.y),
             };
-            if start == end {
+            if current == end || state.start == end {
                 self.scroll_animation = ScrollAnimationState::None;
-            } else if let ScrollAnimationState::ScrollTo(state) = &mut self.scroll_animation {
-                state.start = start;
-                state.end = end;
+            } else if end != state.end {
+                let eased = ease_in_out_cubic(state.progress());
+                if eased >= 1.0 {
+                    self.scroll_animation = ScrollAnimationState::None;
+                } else if let ScrollAnimationState::ScrollTo(state) = &mut self.scroll_animation {
+                    state.start = Point {
+                        x: (current.x - end.x * eased) / (1.0 - eased),
+                        y: (current.y - end.y * eased) / (1.0 - eased),
+                    };
+                    state.end = end;
+                }
             }
         }
     }
@@ -812,17 +830,8 @@ impl BaseDocument {
             }
             ScrollAnimationState::ScrollTo(scroll_to) => {
                 let scroll_to = scroll_to.clone();
-                let time_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64 as f64;
-
                 // Normalised progress through the animation, clamped to [0, 1].
-                let progress = if scroll_to.duration <= 0.0 {
-                    1.0
-                } else {
-                    ((time_ms - scroll_to.start_time) / scroll_to.duration).clamp(0.0, 1.0)
-                };
+                let progress = scroll_to.progress();
                 let eased = ease_in_out_cubic(progress);
 
                 // Interpolate the target offset and move to it.
