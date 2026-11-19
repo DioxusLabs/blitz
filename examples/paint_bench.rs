@@ -16,7 +16,9 @@ use anyrender::ImageRenderer as _;
 use anyrender::PaintScene as _;
 use anyrender_vello::VelloScenePainter;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use anyrender_vello_gpu::{ExternalTextures, ImageCache, ImageManager, VelloGpuScenePainter};
+use anyrender_vello_gpu::{
+    ExternalTextures, GlyphAtlas, ImageCache, ImageManager, VelloGpuScenePainter,
+};
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
@@ -293,6 +295,7 @@ async fn main() {
             let mut scene = vello_gpu::Scene::new(render_width as u16, render_height as u16);
             let mut image_cache = ImageCache::default();
             let mut texture_bindings = ExternalTextures::default();
+            let mut glyphs = GlyphAtlas::new();
 
             let target_texture = device_handle
                 .device
@@ -319,7 +322,7 @@ async fn main() {
 
             bench(iters, |i| {
                 if fresh_atlas && i > 0 {
-                    renderer.reset_and_shrink(&mut resources);
+                    glyphs = GlyphAtlas::new();
                 }
                 let y = scroll_base + scroll_step * (i as f64);
                 document
@@ -330,11 +333,11 @@ async fn main() {
                     .device
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 let image_manager = ImageManager::new(
-                    &mut resources,
                     &device_handle.device,
                     &device_handle.queue,
                     &mut image_cache,
                     &mut texture_bindings,
+                    &mut glyphs,
                 );
                 let mut painter =
                     VelloGpuScenePainter::new(&mut scene, image_manager, &device_handle)
@@ -367,11 +370,11 @@ async fn main() {
                     )
                     .expect("Failed to render to texture");
                 ImageManager::new(
-                    &mut resources,
                     &device_handle.device,
                     &device_handle.queue,
                     &mut image_cache,
                     &mut texture_bindings,
+                    &mut glyphs,
                 )
                 .finish_frame();
                 device_handle.queue.submit([encoder.finish()]);
