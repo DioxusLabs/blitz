@@ -267,6 +267,19 @@ impl ScriptDocument {
         self.runtime.ctx.state.borrow_mut().record_error(message);
     }
 
+    /// Boa's runtime limits for this document's JavaScript: loop iterations,
+    /// recursion depth and VM stack size.
+    ///
+    /// Embedders that run untrusted pages can bound a synchronous infinite
+    /// loop such as `while (true) {}` with
+    /// [`set_loop_iteration_limit`](boa_engine::vm::RuntimeLimits::set_loop_iteration_limit).
+    /// Exceeding a limit throws an error that JavaScript cannot catch. The
+    /// script stops, and the error is reported through
+    /// [`take_js_errors`](Self::take_js_errors).
+    pub fn runtime_limits_mut(&mut self) -> &mut boa_engine::vm::RuntimeLimits {
+        self.runtime.context.runtime_limits_mut()
+    }
+
     /// The deadline of the soonest pending JS timer (if any).
     ///
     /// Embedders which drive the document manually (rather than through an
