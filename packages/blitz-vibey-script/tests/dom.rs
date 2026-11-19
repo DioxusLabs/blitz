@@ -986,3 +986,91 @@ fn class_list_replace() {
         "true|a x c|false|a x c|true|a x|true|c b"
     );
 }
+
+#[test]
+fn boxless_elements_return_empty_cssom_geometry() {
+    let mut doc = ScriptDocument::from_html(
+        r#"<!DOCTYPE html>
+        <html><head><style>
+            body { margin: 0; }
+            #box { position: relative; margin: 16px; width: 120px; height: 80px; border: 4px solid; overflow: scroll; }
+            #child { width: 300px; height: 300px; border: 2px solid; }
+            #contents { display: contents; border: 5px solid; }
+            #contents-child { width: 50px; height: 30px; }
+        </style></head>
+        <body>
+            <div id="box"><div id="child">text</div></div>
+            <div id="contents"><div id="contents-child">ok</div></div>
+            <pre id="out"></pre>
+            <script>
+                function summary(el) {
+                    const r = el.getBoundingClientRect();
+                    return [
+                        r.x, r.y, r.width, r.height,
+                        el.getClientRects().length,
+                        el.offsetLeft, el.offsetTop, el.offsetWidth, el.offsetHeight,
+                        el.offsetParent === null ? "null" : el.offsetParent.tagName,
+                        el.clientLeft, el.clientTop, el.clientWidth, el.clientHeight,
+                        el.scrollWidth, el.scrollHeight, el.scrollLeft, el.scrollTop,
+                    ].join(",");
+                }
+
+                const box = document.getElementById("box");
+                const child = document.getElementById("child");
+                const contents = document.getElementById("contents");
+                const contentsChild = document.getElementById("contents-child");
+
+                // Force initial layout and scroll #box
+                box.scrollTo(15, 25);
+
+                // Toggle to display: none and verify both box and descendant
+                box.style.display = "none";
+                box.scrollTop = 99;
+                box.scrollBy(10, 10);
+                child.scrollIntoView();
+                const hiddenBox = summary(box);
+                const hiddenChild = summary(child);
+
+                // Restore, then detach
+                box.style.display = "";
+                const visibleWidth = box.offsetWidth;
+                box.remove();
+                const detachedBox = summary(box);
+                const detachedChild = summary(child);
+
+                // display: contents vs its child
+                const contentsSummary = summary(contents);
+                const contentsChildWidth = contentsChild.offsetWidth;
+
+                // Root element with display: none
+                document.documentElement.style.display = "none";
+                document.documentElement.scrollTop = 40;
+                const hiddenRoot = [
+                    document.documentElement.clientWidth,
+                    document.documentElement.clientHeight,
+                    document.documentElement.scrollTop,
+                    document.documentElement.scrollLeft,
+                ].join(",");
+
+                document.getElementById("out").textContent = [
+                    hiddenBox,
+                    hiddenChild,
+                    visibleWidth,
+                    detachedBox,
+                    detachedChild,
+                    contentsSummary,
+                    contentsChildWidth,
+                    hiddenRoot,
+                ].join("|");
+            </script>
+        </body></html>"#,
+        DocumentConfig::default(),
+    );
+    doc.execute_scripts();
+    assert_eq!(doc.take_js_errors(), Vec::<String>::new());
+    let zero = "0,0,0,0,0,0,0,0,0,null,0,0,0,0,0,0,0,0";
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        format!("{zero}|{zero}|128|{zero}|{zero}|{zero}|50|0,0,0,0")
+    );
+}

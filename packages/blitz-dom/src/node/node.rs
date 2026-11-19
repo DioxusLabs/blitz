@@ -1825,6 +1825,9 @@ impl Node {
     /// The nearest layout ancestor that [is an offset parent](Self::is_offset_parent), as in
     /// CSSOM View's `offsetParent`.
     pub fn offset_parent(&self) -> Option<&Node> {
+        if !self.has_boxes() {
+            return None;
+        }
         let mut node = self;
         loop {
             node = self.with(node.containing_block()?);
@@ -1841,7 +1844,7 @@ impl Node {
     pub fn inline_fragment_boxes(&self) -> Option<impl Iterator<Item = taffy::Rect<f32>> + '_> {
         use parley::PositionedLayoutItem;
 
-        if !self.is_non_atomic_inline() {
+        if !self.has_boxes() || !self.is_non_atomic_inline() {
             return None;
         }
 
@@ -1941,6 +1944,9 @@ impl Node {
     /// CSSOM View's `offsetLeft`/`offsetTop`: the offset of this node's border box from the
     /// padding edge of its [`offset_parent`](Self::offset_parent).
     pub fn offset_top_left(&self) -> crate::util::Point<f32> {
+        if !self.has_boxes() {
+            return crate::util::Point { x: 0.0, y: 0.0 };
+        }
         let mut x = 0.0;
         let mut y = 0.0;
         let mut current = self;
@@ -1986,29 +1992,59 @@ impl Node {
         crate::util::Point { x, y }
     }
 
+    /// CSSOM View's `clientTop`: the width of the top border, or 0 if the node
+    /// has no CSS layout box.
+    pub fn client_top(&self) -> f32 {
+        if !self.has_boxes() {
+            return 0.0;
+        }
+        self.final_layout().border.top
+    }
+
+    /// CSSOM View's `clientLeft`: the width of the left border, or 0 if the node
+    /// has no CSS layout box.
+    pub fn client_left(&self) -> f32 {
+        if !self.has_boxes() {
+            return 0.0;
+        }
+        self.final_layout().border.left
+    }
+
     /// CSSOM View's `clientWidth`: the width of the padding box (border box minus
-    /// borders and scrollbar)
+    /// borders and scrollbar), or 0 if the node has no CSS layout box.
     pub fn client_width(&self) -> f32 {
+        if !self.has_boxes() {
+            return 0.0;
+        }
         let layout = self.final_layout();
         layout.size.width - layout.border.left - layout.border.right - layout.scrollbar_size.width
     }
 
     /// CSSOM View's `clientHeight`: the height of the padding box (border box minus
-    /// borders and scrollbar)
+    /// borders and scrollbar), or 0 if the node has no CSS layout box.
     pub fn client_height(&self) -> f32 {
+        if !self.has_boxes() {
+            return 0.0;
+        }
         let layout = self.final_layout();
         layout.size.height - layout.border.top - layout.border.bottom - layout.scrollbar_size.height
     }
 
     /// CSSOM View's `scrollWidth`: the width of the node's content, including
-    /// content not visible due to overflow
+    /// content not visible due to overflow, or 0 if the node has no CSS layout box.
     pub fn scroll_width(&self) -> f32 {
+        if !self.has_boxes() {
+            return 0.0;
+        }
         self.cssom_scroll_size().width
     }
 
     /// CSSOM View's `scrollHeight`: the height of the node's content, including
-    /// content not visible due to overflow
+    /// content not visible due to overflow, or 0 if the node has no CSS layout box.
     pub fn scroll_height(&self) -> f32 {
+        if !self.has_boxes() {
+            return 0.0;
+        }
         self.cssom_scroll_size().height
     }
 
@@ -2122,17 +2158,35 @@ impl Node {
     }
 
     /// Does the node generate any boxes? (e.g. `getClientRects()` returns an empty
-    /// list for boxless nodes, such as `display: none`, `display: contents`, or
-    /// detached elements)
+    /// list for boxless nodes, such as `display: none`, `display: contents`,
+    /// descendants of `display: none`, or detached elements)
     pub fn has_boxes(&self) -> bool {
-        self.flags.is_in_document()
-            && !self.display_style().is_some_and(|display| {
-                matches!(
-                    display.inside(),
-                    style::values::specified::box_::DisplayInside::None
-                        | style::values::specified::box_::DisplayInside::Contents
-                )
-            })
+        if !self.flags.is_in_document() {
+            return false;
+        }
+        let Some(display) = self.display_style() else {
+            return false;
+        };
+        if matches!(
+            display.inside(),
+            DisplayInside::None | DisplayInside::Contents
+        ) {
+            return false;
+        }
+        let mut parent_id = self.parent;
+        while let Some(id) = parent_id {
+            let parent = self.with(id);
+            if parent.element_data().is_some() {
+                let Some(parent_display) = parent.display_style() else {
+                    return false;
+                };
+                if parent_display.is_none() {
+                    return false;
+                }
+            }
+            parent_id = parent.parent;
+        }
+        true
     }
 
     /// Creates a synthetic click event

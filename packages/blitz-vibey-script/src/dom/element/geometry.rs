@@ -2,7 +2,6 @@
 
 use crate::dom::node_or_null;
 use crate::dom::{dom_ctx, this_node_id};
-use blitz_dom::NodeId;
 use boa_engine::js_string;
 use boa_engine::object::{JsObject, ObjectInitializer};
 use boa_engine::property::Attribute as PropAttribute;
@@ -12,7 +11,7 @@ use boa_engine::{Context, JsResult, JsValue};
 
 /// Look up a node and compute a geometry value from its layout, resolving
 /// style/layout first so that the values reflect any recent DOM mutations.
-/// Returns 0.0 if the node does not exist.
+/// Returns 0.0 if the node does not exist or has no CSS layout box.
 fn layout_value(
     this: &JsValue,
     context: &mut Context,
@@ -22,7 +21,11 @@ fn layout_value(
     let node_id = this_node_id(this)?;
     let mut doc = ctx.doc.borrow_mut();
     doc.resolve(0.0);
-    let value = doc.get_node(node_id).map(f).unwrap_or(0.0);
+    let value = doc
+        .get_node(node_id)
+        .filter(|node| node.has_boxes())
+        .map(f)
+        .unwrap_or(0.0);
     Ok(JsValue::from(value as f64))
 }
 
@@ -90,7 +93,13 @@ fn client_size(
     let Some(node) = doc.get_node(node_id) else {
         return Ok(JsValue::from(0.0));
     };
-    let value = if node_id == doc.root_element().id {
+    if !node.has_boxes() {
+        return Ok(JsValue::from(0.0));
+    }
+    let value = if doc
+        .try_root_element()
+        .is_some_and(|root| root.id == node_id)
+    {
         let viewport = doc.viewport();
         let scale = viewport.scale();
         let size = (
@@ -144,7 +153,7 @@ pub(super) fn client_top(
     _: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    layout_value(this, context, |node| node.final_layout().border.top.round())
+    layout_value(this, context, |node| node.client_top().round())
 }
 
 pub(super) fn client_left(
@@ -152,9 +161,7 @@ pub(super) fn client_left(
     _: &[JsValue],
     context: &mut Context,
 ) -> JsResult<JsValue> {
-    layout_value(this, context, |node| {
-        node.final_layout().border.left.round()
-    })
+    layout_value(this, context, |node| node.client_left().round())
 }
 
 pub(super) fn client_height(
@@ -200,12 +207,6 @@ fn make_rect_object(context: &mut Context, x: f64, y: f64, width: f64, height: f
         .build()
 }
 
-/// Does the node generate any boxes? (`getClientRects()` returns an empty list
-/// for boxless nodes, e.g. `display: none` or detached elements)
-fn node_has_boxes(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> bool {
-    doc.get_node(node_id).is_some_and(|node| node.has_boxes())
-}
-
 pub(super) fn get_bounding_client_rect(
     this: &JsValue,
     _: &[JsValue],
@@ -234,14 +235,7 @@ pub(super) fn get_client_rects(
     // One rect per box fragment: a single border-box rect for nodes with their
     // own layout box, one rect per line box for non-atomic inline elements,
     // and an empty list for boxless (e.g. `display: none`) elements
-    let rects = {
-        let doc = ctx.doc.borrow();
-        if node_has_boxes(&doc, node_id) {
-            doc.node_client_rects(node_id)
-        } else {
-            Vec::new()
-        }
-    };
+    let rects = ctx.doc.borrow().node_client_rects(node_id);
 
     let rect_objects: Vec<JsValue> = rects
         .into_iter()

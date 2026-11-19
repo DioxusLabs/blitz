@@ -203,11 +203,13 @@ impl RenderedElementBacking for NodeHandle {
     }
 
     fn get_scroll_offset(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsVector2D>>>> {
-        let Some(scroll_offset) = self
-            .doc()
-            .get_node(self.node_id)
-            .map(|node| *node.scroll_offset())
-        else {
+        let Some(scroll_offset) = self.doc().get_node(self.node_id).map(|node| {
+            if node.has_boxes() {
+                *node.scroll_offset()
+            } else {
+                blitz_dom::Point::ZERO
+            }
+        }) else {
             return self.node_not_exist_err();
         };
         Box::pin(async move { Ok(PixelsVector2D::new(scroll_offset.x, scroll_offset.y)) })
@@ -219,19 +221,30 @@ impl RenderedElementBacking for NodeHandle {
             drop(doc);
             return self.node_not_exist_err();
         };
-        let scroll_width = node.final_layout().scroll_width() as f64;
-        let scroll_height = node.final_layout().scroll_height() as f64;
+        let (scroll_width, scroll_height) = if node.has_boxes() {
+            (
+                node.final_layout().scroll_width() as f64,
+                node.final_layout().scroll_height() as f64,
+            )
+        } else {
+            (0.0, 0.0)
+        };
         Box::pin(async move { Ok(PixelsSize::new(scroll_width, scroll_height)) })
     }
 
     fn get_client_rect(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsRect>>>> {
-        let Some(bounding_rect) = self.doc_mut().get_client_bounding_rect(self.node_id) else {
+        let doc = self.doc();
+        if doc.get_node(self.node_id).is_none() {
+            drop(doc);
             return self.node_not_exist_err();
+        }
+        let pixels_rect = match doc.get_client_bounding_rect(self.node_id) {
+            Some(bounding_rect) => PixelsRect::new(
+                Point2D::new(bounding_rect.x, bounding_rect.y),
+                Size2D::new(bounding_rect.width, bounding_rect.height),
+            ),
+            None => PixelsRect::zero(),
         };
-        let pixels_rect = PixelsRect::new(
-            Point2D::new(bounding_rect.x, bounding_rect.y),
-            Size2D::new(bounding_rect.width, bounding_rect.height),
-        );
         Box::pin(async move { Ok(pixels_rect) })
     }
 
