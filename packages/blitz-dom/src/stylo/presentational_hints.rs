@@ -553,9 +553,9 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // The `border` attribute maps to the four border widths as a
         // pixel length, plus the four border styles as `solid` -- width
         // alone would compute back to zero against the default
-        // border-style of `none`. It is only these three elements:
-        // `embed`, `iframe`, `marquee` and non-image `input` all have a
-        // `border` attribute that must stay unmapped.
+        // border-style of `none`. It is only these three elements (and
+        // `table`, below): `embed`, `iframe`, `marquee` and non-image
+        // `input` all have a `border` attribute that must stay unmapped.
         if *name == local_name!("border")
             && (is_image_input || matches_tag!(tag, "img" | "object"))
             && let Some(width) = parse_pixels(value)
@@ -566,6 +566,17 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             ));
             hints.extend(apply_to_all!(BorderStyle::Solid =>
                 BorderTopStyle, BorderRightStyle, BorderBottomStyle, BorderLeftStyle,
+            ));
+        }
+
+        // A table's `border` attribute maps to its four border widths as a
+        // pixel length, and a value that does not parse to 1px. The border
+        // style (outset) and the cells' thin inset borders come from the
+        // table[border] rules in `default.css`.
+        if *name == local_name!("border") && matches_tag!(tag, "table") {
+            let width = parse_pixels(value).unwrap_or(1);
+            hints.extend(apply_to_all!(BorderSideWidth::from_px(width as f32) =>
+                BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth,
             ));
         }
 
