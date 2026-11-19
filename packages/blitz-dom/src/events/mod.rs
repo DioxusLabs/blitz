@@ -131,7 +131,6 @@ pub(crate) fn handle_dom_event(
 
     let target_node_id = event.target;
     let node = &mut doc.nodes[target_node_id];
-    let pos = node.absolute_position(0.0, 0.0);
 
     // Whether this event can move the caret/selection (or change the text) of a text input,
     // in which case we need to update the input's scroll offset afterwards.
@@ -147,17 +146,18 @@ pub(crate) fn handle_dom_event(
     };
 
     // Handle event forwarding for sub-document
-    if let Some(sub_doc) = node.subdoc_mut() {
+    if let Some(sub_doc) = node.subdoc() {
         let viewport_scroll = sub_doc.inner().viewport_scroll();
 
         let set_focus = matches!(
             &event.data,
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
-        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
+        let ui_event =
+            map_dom_event_to_ui_event(event, node.absolute_position(0.0, 0.0), viewport_scroll);
 
         if let Some(ui_event) = ui_event {
-            sub_doc.handle_ui_event(ui_event);
+            node.subdoc_mut().unwrap().handle_ui_event(ui_event);
         }
 
         if set_focus {
@@ -169,19 +169,24 @@ pub(crate) fn handle_dom_event(
 
     // Handle event forwarding for custom widget
     #[cfg(feature = "custom-widget")]
-    if let Some(widget_data) = node
-        .element_data_mut()
-        .and_then(|el| el.custom_widget_data_mut())
+    if node
+        .element_data()
+        .is_some_and(|el| el.custom_widget_data().is_some())
     {
         let set_focus = matches!(
             &event.data,
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
-        let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
+        let ui_event =
+            map_dom_event_to_ui_event(event, node.absolute_position(0.0, 0.0), viewport_scroll);
 
         if let Some(ui_event) = ui_event {
-            widget_data.widget.handle_event(&ui_event);
+            node.element_data_mut()
+                .and_then(|el| el.custom_widget_data_mut())
+                .unwrap()
+                .widget
+                .handle_event(&ui_event);
         }
 
         if set_focus {
