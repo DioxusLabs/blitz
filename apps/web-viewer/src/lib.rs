@@ -19,7 +19,7 @@
 
 use std::sync::{Arc, LazyLock, OnceLock};
 
-use anyrender_vello_hybrid::VelloHybridWebGlWindowRenderer as WindowRenderer;
+use anyrender_vello_gpu::VelloGpuWebGlWindowRenderer as WindowRenderer;
 use blitz_dom::{DocumentConfig, FontContext, decode_font_bytes};
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;

@@ -9805,7 +9805,7 @@ dependencies = [
 name = "web-viewer"
 version = "0.0.0"
 dependencies = [
- "anyrender_vello_hybrid",
+ "anyrender_vello_gpu",
  "blitz-dom",
  "blitz-html",
  "blitz-net",

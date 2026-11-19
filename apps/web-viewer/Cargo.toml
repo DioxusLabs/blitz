@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-anyrender_vello_hybrid = { workspace = true, features = ["webgl"] }
+anyrender_vello_gpu = { workspace = true, features = ["webgl"] }
 blitz-dom = { workspace = true, features = ["svg", "woff", "floats", "scrollbars"] }
 blitz-html = { workspace = true }
 blitz-net = { workspace = true }
