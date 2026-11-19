@@ -63,6 +63,7 @@ mod pointer_leave;
 mod pointerdown_cancelled;
 mod pointerup_cancelled;
 mod pre_overflow_scroll;
+mod pseudo_document_order;
 mod pseudo_element_flow_classification;
 mod pseudo_element_update;
 mod rem_after_viewport_change;
