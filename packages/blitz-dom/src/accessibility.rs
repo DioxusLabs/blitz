@@ -191,7 +191,7 @@ impl BlitzDomNode {
                 let style = s.styles.get_primary()?;
                 Some(
                     style.get_box().get_display().is_none()
-                        || style.clone_visibility() == visibility::computed_value::T::Hidden,
+                        || style.clone_visibility() != visibility::computed_value::T::Visible,
                 )
             })
             .unwrap_or(false)
