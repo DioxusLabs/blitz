@@ -53,7 +53,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
-use style::selector_parser::ServoElementSnapshot;
+use style::selector_parser::{RestyleDamage, ServoElementSnapshot};
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::UserSelect;
@@ -990,11 +990,54 @@ impl BaseDocument {
     }
 
     /// Remove a node from the node tree, clearing any interaction state
-    /// (hover/active/focus/mousedown/selection/drag/scrollbar) that references
-    /// it so that stale NodeIds are never dereferenced after the slot is freed.
+    /// (hover/active/focus/mousedown/selection/drag/scrollbar) and any
+    /// remaining box-tree reverse pointers (`layout_parent`,
+    /// `oof_containing_block`, and its entry in a containing block's
+    /// `hoisted_children`) so that stale `NodeId`s are never dereferenced
+    /// after the slot is freed.
     pub(crate) fn remove_node_from_tree(&mut self, node_id: NodeId) -> Option<Node> {
         self.clear_interaction_state_for_removed_node(node_id);
-        self.nodes.remove(node_id)
+        let node = self.nodes.remove(node_id)?;
+
+        // Detach this node from its out-of-flow containing block's hoisted list
+        // so the containing block never retains a dead key.
+        if let Some(cb_id) = node.oof_containing_block.get() {
+            if let Some(cb) = self.nodes.get(cb_id) {
+                cb.hoisted_children.borrow_mut().retain(|&id| id != node_id);
+            }
+        }
+
+        // Clear `layout_parent` on any surviving child or layout child that
+        // still points at the removed node (e.g. an anonymous block freed
+        // while a former DOM child outlives it).
+        for &child_id in &node.children {
+            if let Some(child) = self.nodes.get(child_id) {
+                if child.layout_parent.get() == Some(node_id) {
+                    child.layout_parent.set(None);
+                }
+            }
+        }
+        if let Some(layout_children) = node.layout_children.borrow().as_ref() {
+            for &child_id in layout_children {
+                if let Some(child) = self.nodes.get(child_id) {
+                    if child.layout_parent.get() == Some(node_id) {
+                        child.layout_parent.set(None);
+                    }
+                }
+            }
+        }
+
+        // Clear `oof_containing_block` on any surviving hoisted child that
+        // still points at the removed node.
+        for &hoisted_id in node.hoisted_children.borrow().iter() {
+            if let Some(hoisted) = self.nodes.get(hoisted_id) {
+                if hoisted.oof_containing_block.get() == Some(node_id) {
+                    hoisted.oof_containing_block.set(None);
+                }
+            }
+        }
+
+        Some(node)
     }
 
     /// The nearest element ancestor of `node_id` that is still in the
@@ -1127,6 +1170,94 @@ impl BaseDocument {
         node
     }
 
+    /// Tear down all box-tree relationships, owned layout-only nodes (anonymous
+    /// blocks and optionally `::before`/`::after` pseudo-elements), and cached
+    /// layout/paint state on a single node leaving the live box tree.
+    pub(crate) fn clear_node_box_tree(&mut self, node_id: NodeId, drop_pseudos: bool) {
+        if !self.nodes.contains_key(node_id) {
+            return;
+        }
+
+        self.reset_node_scroll_state(node_id);
+
+        let cb_id = {
+            let node = &self.nodes[node_id];
+            node.layout_parent.set(None);
+            node.oof_containing_block.take()
+        };
+        if let Some(cb_id) = cb_id {
+            if let Some(cb) = self.nodes.get_mut(cb_id) {
+                cb.hoisted_children.borrow_mut().retain(|&id| id != node_id);
+                cb.insert_damage(RestyleDamage::REPAINT | RestyleDamage::REBUILD_STACKING_CONTEXT);
+            }
+        }
+
+        let hoisted = std::mem::take(&mut *self.nodes[node_id].hoisted_children.borrow_mut());
+        for hoisted_id in hoisted {
+            if let Some(child) = self.nodes.get(hoisted_id) {
+                if child.oof_containing_block.get() == Some(node_id) {
+                    child.oof_containing_block.set(None);
+                }
+            }
+        }
+
+        let layout_children = self.nodes[node_id].layout_children.borrow_mut().take();
+        if let Some(layout_children) = layout_children {
+            for child_id in layout_children {
+                if let Some(child) = self.nodes.get(child_id) {
+                    if child.layout_parent.get() == Some(node_id) {
+                        child.layout_parent.set(None);
+                    }
+                }
+            }
+        }
+
+        let anon_blocks = std::mem::take(&mut self.nodes[node_id].anonymous_blocks);
+        for anon_id in anon_blocks {
+            self.deallocate_anonymous_block(anon_id);
+        }
+
+        if drop_pseudos {
+            let (before, after) = {
+                let node = &self.nodes[node_id];
+                (node.before(), node.after())
+            };
+            if before.is_some() || after.is_some() {
+                let node = &mut self.nodes[node_id];
+                node.set_pe_by_index(1, None);
+                node.set_pe_by_index(0, None);
+            }
+            if let Some(before_id) = before {
+                self.remove_and_drop_pe(before_id);
+            }
+            if let Some(after_id) = after {
+                self.remove_and_drop_pe(after_id);
+            }
+        }
+
+        let node = &mut self.nodes[node_id];
+        *node.paint_children.borrow_mut() = None;
+        node.stacking_context = None;
+        node.sc_contribution_cache.borrow_mut().clear();
+        node.flags.reset_construction_flags();
+        node.clear_layout_cache();
+        if let Some(layout_data) = node.try_layout_data_mut() {
+            layout_data.final_layout = Default::default();
+            layout_data.unrounded_layout = Default::default();
+            layout_data.scrollable_overflow = Default::default();
+        }
+        if let Some(element_data) = node.element_data_mut() {
+            element_data.take_inline_layout();
+        }
+    }
+
+    /// Tear down box-tree state for `node_id` and its entire DOM subtree.
+    pub(crate) fn clear_subtree_box_tree(&mut self, node_id: NodeId) {
+        self.iter_subtree_mut(node_id, |id, doc| {
+            doc.clear_node_box_tree(id, true);
+        });
+    }
+
     /// Deallocate an anonymous block created in a previous construction
     /// round, along with any anonymous blocks nested within it.
     pub(crate) fn deallocate_anonymous_block(&mut self, anon_id: NodeId) {
@@ -1214,8 +1345,9 @@ impl BaseDocument {
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
-            let parent = &mut self.nodes[parent_id];
-            parent.children.retain(|id| *id != node_id);
+            if let Some(parent) = self.nodes.get_mut(parent_id) {
+                parent.children.retain(|id| *id != node_id);
+            }
         }
 
         node

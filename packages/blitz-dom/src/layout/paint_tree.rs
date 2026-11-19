@@ -239,6 +239,7 @@ impl BaseDocument {
             // this node was last built with.
             let role_unchanged = node.stacking_context.is_some() == stacking_context.is_none();
             let clean = role_unchanged
+                && node.paint_children.borrow().is_some()
                 && !node
                     .damage()
                     .unwrap_or(ALL_DAMAGE)

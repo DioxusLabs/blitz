@@ -13,6 +13,7 @@ mod anonymous_block_restyle;
 mod anonymous_block_transform;
 mod autofocus_attribute;
 mod background_size;
+mod box_tree_invalidation;
 mod br_trailing_line;
 mod button_alignment;
 mod checked_attribute;
