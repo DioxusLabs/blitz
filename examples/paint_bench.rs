@@ -3,8 +3,14 @@
 //!
 //! Supports the vello, vello_cpu and vello_gpu anyrender backends.
 //!
-//! Usage: paint_bench <url> [width] [height] [scale] [iters] [backend]
+//! Usage: paint_bench <url> [width] [height] [scale] [iters] [backend] [glyph_cache] [scroll]
 //!   backend: vello (default) | cpu | gpu
+//!   glyph_cache: off (default) | on
+//!   scroll: <px> (static y offset, default 0) | scroll:<step_px> (advance y by step each frame)
+//!
+//! Environment variables:
+//!   BENCH_FRESH_ATLAS=1   Reset glyph atlas / renderer resources between frames (GPU only)
+//!   BENCH_PROFILE_SECS=N  Loop frames for N seconds after warmup (for external sampling profilers)
 
 use anyrender::ImageRenderer as _;
 use anyrender::PaintScene as _;
@@ -29,27 +35,55 @@ fn print_stats(label: &str, times_us: &mut [u128]) {
     let min = times_us[0];
     let max = times_us[times_us.len() - 1];
     let median = times_us[times_us.len() / 2];
+    let p95 = times_us[(times_us.len() * 95 / 100).min(times_us.len() - 1)];
     let mean: u128 = times_us.iter().sum::<u128>() / times_us.len() as u128;
-    println!("{label}: min {min}us / median {median}us / mean {mean}us / max {max}us");
+    println!(
+        "{label}: min {min}us / median {median}us / mean {mean}us / p95 {p95}us / max {max}us"
+    );
 }
 
 /// Run `iters` iterations of a two-phase (encode, rasterize) frame and report
-/// per-phase timing statistics.
-fn bench(iters: usize, mut frame: impl FnMut() -> (u128, u128)) {
-    for _ in 0..WARMUP_ITERS {
-        frame();
+/// cold frame + warm per-phase timing statistics.
+fn bench(iters: usize, mut frame: impl FnMut(usize) -> (u128, u128)) {
+    let (cold_enc, cold_ras) = frame(0);
+    println!(
+        "cold_frame : encode {cold_enc}us / rasterize {cold_ras}us / total {}us",
+        cold_enc + cold_ras
+    );
+
+    for i in 1..WARMUP_ITERS {
+        frame(i);
+    }
+
+    if let Ok(secs_str) = std::env::var("BENCH_PROFILE_SECS") {
+        if let Ok(secs) = secs_str.parse::<u64>() {
+            let start = Instant::now();
+            let mut count = 0usize;
+            while start.elapsed().as_secs() < secs {
+                frame(WARMUP_ITERS + count);
+                count += 1;
+            }
+            println!(
+                "profile_loop: {count} iters in {:.2}s",
+                start.elapsed().as_secs_f64()
+            );
+            return;
+        }
     }
 
     let mut encode_us: Vec<u128> = Vec::with_capacity(iters);
     let mut raster_us: Vec<u128> = Vec::with_capacity(iters);
-    for _ in 0..iters {
-        let (encode, raster) = frame();
+    let mut total_us: Vec<u128> = Vec::with_capacity(iters);
+    for i in 0..iters {
+        let (encode, raster) = frame(WARMUP_ITERS + i);
         encode_us.push(encode);
         raster_us.push(raster);
+        total_us.push(encode + raster);
     }
 
     print_stats("paint_scene", &mut encode_us);
     print_stats("rasterize  ", &mut raster_us);
+    print_stats("total      ", &mut total_us);
 }
 
 #[tokio::main]
@@ -61,6 +95,15 @@ async fn main() {
     let scale: f64 = args.next().and_then(|a| a.parse().ok()).unwrap_or(2.0);
     let iters: usize = args.next().and_then(|a| a.parse().ok()).unwrap_or(100);
     let backend: String = args.next().unwrap_or_else(|| "vello".into());
+    let glyph_cache_arg: String = args.next().unwrap_or_else(|| "off".into());
+    let glyph_caching = matches!(glyph_cache_arg.as_str(), "on" | "true" | "1" | "cached");
+    let scroll_arg: String = args.next().unwrap_or_else(|| "0".into());
+    let (scroll_base, scroll_step): (f64, f64) =
+        if let Some(step) = scroll_arg.strip_prefix("scroll:") {
+            (0.0, step.parse().unwrap_or(40.0))
+        } else {
+            (scroll_arg.parse().unwrap_or(0.0), 0.0)
+        };
 
     let url = Url::parse(&url_string)
         .unwrap_or_else(|_| Url::parse(&format!("https://{url_string}")).expect("Invalid url"));
@@ -68,7 +111,10 @@ async fn main() {
 
     // Fetch HTML
     let html = match url.scheme() {
-        "file" => String::from_utf8_lossy(&std::fs::read(url.path()).unwrap()).into_owned(),
+        "file" => {
+            let path = url.to_file_path().expect("Invalid file URL");
+            String::from_utf8_lossy(&std::fs::read(path).unwrap()).into_owned()
+        }
         _ => {
             let client = reqwest::Client::new();
             client
@@ -110,7 +156,7 @@ async fn main() {
     document.as_mut().resolve(0.0);
 
     println!(
-        "Loaded {url_string} at {width}x{height}@{scale}x; running {iters} paint iterations ({backend} backend)"
+        "Loaded {url_string} at {width}x{height}@{scale}x; running {iters} paint iterations ({backend} backend, glyph_cache={glyph_caching}, scroll={scroll_arg})"
     );
 
     let render_width = (width as f64 * scale) as u32;
@@ -139,7 +185,11 @@ async fn main() {
             .expect("Failed to create vello renderer");
 
             let mut scene = vello::Scene::new();
-            bench(iters, || {
+            bench(iters, |i| {
+                let y = scroll_base + scroll_step * (i as f64);
+                document
+                    .as_mut()
+                    .set_viewport_scroll(blitz_dom::Point { x: 0.0, y });
                 let encode_start = Instant::now();
                 {
                     let mut painter = VelloScenePainter::new(&mut scene);
@@ -180,8 +230,13 @@ async fn main() {
         }
         "cpu" | "vello_cpu" => {
             let mut renderer = VelloCpuImageRenderer::new(render_width, render_height);
+            renderer.set_glyph_caching(glyph_caching);
             let mut buffer = vec![0u8; render_width as usize * render_height as usize * 4];
-            bench(iters, || {
+            bench(iters, |i| {
+                let y = scroll_base + scroll_step * (i as f64);
+                document
+                    .as_mut()
+                    .set_viewport_scroll(blitz_dom::Point { x: 0.0, y });
                 let total_start = Instant::now();
                 let mut encode = 0u128;
                 renderer.render(
@@ -215,6 +270,11 @@ async fn main() {
             )
             .await
             .expect("Failed to create wgpu device");
+            let info = device_handle.adapter.get_info();
+            println!(
+                "adapter    : {} ({:?}, {:?})",
+                info.name, info.backend, info.device_type
+            );
 
             let (mut renderer, mut resources) = vello_gpu::Renderer::new(
                 &device_handle.device,
@@ -253,7 +313,18 @@ async fn main() {
             let target_texture_view =
                 target_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-            bench(iters, || {
+            let fresh_atlas = std::env::var("BENCH_FRESH_ATLAS")
+                .map(|v| v == "1" || v == "true")
+                .unwrap_or(false);
+
+            bench(iters, |i| {
+                if fresh_atlas && i > 0 {
+                    renderer.reset_and_shrink(&mut resources);
+                }
+                let y = scroll_base + scroll_step * (i as f64);
+                document
+                    .as_mut()
+                    .set_viewport_scroll(blitz_dom::Point { x: 0.0, y });
                 let encode_start = Instant::now();
                 let mut encoder = device_handle
                     .device
@@ -266,7 +337,8 @@ async fn main() {
                     &mut texture_bindings,
                 );
                 let mut painter =
-                    VelloGpuScenePainter::new(&mut scene, image_manager, &device_handle);
+                    VelloGpuScenePainter::new(&mut scene, image_manager, &device_handle)
+                        .with_glyph_caching(glyph_caching);
                 painter.reset();
                 paint_scene(
                     &mut painter,
