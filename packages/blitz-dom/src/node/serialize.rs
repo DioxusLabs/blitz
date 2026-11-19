@@ -155,7 +155,7 @@ impl Node {
     /// Serializes this `<svg>` subtree as a standalone SVG document for usvg, with
     /// `currentColor` resolved against each element's computed `color`.
     #[cfg(feature = "svg")]
-    pub(crate) fn svg_source(&self) -> String {
+    pub fn svg_source(&self) -> String {
         let mut output = String::new();
         let opts = SerializeOpts {
             style: OutputStyle::Normal,
