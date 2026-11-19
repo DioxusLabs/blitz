@@ -109,33 +109,6 @@ fn write_xml_attr_name(
     true
 }
 
-/// HTML void elements, which have no end tag
-/// (<https://html.spec.whatwg.org/multipage/syntax.html#void-elements>), plus the legacy ones the
-/// fragment serialization algorithm also skips.
-fn is_void_element(local: &str) -> bool {
-    matches!(
-        local,
-        "area"
-            | "base"
-            | "basefont"
-            | "bgsound"
-            | "br"
-            | "col"
-            | "embed"
-            | "frame"
-            | "hr"
-            | "img"
-            | "input"
-            | "keygen"
-            | "link"
-            | "meta"
-            | "param"
-            | "source"
-            | "track"
-            | "wbr"
-    )
-}
-
 impl Node {
     /// Renders the HTML of this node and all its children as a `String` without extra whitespace.
     ///
@@ -323,7 +296,7 @@ impl Node {
                 // other empty HTML element as `<x></x>`.
                 let is_html_element = data.name.ns == ns!(html);
                 let self_close = !has_children && (opts.xml_namespaces || !is_html_element);
-                let is_void = is_html_element && is_void_element(&data.name.local);
+                let is_void = data.is_void_element();
                 if self_close {
                     writer.push_str(" /");
                 }

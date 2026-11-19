@@ -421,6 +421,34 @@ impl SpecialElementData {
 }
 
 impl ElementData {
+    /// Whether this is an HTML void element, which has no end tag
+    /// (<https://html.spec.whatwg.org/multipage/syntax.html#void-elements>). Includes the legacy
+    /// void elements that the fragment serialization algorithm also writes without one.
+    pub fn is_void_element(&self) -> bool {
+        self.name.ns == ns!(html)
+            && matches!(
+                self.name.local,
+                local_name!("area")
+                    | local_name!("base")
+                    | local_name!("basefont")
+                    | local_name!("bgsound")
+                    | local_name!("br")
+                    | local_name!("col")
+                    | local_name!("embed")
+                    | local_name!("frame")
+                    | local_name!("hr")
+                    | local_name!("img")
+                    | local_name!("input")
+                    | local_name!("keygen")
+                    | local_name!("link")
+                    | local_name!("meta")
+                    | local_name!("param")
+                    | local_name!("source")
+                    | local_name!("track")
+                    | local_name!("wbr")
+            )
+    }
+
     pub fn new(name: QualName, attrs: Vec<Attribute>) -> Self {
         let id_attr_atom = attrs
             .iter()
