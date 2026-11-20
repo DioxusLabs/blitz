@@ -285,7 +285,7 @@ pub(crate) fn glyph_runs<'a, 'b>(
 ) -> impl Iterator<Item = GlyphRun<'a, TextBrush>> + 'b {
     line.items().filter_map(|item| match item {
         PositionedLayoutItem::GlyphRun(glyph_run) => Some(glyph_run),
-        PositionedLayoutItem::InlineBox(_) => None,
+        PositionedLayoutItem::InlineBox(_) | PositionedLayoutItem::Anchor(_) => None,
     })
 }
 

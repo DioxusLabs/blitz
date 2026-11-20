@@ -332,11 +332,11 @@ wgpu_context = { workspace = true }
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
 
-# https://github.com/linebender/parley/pull/940
+# https://github.com/linebender/parley/pull/940 plus an anchor prototype
 [patch.crates-io]
-parley = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
-fontique = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
-parlance = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
-parley_data = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
-parley_emoji = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
-parley_engine = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
+parley = { git = "https://github.com/DioxusLabs/parley", rev = "0fc00fd7b06d27c6e003f5523601e0237c9e88fd" }
+fontique = { git = "https://github.com/DioxusLabs/parley", rev = "0fc00fd7b06d27c6e003f5523601e0237c9e88fd" }
+parlance = { git = "https://github.com/DioxusLabs/parley", rev = "0fc00fd7b06d27c6e003f5523601e0237c9e88fd" }
+parley_data = { git = "https://github.com/DioxusLabs/parley", rev = "0fc00fd7b06d27c6e003f5523601e0237c9e88fd" }
+parley_emoji = { git = "https://github.com/DioxusLabs/parley", rev = "0fc00fd7b06d27c6e003f5523601e0237c9e88fd" }
+parley_engine = { git = "https://github.com/DioxusLabs/parley", rev = "0fc00fd7b06d27c6e003f5523601e0237c9e88fd" }

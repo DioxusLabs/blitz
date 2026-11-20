@@ -1912,6 +1912,7 @@ impl Node {
                         let y1 = line_metrics.block_max_coord;
                         union(&mut line_rect, x0, y0, x1, y1);
                     }
+                    PositionedLayoutItem::Anchor(_) => {}
                     PositionedLayoutItem::InlineBox(inline_box) => {
                         if !is_in_target(NodeId::from_u64(inline_box.id)) {
                             continue;

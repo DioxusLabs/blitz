@@ -71,6 +71,9 @@ impl BaseDocument {
                                 run.run().advance()
                             )
                         }
+                        PositionedLayoutItem::Anchor(anchor) => {
+                            print!("ANCHOR (id: {} x: {})", anchor.id, anchor.x.round())
+                        }
                         PositionedLayoutItem::InlineBox(ibox) => print!(
                             "BOX (id: {} x: {} y: {} w: {}, h: {})",
                             ibox.id,
