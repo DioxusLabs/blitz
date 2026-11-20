@@ -26,21 +26,27 @@ pub(crate) enum UnitKind {
     /// Like `Identity`, in preserved white space that wraps (`pre-wrap`), where spaces at a
     /// line end hang.
     PreWrap = 3,
+    /// Like `Identity`, in collapsible white space. Each U+0020 in it is a kept space that
+    /// collapsing left unchanged, so lone spaces between words don't need units of their own.
+    CollapsibleText = 4,
 }
 
 impl UnitKind {
     fn is_identity(self) -> bool {
-        matches!(self, UnitKind::Identity | UnitKind::PreWrap)
+        matches!(
+            self,
+            UnitKind::Identity | UnitKind::PreWrap | UnitKind::CollapsibleText
+        )
     }
 }
 
-const KIND_SHIFT: u32 = 30;
+const KIND_SHIFT: u32 = 29;
 const OFFSET_MASK: u32 = (1 << KIND_SHIFT) - 1;
 
 /// The start of a mapped range. The range ends where the next unit of the same node starts.
 #[derive(Clone, Copy)]
 struct Unit {
-    /// The source offset, with the [`UnitKind`] in the top two bits.
+    /// The source offset, with the [`UnitKind`] in the top three bits.
     source: u32,
     layout: u32,
 }
@@ -59,7 +65,8 @@ impl Unit {
             0 => UnitKind::Identity,
             1 => UnitKind::Variable,
             2 => UnitKind::KeptSpace,
-            _ => UnitKind::PreWrap,
+            3 => UnitKind::PreWrap,
+            _ => UnitKind::CollapsibleText,
         }
     }
 
@@ -160,10 +167,14 @@ impl TextOffsetMap {
         Some(units.first()?.layout()..units.last()?.layout())
     }
 
-    /// Whether the character at `layout` is a space that a collapsible white space run collapsed
-    /// to, which CSS removes at a line end.
-    pub(crate) fn is_collapsible_space(&self, layout: usize) -> bool {
-        self.kind_at(layout) == Some(UnitKind::KeptSpace)
+    /// Whether the character `c` at `layout` is a space that a collapsible white space run
+    /// collapsed to, which CSS removes at a line end.
+    pub(crate) fn is_collapsible_space(&self, layout: usize, c: char) -> bool {
+        match self.kind_at(layout) {
+            Some(UnitKind::KeptSpace) => true,
+            Some(UnitKind::CollapsibleText) => c == ' ',
+            _ => false,
+        }
     }
 
     /// Whether white space at `layout` is preserved and wraps, so it hangs at a line end.
@@ -312,8 +323,8 @@ mod tests {
             Some((id(2), 0))
         );
         assert_eq!(map.source_position(4, Affinity::Upstream), Some((id(2), 1)));
-        assert!(map.is_collapsible_space(1));
-        assert!(!map.is_collapsible_space(0));
-        assert!(!map.is_collapsible_space(2));
+        assert!(map.is_collapsible_space(1, ' '));
+        assert!(!map.is_collapsible_space(0, 'a'));
+        assert!(!map.is_collapsible_space(2, 'b'));
     }
 }

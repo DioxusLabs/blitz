@@ -70,6 +70,8 @@ pub(crate) struct WhiteSpaceCollapser {
     pending: Option<Pending>,
     /// The current text node's collapsed text, as pushed to Parley.
     out: String,
+    /// Whether the current text node's transformed text is its source, so `segments` is unused.
+    identity: bool,
     /// The current text node's transformed text, aligned to its source.
     segments: Vec<Segment>,
 }
@@ -87,7 +89,10 @@ impl WhiteSpaceCollapser {
     ) {
         self.map.begin_node(node);
         if !text.is_empty() {
-            align(source, text, &mut self.segments);
+            self.identity = source == text;
+            if !self.identity {
+                align(source, text, &mut self.segments);
+            }
             self.out.clear();
             self.collapse(text, white_space);
             builder.push_text(&self.out);
@@ -178,12 +183,20 @@ impl WhiteSpaceCollapser {
                 self.commit(text, pos..pos + c.len_utf8(), UnitKind::Identity);
                 pos += c.len_utf8();
             } else {
-                let content_len = rest
-                    .find(|c| is_collapsible(mode, c) || is_segment_break(c))
-                    .unwrap_or(rest.len());
+                let mut len = content_len(rest, mode);
+                // A lone space between content in this node is kept as is, so commit it with
+                // the content around it rather than as a run of its own.
+                if white_space.collapsed_space == " " {
+                    while rest.as_bytes().get(len) == Some(&b' ') {
+                        match content_len(&rest[len + 1..], mode) {
+                            0 => break,
+                            after => len += 1 + after,
+                        }
+                    }
+                }
                 self.flush();
-                self.commit(text, pos..pos + content_len, UnitKind::Identity);
-                pos += content_len;
+                self.commit(text, pos..pos + len, UnitKind::CollapsibleText);
+                pos += len;
             }
         }
     }
@@ -219,6 +232,11 @@ impl WhiteSpaceCollapser {
 
     /// Commits `text[range]` unchanged, mapping the parts that match the source as `exact`.
     fn commit(&mut self, text: &str, range: std::ops::Range<usize>, exact: UnitKind) {
+        if self.identity {
+            self.map.push(exact, range.start, self.len);
+            self.push_out(&text[range]);
+            return;
+        }
         let first = self.segments.partition_point(|seg| seg.text <= range.start) - 1;
         let kind = |seg: &Segment| {
             if seg.exact { exact } else { UnitKind::Variable }
@@ -232,7 +250,10 @@ impl WhiteSpaceCollapser {
             self.map
                 .push(kind(seg), seg.source, self.len + seg.text - range.start);
         }
-        let text = &text[range];
+        self.push_out(&text[range]);
+    }
+
+    fn push_out(&mut self, text: &str) {
         self.out.push_str(text);
         self.len += text.len();
         self.ends_with_break = text.ends_with(is_segment_break);
@@ -240,6 +261,9 @@ impl WhiteSpaceCollapser {
 
     /// The source offset of the transformed text offset `pos`.
     fn source_at(&self, pos: usize) -> usize {
+        if self.identity {
+            return pos;
+        }
         let index = self.segments.partition_point(|seg| seg.text <= pos) - 1;
         let seg = self.segments[index];
         if seg.exact {
@@ -250,6 +274,13 @@ impl WhiteSpaceCollapser {
             self.segments[index + 1].source
         }
     }
+}
+
+/// The length of the content (neither collapsible white space nor a segment break) at the
+/// start of `text`.
+fn content_len(text: &str, mode: WhiteSpaceCollapse) -> usize {
+    text.find(|c| is_collapsible(mode, c) || is_segment_break(c))
+        .unwrap_or(text.len())
 }
 
 /// Aligns `text` (`source` after `text-transform`) to `source`. Characters map one to one when

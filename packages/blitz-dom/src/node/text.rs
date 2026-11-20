@@ -79,7 +79,7 @@ impl TextLayout {
         while let Some(c) = text[..end].chars().next_back()
             && self
                 .offset_map
-                .is_collapsible_space(range.start + end - c.len_utf8())
+                .is_collapsible_space(range.start + end - c.len_utf8(), c)
         {
             end -= c.len_utf8();
         }
