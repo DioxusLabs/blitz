@@ -551,7 +551,7 @@ fn collect_layout_children_with_wrap(
                     doc,
                     container_node_id,
                     out,
-                    true,
+                    ChildFlow::FlexOrGrid,
                     text_item_needs_wrap,
                 );
             }
@@ -652,7 +652,7 @@ fn collect_layout_children_with_wrap(
                 doc,
                 container_node_id,
                 out,
-                false,
+                ChildFlow::Block,
                 block_item_needs_wrap,
             );
         }
@@ -813,12 +813,21 @@ fn contents_holds_only_inlines(doc: &BaseDocument, node_id: NodeId) -> bool {
     classification.all_inline && classification.has_inline_level
 }
 
+/// The kind of container whose children `collect_complex_layout_children` is collecting.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChildFlow {
+    /// A flow container: runs of text and inline-level children share an anonymous block.
+    Block,
+    /// A flex or grid container: every child is its own item and whitespace-only text is dropped.
+    FlexOrGrid,
+}
+
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
 fn collect_complex_layout_children(
     doc: &mut BaseDocument,
     container_node_id: NodeId,
     out: &mut LayoutChildren,
-    hide_whitespace: bool,
+    child_flow: ChildFlow,
     needs_wrap: fn(NodeKind, DisplayOutside) -> bool,
 ) {
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
@@ -843,14 +852,16 @@ fn collect_complex_layout_children(
         // Taffy knows how to deal with `Display::None` children.
         //
         // Also hide all-whitespace flexbox children as these should be ignored
-        if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
+        if child_node_kind == NodeKind::Comment
+            || (child_flow == ChildFlow::FlexOrGrid && is_whitespace_node)
+        {
             // return;
         }
         // A `display: contents` node in block flow that holds only inline
         // content goes into the anonymous block whole, so that its text
         // keeps the style it inherits from the node.
         else if display_inside == DisplayInside::Contents
-            && !hide_whitespace
+            && child_flow == ChildFlow::Block
             && contents_holds_only_inlines(doc, child_id)
         {
             out.push_wrapped(container_node_id, child_id, doc);
