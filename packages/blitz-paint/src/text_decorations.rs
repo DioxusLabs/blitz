@@ -89,6 +89,23 @@ pub(crate) struct ResolvedDecoration {
     inset: GenericTextDecorationInset<LengthPercentage>,
 }
 
+impl ResolvedDecoration {
+    /// The underline under the text an input method is composing: solid, `auto` thick, and in
+    /// the text's colour.
+    pub(crate) fn composition_underline(color: Color) -> Self {
+        Self {
+            line: TextDecorationLine::UNDERLINE,
+            style: TextDecorationStyle::Solid,
+            color,
+            thickness: GenericTextDecorationLength::Auto,
+            underline_offset: None,
+            underline_under: false,
+            underline_from_font: false,
+            inset: GenericTextDecorationInset::Auto,
+        }
+    }
+}
+
 /// An element on the current ancestor path (inline root -> run node), caching the
 /// values resolved from its computed style so descending into the same node across
 /// consecutive runs doesn't re-resolve them.
