@@ -301,8 +301,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             * node.transform().as_deref().copied().unwrap_or_default()
     }
 
+    /// Scroll the contents in the node's own coordinate space, inside its CSS transform.
     fn scrolled_transform(&self, node: &Node, transform: Affine) -> Affine {
-        transform.then_translate(Vec2 {
+        transform.pre_translate(Vec2 {
             x: -node.scroll_offset().x * self.scale,
             y: -node.scroll_offset().y * self.scale,
         })
@@ -395,10 +396,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         if node.flags.is_inline_root() {
             if let Some(layout) = &cx.element.inline_layout_data {
                 let layout_box = node.final_layout();
-                let x = (layout_box.padding.left + layout_box.border.left) as f64
-                    - node.scroll_offset().x;
+                // `transform` is already scrolled.
+                let x = (layout_box.padding.left + layout_box.border.left) as f64;
                 let y = (layout_box.padding.top + layout_box.border.top) as f64
-                    - node.scroll_offset().y
                     + layout.block_offset as f64;
                 let text_transform =
                     transform * Affine::translate((x * self.scale, y * self.scale));
@@ -709,12 +709,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             None,
                             None,
                             |scene| {
-                                // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-                                let content_position = Point {
-                                    x: content_position.x - node.scroll_offset().x,
-                                    y: content_position.y - node.scroll_offset().y,
-                                };
-
+                                // Now that background has been drawn, scroll the transform to
+                                // draw our contents scrolled. This also moves our own inline
+                                // content, so its position must not be scrolled again.
                                 cx.transform = self.scrolled_transform(node, cx.transform);
                                 cx.draw_image(scene);
                                 #[cfg(feature = "svg")]
