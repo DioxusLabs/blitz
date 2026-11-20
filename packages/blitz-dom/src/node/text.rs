@@ -6,6 +6,7 @@ use blitz_traits::{
 use keyboard_types::{Key, Modifiers, NamedKey};
 use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
 
+use crate::layout::inline::{TextOffsetMap, is_segment_break};
 use crate::util::ACTION_MOD;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -37,6 +38,19 @@ pub struct TextLayout {
     /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
     /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
     pub content_box_subpixel_offset: taffy::Point<f32>,
+    /// Maps DOM offsets in the formatting context to byte offsets in `text`.
+    pub offset_map: TextOffsetMap,
+}
+
+/// The white space at the end of a line, as byte ranges of [`TextLayout::text`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineEndWhitespace {
+    /// Preserved spaces and tabs (`pre-wrap`) that hang past the end of the line. Before a
+    /// forced break they only hang if they overflow.
+    pub hanging: std::ops::Range<usize>,
+    /// The collapsible space that CSS removes at the end of the line. Parley keeps it in the
+    /// text as a hanging space.
+    pub removed: std::ops::Range<usize>,
 }
 
 impl TextLayout {
@@ -48,6 +62,40 @@ impl TextLayout {
         *self
             .content_widths
             .get_or_insert_with(|| self.layout.calculate_content_widths())
+    }
+
+    /// The white space at the end of line `line_index`, not counting a forced line break.
+    ///
+    /// Parley only reports the total hanging advance of each line, so this scans back from the
+    /// line's end. If Parley reports these ranges itself one day, only this needs to change.
+    pub fn line_end_whitespace(&self, line_index: usize) -> Option<LineEndWhitespace> {
+        let range = self.layout.get(line_index)?.text_range();
+        let text = &self.text[range.clone()];
+        let mut end = text.len();
+        if let Some(c) = text.chars().next_back().filter(|&c| is_segment_break(c)) {
+            end -= c.len_utf8();
+        }
+        let removed_end = end;
+        while let Some(c) = text[..end].chars().next_back()
+            && self
+                .offset_map
+                .is_collapsible_space(range.start + end - c.len_utf8())
+        {
+            end -= c.len_utf8();
+        }
+        let hanging_end = end;
+        while let Some(c) = text[..end].chars().next_back()
+            && matches!(c, ' ' | '\t' | '\u{3000}')
+            && self
+                .offset_map
+                .is_pre_wrap(range.start + end - c.len_utf8())
+        {
+            end -= c.len_utf8();
+        }
+        Some(LineEndWhitespace {
+            hanging: range.start + end..range.start + hanging_end,
+            removed: range.start + hanging_end..range.start + removed_end,
+        })
     }
 
     /// Whether `byte_index` of `text` is the U+FFFC character that stands in for an in-flow

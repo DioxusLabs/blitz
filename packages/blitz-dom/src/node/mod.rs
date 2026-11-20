@@ -12,6 +12,7 @@ mod stylo_data;
 mod svg;
 mod text;
 
+pub use crate::layout::inline::{Affinity, TextOffsetMap};
 pub use attributes::{Attribute, Attributes};
 #[cfg(feature = "custom-widget")]
 pub use custom_widget::{
@@ -28,4 +29,7 @@ pub use scrollbar::{ScrollbarColor, ScrollbarRef, ScrollbarWidth};
 pub use stylo_data::ComputedStyleRef;
 #[cfg(feature = "svg")]
 pub use svg::{SvgImageData, SvgIntrinsicDimensions};
-pub use text::{GeneratedTextInputEvent, INLINE_BOX_CHAR, TextBrush, TextInputData, TextLayout};
+pub use text::{
+    GeneratedTextInputEvent, INLINE_BOX_CHAR, LineEndWhitespace, TextBrush, TextInputData,
+    TextLayout,
+};

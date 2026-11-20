@@ -12,6 +12,7 @@ use style::{
 };
 use stylo_taffy::CopyStyleGetters;
 
+use super::collapse::{WhiteSpace, WhiteSpaceCollapser};
 use crate::{
     NodeData,
     layout::list::BULLET_FONT_FAMILY,
@@ -54,6 +55,9 @@ pub(crate) fn build_inline_layout_into(
         ));
     }
 
+    let mut collapser = WhiteSpaceCollapser::default();
+    let root_white_space = white_space(root_node_style.as_deref().map(|style| &**style));
+
     let text_transform = root_node_style
         .as_deref()
         .map(|s| CaseTransform::from_style(s))
@@ -77,10 +81,20 @@ pub(crate) fn build_inline_layout_into(
                 let mut marker_style = parley_style.clone();
                 marker_style.font_family = BULLET_FONT_FAMILY.into();
                 builder.push_style_span(marker_style);
-                builder.push_text(&format!("{char} "));
+                collapser.push_generated(
+                    &mut builder,
+                    inline_context_root_node_id,
+                    &format!("{char} "),
+                    root_white_space,
+                );
                 builder.pop_style_span();
             }
-            Marker::String(str) => builder.push_text(str),
+            Marker::String(str) => collapser.push_generated(
+                &mut builder,
+                inline_context_root_node_id,
+                str,
+                root_white_space,
+            ),
         }
     };
     // The marker is a separate box, so words in the content don't continue from it.
@@ -90,6 +104,7 @@ pub(crate) fn build_inline_layout_into(
     if let Some(before_id) = root_node.before() {
         build_inline_layout_recursive(
             &mut builder,
+            &mut collapser,
             &mut text_transformer,
             nodes,
             before_id,
@@ -99,6 +114,7 @@ pub(crate) fn build_inline_layout_into(
     for child_id in root_node.children.iter().copied() {
         build_inline_layout_recursive(
             &mut builder,
+            &mut collapser,
             &mut text_transformer,
             nodes,
             child_id,
@@ -108,6 +124,7 @@ pub(crate) fn build_inline_layout_into(
     if let Some(after_id) = root_node.after() {
         build_inline_layout_recursive(
             &mut builder,
+            &mut collapser,
             &mut text_transformer,
             nodes,
             after_id,
@@ -115,11 +132,13 @@ pub(crate) fn build_inline_layout_into(
         );
     }
 
+    text_layout.offset_map = collapser.finish();
     text_layout.text = builder.build_into(&mut text_layout.layout);
     return;
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
+        collapser: &mut WhiteSpaceCollapser,
         text_transformer: &mut TextTransformer,
         nodes: &crate::NodeTree,
         node_id: NodeId,
@@ -181,6 +200,7 @@ pub(crate) fn build_inline_layout_into(
                         if let Some(before_id) = node.before() {
                             build_inline_layout_recursive(
                                 builder,
+                                collapser,
                                 text_transformer,
                                 nodes,
                                 before_id,
@@ -191,6 +211,7 @@ pub(crate) fn build_inline_layout_into(
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             build_inline_layout_recursive(
                                 builder,
+                                collapser,
                                 text_transformer,
                                 nodes,
                                 child_id,
@@ -200,6 +221,7 @@ pub(crate) fn build_inline_layout_into(
                         if let Some(after_id) = node.after() {
                             build_inline_layout_recursive(
                                 builder,
+                                collapser,
                                 text_transformer,
                                 nodes,
                                 after_id,
@@ -215,6 +237,7 @@ pub(crate) fn build_inline_layout_into(
                             if box_kind == InlineBoxKind::InFlow {
                                 text_transformer.word_break(builder);
                             }
+                            collapser.push_inline_box(node_id, box_kind == InlineBoxKind::InFlow);
                             builder.push_inline_box(InlineBox {
                                 id: node_id.as_u64(),
                                 kind: box_kind,
@@ -232,13 +255,7 @@ pub(crate) fn build_inline_layout_into(
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
-                            builder.push_style_modification_span(&[
-                                parley::StyleProperty::WhiteSpaceCollapse(
-                                    WhiteSpaceCollapse::Preserve,
-                                ),
-                            ]);
-                            builder.push_text("\n");
-                            builder.pop_style_span();
+                            collapser.push_line_break(builder, node_id);
                             text_transformer.word_break(builder);
                         } else {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -255,6 +272,7 @@ pub(crate) fn build_inline_layout_into(
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
                                     builder,
+                                    collapser,
                                     text_transformer,
                                     nodes,
                                     before_id,
@@ -265,6 +283,7 @@ pub(crate) fn build_inline_layout_into(
                             for child_id in node.children.iter().copied() {
                                 build_inline_layout_recursive(
                                     builder,
+                                    collapser,
                                     text_transformer,
                                     nodes,
                                     child_id,
@@ -274,6 +293,7 @@ pub(crate) fn build_inline_layout_into(
                             if let Some(after_id) = node.after() {
                                 build_inline_layout_recursive(
                                     builder,
+                                    collapser,
                                     text_transformer,
                                     nodes,
                                     after_id,
@@ -289,6 +309,7 @@ pub(crate) fn build_inline_layout_into(
                         if box_kind == InlineBoxKind::InFlow {
                             text_transformer.word_break(builder);
                         }
+                        collapser.push_inline_box(node_id, box_kind == InlineBoxKind::InFlow);
                         builder.push_inline_box(InlineBox {
                             id: node_id.as_u64(),
                             kind: box_kind,
@@ -312,12 +333,50 @@ pub(crate) fn build_inline_layout_into(
 
                 let text =
                     text_transformer.transform(&data.content, parent_text_transform, builder);
-                builder.push_text(text);
+                let white_space = white_space(text_style(nodes, node_id).as_deref());
+                collapser.push_text(builder, node_id, &data.content, text, white_space);
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
             NodeData::Document(_) => unreachable!(),
         }
+    }
+}
+
+/// The styles that apply to the text node `node_id`: those of its nearest styled ancestor.
+fn text_style(
+    nodes: &crate::NodeTree,
+    node_id: NodeId,
+) -> Option<style::servo_arc::Arc<style::properties::ComputedValues>> {
+    let mut parent = nodes[node_id].parent;
+    while let Some(id) = parent {
+        if let Some(style) = nodes[id].primary_styles() {
+            return Some(style.clone());
+        }
+        parent = nodes[id].parent;
+    }
+    None
+}
+
+fn white_space(style: Option<&style::properties::ComputedValues>) -> WhiteSpace {
+    let Some(style) = style else {
+        return WhiteSpace {
+            collapse: WhiteSpaceCollapse::Collapse,
+            collapsed_space: " ",
+            wrap: true,
+        };
+    };
+    WhiteSpace {
+        collapse: stylo_to_parley::white_space_collapse(style.clone_white_space_collapse()),
+        collapsed_space: if style
+            .clone_text_transform()
+            .contains(style::values::computed::TextTransform::FULL_WIDTH)
+        {
+            "\u{3000}"
+        } else {
+            " "
+        },
+        wrap: style.clone_text_wrap_mode() == stylo_to_parley::stylo::TextWrapMode::Wrap,
     }
 }
