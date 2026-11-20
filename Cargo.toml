@@ -331,3 +331,12 @@ wgpu_context = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+# https://github.com/linebender/parley/pull/940
+[patch.crates-io]
+parley = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
+fontique = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
+parlance = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
+parley_data = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
+parley_emoji = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
+parley_engine = { git = "https://github.com/linebender/parley", rev = "387e7fd97c10b1311b80fb87838e621aadb7d084" }
