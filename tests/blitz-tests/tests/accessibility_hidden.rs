@@ -150,6 +150,33 @@ fn excludes_child_element_of_hidden_element() -> TestResult<()> {
     )
 }
 
+#[test]
+fn focus_does_not_point_at_a_hidden_element() {
+    for (property, value) in [("display", "none"), ("visibility", "hidden")] {
+        let mut document = HtmlDocument::from_html(
+            r#"<html><body><input id="target"></body></html>"#,
+            default_document_config(),
+        );
+        document.resolve(0.0);
+        let target = document.get_element_by_id("target").unwrap();
+        assert!(document.set_focus_to(target));
+        document
+            .mutate()
+            .set_style_property(target, property, value);
+        document.resolve(0.0);
+
+        let tree_update = document.build_accessibility_tree();
+
+        assert!(
+            tree_update
+                .nodes
+                .iter()
+                .any(|(id, _)| *id == tree_update.focus),
+            "focus is not a node in the tree with {property}: {value}"
+        );
+    }
+}
+
 fn default_document_config() -> DocumentConfig {
     DocumentConfig {
         viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
