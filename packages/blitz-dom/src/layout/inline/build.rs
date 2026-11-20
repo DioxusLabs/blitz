@@ -12,7 +12,6 @@ use style::{
 };
 use stylo_taffy::CopyStyleGetters;
 
-use super::collapse::{WhiteSpace, WhiteSpaceCollapser};
 use crate::{
     NodeData,
     layout::list::BULLET_FONT_FAMILY,
@@ -20,6 +19,7 @@ use crate::{
     layout::text_transform::{CaseTransform, TextTransformer},
     node::{ListItemLayout, ListItemLayoutPosition, Marker, TextBrush, TextLayout},
     stylo_to_parley,
+    text_map::{WhiteSpace, WhiteSpaceCollapser},
 };
 
 pub(crate) fn build_inline_layout_into(
@@ -138,7 +138,7 @@ pub(crate) fn build_inline_layout_into(
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
-        collapser: &mut WhiteSpaceCollapser,
+        collapser: &mut WhiteSpaceCollapser<NodeId>,
         text_transformer: &mut TextTransformer,
         nodes: &crate::NodeTree,
         node_id: NodeId,

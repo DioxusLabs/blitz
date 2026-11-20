@@ -1,6 +1,6 @@
-//! Mapping between offsets in the DOM and offsets in the text of an inline formatting context.
+//! Mapping between offsets in source text nodes and offsets in the text of an inline
+//! formatting context.
 
-use blitz_traits::node_id::NodeId;
 use std::ops::Range;
 
 /// Which side of a position to prefer when several DOM positions map to the same layout offset
@@ -14,7 +14,7 @@ pub enum Affinity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UnitKind {
+pub(super) enum UnitKind {
     /// Source and layout ranges have the same length and map byte for byte.
     Identity = 0,
     /// Source and layout ranges have different lengths (and either may be empty), so only their
@@ -79,33 +79,44 @@ impl Unit {
     }
 }
 
-/// Maps offsets in the DOM nodes of an inline formatting context to byte offsets in the text
-/// that was laid out, and back.
+/// Maps offsets in the source nodes of an inline formatting context, identified by `Id`, to
+/// byte offsets in the text that was laid out, and back.
 ///
-/// It is recorded while Blitz builds the layout text, as each node's text is transformed and
-/// its white space collapsed, so nothing is inferred afterwards.
+/// It is recorded by [`WhiteSpaceCollapser`](super::WhiteSpaceCollapser) as it builds the
+/// layout text, as each node's text is transformed and its white space collapsed, so nothing is
+/// inferred afterwards.
 ///
-/// Source offsets are UTF-8 byte offsets into a text node's content. Inline boxes and `<br>`
-/// elements have a source length of 1 (before and after the element). Generated text (list
-/// markers) is attributed to the inline root with a source length of 0.
+/// Source offsets are UTF-8 byte offsets into a text node's content. Inline boxes and line
+/// breaks have a source length of 1 (before and after the element). Generated text has a
+/// source length of 0.
 ///
 /// Each node owns a contiguous run of units in layout order, ending with a sentinel unit at
 /// the node's source length, so plain text costs two 8-byte units per node.
-#[derive(Clone, Default)]
-pub struct TextOffsetMap {
+#[derive(Clone)]
+pub struct TextOffsetMap<Id> {
     /// Each node's id and the index of its first unit, in layout order.
-    nodes: Vec<(NodeId, u32)>,
+    nodes: Vec<(Id, u32)>,
     /// Indices into `nodes`, sorted by node id.
     by_id: Vec<u32>,
     /// All units, in layout order. Layout offsets never decrease.
     units: Vec<Unit>,
 }
 
-impl TextOffsetMap {
+impl<Id> Default for TextOffsetMap<Id> {
+    fn default() -> Self {
+        Self {
+            nodes: Vec::new(),
+            by_id: Vec::new(),
+            units: Vec::new(),
+        }
+    }
+}
+
+impl<Id: Copy + Ord> TextOffsetMap<Id> {
     /// The layout offset of `source` in `node`, or `None` if `node` isn't in this layout or the
     /// offset is past its end. Offsets inside collapsed white space or inside a character whose
     /// transform changed its length map to the end of the collapsed or transformed text.
-    pub fn layout_offset(&self, node: NodeId, source: usize) -> Option<usize> {
+    pub fn layout_offset(&self, node: Id, source: usize) -> Option<usize> {
         let units = &self.units[self.node_units(node)?];
         let (last, rest) = units.split_last()?;
         if source > last.source() {
@@ -126,7 +137,7 @@ impl TextOffsetMap {
     }
 
     /// The DOM position (node and source offset) of the layout offset `layout`.
-    pub fn source_position(&self, layout: usize, affinity: Affinity) -> Option<(NodeId, usize)> {
+    pub fn source_position(&self, layout: usize, affinity: Affinity) -> Option<(Id, usize)> {
         let downstream = self.units.partition_point(|unit| unit.layout() <= layout);
         let index = match affinity {
             Affinity::Upstream => match self.units.partition_point(|unit| unit.layout() < layout) {
@@ -162,14 +173,14 @@ impl TextOffsetMap {
     }
 
     /// The range of layout text produced by `node`.
-    pub fn layout_range(&self, node: NodeId) -> Option<Range<usize>> {
+    pub fn layout_range(&self, node: Id) -> Option<Range<usize>> {
         let units = &self.units[self.node_units(node)?];
         Some(units.first()?.layout()..units.last()?.layout())
     }
 
     /// Whether the character `c` at `layout` is a space that a collapsible white space run
     /// collapsed to, which CSS removes at a line end.
-    pub(crate) fn is_collapsible_space(&self, layout: usize, c: char) -> bool {
+    pub fn is_collapsible_space(&self, layout: usize, c: char) -> bool {
         match self.kind_at(layout) {
             Some(UnitKind::KeptSpace) => true,
             Some(UnitKind::CollapsibleText) => c == ' ',
@@ -178,7 +189,7 @@ impl TextOffsetMap {
     }
 
     /// Whether white space at `layout` is preserved and wraps, so it hangs at a line end.
-    pub(crate) fn is_pre_wrap(&self, layout: usize) -> bool {
+    pub fn is_pre_wrap(&self, layout: usize) -> bool {
         self.kind_at(layout) == Some(UnitKind::PreWrap)
     }
 
@@ -187,12 +198,10 @@ impl TextOffsetMap {
         Some(self.units[index.checked_sub(1)?].kind())
     }
 
-    fn node_units(&self, node: NodeId) -> Option<Range<usize>> {
+    fn node_units(&self, node: Id) -> Option<Range<usize>> {
         let index = self
             .by_id
-            .binary_search_by_key(&node.as_u64(), |&index| {
-                self.nodes[index as usize].0.as_u64()
-            })
+            .binary_search_by_key(&node, |&index| self.nodes[index as usize].0)
             .ok()?;
         let index = self.by_id[index] as usize;
         Some(self.nodes[index].1 as usize..self.node_end(index))
@@ -205,34 +214,41 @@ impl TextOffsetMap {
     }
 }
 
-impl std::fmt::Debug for TextOffsetMap {
+impl<Id: Copy + Ord + std::fmt::Debug> std::fmt::Debug for TextOffsetMap<Id> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut list = f.debug_list();
-        for (index, &(node, _)) in self.nodes.iter().enumerate() {
+        for (index, (node, _)) in self.nodes.iter().enumerate() {
             let units = &self.units[self.nodes[index].1 as usize..self.node_end(index)];
             let units: Vec<_> = units
                 .iter()
                 .map(|unit| (unit.kind(), unit.source(), unit.layout()))
                 .collect();
-            list.entry(&(node.as_u64(), units));
+            list.entry(&(node, units));
         }
         list.finish()
     }
 }
 
 /// Records a [`TextOffsetMap`] in layout order.
-#[derive(Default)]
-pub(crate) struct TextOffsetMapBuilder {
-    map: TextOffsetMap,
+pub(super) struct TextOffsetMapBuilder<Id> {
+    map: TextOffsetMap<Id>,
 }
 
-impl TextOffsetMapBuilder {
-    pub(crate) fn begin_node(&mut self, node: NodeId) {
+impl<Id> Default for TextOffsetMapBuilder<Id> {
+    fn default() -> Self {
+        Self {
+            map: TextOffsetMap::default(),
+        }
+    }
+}
+
+impl<Id: Copy + Ord> TextOffsetMapBuilder<Id> {
+    pub(super) fn begin_node(&mut self, node: Id) {
         self.map.nodes.push((node, self.map.units.len() as u32));
     }
 
     /// Starts a unit of `kind` at `source` in the current node and `layout`, returning its index.
-    pub(crate) fn push(&mut self, kind: UnitKind, source: usize, layout: usize) -> usize {
+    pub(super) fn push(&mut self, kind: UnitKind, source: usize, layout: usize) -> usize {
         let units = &mut self.map.units;
         let node_start = self
             .map
@@ -253,24 +269,24 @@ impl TextOffsetMapBuilder {
     }
 
     /// Ends the current node, whose source is `source_len` long, at `layout`.
-    pub(crate) fn end_node(&mut self, source_len: usize, layout: usize) {
+    pub(super) fn end_node(&mut self, source_len: usize, layout: usize) {
         self.map
             .units
             .push(Unit::new(UnitKind::Identity, source_len, layout));
     }
 
     /// Moves the units from `first` onwards `delta` bytes later in the layout text.
-    pub(crate) fn shift(&mut self, first: usize, delta: usize) {
+    pub(super) fn shift(&mut self, first: usize, delta: usize) {
         for unit in &mut self.map.units[first..] {
             unit.layout += delta as u32;
         }
     }
 
-    pub(crate) fn finish(mut self) -> TextOffsetMap {
+    pub(super) fn finish(mut self) -> TextOffsetMap<Id> {
         let map = &mut self.map;
         map.by_id = (0..map.nodes.len() as u32).collect();
         map.by_id
-            .sort_unstable_by_key(|&index| map.nodes[index as usize].0.as_u64());
+            .sort_unstable_by_key(|&index| map.nodes[index as usize].0);
         self.map
     }
 }
@@ -279,20 +295,16 @@ impl TextOffsetMapBuilder {
 mod tests {
     use super::*;
 
-    fn id(id: u64) -> NodeId {
-        NodeId::from_u64(id)
-    }
-
     /// `"a  b"` + `"c"` collapsed to `"a bc"`.
-    fn collapsed() -> TextOffsetMap {
+    fn collapsed() -> TextOffsetMap<u64> {
         let mut builder = TextOffsetMapBuilder::default();
-        builder.begin_node(id(1));
+        builder.begin_node(1);
         builder.push(UnitKind::Identity, 0, 0);
         builder.push(UnitKind::KeptSpace, 1, 1);
         builder.push(UnitKind::Variable, 2, 2);
         builder.push(UnitKind::Identity, 3, 2);
         builder.end_node(4, 3);
-        builder.begin_node(id(2));
+        builder.begin_node(2);
         builder.push(UnitKind::Identity, 0, 3);
         builder.end_node(1, 4);
         builder.finish()
@@ -301,28 +313,22 @@ mod tests {
     #[test]
     fn maps_source_to_layout() {
         let map = collapsed();
-        let offsets: Vec<_> = (0..=4).map(|i| map.layout_offset(id(1), i)).collect();
+        let offsets: Vec<_> = (0..=4).map(|i| map.layout_offset(1, i)).collect();
         assert_eq!(offsets, [Some(0), Some(1), Some(2), Some(2), Some(3)]);
-        assert_eq!(map.layout_offset(id(1), 5), None);
-        assert_eq!(map.layout_offset(id(2), 1), Some(4));
-        assert_eq!(map.layout_offset(id(3), 0), None);
-        assert_eq!(map.layout_range(id(2)), Some(3..4));
+        assert_eq!(map.layout_offset(1, 5), None);
+        assert_eq!(map.layout_offset(2, 1), Some(4));
+        assert_eq!(map.layout_offset(3, 0), None);
+        assert_eq!(map.layout_range(2), Some(3..4));
     }
 
     #[test]
     fn maps_layout_to_source() {
         let map = collapsed();
-        assert_eq!(map.source_position(2, Affinity::Upstream), Some((id(1), 2)));
-        assert_eq!(
-            map.source_position(2, Affinity::Downstream),
-            Some((id(1), 3))
-        );
-        assert_eq!(map.source_position(3, Affinity::Upstream), Some((id(1), 4)));
-        assert_eq!(
-            map.source_position(3, Affinity::Downstream),
-            Some((id(2), 0))
-        );
-        assert_eq!(map.source_position(4, Affinity::Upstream), Some((id(2), 1)));
+        assert_eq!(map.source_position(2, Affinity::Upstream), Some((1, 2)));
+        assert_eq!(map.source_position(2, Affinity::Downstream), Some((1, 3)));
+        assert_eq!(map.source_position(3, Affinity::Upstream), Some((1, 4)));
+        assert_eq!(map.source_position(3, Affinity::Downstream), Some((2, 0)));
+        assert_eq!(map.source_position(4, Affinity::Upstream), Some((2, 1)));
         assert!(map.is_collapsible_space(1, ' '));
         assert!(!map.is_collapsible_space(0, 'a'));
         assert!(!map.is_collapsible_space(2, 'b'));

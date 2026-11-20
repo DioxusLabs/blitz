@@ -1,7 +1,7 @@
 //! White space collapsing for an inline formatting context.
 //!
-//! Blitz collapses white space itself (CSS Text §4.1.1) so that it can record a
-//! [`TextOffsetMap`] as it goes. The collapsed text is then pushed to Parley's [`TreeBuilder`],
+//! White space is collapsed here (CSS Text §4.1.1) rather than by Parley so that a
+//! [`TextOffsetMap`] can be recorded as it goes. The collapsed text is then pushed to Parley's [`TreeBuilder`],
 //! which keeps the span tree. Parley collapses white space too, but text that is already
 //! collapsed comes out unchanged, except that a space pending at the end of one text node is
 //! committed or dropped by what follows it, exactly as here.
@@ -11,17 +11,17 @@
 //! wraps. A builder that took final text and style runs (Parley's `StyleRunBuilder`, once its
 //! styles can have parents) would need that style variant from here instead.
 
-use blitz_traits::node_id::NodeId;
 use icu_properties::{
     CodePointMapData,
     props::{GeneralCategory, GeneralCategoryGroup},
 };
-use parley::{StyleProperty, TreeBuilder, WhiteSpaceCollapse};
+use parley::{Brush, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 
+use super::INLINE_BOX_CHAR;
 use super::offset_map::{TextOffsetMap, TextOffsetMapBuilder, UnitKind};
-use crate::node::{INLINE_BOX_CHAR, TextBrush};
 
-pub(crate) fn is_segment_break(c: char) -> bool {
+/// Whether `c` is a segment break (CSS Text §4.1.1).
+pub fn is_segment_break(c: char) -> bool {
     matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
@@ -34,13 +34,13 @@ fn is_collapsible(mode: WhiteSpaceCollapse, c: char) -> bool {
 }
 
 /// The white space handling of the span a text node is in.
-#[derive(Clone, Copy)]
-pub(crate) struct WhiteSpace {
-    pub(crate) collapse: WhiteSpaceCollapse,
+#[derive(Debug, Clone, Copy)]
+pub struct WhiteSpace {
+    pub collapse: WhiteSpaceCollapse,
     /// The space a collapsible run collapses to: U+3000 under `text-transform: full-width`.
-    pub(crate) collapsed_space: &'static str,
+    pub collapsed_space: &'static str,
     /// Whether `text-wrap-mode` is `wrap`.
-    pub(crate) wrap: bool,
+    pub wrap: bool,
 }
 
 /// A collapsible run that will collapse to one space if content follows it.
@@ -60,10 +60,10 @@ struct Segment {
 }
 
 /// Collapses the white space of an inline formatting context's text and records where each
-/// part of the DOM ended up in the layout text.
-#[derive(Default)]
-pub(crate) struct WhiteSpaceCollapser {
-    map: TextOffsetMapBuilder,
+/// part of each source node (identified by `Id`) ended up in the layout text, pushing the
+/// collapsed text to a Parley [`TreeBuilder`].
+pub struct WhiteSpaceCollapser<Id> {
+    map: TextOffsetMapBuilder<Id>,
     /// Length of the text committed so far (pending white space isn't).
     len: usize,
     ends_with_break: bool,
@@ -76,13 +76,27 @@ pub(crate) struct WhiteSpaceCollapser {
     segments: Vec<Segment>,
 }
 
-impl WhiteSpaceCollapser {
+impl<Id> Default for WhiteSpaceCollapser<Id> {
+    fn default() -> Self {
+        Self {
+            map: TextOffsetMapBuilder::default(),
+            len: 0,
+            ends_with_break: false,
+            pending: None,
+            out: String::new(),
+            identity: false,
+            segments: Vec::new(),
+        }
+    }
+}
+
+impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
     /// Collapses and pushes the content of the text node `node`. `text` is `source` after
     /// `text-transform`.
-    pub(crate) fn push_text(
+    pub fn push_text<B: Brush>(
         &mut self,
-        builder: &mut TreeBuilder<'_, TextBrush>,
-        node: NodeId,
+        builder: &mut TreeBuilder<'_, B>,
+        node: Id,
         source: &str,
         text: &str,
         white_space: WhiteSpace,
@@ -101,23 +115,19 @@ impl WhiteSpaceCollapser {
         self.map.end_node(source.len(), self.len);
     }
 
-    /// Pushes text generated for `node` (a list marker), which has no source offsets.
-    pub(crate) fn push_generated(
+    /// Pushes text generated for `node` (e.g. a list marker), which has no source offsets.
+    pub fn push_generated<B: Brush>(
         &mut self,
-        builder: &mut TreeBuilder<'_, TextBrush>,
-        node: NodeId,
+        builder: &mut TreeBuilder<'_, B>,
+        node: Id,
         text: &str,
         white_space: WhiteSpace,
     ) {
         self.push_text(builder, node, "", text, white_space);
     }
 
-    /// Pushes the forced line break of a `<br>` element.
-    pub(crate) fn push_line_break(
-        &mut self,
-        builder: &mut TreeBuilder<'_, TextBrush>,
-        node: NodeId,
-    ) {
+    /// Pushes a forced line break element (`<br>`).
+    pub fn push_line_break<B: Brush>(&mut self, builder: &mut TreeBuilder<'_, B>, node: Id) {
         self.map.begin_node(node);
         self.pending = None;
         self.map.push(UnitKind::Identity, 0, self.len);
@@ -133,7 +143,7 @@ impl WhiteSpaceCollapser {
 
     /// Records the position of an inline box. Only in-flow boxes take up a character
     /// (U+FFFC) of the text, and only they end a collapsible run.
-    pub(crate) fn push_inline_box(&mut self, node: NodeId, in_flow: bool) {
+    pub fn push_inline_box(&mut self, node: Id, in_flow: bool) {
         self.map.begin_node(node);
         if in_flow {
             self.flush();
@@ -147,7 +157,7 @@ impl WhiteSpaceCollapser {
     }
 
     /// Finishes the formatting context, dropping any white space at its end.
-    pub(crate) fn finish(self) -> TextOffsetMap {
+    pub fn finish(self) -> TextOffsetMap<Id> {
         self.map.finish()
     }
 

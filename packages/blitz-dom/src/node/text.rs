@@ -6,7 +6,7 @@ use blitz_traits::{
 use keyboard_types::{Key, Modifiers, NamedKey};
 use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
 
-use crate::layout::inline::{TextOffsetMap, is_segment_break};
+use crate::text_map::is_segment_break;
 use crate::util::ACTION_MOD;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -120,8 +120,10 @@ impl TextLayout {
     }
 }
 
-/// The character Parley places in the text for each in-flow inline box.
-pub const INLINE_BOX_CHAR: char = '\u{FFFC}';
+pub use crate::text_map::INLINE_BOX_CHAR;
+
+/// Maps DOM offsets in an inline formatting context to offsets in its layout text, and back.
+pub type TextOffsetMap = crate::text_map::TextOffsetMap<NodeId>;
 
 impl std::fmt::Debug for TextLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

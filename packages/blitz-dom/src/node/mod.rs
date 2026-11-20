@@ -12,7 +12,7 @@ mod stylo_data;
 mod svg;
 mod text;
 
-pub use crate::layout::inline::{Affinity, TextOffsetMap};
+pub use crate::text_map::Affinity;
 pub use attributes::{Attribute, Attributes};
 #[cfg(feature = "custom-widget")]
 pub use custom_widget::{
@@ -31,5 +31,5 @@ pub use stylo_data::ComputedStyleRef;
 pub use svg::{SvgImageData, SvgIntrinsicDimensions};
 pub use text::{
     GeneratedTextInputEvent, INLINE_BOX_CHAR, LineEndWhitespace, TextBrush, TextInputData,
-    TextLayout,
+    TextLayout, TextOffsetMap,
 };
