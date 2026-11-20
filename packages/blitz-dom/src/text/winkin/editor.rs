@@ -82,7 +82,7 @@ pub struct TextEditor {
     /// The control, and its computed style, which the text is set in.
     style: Option<(NodeId, ServoArc<ComputedValues>)>,
     scale: f32,
-    /// The width lines wrap at in a `<textarea>`, in device pixels.
+    /// The width lines wrap at in a `<textarea>`, in CSS pixels.
     width: Option<f32>,
     layout: TextLayout,
     /// Whether a setter changed what the text is laid out with since it was last laid out.
@@ -185,7 +185,11 @@ impl TextEditor {
         let Some((node, style)) = &self.style else {
             return;
         };
-        let width = if self.is_multiline { self.width } else { None };
+        let width = if self.is_multiline {
+            self.width.map(|width| width * self.scale)
+        } else {
+            None
+        };
         let composition = self.composition_range();
         let revealed = self.revealed.clone().filter(|_| composition.is_none());
         self.pieces = Pieces::new(self.text.len(), composition.clone().or(revealed.clone()));
@@ -372,10 +376,10 @@ impl TextEditor {
         );
     }
 
-    /// The text position nearest the point, where the text is laid out.
+    /// The text position nearest the point, in CSS pixels, where the text is laid out.
     fn hit(&self, x: f32, y: f32) -> Option<Position> {
         let layout = self.layout.layout()?;
-        let position = layout.hit_test(x, y, PastLines::Column)?;
+        let position = layout.hit_test(x * self.scale, y * self.scale, PastLines::Column)?;
         Some(self.text_position(layout, position))
     }
 
@@ -461,9 +465,13 @@ impl EditableText for TextEditor {
                 metrics.left + metrics.width
             })
             .fold(0.0, f32::max);
+        let scale = self.scale;
         Some(EditorMetrics {
-            size: Size::new(f64::from(width), f64::from(layout.metrics().block_end)),
-            scale: self.scale,
+            size: Size::new(
+                f64::from(width / scale),
+                f64::from(layout.metrics().block_end / scale),
+            ),
+            scale,
         })
     }
 

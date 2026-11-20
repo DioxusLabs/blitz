@@ -1214,7 +1214,10 @@ pub(crate) fn paint_text_input(
     let Some(layout) = text_layout.layout() else {
         return;
     };
-    let size = editor.metrics().map(|metrics| metrics.size).unwrap_or_default();
+    let size = editor
+        .metrics()
+        .map(|metrics| metrics.size * scale)
+        .unwrap_or_default();
     let selection = editor.layout_selection_range();
     let selection = (focussed && !selection.is_empty()).then_some((selection.start, selection.end));
     paint(
