@@ -11,10 +11,8 @@
 //! wraps. A builder that took final text and style runs (Parley's `StyleRunBuilder`, once its
 //! styles can have parents) would need that style variant from here instead.
 
-use icu_properties::{
-    CodePointMapData,
-    props::{GeneralCategory, GeneralCategoryGroup},
-};
+use std::ops::Range;
+
 use parley::{Brush, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 
 use super::INLINE_BOX_CHAR;
@@ -48,13 +46,13 @@ struct Pending {
     space: &'static str,
 }
 
-/// The start of a range of a text node's transformed text, and where it came from.
-#[derive(Clone, Copy)]
-struct Segment {
-    text: usize,
-    source: usize,
-    /// Whether the range maps byte for byte to the source.
-    exact: bool,
+/// A range of a text node's transformed text that `text-transform` made from source text of a
+/// different length (`ß` → `SS`, a dropped combining mark, a full-width letter). Only its ends
+/// map; text outside every change is its source, byte for byte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextChange {
+    pub source: Range<usize>,
+    pub text: Range<usize>,
 }
 
 /// Collapses the white space of an inline formatting context's text and records where each
@@ -68,10 +66,8 @@ pub struct WhiteSpaceCollapser<Id> {
     pending: Option<Pending>,
     /// The current text node's collapsed text, as pushed to Parley.
     out: String,
-    /// Whether the current text node's transformed text is its source, so `segments` is unused.
-    identity: bool,
-    /// The current text node's transformed text, aligned to its source.
-    segments: Vec<Segment>,
+    /// The first of the current text node's changes not yet committed.
+    next_change: usize,
 }
 
 impl<Id> Default for WhiteSpaceCollapser<Id> {
@@ -82,33 +78,28 @@ impl<Id> Default for WhiteSpaceCollapser<Id> {
             ends_with_break: false,
             pending: None,
             out: String::new(),
-            identity: false,
-            segments: Vec::new(),
+            next_change: 0,
         }
     }
 }
 
 impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
     /// Collapses and pushes the content of the text node `node`. `text` is `source` after
-    /// `text-transform`: case mapping, then `map_char` on each character (`full-width` and
-    /// `full-size-kana`).
+    /// `text-transform`, which reports where their lengths differ as `changes`, in order.
     pub fn push_text<B: Brush>(
         &mut self,
         builder: &mut TreeBuilder<'_, B>,
         node: Id,
         source: &str,
         text: &str,
+        changes: &[TextChange],
         white_space: WhiteSpace,
-        map_char: impl Fn(char) -> char,
     ) {
         self.map.begin_node(node);
         if !text.is_empty() {
-            self.identity = source == text;
-            if !self.identity {
-                align(source, text, map_char, &mut self.segments);
-            }
+            self.next_change = 0;
             self.out.clear();
-            self.collapse(text, white_space);
+            self.collapse(text, changes, white_space);
             builder.push_text(&self.out);
             debug_assert_eq!(builder.text().len(), self.len, "{:?}", self.out);
         }
@@ -123,7 +114,11 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
         text: &str,
         white_space: WhiteSpace,
     ) {
-        self.push_text(builder, node, "", text, white_space, |c| c);
+        let generated = TextChange {
+            source: 0..0,
+            text: 0..text.len(),
+        };
+        self.push_text(builder, node, "", text, &[generated], white_space);
     }
 
     /// Pushes a forced line break element (`<br>`).
@@ -164,7 +159,7 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
         self.map.finish()
     }
 
-    fn collapse(&mut self, text: &str, white_space: WhiteSpace) {
+    fn collapse(&mut self, text: &str, changes: &[TextChange], white_space: WhiteSpace) {
         let mode = white_space.collapse;
         if !is_collapsible(mode, ' ') && !is_collapsible(mode, '\n') {
             // Preserved white space: only a preserved segment break drops a pending run.
@@ -172,7 +167,7 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
                 self.pending = None;
             }
             self.flush();
-            self.commit(text, 0..text.len(), UnitKind::Identity);
+            self.commit(text, changes, 0..text.len(), UnitKind::Identity);
             return;
         }
 
@@ -183,12 +178,18 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
                 .find(|c| !is_collapsible(mode, c))
                 .unwrap_or(rest.len());
             if run_len > 0 {
-                self.collapse_run(pos, c.len_utf8(), run_len, white_space.collapsed_space);
+                self.collapse_run(
+                    changes,
+                    pos,
+                    c.len_utf8(),
+                    run_len,
+                    white_space.collapsed_space,
+                );
                 self.out.push(' ');
                 pos += run_len;
             } else if is_segment_break(c) {
                 self.pending = None;
-                self.commit(text, pos..pos + c.len_utf8(), UnitKind::Identity);
+                self.commit(text, changes, pos..pos + c.len_utf8(), UnitKind::Identity);
                 pos += c.len_utf8();
             } else {
                 let mut len = content_len(rest, mode);
@@ -203,15 +204,22 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
                     }
                 }
                 self.flush();
-                self.commit(text, pos..pos + len, UnitKind::CollapsibleText);
+                self.commit(text, changes, pos..pos + len, UnitKind::CollapsibleText);
                 pos += len;
             }
         }
     }
 
     /// Records a collapsible run at `pos` whose first character is `first_len` bytes long.
-    fn collapse_run(&mut self, pos: usize, first_len: usize, run_len: usize, space: &'static str) {
-        let source = self.source_at(pos);
+    fn collapse_run(
+        &mut self,
+        changes: &[TextChange],
+        pos: usize,
+        first_len: usize,
+        run_len: usize,
+        space: &'static str,
+    ) {
+        let source = source_at(changes, pos);
         if self.pending.is_some() {
             self.map.push(UnitKind::Variable, source, self.len);
             return;
@@ -219,7 +227,7 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
         let kept_unit = self.map.push(UnitKind::KeptSpace, source, self.len);
         self.pending = Some(Pending { kept_unit, space });
         if first_len < run_len {
-            let source = self.source_at(pos + first_len);
+            let source = source_at(changes, pos + first_len);
             self.map.push(UnitKind::Variable, source, self.len);
         }
     }
@@ -238,26 +246,56 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
         self.ends_with_break = false;
     }
 
-    /// Commits `text[range]` unchanged, mapping the parts that match the source as `exact`.
-    fn commit(&mut self, text: &str, range: std::ops::Range<usize>, exact: UnitKind) {
-        if self.identity {
-            self.map.push(exact, range.start, self.len);
-            self.push_out(&text[range]);
-            return;
-        }
-        let first = self.segments.partition_point(|seg| seg.text <= range.start) - 1;
-        let kind = |seg: &Segment| {
-            if seg.exact { exact } else { UnitKind::Variable }
-        };
-        let source = self.source_at(range.start);
-        self.map.push(kind(&self.segments[first]), source, self.len);
-        for seg in self.segments[first + 1..]
-            .iter()
-            .take_while(|seg| seg.text < range.end)
+    /// Commits `text[range]` unchanged, mapping the parts outside `changes` as `exact`.
+    fn commit(&mut self, text: &str, changes: &[TextChange], range: Range<usize>, exact: UnitKind) {
+        let (base, start) = (self.len, range.start);
+        let layout = |at: usize| base + at - start;
+        // Changes before `range` were in collapsed white space.
+        let mut next = self.next_change;
+        while changes
+            .get(next)
+            .is_some_and(|change| change.text.start < start)
         {
-            self.map
-                .push(kind(seg), seg.source, self.len + seg.text - range.start);
+            next += 1;
         }
+        let starts_change = |next: usize, at: usize| {
+            changes
+                .get(next)
+                .is_some_and(|change| change.text.start == at)
+        };
+        if !starts_change(next, start) {
+            match changes.get(change_around(changes, start)) {
+                Some(change) if change.text.start < start && start < change.text.end => {
+                    self.map
+                        .push(UnitKind::Variable, change.source.end, layout(start));
+                    if change.text.end < range.end && !starts_change(next, change.text.end) {
+                        self.map
+                            .push(exact, change.source.end, layout(change.text.end));
+                    }
+                }
+                _ => {
+                    self.map
+                        .push(exact, source_at(changes, start), layout(start));
+                }
+            }
+        }
+        // A change that takes up no text belongs to the text before it.
+        while let Some(change) = changes.get(next).filter(|change| {
+            change.text.start < range.end
+                || (change.text.is_empty() && change.text.start == range.end)
+        }) {
+            next += 1;
+            self.map.push(
+                UnitKind::Variable,
+                change.source.start,
+                layout(change.text.start),
+            );
+            if change.text.end < range.end && !starts_change(next, change.text.end) {
+                self.map
+                    .push(exact, change.source.end, layout(change.text.end));
+            }
+        }
+        self.next_change = next;
         self.push_out(&text[range]);
     }
 
@@ -266,21 +304,28 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
         self.len += text.len();
         self.ends_with_break = text.ends_with(is_segment_break);
     }
+}
 
-    /// The source offset of the transformed text offset `pos`.
-    fn source_at(&self, pos: usize) -> usize {
-        if self.identity {
-            return pos;
+/// The index of the last change starting at or before `pos`, or `changes.len()` if none does.
+fn change_around(changes: &[TextChange], pos: usize) -> usize {
+    changes
+        .partition_point(|change| change.text.start <= pos)
+        .checked_sub(1)
+        .unwrap_or(changes.len())
+}
+
+/// The source offset of the transformed text offset `pos`.
+fn source_at(changes: &[TextChange], pos: usize) -> usize {
+    match changes.get(change_around(changes, pos)) {
+        None => pos,
+        Some(change) if pos < change.text.end => {
+            if pos == change.text.start {
+                change.source.start
+            } else {
+                change.source.end
+            }
         }
-        let index = self.segments.partition_point(|seg| seg.text <= pos) - 1;
-        let seg = self.segments[index];
-        if seg.exact {
-            seg.source + (pos - seg.text)
-        } else if pos == seg.text {
-            seg.source
-        } else {
-            self.segments[index + 1].source
-        }
+        Some(change) => change.source.end + (pos - change.text.end),
     }
 }
 
@@ -289,79 +334,4 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
 fn content_len(text: &str, mode: WhiteSpaceCollapse) -> usize {
     text.find(|c| is_collapsible(mode, c) || is_segment_break(c))
         .unwrap_or(text.len())
-}
-
-/// Aligns `text` (`source` after case mapping and then `map_char`) to `source`, character by
-/// character: case mappings that expand a character (`ß` → `SS`, or `Ss` when capitalized) and
-/// combining marks removed by tailored casing are matched, and anything that can't be matched
-/// maps as one range.
-fn align(source: &str, text: &str, map_char: impl Fn(char) -> char, segments: &mut Vec<Segment>) {
-    segments.clear();
-    let mut push = |text: usize, source: usize, exact: bool| {
-        if let Some(last) = segments.last()
-            && last.exact
-            && exact
-            && text - last.text == source - last.source
-        {
-            return;
-        }
-        segments.push(Segment {
-            text,
-            source,
-            exact,
-        });
-    };
-
-    let (mut s, mut t) = (0, 0);
-    // ASCII case mapping never changes lengths.
-    if source.len() == text.len() && source.is_ascii() && text.is_ascii() {
-        push(0, 0, true);
-        s = source.len();
-        t = text.len();
-    } else {
-        let general_category = CodePointMapData::<GeneralCategory>::new();
-        while let (Some(c), Some(d)) = (source[s..].chars().next(), text[t..].chars().next()) {
-            let rest = &text[t..];
-            let expansion = matching_prefix(rest, c.to_uppercase().map(&map_char))
-                .or_else(|| matching_prefix(rest, c.to_lowercase().map(&map_char)))
-                .filter(|&len| len > d.len_utf8());
-            if let Some(len) = expansion {
-                push(t, s, false);
-                t += len;
-            } else if c != d && GeneralCategoryGroup::Mark.contains(general_category.get(c)) {
-                push(t, s, false);
-            } else {
-                push(t, s, c.len_utf8() == d.len_utf8());
-                t += d.len_utf8();
-            }
-            s += c.len_utf8();
-        }
-    }
-    if s < source.len() || t < text.len() {
-        push(t, s, false);
-    }
-    push(text.len(), source.len(), true);
-    // The end segment is needed even when it merged into an exact one before it.
-    if segments.last().is_none_or(|last| last.text != text.len()) {
-        segments.push(Segment {
-            text: text.len(),
-            source: source.len(),
-            exact: true,
-        });
-    }
-}
-
-/// The length of the prefix of `text` that is `mapped`, ignoring case (so that titlecasing
-/// matches an uppercase expansion).
-fn matching_prefix(text: &str, mapped: impl Iterator<Item = char>) -> Option<usize> {
-    let mut text = text.chars();
-    let mut len = 0;
-    for c in mapped {
-        let d = text.next()?;
-        if d != c && !d.to_lowercase().eq(c.to_lowercase()) {
-            return None;
-        }
-        len += d.len_utf8();
-    }
-    Some(len)
 }

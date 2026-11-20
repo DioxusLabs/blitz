@@ -334,12 +334,10 @@ pub(crate) fn build_inline_layout_into(
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
 
-                let text =
+                let (text, changes) =
                     text_transformer.transform(&data.content, parent_text_transform, builder);
                 let white_space = white_space(text_style(nodes, node_id).as_deref());
-                collapser.push_text(builder, node_id, &data.content, text, white_space, |c| {
-                    parent_text_transform.map_char(c)
-                });
+                collapser.push_text(builder, node_id, &data.content, text, changes, white_space);
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);

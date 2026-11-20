@@ -12,6 +12,7 @@ use icu_properties::props::{GeneralCategory, GeneralCategoryGroup};
 use icu_properties::{CodePointMapData, CodePointMapDataBorrowed};
 use icu_segmenter::{WordSegmenter, WordSegmenterBorrowed, options::WordBreakInvariantOptions};
 use parley::{Brush, TreeBuilder};
+use std::fmt;
 use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
 use style::properties::ComputedValues;
 use style::values::computed::TextTransform;
@@ -19,6 +20,8 @@ use style::values::specified::text::TextTransformCase;
 use stylo_taffy::CopyStyleGetters;
 #[cfg(feature = "text-transform-icu")]
 use writeable::Writeable;
+
+use crate::text_map::TextChange;
 
 #[cfg(feature = "text-transform-icu")]
 const CASE_MAPPER: CaseMapperBorrowed<'static> = CaseMapper::new();
@@ -70,19 +73,6 @@ impl CaseTransform {
         }
     }
 
-    /// Applies the `full-width` and `full-size-kana` mappings to `c`, which follow case mapping.
-    pub(crate) fn map_char(&self, mut c: char) -> char {
-        if self.text_transform.contains(TextTransform::FULL_WIDTH)
-            && !is_collapsible(self.white_space_collapse, c)
-        {
-            c = full_width(c);
-        }
-        if self.text_transform.contains(TextTransform::FULL_SIZE_KANA) {
-            c = full_size_kana(c);
-        }
-        c
-    }
-
     /// Whether the language has case mappings for ASCII characters that differ from the
     /// default ones (`i` ↔ `İ` and `ı` ↔ `I`).
     fn has_turkic_casing(&self) -> bool {
@@ -126,6 +116,10 @@ pub(crate) struct TextTransformer {
     segmentation_buffer: String,
     /// Reused buffer for the transformed text.
     output: String,
+    /// Reused buffer for case mapped text, before the width transforms.
+    cased: String,
+    /// Where the transformed text differs in length from its source.
+    changes: Vec<TextChange>,
 }
 
 impl TextTransformer {
@@ -134,16 +128,17 @@ impl TextTransformer {
         self.context_start = builder.text().len();
     }
 
-    /// Transforms the content of a text node that is about to be pushed to `builder`.
+    /// Transforms the content of a text node that is about to be pushed to `builder`, returning
+    /// the transformed text and where its length differs from `text`, in order.
     #[inline]
     pub(crate) fn transform<'a, B: Brush>(
         &'a mut self,
         text: &'a str,
         transform: &CaseTransform,
         builder: &TreeBuilder<'_, B>,
-    ) -> &'a str {
+    ) -> (&'a str, &'a [TextChange]) {
         if transform.text_transform.is_empty() {
-            return text;
+            return (text, &[]);
         }
         self.transform_nonempty(text, transform, builder)
     }
@@ -153,41 +148,50 @@ impl TextTransformer {
         text: &'a str,
         transform: &CaseTransform,
         builder: &TreeBuilder<'_, B>,
-    ) -> &'a str {
+    ) -> (&'a str, &'a [TextChange]) {
         let case = transform.text_transform.case();
+        // ASCII case mapping never changes lengths.
         if text.is_ascii()
             && !transform.has_turkic_casing()
             && !transform.text_transform.contains(TextTransform::FULL_WIDTH)
         {
             match case {
                 TextTransformCase::Uppercase => {
-                    return map_ascii(
+                    let output = map_ascii(
                         text,
                         &mut self.output,
                         u8::is_ascii_lowercase,
                         str::make_ascii_uppercase,
                     );
+                    return (output, &[]);
                 }
                 TextTransformCase::Lowercase => {
-                    return map_ascii(
+                    let output = map_ascii(
                         text,
                         &mut self.output,
                         u8::is_ascii_uppercase,
                         str::make_ascii_lowercase,
                     );
+                    return (output, &[]);
                 }
-                TextTransformCase::None => return text,
+                TextTransformCase::None => return (text, &[]),
                 _ => {}
             }
         }
 
-        let mut output = OutputSink::new(text, &mut self.output);
+        self.changes.clear();
+        let mut output =
+            OutputSink::new(text, &mut self.output, &mut self.cased, &mut self.changes);
         output.width = transform.text_transform & WIDTH_TRANSFORMS;
         output.white_space_collapse = transform.white_space_collapse;
         match case {
-            TextTransformCase::None => output.push_str(text),
-            TextTransformCase::Uppercase => uppercase(text, &transform.lang, &mut output),
-            TextTransformCase::Lowercase => lowercase(text, &transform.lang, &mut output),
+            TextTransformCase::None => output.push_source(text),
+            TextTransformCase::Uppercase => {
+                output.push_cased(text, &transform.lang, uppercase, false)
+            }
+            TextTransformCase::Lowercase => {
+                output.push_cased(text, &transform.lang, lowercase, false)
+            }
             TextTransformCase::MathAuto => math_auto(text, &mut output),
             TextTransformCase::Capitalize => {
                 // Pending (collapsed) whitespace always ends the preceding word, so no
@@ -220,7 +224,7 @@ impl TextTransformer {
 fn math_auto(text: &str, output: &mut OutputSink<'_>) {
     let mut chars = text.chars();
     let Some(c) = chars.next().filter(|_| chars.next().is_none()) else {
-        output.push_str(text);
+        output.push_source(text);
         return;
     };
     let codepoint = match c {
@@ -241,12 +245,12 @@ fn math_auto(text: &str, output: &mut OutputSink<'_>) {
         '\u{3F1}' => 0x1D71A,
         '\u{3D6}' => 0x1D71B,
         _ => {
-            output.push_str(text);
+            output.push_source(text);
             return;
         }
     };
     let mapped = char::from_u32(codepoint).unwrap();
-    output.push_str(mapped.encode_utf8(&mut [0; 4]));
+    output.push_mapped(text.len(), mapped.encode_utf8(&mut [0; 4]), true);
 }
 
 /// Whether Parley collapses `c` with the given `white-space-collapse`.
@@ -354,41 +358,153 @@ fn map_ascii<'a>(
 }
 
 /// Collects transformed text, borrowing the original text if it is unchanged and otherwise
-/// copying it into a reused buffer from the first difference onwards.
+/// copying it into a reused buffer from the first difference onwards. Records where the output
+/// differs in length from the original, one source character at a time.
 struct OutputSink<'a> {
     original: &'a str,
     /// The length of the output so far if it is a prefix of `original`, or `None` if the output
     /// has diverged and is in `buffer`.
     unchanged_len: Option<usize>,
     buffer: &'a mut String,
+    /// Scratch space for case mapped text.
+    cased: &'a mut String,
+    /// How much of `original` has been written.
+    source_len: usize,
+    changes: &'a mut Vec<TextChange>,
     /// `full-width` and/or `full-size-kana`, applied to each pushed character.
     width: TextTransform,
     white_space_collapse: WhiteSpaceCollapse,
 }
 
+/// A case mapping, writing `text` case mapped for `lang` to the sink.
+type CaseMapping = fn(&str, &LanguageIdentifier, &mut dyn fmt::Write);
+
 impl<'a> OutputSink<'a> {
-    fn new(original: &'a str, buffer: &'a mut String) -> Self {
+    fn new(
+        original: &'a str,
+        buffer: &'a mut String,
+        cased: &'a mut String,
+        changes: &'a mut Vec<TextChange>,
+    ) -> Self {
         Self {
             original,
             unchanged_len: Some(0),
             buffer,
+            cased,
+            source_len: 0,
+            changes,
             width: TextTransform::NONE,
             white_space_collapse: WhiteSpaceCollapse::Collapse,
         }
     }
 
-    fn push_str(&mut self, s: &str) {
+    fn len(&self) -> usize {
+        match self.unchanged_len {
+            Some(len) => len,
+            None => self.buffer.len(),
+        }
+    }
+
+    /// Writes `text`, the next part of the original, with no case mapping.
+    fn push_source(&mut self, text: &str) {
         if self.width.is_empty() {
-            self.push_unmapped(s);
+            self.push_unmapped(text);
+            self.source_len += text.len();
         } else {
-            s.chars().for_each(|c| self.push_char(c));
+            for c in text.chars() {
+                self.push_mapped(c.len_utf8(), c.encode_utf8(&mut [0; 4]), true);
+            }
+        }
+    }
+
+    /// Writes `text`, the next part of the original, case mapped by `case`.
+    ///
+    /// The whole of `text` is case mapped at once, so that mappings that depend on context
+    /// (a final sigma, Dutch `IJ`) apply. Each character is then given its share of the output
+    /// by case mapping it alone, with any combining marks after it, as only those affect it. If
+    /// context changed how many characters that makes, the rest of `text` maps as a whole.
+    /// If `first_only`, `case` maps only the first character and leaves the rest unchanged.
+    fn push_cased(
+        &mut self,
+        text: &str,
+        lang: &LanguageIdentifier,
+        case: CaseMapping,
+        first_only: bool,
+    ) {
+        let source_start = self.source_len;
+        let mut cased = std::mem::take(&mut *self.cased);
+        cased.clear();
+        case(text, lang, &mut cased);
+        if cased == text {
+            self.push_source(text);
+        } else {
+            let mut out = cased.as_str();
+            let mut start = 0;
+            'chunks: while start < text.len() {
+                let end = start + chunk_len(&text[start..]);
+                let chunk = &text[start..end];
+                let len = chunk.chars().count();
+                let mapped = if first_only && start > 0 {
+                    len
+                } else if chunk.len() == 1 {
+                    1
+                } else {
+                    let mut count = CharCount(0);
+                    case(chunk, lang, &mut count);
+                    count.0
+                };
+                // The character gets what its marks don't. A mark gets one character while any
+                // remain, so marks the mapping drops (Greek accents in uppercase) come last.
+                let mut marks = mapped.saturating_sub(1).min(len - 1);
+                let own = mapped - marks;
+                for (index, c) in chunk.chars().enumerate() {
+                    let count = if index == 0 {
+                        own
+                    } else {
+                        let count = marks.min(1);
+                        marks -= count;
+                        count
+                    };
+                    let Some(len) = char_prefix_len(out, count) else {
+                        let rest = source_start + text.len() - self.source_len;
+                        self.push_mapped(rest, out, false);
+                        out = "";
+                        break 'chunks;
+                    };
+                    let (head, tail) = out.split_at(len);
+                    self.push_mapped(c.len_utf8(), head, true);
+                    out = tail;
+                }
+                start = end;
+            }
+            if !out.is_empty() {
+                self.push_mapped(0, out, false);
+            }
+        }
+        *self.cased = cased;
+    }
+
+    /// Writes `text`, the mapping of the next `source_len` bytes of the original, after the
+    /// width transforms. `one_char` says that those bytes are one character.
+    fn push_mapped(&mut self, source_len: usize, text: &str, one_char: bool) {
+        let start = self.len();
+        let mut chars = text.chars();
+        let single = one_char && chars.next().is_some() && chars.next().is_none();
+        for c in text.chars() {
+            self.push_char(c);
+        }
+        let source = self.source_len..self.source_len + source_len;
+        self.source_len = source.end;
+        let text = start..self.len();
+        if !(single && source.len() == text.len()) {
+            self.changes.push(TextChange { source, text });
         }
     }
 
     /// Pushes `c` after applying the `full-width` and `full-size-kana` mappings.
     ///
     /// Text transforms apply after white space collapsing, so collapsible white space is left
-    /// for Parley, which collapses it to U+3000 for `full-width` (see `stylo_to_parley::style`).
+    /// for the collapser, which collapses it to U+3000 for `full-width`.
     fn push_char(&mut self, mut c: char) {
         if self.width.contains(TextTransform::FULL_WIDTH)
             && !is_collapsible(self.white_space_collapse, c)
@@ -415,25 +531,41 @@ impl<'a> OutputSink<'a> {
         self.buffer.push_str(s);
     }
 
-    #[cfg(feature = "text-transform-icu")]
-    fn write(&mut self, writeable: impl Writeable) {
-        // Writing to an `OutputSink` is infallible.
-        let _ = writeable.write_to(self);
-    }
-
-    fn finish(self) -> &'a str {
-        match self.unchanged_len {
+    fn finish(self) -> (&'a str, &'a [TextChange]) {
+        let text = match self.unchanged_len {
             Some(len) => &self.original[..len],
             None => self.buffer,
-        }
+        };
+        (text, self.changes)
     }
 }
 
-#[cfg(feature = "text-transform-icu")]
-impl std::fmt::Write for OutputSink<'_> {
-    fn write_str(&mut self, s: &str) -> std::fmt::Result {
-        self.push_str(s);
+/// Counts the characters written to it.
+struct CharCount(usize);
+
+impl fmt::Write for CharCount {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.0 += s.chars().count();
         Ok(())
+    }
+}
+
+/// The length of the first character of `text` and the combining marks after it.
+fn chunk_len(text: &str) -> usize {
+    let mut chars = text.char_indices();
+    chars.next();
+    chars
+        .find(|&(_, c)| {
+            c.is_ascii() || !GeneralCategoryGroup::Mark.contains(GENERAL_CATEGORY.get(c))
+        })
+        .map_or(text.len(), |(index, _)| index)
+}
+
+/// The length of the first `count` characters of `text`, if it has that many.
+fn char_prefix_len(text: &str, count: usize) -> Option<usize> {
+    match text.char_indices().nth(count) {
+        Some((index, _)) => Some(index),
+        None => (text.chars().count() == count).then_some(text.len()),
     }
 }
 
@@ -471,10 +603,10 @@ fn capitalize(
 
             match part.find(is_typographic_letter_unit) {
                 Some(letter_start) if !first_letter_already_seen => {
-                    output.push_str(&part[..letter_start]);
-                    titlecase_segment(&part[letter_start..], lang, output);
+                    output.push_source(&part[..letter_start]);
+                    output.push_cased(&part[letter_start..], lang, titlecase_segment, true);
                 }
-                _ => output.push_str(part),
+                _ => output.push_source(part),
             }
         }
         segment_start = segment_end;
@@ -482,37 +614,40 @@ fn capitalize(
 }
 
 #[cfg(feature = "text-transform-icu")]
-fn uppercase(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
-    output.write(CASE_MAPPER.uppercase(text, lang));
+fn uppercase(text: &str, lang: &LanguageIdentifier, output: &mut dyn fmt::Write) {
+    // Writing to a `String` or a `CharCount` is infallible.
+    let _ = CASE_MAPPER.uppercase(text, lang).write_to(output);
 }
 
 #[cfg(feature = "text-transform-icu")]
-fn lowercase(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
-    output.write(CASE_MAPPER.lowercase(text, lang));
+fn lowercase(text: &str, lang: &LanguageIdentifier, output: &mut dyn fmt::Write) {
+    let _ = CASE_MAPPER.lowercase(text, lang).write_to(output);
 }
 
 /// Titlecases the first character of `text`, which must start with a typographic letter unit,
 /// leaving the rest unchanged.
 #[cfg(feature = "text-transform-icu")]
-fn titlecase_segment(text: &str, lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
+fn titlecase_segment(text: &str, lang: &LanguageIdentifier, output: &mut dyn fmt::Write) {
     let mut options = TitlecaseOptions::default();
     options.leading_adjustment = Some(LeadingAdjustment::None);
     options.trailing_case = Some(TrailingCase::Unchanged);
-    output.write(TITLECASE_MAPPER.titlecase_segment(text, lang, options));
+    let _ = TITLECASE_MAPPER
+        .titlecase_segment(text, lang, options)
+        .write_to(output);
 }
 
 #[cfg(not(feature = "text-transform-icu"))]
-fn uppercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
+fn uppercase(text: &str, _lang: &LanguageIdentifier, output: &mut dyn fmt::Write) {
     for c in text.chars() {
         push_chars(output, c.to_uppercase());
     }
 }
 
 #[cfg(not(feature = "text-transform-icu"))]
-fn lowercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
+fn lowercase(text: &str, _lang: &LanguageIdentifier, output: &mut dyn fmt::Write) {
     // Only `str::to_lowercase` implements the context-sensitive final sigma rule.
     if text.contains('Σ') {
-        output.push_str(&text.to_lowercase());
+        let _ = output.write_str(&text.to_lowercase());
         return;
     }
     for c in text.chars() {
@@ -522,18 +657,18 @@ fn lowercase(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>
 
 /// Approximates titlecasing with uppercasing, as the standard library has no titlecase mapping.
 #[cfg(not(feature = "text-transform-icu"))]
-fn titlecase_segment(text: &str, _lang: &LanguageIdentifier, output: &mut OutputSink<'_>) {
+fn titlecase_segment(text: &str, _lang: &LanguageIdentifier, output: &mut dyn fmt::Write) {
     let mut chars = text.chars();
     if let Some(first) = chars.next() {
         push_chars(output, first.to_uppercase());
     }
-    output.push_str(chars.as_str());
+    let _ = output.write_str(chars.as_str());
 }
 
 #[cfg(not(feature = "text-transform-icu"))]
-fn push_chars(output: &mut OutputSink<'_>, chars: impl Iterator<Item = char>) {
+fn push_chars(output: &mut dyn fmt::Write, chars: impl Iterator<Item = char>) {
     for c in chars {
-        output.push_str(c.encode_utf8(&mut [0; 4]));
+        let _ = output.write_char(c);
     }
 }
 
@@ -583,7 +718,7 @@ mod tests {
         text: &str,
         transform: &CaseTransform,
     ) -> String {
-        let output = transformer.transform(text, transform, builder).to_owned();
+        let output = transformer.transform(text, transform, builder).0.to_owned();
         builder.push_text(&output);
         output
     }
@@ -709,7 +844,7 @@ mod tests {
                     ..CaseTransform::NONE
                 };
                 transformer.word_break(builder);
-                let output = transformer.transform(text, &transform, builder);
+                let (output, _) = transformer.transform(text, &transform, builder);
                 assert_eq!(output.as_ptr() == text.as_ptr(), borrowed, "{text:?}");
                 builder.push_text(" ");
             }
@@ -802,7 +937,7 @@ mod tests {
             for text in [
                 "", "ab", "a ", " a", "a\u{301}", "∂∇", "1", "+", "é", "\u{3A2}", "ℎ", "𝑎", "😀",
             ] {
-                let output = transformer.transform(text, &transform, builder);
+                let (output, _) = transformer.transform(text, &transform, builder);
                 assert_eq!(output, text);
                 assert_eq!(output.as_ptr(), text.as_ptr());
             }
@@ -969,7 +1104,7 @@ mod tests {
                     text_transform,
                     ..CaseTransform::NONE
                 };
-                let output = transformer.transform(text, &transform, builder);
+                let (output, _) = transformer.transform(text, &transform, builder);
                 assert_eq!(output, text);
                 assert_eq!(output.as_ptr(), text.as_ptr(), "{text:?}");
             }

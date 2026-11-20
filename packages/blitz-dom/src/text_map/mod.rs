@@ -9,7 +9,7 @@ mod collapse;
 mod line_end;
 mod offset_map;
 
-pub use collapse::{WhiteSpace, WhiteSpaceCollapser, is_segment_break};
+pub use collapse::{TextChange, WhiteSpace, WhiteSpaceCollapser, is_segment_break};
 pub use line_end::{LineEndWhitespace, line_end_whitespace};
 pub use offset_map::{Affinity, TextOffsetMap};
 
