@@ -23,7 +23,10 @@ use crate::{
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::EventDispatchSource;
-use blitz_traits::events::{BlitzFocusEvent, DomEvent, DomEventData, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzFocusEvent, BlitzPointerEvent, DomEvent, DomEventData, HitResult, MouseEventButtons,
+    UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -192,6 +195,39 @@ pub enum DocumentEvent {
     },
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) struct LastMousePointerState {
+    is_primary: bool,
+    buttons: MouseEventButtons,
+    client_x: f32,
+    client_y: f32,
+    pressure: f64,
+    tangential_pressure: f32,
+    tilt_x: i8,
+    tilt_y: i8,
+    twist: u16,
+    altitude: f64,
+    azimuth: f64,
+}
+
+impl LastMousePointerState {
+    pub(crate) fn from_event(event: &BlitzPointerEvent) -> Self {
+        Self {
+            is_primary: event.is_primary,
+            buttons: event.buttons,
+            client_x: event.client_x(),
+            client_y: event.client_y(),
+            pressure: event.details.pressure,
+            tangential_pressure: event.details.tangential_pressure,
+            tilt_x: event.details.tilt_x,
+            tilt_y: event.details.tilt_y,
+            twist: event.details.twist,
+            altitude: event.details.altitude,
+            azimuth: event.details.azimuth,
+        }
+    }
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -265,6 +301,7 @@ pub struct BaseDocument {
     pub(crate) hover_node_is_text: bool,
     /// The last known pointer position in client coordinates (viewport-relative, unscrolled).
     pub(crate) last_client_pointer_position: Option<taffy::Point<f32>>,
+    pub(crate) last_mouse_pointer_state: Option<LastMousePointerState>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<NodeId>,
     /// The node which is currently active (if any)
@@ -493,6 +530,7 @@ impl BaseDocument {
             hover_hit_node_id: None,
             hover_node_is_text: false,
             last_client_pointer_position: None,
+            last_mouse_pointer_state: None,
             focus_node_id: None,
             active_node_id: None,
             mousedown_node_id: None,
@@ -2097,6 +2135,7 @@ impl BaseDocument {
         // The pointer is no longer over the document, so stop re-resolving
         // hover state against it.
         self.last_client_pointer_position = None;
+        self.last_mouse_pointer_state = None;
         self.hover_hit_node_id = None;
 
         let Some(hover_node_id) = self.hover_node_id else {

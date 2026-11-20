@@ -1,4 +1,5 @@
 use crate::Document;
+use crate::document::LastMousePointerState;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventDispatchSource, EventState,
     Point, PointerCoords, UiEvent,
@@ -38,8 +39,18 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         EventDriver { doc, handler }
     }
 
+    fn is_redundant_mouse_pointer_move(&self, event: &BlitzPointerEvent) -> bool {
+        event.is_mouse()
+            && self.doc.inner().last_mouse_pointer_state
+                == Some(LastMousePointerState::from_event(event))
+    }
+
     pub fn handle_pointer_move(&mut self, event: &BlitzPointerEvent) -> Option<NodeId> {
         let mut doc = self.doc.inner_mut();
+
+        if event.is_mouse() {
+            doc.last_mouse_pointer_state = Some(LastMousePointerState::from_event(event));
+        }
 
         let prev_hover_node_id = doc.hover_node_id;
         let changed = doc.set_hover_to(event.page_x(), event.page_y());
@@ -189,6 +200,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         // Update document input state (hover, focus, active, etc)
         match &event {
             UiEvent::PointerMove(event) => {
+                if self.is_redundant_mouse_pointer_move(event) {
+                    return;
+                }
                 hover_node_id = self.handle_pointer_move(event);
             }
             UiEvent::PointerDown(event) => {
