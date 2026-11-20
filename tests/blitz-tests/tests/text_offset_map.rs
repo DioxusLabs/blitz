@@ -219,9 +219,9 @@ fn out_of_flow_boxes_follow_pending_space() {
     let float = doc.query_selector("#f").unwrap().unwrap();
     assert_eq!(layout.offset_map.layout_range(float), Some(2..2));
     let anchor = layout
-        .layout
-        .inline_boxes()
-        .find(|inline_box| inline_box.id == float.as_u64())
+        .out_of_flow_boxes
+        .iter()
+        .find(|oof_box| oof_box.node_id == float)
         .unwrap()
         .index;
     assert_eq!(anchor, 1);

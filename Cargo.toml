@@ -38,7 +38,7 @@ homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 categories = ["gui"]
 edition = "2024"
-rust-version = "1.91.0"
+rust-version = "1.96.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
@@ -255,7 +255,7 @@ edition = "2024"
 description = "Top level crate for Blitz"
 license = "MIT OR Apache-2.0"
 keywords = ["dom", "ui", "gui", "react", "wasm"]
-rust-version = "1.91.0"
+rust-version = "1.96.0"
 publish = false
 
 [features]
@@ -331,3 +331,12 @@ wgpu_context = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+# Parley StyleRunBuilder parent support (stacked on linebender/parley#940)
+[patch.crates-io]
+parley = { git = "https://github.com/DioxusLabs/parley", rev = "d1ab3dcb94f6b1ab8a99fa6513f8ada46e0565f3" }
+fontique = { git = "https://github.com/DioxusLabs/parley", rev = "d1ab3dcb94f6b1ab8a99fa6513f8ada46e0565f3" }
+parlance = { git = "https://github.com/DioxusLabs/parley", rev = "d1ab3dcb94f6b1ab8a99fa6513f8ada46e0565f3" }
+parley_data = { git = "https://github.com/DioxusLabs/parley", rev = "d1ab3dcb94f6b1ab8a99fa6513f8ada46e0565f3" }
+parley_emoji = { git = "https://github.com/DioxusLabs/parley", rev = "d1ab3dcb94f6b1ab8a99fa6513f8ada46e0565f3" }
+parley_engine = { git = "https://github.com/DioxusLabs/parley", rev = "d1ab3dcb94f6b1ab8a99fa6513f8ada46e0565f3" }

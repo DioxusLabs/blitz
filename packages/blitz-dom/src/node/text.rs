@@ -4,7 +4,7 @@ use blitz_traits::{
     shell::ShellProvider,
 };
 use keyboard_types::{Key, Modifiers, NamedKey};
-use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
+use parley::{ContentWidths, FontContext, LayoutContext};
 
 use crate::text_map::line_end_whitespace;
 use crate::util::ACTION_MOD;
@@ -22,11 +22,23 @@ impl TextBrush {
     }
 }
 
+/// A floated or absolutely positioned box in an inline context.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OutOfFlowBox {
+    pub node_id: NodeId,
+    /// The byte index in the layout's text at which the box is anchored.
+    pub index: usize,
+    pub is_floated: bool,
+}
+
 #[derive(Clone, Default)]
 pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
+    /// The floated and absolutely positioned boxes of the inline context, in document order.
+    /// Parley only knows about the floated ones (as `FloatedBox`es).
+    pub out_of_flow_boxes: Vec<OutOfFlowBox>,
     /// Block-axis offset (in CSS px) of the line boxes from the top of the container's content
     /// box, as applied by `align-content`.
     pub block_offset: f32,
@@ -73,7 +85,33 @@ impl TextLayout {
             && self
                 .layout
                 .inline_boxes()
-                .any(|ibox| ibox.kind == InlineBoxKind::InFlow && ibox.index == byte_index)
+                .any(|ibox| ibox.index == byte_index)
+    }
+
+    /// Whether the inline context has any in-flow inline boxes or out-of-flow boxes.
+    pub fn has_boxes(&self) -> bool {
+        self.layout.inline_boxes().len() > 0 || !self.out_of_flow_boxes.is_empty()
+    }
+
+    /// The node ids of all boxes of the inline context (in-flow inline boxes and out-of-flow
+    /// boxes) in document order, with the byte index in `text` at which each sits.
+    pub fn boxes_in_document_order(&self) -> impl Iterator<Item = (usize, NodeId)> + '_ {
+        let mut inline_boxes = self.layout.inline_boxes().peekable();
+        let mut oof_boxes = self.out_of_flow_boxes.iter().peekable();
+        std::iter::from_fn(move || {
+            // An out-of-flow box at the index of an inline box's U+FFFC precedes that box.
+            let oof_index = oof_boxes.peek().map(|oof| oof.index);
+            let ibox_index = inline_boxes.peek().map(|ibox| ibox.index);
+            match (oof_index, ibox_index) {
+                (Some(oof), Some(ibox)) if oof <= ibox => {
+                    oof_boxes.next().map(|b| (b.index, b.node_id))
+                }
+                (Some(_), None) => oof_boxes.next().map(|b| (b.index, b.node_id)),
+                _ => inline_boxes
+                    .next()
+                    .map(|b| (b.index, NodeId::from_u64(b.id))),
+            }
+        })
     }
 
     /// The byte index in `text` of the U+FFFC character that stands in for `node_id`, if it is
@@ -81,7 +119,7 @@ impl TextLayout {
     pub fn inline_box_char_index(&self, node_id: NodeId) -> Option<usize> {
         self.layout
             .inline_boxes()
-            .find(|ibox| ibox.id == node_id.as_u64() && ibox.kind == InlineBoxKind::InFlow)
+            .find(|ibox| ibox.id == node_id.as_u64())
             .map(|ibox| ibox.index)
     }
 }

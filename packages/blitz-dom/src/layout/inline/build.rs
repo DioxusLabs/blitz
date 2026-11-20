@@ -1,7 +1,7 @@
 use blitz_traits::node_id::NodeId;
 use markup5ever::local_name;
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, TreeBuilder, WhiteSpaceCollapse,
+    FloatedBox, FontContext, InlineBox, LayoutContext, StyleRunBuilder, WhiteSpaceCollapse,
 };
 use style::{
     computed_values::position::T as PositionProperty,
@@ -17,7 +17,7 @@ use crate::{
     layout::list::BULLET_FONT_FAMILY,
     layout::replaced::is_inline_box_element,
     layout::text_transform::{CaseTransform, TextTransformer},
-    node::{ListItemLayout, ListItemLayoutPosition, Marker, TextBrush, TextLayout},
+    node::{ListItemLayout, ListItemLayoutPosition, Marker, OutOfFlowBox, TextBrush, TextLayout},
     stylo_to_parley,
     text_map::{WhiteSpace, WhiteSpaceCollapser},
 };
@@ -46,8 +46,9 @@ pub(crate) fn build_inline_layout_into(
             ..Default::default()
         });
 
-    // Create a parley tree builder
-    let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
+    // Create a parley style run builder
+    let mut builder = layout_ctx.style_run_builder(font_ctx, scale, true);
+    let root_style_index = builder.push_style(parley_style, None);
     if let Some(style) = root_node_style.as_deref() {
         builder.set_base_direction(stylo_to_parley::base_direction(
             style.clone_direction(),
@@ -55,7 +56,7 @@ pub(crate) fn build_inline_layout_into(
         ));
     }
 
-    let mut collapser = WhiteSpaceCollapser::default();
+    let mut collapser = WhiteSpaceCollapser::with_text(std::mem::take(&mut text_layout.text));
     let root_white_space = white_space(root_node_style.as_deref().map(|style| &**style));
 
     let text_transform = root_node_style
@@ -78,36 +79,43 @@ pub(crate) fn build_inline_layout_into(
             // disclosure-closed (U+25B8) falls back to the element's own font and
             // renders as a missing glyph.
             Marker::Char(char) => {
-                let mut marker_style = parley_style.clone();
-                marker_style.font_family = BULLET_FONT_FAMILY.into();
-                builder.push_style_span(marker_style);
+                let marker_style_index = builder.push_modified_style(
+                    root_style_index,
+                    [parley::StyleProperty::FontFamily(BULLET_FONT_FAMILY.into())],
+                );
                 collapser.push_generated(
                     &mut builder,
+                    marker_style_index,
                     inline_context_root_node_id,
                     &format!("{char} "),
                     root_white_space,
                 );
-                builder.pop_style_span();
             }
             Marker::String(str) => collapser.push_generated(
                 &mut builder,
+                root_style_index,
                 inline_context_root_node_id,
                 str,
                 root_white_space,
             ),
         }
     };
+    text_layout.out_of_flow_boxes.clear();
+    let oof_boxes = &mut text_layout.out_of_flow_boxes;
+
     // The marker is a separate box, so words in the content don't continue from it.
     let mut text_transformer = TextTransformer::default();
-    text_transformer.word_break(&builder);
+    text_transformer.word_break(collapser.text().len());
 
     if let Some(before_id) = root_node.before() {
         build_inline_layout_recursive(
             &mut builder,
             &mut collapser,
             &mut text_transformer,
+            oof_boxes,
             nodes,
             before_id,
+            root_style_index,
             &text_transform,
         );
     }
@@ -116,8 +124,10 @@ pub(crate) fn build_inline_layout_into(
             &mut builder,
             &mut collapser,
             &mut text_transformer,
+            oof_boxes,
             nodes,
             child_id,
+            root_style_index,
             &text_transform,
         );
     }
@@ -126,22 +136,29 @@ pub(crate) fn build_inline_layout_into(
             &mut builder,
             &mut collapser,
             &mut text_transformer,
+            oof_boxes,
             nodes,
             after_id,
+            root_style_index,
             &text_transform,
         );
     }
 
-    text_layout.offset_map = collapser.finish();
-    text_layout.text = builder.build_into(&mut text_layout.layout);
+    let (text, offset_map) = collapser.finish();
+    builder.build_into(&mut text_layout.layout, &text);
+    text_layout.text = text;
+    text_layout.offset_map = offset_map;
     return;
 
+    #[allow(clippy::too_many_arguments)]
     fn build_inline_layout_recursive(
-        builder: &mut TreeBuilder<TextBrush>,
+        builder: &mut StyleRunBuilder<TextBrush>,
         collapser: &mut WhiteSpaceCollapser<NodeId>,
         text_transformer: &mut TextTransformer,
+        oof_boxes: &mut Vec<OutOfFlowBox>,
         nodes: &crate::NodeTree,
         node_id: NodeId,
+        parent_style_index: u16,
         parent_text_transform: &CaseTransform,
     ) {
         let node = &nodes[node_id];
@@ -167,46 +184,83 @@ pub(crate) fn build_inline_layout_into(
                     .map(|s| s.clone_position())
                     .unwrap_or(PositionProperty::Static);
                 let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
-                let box_kind = if position.is_absolutely_positioned() {
-                    InlineBoxKind::OutOfFlow
-                } else if float.is_floating() {
-                    InlineBoxKind::CustomOutOfFlow
-                } else {
-                    InlineBoxKind::InFlow
-                };
+                let is_absolute = position.is_absolutely_positioned();
+                let is_floated = !is_absolute && cfg!(feature = "floats") && float.is_floating();
+                let mut push_box =
+                    |builder: &mut StyleRunBuilder<TextBrush>,
+                     collapser: &mut WhiteSpaceCollapser<NodeId>,
+                     text_transformer: &mut TextTransformer| {
+                        if is_absolute || is_floated {
+                            // Parley has no notion of absolutely positioned boxes: their static
+                            // position is derived from their text index after layout. Like Parley's
+                            // floated boxes, they precede any pending collapsible whitespace.
+                            let index = collapser.push_out_of_flow_box(node_id);
+                            oof_boxes.push(OutOfFlowBox {
+                                node_id,
+                                index,
+                                is_floated,
+                            });
+                            if is_floated {
+                                builder.push_floated_box(FloatedBox {
+                                    id: node_id.as_u64(),
+                                    index,
+                                });
+                            }
+                        } else {
+                            collapser.push_inline_box(
+                                builder,
+                                parent_style_index,
+                                node_id,
+                                InlineBox {
+                                    id: node_id.as_u64(),
+                                    // Overridden by push_inline_box method
+                                    index: 0,
+                                    // Width and height are set during layout
+                                    width: 0.0,
+                                    height: 0.0,
+                                    baseline: None,
+                                    vertical_align: node
+                                        .primary_styles()
+                                        .map(|s| stylo_to_parley::vertical_align(&s))
+                                        .unwrap_or_default(),
+                                },
+                            );
+                            text_transformer.word_break(collapser.text().len());
+                        }
+                    };
 
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
                         // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
-                        let whitespace = style.map(|s| {
-                            [
-                                parley::StyleProperty::WhiteSpaceCollapse(
-                                    stylo_to_parley::white_space_collapse(
-                                        s.clone_white_space_collapse(),
+                        let child_style_index = style.map_or(parent_style_index, |s| {
+                            builder.push_modified_style(
+                                parent_style_index,
+                                [
+                                    parley::StyleProperty::WhiteSpaceCollapse(
+                                        stylo_to_parley::white_space_collapse(
+                                            s.clone_white_space_collapse(),
+                                        ),
                                     ),
-                                ),
-                                parley::StyleProperty::TextWrapMode(
-                                    stylo_to_parley::text_wrap_mode(s.clone_text_wrap_mode()),
-                                ),
-                                parley::StyleProperty::CollapsedSpace(
-                                    stylo_to_parley::collapsed_space(s.clone_text_transform()),
-                                ),
-                            ]
+                                    parley::StyleProperty::TextWrapMode(
+                                        stylo_to_parley::text_wrap_mode(s.clone_text_wrap_mode()),
+                                    ),
+                                    parley::StyleProperty::CollapsedSpace(
+                                        stylo_to_parley::collapsed_space(s.clone_text_transform()),
+                                    ),
+                                ],
+                            )
                         });
-                        builder.push_style_modification_span(
-                            whitespace
-                                .as_ref()
-                                .map_or(&[][..], |styles| styles.as_slice()),
-                        );
                         if let Some(before_id) = node.before() {
                             build_inline_layout_recursive(
                                 builder,
                                 collapser,
                                 text_transformer,
+                                oof_boxes,
                                 nodes,
                                 before_id,
+                                child_style_index,
                                 &text_transform,
                             );
                         }
@@ -216,8 +270,10 @@ pub(crate) fn build_inline_layout_into(
                                 builder,
                                 collapser,
                                 text_transformer,
+                                oof_boxes,
                                 nodes,
                                 child_id,
+                                child_style_index,
                                 &text_transform,
                             );
                         }
@@ -226,41 +282,28 @@ pub(crate) fn build_inline_layout_into(
                                 builder,
                                 collapser,
                                 text_transformer,
+                                oof_boxes,
                                 nodes,
                                 after_id,
+                                child_style_index,
                                 &text_transform,
                             );
                         }
-                        builder.pop_style_span();
                     }
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
                         if is_inline_box_element(tag_name) {
-                            if box_kind == InlineBoxKind::InFlow {
-                                text_transformer.word_break(builder);
-                            }
-                            collapser.push_inline_box(node_id, box_kind == InlineBoxKind::InFlow);
-                            builder.push_inline_box(InlineBox {
-                                id: node_id.as_u64(),
-                                kind: box_kind,
-                                // Overridden by push_inline_box method
-                                index: 0,
-                                // Width and height are set during layout
-                                width: 0.0,
-                                height: 0.0,
-                                baseline: None,
-                                vertical_align: node
-                                    .primary_styles()
-                                    .map(|s| stylo_to_parley::vertical_align(&s))
-                                    .unwrap_or_default(),
-                            });
+                            push_box(builder, collapser, text_transformer);
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
-                            collapser.push_line_break(builder, node_id);
-                            text_transformer.word_break(builder);
-                        } else {
+                            collapser.push_line_break(builder, parent_style_index, node_id);
+                            text_transformer.word_break(collapser.text().len());
+                        } else if node.before().is_some()
+                            || !node.children.is_empty()
+                            || node.after().is_some()
+                        {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let style = node
                                 .primary_styles()
@@ -270,15 +313,17 @@ pub(crate) fn build_inline_layout_into(
                                     ..Default::default()
                                 });
 
-                            builder.push_style_span(style);
+                            let style_index = builder.push_style(style, Some(parent_style_index));
 
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
                                     builder,
                                     collapser,
                                     text_transformer,
+                                    oof_boxes,
                                     nodes,
                                     before_id,
+                                    style_index,
                                     &text_transform,
                                 );
                             }
@@ -288,8 +333,10 @@ pub(crate) fn build_inline_layout_into(
                                     builder,
                                     collapser,
                                     text_transformer,
+                                    oof_boxes,
                                     nodes,
                                     child_id,
+                                    style_index,
                                     &text_transform,
                                 );
                             }
@@ -298,35 +345,18 @@ pub(crate) fn build_inline_layout_into(
                                     builder,
                                     collapser,
                                     text_transformer,
+                                    oof_boxes,
                                     nodes,
                                     after_id,
+                                    style_index,
                                     &text_transform,
                                 );
                             }
-
-                            builder.pop_style_span();
                         }
                     }
                     // Inline box
                     (_, _) => {
-                        if box_kind == InlineBoxKind::InFlow {
-                            text_transformer.word_break(builder);
-                        }
-                        collapser.push_inline_box(node_id, box_kind == InlineBoxKind::InFlow);
-                        builder.push_inline_box(InlineBox {
-                            id: node_id.as_u64(),
-                            kind: box_kind,
-                            // Overridden by push_inline_box method
-                            index: 0,
-                            // Width and height are set during layout
-                            width: 0.0,
-                            height: 0.0,
-                            baseline: None,
-                            vertical_align: node
-                                .primary_styles()
-                                .map(|s| stylo_to_parley::vertical_align(&s))
-                                .unwrap_or_default(),
-                        });
+                        push_box(builder, collapser, text_transformer);
                     }
                 };
             }
@@ -334,10 +364,22 @@ pub(crate) fn build_inline_layout_into(
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
 
-                let (text, changes) =
-                    text_transformer.transform(&data.content, parent_text_transform, builder);
+                let (text, changes) = text_transformer.transform(
+                    &data.content,
+                    parent_text_transform,
+                    collapser.text(),
+                    collapser.has_pending_whitespace(),
+                );
                 let white_space = white_space(text_style(nodes, node_id).as_deref());
-                collapser.push_text(builder, node_id, &data.content, text, changes, white_space);
+                collapser.push_text(
+                    builder,
+                    parent_style_index,
+                    node_id,
+                    &data.content,
+                    text,
+                    changes,
+                    white_space,
+                );
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -367,6 +409,7 @@ fn white_space(style: Option<&style::properties::ComputedValues>) -> WhiteSpace 
         return WhiteSpace {
             collapse: WhiteSpaceCollapse::Collapse,
             collapsed_space: " ",
+            wrap: true,
         };
     };
     WhiteSpace {
@@ -375,5 +418,6 @@ fn white_space(style: Option<&style::properties::ComputedValues>) -> WhiteSpace 
             parley::CollapsedSpace::IdeographicSpace => "\u{3000}",
             parley::CollapsedSpace::Space => " ",
         },
+        wrap: style.clone_text_wrap_mode() == stylo_to_parley::stylo::TextWrapMode::Wrap,
     }
 }
