@@ -209,6 +209,9 @@ pub struct BaseDocument {
     /// last [`resolve`](Self::resolve), to be applied (coalesced into a single
     /// device rebuild) at the start of the next resolve.
     pub(crate) pending_device_changes: DeviceChanges,
+    /// Set when the viewport shrinks while a text input is focused, so the next
+    /// resolve scrolls it back into view once layout reflects the new size.
+    pub(crate) pending_focus_reveal: bool,
     /// Document-wide work for the next [`resolve`](Self::resolve).
     pub(crate) flags: DocumentFlags,
     /// Strategy for Stylo's style traversal during `resolve`.
@@ -476,6 +479,7 @@ impl BaseDocument {
             viewport,
             media_type,
             pending_device_changes: DeviceChanges::empty(),
+            pending_focus_reveal: false,
             flags: DocumentFlags::empty(),
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
@@ -2283,8 +2287,21 @@ impl BaseDocument {
         let device = self.stylist.device_mut();
         let old_viewport_size = device.au_viewport_size();
         device.set_media_data(media_data);
+        let new_viewport_size = device.au_viewport_size();
         let viewport_units_changed =
-            old_viewport_size != device.au_viewport_size() && device.used_viewport_size();
+            old_viewport_size != new_viewport_size && device.used_viewport_size();
+        // A soft keyboard opening shrinks the viewport and can cover the focused
+        // input. Mobile browsers scroll it back into view; growing doesn't.
+        if (new_viewport_size.width < old_viewport_size.width
+            || new_viewport_size.height < old_viewport_size.height)
+            && self.focus_node_id.is_some_and(|id| {
+                self.nodes[id]
+                    .element_data()
+                    .is_some_and(|el| el.text_input_data().is_some())
+            })
+        {
+            self.pending_focus_reveal = true;
+        }
         self.restyle_for_device_change(viewport_units_changed);
 
         // Text is shaped at a specific scale factor, so cached inline layouts
