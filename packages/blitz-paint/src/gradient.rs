@@ -1,8 +1,11 @@
-use crate::color::{Color, ToColorColor};
-use color::DynamicColor;
+use crate::color::ToColorColor;
+use color::{ColorSpaceTag, HueDirection};
 use kurbo::{self, Affine, Point, Rect, Vec2};
 use peniko::{self, ColorStop, Gradient, LinearGradientPosition, SweepGradientPosition};
-use style::color::AbsoluteColor;
+use style::color::{
+    AbsoluteColor, ColorSpace,
+    mix::{ColorInterpolationMethod, HueInterpolationMethod},
+};
 use style::{
     OwnedSlice,
     values::{
@@ -58,10 +61,12 @@ pub(crate) fn to_peniko_gradient(
             direction,
             items,
             flags,
+            color_interpolation_method,
             // compat_mode,
             ..
         } => linear_gradient(
             (direction, items, *flags),
+            color_interpolation_method,
             origin_rect,
             bounding_box,
             scale,
@@ -72,21 +77,66 @@ pub(crate) fn to_peniko_gradient(
             position,
             items,
             flags,
+            color_interpolation_method,
             // compat_mode,
             ..
-        } => radial_gradient((shape, position, items, *flags), origin_rect, current_color),
+        } => radial_gradient(
+            (shape, position, items, *flags),
+            color_interpolation_method,
+            origin_rect,
+            current_color,
+        ),
         GenericGradient::Conic {
             angle,
             position,
             items,
             flags,
+            color_interpolation_method,
             ..
-        } => conic_gradient((angle, position, items, *flags), origin_rect, current_color),
+        } => conic_gradient(
+            (angle, position, items, *flags),
+            color_interpolation_method,
+            origin_rect,
+            current_color,
+        ),
     }
+}
+
+/// Preserve Stylo's interpolation metadata before producing any color stops.
+fn set_color_interpolation(gradient: &mut Gradient, method: &ColorInterpolationMethod) {
+    gradient.interpolation_cs = match method.space {
+        ColorSpace::Srgb => ColorSpaceTag::Srgb,
+        ColorSpace::SrgbLinear => ColorSpaceTag::LinearSrgb,
+        ColorSpace::Hsl => ColorSpaceTag::Hsl,
+        ColorSpace::Hwb => ColorSpaceTag::Hwb,
+        ColorSpace::Lab => ColorSpaceTag::Lab,
+        ColorSpace::Lch => ColorSpaceTag::Lch,
+        ColorSpace::Oklab => ColorSpaceTag::Oklab,
+        ColorSpace::Oklch => ColorSpaceTag::Oklch,
+        ColorSpace::DisplayP3 => ColorSpaceTag::DisplayP3,
+        // color 0.3 has no linear-P3 tag. Linear RGB bases are related by a
+        // linear transform, so interpolation is equivalent in linear sRGB.
+        ColorSpace::DisplayP3Linear => ColorSpaceTag::LinearSrgb,
+        ColorSpace::A98Rgb => ColorSpaceTag::A98Rgb,
+        ColorSpace::ProphotoRgb => ColorSpaceTag::ProphotoRgb,
+        ColorSpace::Rec2020 => ColorSpaceTag::Rec2020,
+        ColorSpace::XyzD50 => ColorSpaceTag::XyzD50,
+        ColorSpace::XyzD65 => ColorSpaceTag::XyzD65,
+    };
+    gradient.hue_direction = match method.hue {
+        HueInterpolationMethod::Shorter => HueDirection::Shorter,
+        HueInterpolationMethod::Longer => HueDirection::Longer,
+        HueInterpolationMethod::Increasing => HueDirection::Increasing,
+        HueInterpolationMethod::Decreasing => HueDirection::Decreasing,
+        // Stylo's non-standard "specified hue" extension has no counterpart
+        // in color 0.3. Keep the previous shorter-hue fallback for this mode.
+        HueInterpolationMethod::Specified => HueDirection::Shorter,
+    };
 }
 
 fn linear_gradient(
     gradient: LinearGradient,
+    interpolation: &ColorInterpolationMethod,
     rect: Rect,
     bounding_box: Rect,
     scale: f64,
@@ -141,6 +191,8 @@ fn linear_gradient(
         peniko::Extend::Pad
     });
 
+    set_color_interpolation(&mut gradient, interpolation);
+
     let (first_offset, last_offset) = resolve_length_color_stops(
         current_color,
         items,
@@ -160,6 +212,7 @@ fn linear_gradient(
 
 fn radial_gradient(
     gradient: RadialGradient,
+    interpolation: &ColorInterpolationMethod,
     rect: Rect,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
@@ -171,6 +224,8 @@ fn radial_gradient(
     } else {
         peniko::Extend::Pad
     });
+
+    set_color_interpolation(&mut gradient, interpolation);
 
     let (width_px, height_px) = (
         resolve_gradient_length(&position.horizontal, rect.width()),
@@ -263,6 +318,7 @@ fn radial_gradient(
 
 fn conic_gradient(
     gradient: ConicGradient,
+    interpolation: &ColorInterpolationMethod,
     rect: Rect,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
@@ -275,6 +331,8 @@ fn conic_gradient(
         } else {
             peniko::Extend::Pad
         });
+
+    set_color_interpolation(&mut gradient, interpolation);
 
     let (first_offset, last_offset) = resolve_angle_color_stops(
         current_color,
@@ -400,21 +458,17 @@ fn resolve_color_stops<T>(
                     gradient.stops.push(peniko::ColorStop { color, offset });
                 } else {
                     let mid_point = (hint - last_stop.offset) / (offset - last_stop.offset);
+                    let interpolator = last_stop.color.interpolate(
+                        color,
+                        gradient.interpolation_cs,
+                        gradient.hue_direction,
+                    );
                     let mut interpolate_stop = |cur_offset: f32| {
                         let relative_offset =
                             (cur_offset - last_stop.offset) / (offset - last_stop.offset);
                         let multiplier = relative_offset.powf(0.5f32.log(mid_point));
-                        let [last_r, last_g, last_b, last_a] = last_stop.color.components;
-                        let [r, g, b, a] = color.components;
-
-                        let color = Color::new([
-                            (last_r + multiplier * (r - last_r)),
-                            (last_g + multiplier * (g - last_g)),
-                            (last_b + multiplier * (b - last_b)),
-                            (last_a + multiplier * (a - last_a)),
-                        ]);
                         gradient.stops.push(peniko::ColorStop {
-                            color: DynamicColor::from_alpha_color(color),
+                            color: interpolator.eval(multiplier),
                             offset: cur_offset,
                         });
                     };
