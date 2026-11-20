@@ -144,12 +144,13 @@ fn text_input_geometry_is_in_css_pixels() {
     };
     let (size, selection) = at_scale(1.0);
     let (scaled_size, scaled_selection) = at_scale(2.0);
+    // The backend rounds line metrics to whole device pixels, so the sizes differ by up to a pixel.
     assert!(
-        (size.width - scaled_size.width).abs() < 1.0,
+        (size.width - scaled_size.width).abs() < 1.5,
         "{size:?} {scaled_size:?}"
     );
     assert!(
-        (size.height - scaled_size.height).abs() < 1.0,
+        (size.height - scaled_size.height).abs() < 1.5,
         "{size:?} {scaled_size:?}"
     );
     assert!(selection.start > 0 && selection.start < 11, "{selection:?}");
