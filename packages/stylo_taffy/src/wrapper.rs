@@ -508,15 +508,17 @@ impl<T: Deref<Target = ComputedValues>> taffy::BlockItemStyle for TaffyStyloStyl
     #[cfg(feature = "floats")]
     #[inline]
     fn float(&self) -> taffy::Float {
-        let float = convert::float(self.style.clone_float());
-        self.layout_wm().logical_float(float)
+        let wm = self.layout_wm();
+        let float = convert::float(self.style.clone_float(), wm.is_bidi_ltr());
+        wm.logical_float(float)
     }
 
     #[cfg(feature = "floats")]
     #[inline]
     fn clear(&self) -> taffy::Clear {
-        let clear = convert::clear(self.style.clone_clear());
-        self.layout_wm().logical_clear(clear)
+        let wm = self.layout_wm();
+        let clear = convert::clear(self.style.clone_clear(), wm.is_bidi_ltr());
+        wm.logical_clear(clear)
     }
 }
 
