@@ -503,6 +503,14 @@ impl Node {
     }
 
     pub fn is_or_contains_block(&self) -> bool {
+        let display = self.display_style().unwrap_or(StyloDisplay::inline());
+
+        // display: contents generates no box (so its own position and float don't apply):
+        // its children participate in the parent's formatting context in its place
+        if display.inside() == DisplayInside::Contents {
+            return self.any_child_is_or_contains_block();
+        }
+
         let style = self.primary_styles();
         let style = style.as_ref();
 
@@ -525,21 +533,17 @@ impl Node {
         if is_floating {
             return false;
         }
-        let display = self.display_style().unwrap_or(StyloDisplay::inline());
         match display.outside() {
             DisplayOutside::None => false,
             DisplayOutside::Block => true,
-            _ => {
-                if display.inside() == DisplayInside::Flow {
-                    self.children
-                        .iter()
-                        .copied()
-                        .any(|child_id| self.tree()[child_id].is_or_contains_block())
-                } else {
-                    false
-                }
-            }
+            _ => display.inside() == DisplayInside::Flow && self.any_child_is_or_contains_block(),
         }
+    }
+
+    fn any_child_is_or_contains_block(&self) -> bool {
+        self.children
+            .iter()
+            .any(|&child_id| self.tree()[child_id].is_or_contains_block())
     }
 
     /// Whether box-tree construction found this to be an inline box with block-level in-flow content only.
