@@ -183,6 +183,9 @@ pub enum DomEventKind {
     FocusIn,
     FocusOut,
 
+    Load,
+    Error,
+
     AppleStandardKeybinding,
 }
 impl DomEventKind {
@@ -233,6 +236,8 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+            "load" => Ok(Self::Load),
+            "error" => Ok(Self::Error),
             _ => Err(()),
         }
     }
@@ -280,6 +285,9 @@ pub enum DomEventData {
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
+
+    Load,
+    Error,
 
     AppleStandardKeybinding(SmolStr),
 }
@@ -336,6 +344,9 @@ impl DomEventData {
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
 
+            Self::Load => "load",
+            Self::Error => "error",
+
             Self::AppleStandardKeybinding { .. } => "applekeybinding",
         }
     }
@@ -381,6 +392,9 @@ impl DomEventData {
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
+
+            Self::Load => DomEventKind::Load,
+            Self::Error => DomEventKind::Error,
 
             Self::AppleStandardKeybinding { .. } => DomEventKind::AppleStandardKeybinding,
         }
@@ -428,6 +442,9 @@ impl DomEventData {
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
 
+            Self::Load => false,
+            Self::Error => false,
+
             Self::AppleStandardKeybinding { .. } => true,
         }
     }
@@ -473,6 +490,9 @@ impl DomEventData {
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
+
+            Self::Load => false,
+            Self::Error => false,
 
             Self::AppleStandardKeybinding { .. } => false,
         }

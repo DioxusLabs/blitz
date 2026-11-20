@@ -2,6 +2,7 @@
 use blitz_traits::devtools::{
     AttributeChanged, CharacterDataChanged, MutationRecord, NodeInserted, NodeRemoved,
 };
+use blitz_traits::events::DomEventData;
 use blitz_traits::node_id::NodeId;
 use markup5ever::{LocalName, ns};
 use std::collections::HashSet;
@@ -1437,21 +1438,32 @@ impl<'doc> DocumentMutator<'doc> {
     /// Load the image of an `<img>`, or the href of an SVG `<image>` or `<feImage>`,
     /// which usvg reads from the image cache when parsing the `<svg>`.
     fn load_image(&mut self, target_id: NodeId) {
+        self.doc.pending_images.retain(|_, waiting| {
+            waiting.retain(|(node_id, image_type)| {
+                *node_id != target_id || *image_type != ImageType::Image
+            });
+            !waiting.is_empty()
+        });
+
         let Some(element) = self.doc.nodes[target_id].element_data() else {
             return;
         };
-        let raw_src = if element.name.ns == ns!(svg) {
-            // usvg resolves `data:` URLs and `#fragment` references itself
-            element
-                .svg_href()
-                .filter(|href| !href.starts_with('#') && !is_data_url(href))
-        } else {
-            element.attr(local_name!("src"))
-        };
-        let Some(raw_src) = raw_src.filter(|src| !src.is_empty()) else {
+        let is_html_image = is_html_img(element);
+        let Some(raw_src) = image_source_attr(element).filter(|src| !src.is_empty()) else {
+            if let Some(element) = self.doc.nodes[target_id].element_data_mut() {
+                if matches!(element.special_data, SpecialElementData::Image(_)) {
+                    element.special_data = SpecialElementData::None;
+                    let node = &mut self.doc.nodes[target_id];
+                    node.clear_layout_cache();
+                    node.insert_damage(ALL_DAMAGE);
+                }
+            }
             return;
         };
         let Some(src) = self.doc.resolve_url(raw_src) else {
+            if is_html_image {
+                self.doc.queue_ua_event(target_id, DomEventData::Error);
+            }
             return;
         };
 
@@ -1464,6 +1476,9 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialElementData::Image(Box::new(cached_image.clone()));
             node.clear_layout_cache();
             node.insert_damage(ALL_DAMAGE);
+            if is_html_image {
+                self.doc.queue_ua_event(target_id, DomEventData::Load);
+            }
             return;
         }
 
@@ -1573,6 +1588,21 @@ impl<'doc> DocumentMutator<'doc> {
             self.append_children(label_id, &[text_id]);
             self.append_children(button_id, &[button_text_id]);
         }
+    }
+}
+
+pub(crate) fn is_html_img(element: &ElementData) -> bool {
+    element.name.ns == ns!(html) && element.name.local == local_name!("img")
+}
+
+pub(crate) fn image_source_attr(element: &ElementData) -> Option<&str> {
+    if element.name.ns == ns!(svg) {
+        // usvg resolves `data:` URLs and `#fragment` references itself
+        element
+            .svg_href()
+            .filter(|href| !href.starts_with('#') && !is_data_url(href))
+    } else {
+        element.attr(local_name!("src"))
     }
 }
 

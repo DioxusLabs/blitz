@@ -8,12 +8,12 @@ use blitz_traits::events::{
 };
 use dioxus_html::{
     AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DragData,
-    FocusData, FormData, FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData,
-    HasMouseData, HasPointerData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
-    HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
-    MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking, ResizeData,
-    ScrollBehavior, ScrollData, ScrollLogicalPosition, ScrollToOptions, SelectionData, ToggleData,
-    TouchData, TouchPoint, TransitionData, VisibleData, WheelData,
+    FocusData, FormData, FormValue, HasFileData, HasFocusData, HasFormData, HasImageData,
+    HasKeyboardData, HasMouseData, HasPointerData, HasScrollData, HasTouchData, HasTouchPointData,
+    HasWheelData, HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData,
+    MountedError, MountedResult, MouseData, PlatformEventData, PointerData, RenderedElementBacking,
+    ResizeData, ScrollBehavior, ScrollData, ScrollLogicalPosition, ScrollToOptions, SelectionData,
+    ToggleData, TouchData, TouchPoint, TransitionData, VisibleData, WheelData,
     geometry::{
         ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
         WheelDelta,
@@ -89,8 +89,8 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_drag_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_image_data(&self, _event: &PlatformEventData) -> ImageData {
-        unimplemented!("todo: convert_image_data in dioxus-native. requires support in blitz")
+    fn convert_image_data(&self, event: &PlatformEventData) -> ImageData {
+        event.downcast::<NativeImageData>().unwrap().clone().into()
     }
 
     fn convert_media_data(&self, _event: &PlatformEventData) -> MediaData {
@@ -139,6 +139,27 @@ impl HtmlEventConverter for NativeConverter {
 
     fn convert_visible_data(&self, _event: &PlatformEventData) -> VisibleData {
         unimplemented!("todo: convert_visible_data in dioxus-native. requires support in blitz")
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeImageData {
+    load_error: bool,
+}
+
+impl NativeImageData {
+    pub fn new(load_error: bool) -> Self {
+        Self { load_error }
+    }
+}
+
+impl HasImageData for NativeImageData {
+    fn load_error(&self) -> bool {
+        self.load_error
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
