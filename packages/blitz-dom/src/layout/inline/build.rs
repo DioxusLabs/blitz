@@ -47,8 +47,8 @@ pub(crate) fn build_inline_layout_into(
         });
 
     // Create a parley style run builder
-    let mut builder = layout_ctx.style_run_builder(font_ctx, scale, true, &parley_style);
-    let root_style_index = 0;
+    let mut builder = layout_ctx.style_run_builder(font_ctx, scale, true);
+    let root_style_index = builder.push_style(parley_style, None);
     if let Some(style) = root_node_style.as_deref() {
         builder.set_base_direction(stylo_to_parley::base_direction(
             style.clone_direction(),
@@ -313,7 +313,7 @@ pub(crate) fn build_inline_layout_into(
                                     ..Default::default()
                                 });
 
-                            let style_index = builder.push_style(parent_style_index, style);
+                            let style_index = builder.push_style(style, Some(parent_style_index));
 
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(

@@ -334,9 +334,9 @@ wgpu_context = { workspace = true }
 
 # Parley StyleRunBuilder parent support (stacked on linebender/parley#940)
 [patch.crates-io]
-parley = { git = "https://github.com/DioxusLabs/parley", rev = "919d2c61b682028b8a4b5b08dd42aaa5aff1e9fa" }
-fontique = { git = "https://github.com/DioxusLabs/parley", rev = "919d2c61b682028b8a4b5b08dd42aaa5aff1e9fa" }
-parlance = { git = "https://github.com/DioxusLabs/parley", rev = "919d2c61b682028b8a4b5b08dd42aaa5aff1e9fa" }
-parley_data = { git = "https://github.com/DioxusLabs/parley", rev = "919d2c61b682028b8a4b5b08dd42aaa5aff1e9fa" }
-parley_emoji = { git = "https://github.com/DioxusLabs/parley", rev = "919d2c61b682028b8a4b5b08dd42aaa5aff1e9fa" }
-parley_engine = { git = "https://github.com/DioxusLabs/parley", rev = "919d2c61b682028b8a4b5b08dd42aaa5aff1e9fa" }
+parley = { git = "https://github.com/DioxusLabs/parley", rev = "aa089ddbdd20f792b0626bb6c2c59829126ff0a1" }
+fontique = { git = "https://github.com/DioxusLabs/parley", rev = "aa089ddbdd20f792b0626bb6c2c59829126ff0a1" }
+parlance = { git = "https://github.com/DioxusLabs/parley", rev = "aa089ddbdd20f792b0626bb6c2c59829126ff0a1" }
+parley_data = { git = "https://github.com/DioxusLabs/parley", rev = "aa089ddbdd20f792b0626bb6c2c59829126ff0a1" }
+parley_emoji = { git = "https://github.com/DioxusLabs/parley", rev = "aa089ddbdd20f792b0626bb6c2c59829126ff0a1" }
+parley_engine = { git = "https://github.com/DioxusLabs/parley", rev = "aa089ddbdd20f792b0626bb6c2c59829126ff0a1" }
