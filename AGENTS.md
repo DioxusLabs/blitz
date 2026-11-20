@@ -10,14 +10,14 @@ Before pushing, run what CI runs:
 - `cargo clippy --workspace -- -D warnings`
 - `cargo clippy -p blitz-dom --no-default-features --features svg,woff,accessibility,system-fonts,file-input,custom-widget --all-targets -- -D warnings`
 - `cargo test --workspace`
-- `cargo doc` and, if you touched `Cargo.toml`, `cargo deny --workspace --all-features --locked check licenses`
+- `RUSTDOCFLAGS="-D warnings" cargo doc` and, if you touched `Cargo.toml`, `cargo deny --workspace --all-features --locked check licenses`
 - If you touched `.github/scripts`: `python3 -m unittest discover -s .github/scripts`
 
-Don't use `--all-features` for clippy/test: `rdme/avif` needs system dav1d >= 1.3 and `accesskit_xplat/tokio` conflicts with accesskit_unix. Pass an explicit feature list instead.
+Don't use `--all-features` for clippy/test: `rdme/avif` needs system dav1d >= 1.3 and `accesskit_xplat/tokio` conflicts with `accesskit_xplat/async-io`. Pass an explicit feature list instead.
 
 Run `apps/browser` with `cargo run -p browser` (not the built binary directly), or its `asset!` stylesheet doesn't load.
 
-Headless machines: the default GPU renderer has no adapter. Prefer rendering to an image (`cargo run --release --example screenshot <file-or-url>`); for a window use the CPU renderer (`--no-default-features --features cpu-softbuffer` or the `cpu` just recipes).
+Headless machines: the default GPU renderer has no adapter. Prefer rendering to an image (`cargo run --release --example screenshot <file-or-url>`); for a window use the softbuffer CPU renderer (`--no-default-features --features cpu-softbuffer`; the `cpu` just recipes use `cpu-pixels`, which still requires wgpu).
 
 ## Web Platform Tests
 WPT is the main correctness signal; results are deterministic.
@@ -39,10 +39,6 @@ WPT is the main correctness signal; results are deterministic.
 - There's no CSS 2.1 block-in-inline split: an inline box containing blocks is laid out as a block. Inline `img`/`svg`/`input` still paint through `render_element`.
 - `apps/browser` paints pages as sub-documents (`draw_sub_document` runs its own `paint_scene`). Any extra top-level paint pass also has to run per sub-document, or it works in examples but not in the browser.
 - Generated form-control content must be layout-only anonymous content, not real DOM children (those are visible to selectors/scripts and break WPT).
-
-## Code editor (`packages/parley_code_editor`)
-- Standalone code editing control (floem-editor-core + Parley + AnyRender); doesn't depend on blitz-dom. It may move out of this repo.
-- `cargo test -p parley_code_editor`; render to a PNG with `cargo run -p parley_code_editor --example screenshot [--wrap] [file] [out.png]`; open a window with `--example editor [--cpu] [--wrap] [file]`.
 
 ## Pull requests
 - Human-written PR descriptions are preferred. Write a short plain-prose explanation of what changed and why, the way a person would. Skip generated boilerplate, heading templates and file-by-file change lists.
