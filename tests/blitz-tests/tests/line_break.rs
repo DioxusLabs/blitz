@@ -1,6 +1,7 @@
 //! The CSS `line-break` property controls the soft wrap opportunities used for
 //! inline layout.
 
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, node::TextLayout};
 use blitz_test_harness::Harness;
 
@@ -15,12 +16,22 @@ fn inline<'a>(doc: &'a BaseDocument, selector: &str) -> &'a TextLayout {
         .unwrap()
 }
 
+/// The number of lines holding the text of `selector`'s inline formatting context.
+fn lines(doc: &BaseDocument, selector: &str) -> usize {
+    let layout = inline(doc, selector);
+    let mut tops = Vec::new();
+    layout.for_each_selection_rect(0, layout.text_len(), |rect| tops.push(rect.y0));
+    tops.sort_by(f64::total_cmp);
+    tops.dedup();
+    tops.len()
+}
+
 fn line_count(line_break: &str, text: &str) -> usize {
     let harness = Harness::from_html(&format!(
         "<div id='test' style='width:1px;line-break:{line_break}'>{text}</div>",
     ));
     let doc = harness.base();
-    inline(&doc, "#test").layout.len()
+    lines(&doc, "#test")
 }
 
 #[test]
@@ -40,7 +51,7 @@ fn anywhere_breaks_between_letters() {
 #[test]
 fn changing_the_property_relayouts() {
     let mut harness = Harness::from_html("<div id='test' style='width:1px'>abc</div>");
-    assert_eq!(inline(&harness.base(), "#test").layout.len(), 1);
+    assert_eq!(lines(&harness.base(), "#test"), 1);
 
     let id = harness.node("#test");
     harness
@@ -48,5 +59,5 @@ fn changing_the_property_relayouts() {
         .mutate()
         .set_style_property(id, "line-break", "anywhere");
     harness.pump();
-    assert_eq!(inline(&harness.base(), "#test").layout.len(), 3);
+    assert_eq!(lines(&harness.base(), "#test"), 3);
 }

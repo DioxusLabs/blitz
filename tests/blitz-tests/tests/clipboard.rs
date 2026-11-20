@@ -1,3 +1,4 @@
+use blitz_dom::text::EditableText as _;
 use blitz_test_harness::{Harness, key_event};
 use blitz_traits::events::{KeyState, UiEvent};
 use keyboard_types::{Key, Modifiers};

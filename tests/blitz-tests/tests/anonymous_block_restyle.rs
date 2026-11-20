@@ -3,6 +3,7 @@
 
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::DocumentConfig;
+use blitz_dom::text::InlineText as _;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -225,20 +226,19 @@ fn anonymous_text_tracks_intermediate_transition_frames() {
     assert_eq!(color(&doc, before[0]), [255, 0, 0]);
 }
 
+/// Where the text of `node`'s lines starts, in CSS pixels from its content box's left.
 fn line_offset(doc: &HtmlDocument, node: NodeId) -> f32 {
-    doc.get_node(node)
+    let layout = doc
+        .get_node(node)
         .unwrap()
         .element_data()
         .unwrap()
         .inline_layout_data
         .as_ref()
-        .unwrap()
-        .layout
-        .lines()
-        .next()
-        .unwrap()
-        .metrics()
-        .offset
+        .unwrap();
+    let mut left = f64::INFINITY;
+    layout.for_each_selection_rect(0, layout.text_len(), |rect| left = left.min(rect.x0));
+    (left / f64::from(layout.scale())) as f32
 }
 
 #[test]

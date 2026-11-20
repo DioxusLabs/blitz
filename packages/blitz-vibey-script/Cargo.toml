@@ -12,7 +12,9 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = []
+default = ["parley"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["blitz-html/parley"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]
@@ -34,7 +36,6 @@ markup5ever = { workspace = true }
 style = { workspace = true }
 
 # Other dependencies
-icu_properties = { workspace = true }
 keyboard-types = { workspace = true }
 log = "0.4"
 url = { workspace = true }

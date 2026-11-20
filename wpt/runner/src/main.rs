@@ -2,11 +2,11 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use atomic_float::AtomicF64;
+use blitz_dom::FontContext;
 use blitz_dom::net::Resource;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use panic_backtrace::StashedPanicInfo;
-use parley::FontContext;
 use report::{generate_expectations, generate_report};
 use supports_hyperlinks::Stream as HyperlinkStream;
 use terminal_link::Link;
@@ -387,7 +387,9 @@ fn main() {
     let num = AtomicU32::new(0);
     let completed_num = AtomicU32::new(0);
 
-    let base_font_context = parley::FontContext::default();
+    // Listing the platform's fonts reads every installed font file: list them once, and hand
+    // every test a clone.
+    let base_font_context = FontContext::default();
 
     let thread_state: ThreadLocal<RefCell<ThreadCtx>> = ThreadLocal::new();
     let worker_counter = AtomicUsize::new(0);
