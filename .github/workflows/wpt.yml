@@ -27,6 +27,39 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'pull_request' && 'main' || github.sha }}
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+      - name: Merge PR onto latest main
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          MAIN_SHA="$(git rev-parse HEAD)"
+          echo "Latest main: $MAIN_SHA"
+          echo "PR #$PR_NUMBER head: $PR_HEAD_SHA"
+          git fetch --no-tags origin "refs/pull/$PR_NUMBER/head"
+          if ! git rev-parse --verify --quiet "$PR_HEAD_SHA^{commit}" >/dev/null; then
+            git fetch --no-tags origin "$PR_HEAD_SHA"
+          fi
+          if ! git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            merge --no-edit "$PR_HEAD_SHA"; then
+            CONFLICTS="$(git diff --name-only --diff-filter=U)"
+            git merge --abort || true
+            {
+              echo "## WPT tests skipped: merge conflicts with \`main\`"
+              echo ""
+              echo "PR #$PR_NUMBER (\`${PR_HEAD_SHA:0:9}\`) cannot be merged cleanly onto latest \`main\` (\`${MAIN_SHA:0:9}\`). Resolve the conflicts and re-run."
+              if [ -n "$CONFLICTS" ]; then
+                echo ""
+                echo "Conflicting files:"
+                echo "$CONFLICTS" | sed 's/^/- `/' | sed 's/$/`/'
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::PR #$PR_NUMBER ($PR_HEAD_SHA) has merge conflicts with latest main ($MAIN_SHA); refusing to run WPT tests."
+            exit 1
+          fi
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
