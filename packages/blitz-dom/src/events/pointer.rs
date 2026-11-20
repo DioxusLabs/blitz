@@ -21,6 +21,7 @@ use crate::{
     BaseDocument,
     node::{ScrollbarRef, SpecialElementData},
     scrolling::{FlingState, ScrollAnimationState},
+    text::{Edit, EditEngine as _, EditableText as _},
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -333,35 +334,37 @@ pub(crate) fn handle_pointermove(
             return changed;
         }
 
+        text_input_data.editor.refresh(&mut doc.text);
         let mut content_box_offset = taffy::Point {
             x: final_layout.padding.left + final_layout.border.left,
             y: final_layout.padding.top + final_layout.border.top,
         };
         if !text_input_data.is_multiline {
-            let layout = text_input_data.editor.try_layout().unwrap();
-            let content_box_height = final_layout.content_box_height();
-            let input_height = layout.height() / layout.scale();
-            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+            if let Some(metrics) = text_input_data.editor.metrics() {
+                let content_box_height = final_layout.content_box_height();
+                let input_height = metrics.size.height as f32;
+                let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
-            content_box_offset.y += y_offset;
+                content_box_offset.y += y_offset;
+            }
         }
 
-        // Account for the input's scroll offset (stored in CSS pixels, scaled here to device
-        // pixels) when mapping the pointer location into the text content's coordinate space.
-        let scroll_offset = text_input_data.scroll_offset as f64 * doc.viewport.scale_f64();
+        // Account for the input's scroll offset when mapping the pointer location into the text
+        // content's coordinate space.
+        let scroll_offset = text_input_data.scroll_offset as f64;
         let (scroll_x, scroll_y) = if text_input_data.is_multiline {
             (0.0, scroll_offset)
         } else {
             (scroll_offset, 0.0)
         };
 
-        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64() + scroll_x;
-        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64() + scroll_y;
+        let x = (hit.x - content_box_offset.x) as f64 + scroll_x;
+        let y = (hit.y - content_box_offset.y) as f64 + scroll_y;
 
-        text_input_data
-            .editor
-            .driver(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx)
-            .extend_selection_to_point(x as f32, y as f32);
+        text_input_data.editor.edit(
+            &mut doc.text,
+            Edit::ExtendSelectionToPoint(x as f32, y as f32),
+        );
 
         changed = true;
     } else if event.is_mouse()
@@ -462,16 +465,14 @@ pub(crate) fn handle_pointerdown(
                         y: node.final_layout().padding.top + node.final_layout().border.top,
                     };
                     if !text_input_data.is_multiline {
-                        let layout = text_input_data.editor.try_layout().unwrap();
-                        let content_box_height = node.final_layout().content_box_height();
-                        let input_height = layout.height() / layout.scale();
-                        let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
-                        content_box_offset.y += y_offset;
+                        if let Some(metrics) = text_input_data.editor.metrics() {
+                            let content_box_height = node.final_layout().content_box_height();
+                            let input_height = metrics.size.height as f32;
+                            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+                            content_box_offset.y += y_offset;
+                        }
                     }
-                    // `scroll_offset` is stored in CSS pixels; scale it to device pixels to
-                    // match the editor's coordinate space.
-                    let scroll_offset =
-                        text_input_data.scroll_offset as f64 * doc.viewport.scale_f64();
+                    let scroll_offset = text_input_data.scroll_offset as f64;
                     let scroll = if text_input_data.is_multiline {
                         taffy::Point {
                             x: 0.0,
@@ -513,32 +514,28 @@ pub(crate) fn handle_pointerdown(
             // Clear general text selection when focusing a text input
             doc.clear_text_selection();
 
-            let tx = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64() + scroll.x;
-            let ty = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64() + scroll.y;
+            let tx = (hit.x - content_box_offset.x) as f64 + scroll.x;
+            let ty = (hit.y - content_box_offset.y) as f64 + scroll.y;
 
             // Now get mutable access to the text input
             let click_count = doc.click_count;
             let node = &mut doc.nodes[actual_target];
             let el = node.data.downcast_element_mut().unwrap();
             if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
-                let mut font_ctx = doc.font_ctx.lock().unwrap();
-                let mut driver = text_input_data
-                    .editor
-                    .driver(&mut font_ctx, &mut doc.layout_ctx);
-
-                match click_count {
+                let (tx, ty) = (tx as f32, ty as f32);
+                let edit = match click_count {
                     1 => {
                         if mods.shift() {
-                            driver.shift_click_extension(tx as f32, ty as f32);
+                            Edit::ShiftClickExtension(tx, ty)
                         } else {
-                            driver.move_to_point(tx as f32, ty as f32);
+                            Edit::MoveToPoint(tx, ty)
                         }
                     }
-                    2 => driver.select_word_at_point(tx as f32, ty as f32),
-                    _ => driver.select_hard_line_at_point(tx as f32, ty as f32),
-                }
-
-                drop(font_ctx);
+                    2 => Edit::SelectWordAtPoint(tx, ty),
+                    _ => Edit::SelectHardLineAtPoint(tx, ty),
+                };
+                let edit = text_input_data.edit(edit);
+                text_input_data.editor.edit(&mut doc.text, edit);
             }
 
             doc.set_focus_to(hit.node_id);

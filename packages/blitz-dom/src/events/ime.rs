@@ -3,6 +3,17 @@ use blitz_traits::events::BlitzImeEvent;
 use crate::BaseDocument;
 
 pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent) {
+    let reveals = doc.reveal_typed_password.is_some();
+    apply_ime_event(doc, event, reveals);
+}
+
+/// Inserts pasted text into the focused text input, as an input method commits text. A password
+/// field never shows pasted text in the clear.
+pub(crate) fn handle_paste(doc: &mut BaseDocument, text: String) {
+    apply_ime_event(doc, BlitzImeEvent::Commit(text), false);
+}
+
+fn apply_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent, reveals: bool) {
     if let Some(node_id) = doc.focus_node_id {
         let node = &mut doc.nodes[node_id];
         let text_input_data = node
@@ -10,13 +21,10 @@ pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent) {
             .downcast_element_mut()
             .and_then(|el| el.text_input_data_mut());
         if let Some(input_data) = text_input_data {
-            let generated_event = input_data.apply_ime_event(
-                &mut doc.font_ctx.lock().unwrap(),
-                &mut doc.layout_ctx,
-                event,
-            );
+            let generated_event = input_data.apply_ime_event(&mut doc.text, event, reveals);
 
             if let Some(generated_event) = generated_event {
+                doc.note_password_reveal(node_id, web_time::Instant::now());
                 doc.apply_generated_text_input_event(node_id, generated_event);
             }
 

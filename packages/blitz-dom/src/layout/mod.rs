@@ -5,6 +5,7 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
+use crate::text::EditEngine as _;
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
@@ -30,7 +31,6 @@ pub(crate) mod list;
 pub(crate) mod paint_tree;
 pub(crate) mod replaced;
 pub(crate) mod table;
-pub(crate) mod text_transform;
 #[cfg(feature = "writing-mode")]
 pub(crate) mod writing_mode;
 
@@ -87,7 +87,7 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// custom `LayoutPartialTree` wrapper which intercepts some nodes — multi-column or
 /// paginated layout — and delegates everything else to Blitz).
 pub struct LayoutPassState<'doc> {
-    doc: &'doc mut BaseDocument,
+    pub(crate) doc: &'doc mut BaseDocument,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
@@ -315,18 +315,14 @@ impl LayoutPassState<'_> {
                         };
                         let content_width = (output.size.width - pb.horizontal_axis_sum()).max(0.0);
                         let doc = &mut *self.doc;
-                        let scale = doc.viewport.scale();
                         let node = &mut doc.nodes[dom_node_id(node_id)];
                         if let Some(input) = node
                             .data
                             .downcast_element_mut()
                             .and_then(|el| el.text_input_data_mut())
                         {
-                            input.editor.set_width(Some(content_width * scale));
-                            input.editor.refresh_layout(
-                                &mut doc.font_ctx.lock().unwrap(),
-                                &mut doc.layout_ctx,
-                            );
+                            input.editor.set_width(Some(content_width));
+                            input.editor.refresh(&mut doc.text);
                         }
                     }
                     return output;
@@ -361,7 +357,24 @@ impl LayoutPassState<'_> {
                                 },
                             );
                         }
-                        None | Some("text" | "password" | "email" | "tel" | "url" | "search") => {
+                        // A slider is 129px along its inline axis and 16px across it, as Chrome
+                        // sizes one.
+                        Some("range") => {
+                            return compute_leaf_layout(
+                                inputs,
+                                &node.layout_style(),
+                                resolve_calc_value,
+                                |_known_size, _available_space| taffy::Size {
+                                    width: 129.0,
+                                    height: 16.0,
+                                },
+                            );
+                        }
+                        None
+                        | Some(
+                            "text" | "password" | "email" | "tel" | "url" | "search" | "number"
+                            | "date" | "month" | "week" | "time" | "datetime-local",
+                        ) => {
                             return compute_leaf_layout(
                                 inputs,
                                 &node.layout_style(),
