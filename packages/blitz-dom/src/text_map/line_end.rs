@@ -1,49 +1,75 @@
 use std::ops::Range;
 
+use parley::{Brush, Line};
+
 use super::{TextOffsetMap, is_segment_break};
 
 /// The white space at the end of a line, as byte ranges of the layout text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineEndWhitespace {
-    /// Preserved spaces and tabs (`pre-wrap`) that hang past the end of the line. Before a
-    /// forced break they only hang if they overflow.
+    /// Preserved spaces and tabs (`pre-wrap`) that hang past the end of the line.
     pub hanging: Range<usize>,
     /// The collapsible space that CSS removes at the end of the line. Parley keeps it in the
     /// text as a hanging space.
     pub removed: Range<usize>,
 }
 
-/// The white space at the end of the line spanning `line` of the layout `text`, not counting a
+/// Total advances within this of the line's hanging advance are taken to match it.
+const ADVANCE_EPSILON: f32 = 0.01;
+
+/// The white space at the end of the laid out `line` of the layout `text`, not counting a
 /// forced line break.
 ///
-/// Parley only reports the total hanging advance of each line, so this scans back from the
-/// line's end. If Parley reports these ranges itself one day, only this needs to change.
-pub fn line_end_whitespace<Id: Copy + Ord>(
+/// Parley only reports the total hanging advance of each line, so this walks back over the
+/// line's trailing white space clusters until their advances add up to it. If Parley reports
+/// these ranges itself one day, only this needs to change.
+pub fn line_end_whitespace<B: Brush, Id: Copy + Ord>(
     text: &str,
-    line: Range<usize>,
+    line: &Line<'_, B>,
     map: &TextOffsetMap<Id>,
 ) -> LineEndWhitespace {
-    let start = line.start;
-    let text = &text[line];
-    let mut end = text.len();
-    if let Some(c) = text.chars().next_back().filter(|&c| is_segment_break(c)) {
-        end -= c.len_utf8();
-    }
-    let removed_end = end;
-    while let Some(c) = text[..end].chars().next_back()
-        && map.is_collapsible_space(start + end - c.len_utf8(), c)
+    let mut clusters: Vec<(Range<usize>, f32)> = line
+        .runs()
+        .flat_map(|run| run.clusters())
+        .map(|cluster| (cluster.text_range(), cluster.advance()))
+        .collect();
+    clusters.sort_unstable_by_key(|(range, _)| range.start);
+
+    let mut end = line.text_range().end;
+    let mut clusters = &clusters[..];
+    if let Some(((range, _), rest)) = clusters.split_last()
+        && range.end == end
+        && text[range.clone()].starts_with(is_segment_break)
     {
-        end -= c.len_utf8();
+        end = range.start;
+        clusters = rest;
     }
-    let hanging_end = end;
-    while let Some(c) = text[..end].chars().next_back()
-        && matches!(c, ' ' | '\t' | '\u{3000}')
-        && map.is_pre_wrap(start + end - c.len_utf8())
+
+    let mut hanging_start = end;
+    let mut remaining = line.metrics().hanging_advance;
+    for (range, advance) in clusters.iter().rev() {
+        // An inline box between clusters has no cluster of its own and ends the white space.
+        if range.end != hanging_start
+            || *advance > remaining + ADVANCE_EPSILON
+            || !text[range.clone()]
+                .chars()
+                .all(|c| matches!(c, ' ' | '\t' | '\u{3000}'))
+        {
+            break;
+        }
+        remaining -= advance;
+        hanging_start = range.start;
+    }
+
+    let mut removed_start = end;
+    while removed_start > hanging_start
+        && let Some(c) = text[..removed_start].chars().next_back()
+        && map.is_collapsible_space(removed_start - c.len_utf8(), c)
     {
-        end -= c.len_utf8();
+        removed_start -= c.len_utf8();
     }
     LineEndWhitespace {
-        hanging: start + end..start + hanging_end,
-        removed: start + hanging_end..start + removed_end,
+        hanging: hanging_start..removed_start,
+        removed: removed_start..end,
     }
 }

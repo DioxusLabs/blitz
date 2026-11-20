@@ -39,8 +39,6 @@ pub struct WhiteSpace {
     pub collapse: WhiteSpaceCollapse,
     /// The space a collapsible run collapses to: U+3000 under `text-transform: full-width`.
     pub collapsed_space: &'static str,
-    /// Whether `text-wrap-mode` is `wrap`.
-    pub wrap: bool,
 }
 
 /// A collapsible run that will collapse to one space if content follows it.
@@ -92,7 +90,8 @@ impl<Id> Default for WhiteSpaceCollapser<Id> {
 
 impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
     /// Collapses and pushes the content of the text node `node`. `text` is `source` after
-    /// `text-transform`.
+    /// `text-transform`: case mapping, then `map_char` on each character (`full-width` and
+    /// `full-size-kana`).
     pub fn push_text<B: Brush>(
         &mut self,
         builder: &mut TreeBuilder<'_, B>,
@@ -100,12 +99,13 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
         source: &str,
         text: &str,
         white_space: WhiteSpace,
+        map_char: impl Fn(char) -> char,
     ) {
         self.map.begin_node(node);
         if !text.is_empty() {
             self.identity = source == text;
             if !self.identity {
-                align(source, text, &mut self.segments);
+                align(source, text, map_char, &mut self.segments);
             }
             self.out.clear();
             self.collapse(text, white_space);
@@ -123,7 +123,7 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
         text: &str,
         white_space: WhiteSpace,
     ) {
-        self.push_text(builder, node, "", text, white_space);
+        self.push_text(builder, node, "", text, white_space, |c| c);
     }
 
     /// Pushes a forced line break element (`<br>`).
@@ -143,6 +143,9 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
 
     /// Records the position of an inline box. Only in-flow boxes take up a character
     /// (U+FFFC) of the text, and only they end a collapsible run.
+    ///
+    /// An out-of-flow box is recorded after any collapsible space before it, in DOM order,
+    /// though Parley anchors it before that space (see [`TextOffsetMap::layout_range`]).
     pub fn push_inline_box(&mut self, node: Id, in_flow: bool) {
         self.map.begin_node(node);
         if in_flow {
@@ -169,12 +172,7 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
                 self.pending = None;
             }
             self.flush();
-            let kind = if mode == WhiteSpaceCollapse::Preserve && white_space.wrap {
-                UnitKind::PreWrap
-            } else {
-                UnitKind::Identity
-            };
-            self.commit(text, 0..text.len(), kind);
+            self.commit(text, 0..text.len(), UnitKind::Identity);
             return;
         }
 
@@ -293,11 +291,11 @@ fn content_len(text: &str, mode: WhiteSpaceCollapse) -> usize {
         .unwrap_or(text.len())
 }
 
-/// Aligns `text` (`source` after `text-transform`) to `source`. Characters map one to one when
-/// the character count is unchanged. Otherwise case mappings that expand a character (`ß` →
-/// `SS`) and combining marks removed by tailored casing are matched character by character, and
-/// anything that can't be matched maps as one range.
-fn align(source: &str, text: &str, segments: &mut Vec<Segment>) {
+/// Aligns `text` (`source` after case mapping and then `map_char`) to `source`, character by
+/// character: case mappings that expand a character (`ß` → `SS`, or `Ss` when capitalized) and
+/// combining marks removed by tailored casing are matched, and anything that can't be matched
+/// maps as one range.
+fn align(source: &str, text: &str, map_char: impl Fn(char) -> char, segments: &mut Vec<Segment>) {
     segments.clear();
     let mut push = |text: usize, source: usize, exact: bool| {
         if let Some(last) = segments.last()
@@ -315,22 +313,17 @@ fn align(source: &str, text: &str, segments: &mut Vec<Segment>) {
     };
 
     let (mut s, mut t) = (0, 0);
-    if source == text {
+    // ASCII case mapping never changes lengths.
+    if source.len() == text.len() && source.is_ascii() && text.is_ascii() {
         push(0, 0, true);
         s = source.len();
         t = text.len();
-    } else if source.chars().count() == text.chars().count() {
-        for (c, d) in source.chars().zip(text.chars()) {
-            push(t, s, c.len_utf8() == d.len_utf8());
-            s += c.len_utf8();
-            t += d.len_utf8();
-        }
     } else {
         let general_category = CodePointMapData::<GeneralCategory>::new();
         while let (Some(c), Some(d)) = (source[s..].chars().next(), text[t..].chars().next()) {
             let rest = &text[t..];
-            let expansion = matching_prefix(rest, c.to_uppercase())
-                .or_else(|| matching_prefix(rest, c.to_lowercase()))
+            let expansion = matching_prefix(rest, c.to_uppercase().map(&map_char))
+                .or_else(|| matching_prefix(rest, c.to_lowercase().map(&map_char)))
                 .filter(|&len| len > d.len_utf8());
             if let Some(len) = expansion {
                 push(t, s, false);
@@ -358,14 +351,17 @@ fn align(source: &str, text: &str, segments: &mut Vec<Segment>) {
     }
 }
 
+/// The length of the prefix of `text` that is `mapped`, ignoring case (so that titlecasing
+/// matches an uppercase expansion).
 fn matching_prefix(text: &str, mapped: impl Iterator<Item = char>) -> Option<usize> {
     let mut text = text.chars();
     let mut len = 0;
     for c in mapped {
-        if text.next() != Some(c) {
+        let d = text.next()?;
+        if d != c && !d.to_lowercase().eq(c.to_lowercase()) {
             return None;
         }
-        len += c.len_utf8();
+        len += d.len_utf8();
     }
     Some(len)
 }

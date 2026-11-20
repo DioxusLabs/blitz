@@ -178,6 +178,17 @@ fn apply_points(doc: &mut BaseDocument, points: [Point; 2]) {
 }
 
 fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
+    own_point(doc, point).or_else(|| {
+        // An element that renders nothing in an inline layout (e.g. an empty `<span>`) is
+        // positioned by the content next to it.
+        let node = doc.get_node(point.0)?;
+        let root = inline_root(doc, node.id).filter(|&root| root != node.id)?;
+        adjacent_point(doc, node.id, root)
+    })
+}
+
+/// The rendered position of `point` from its own node and descendants.
+fn own_point(doc: &BaseDocument, point: Point) -> Option<Point> {
     let node = doc.get_node(point.0)?;
     if !node.flags.is_in_document() {
         return None;
@@ -220,6 +231,29 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
         })
 }
 
+/// The rendered position of the nearest content after `id` (or else before it) inside the
+/// inline formatting context of `root`, or the start of `root` if it has none.
+fn adjacent_point(doc: &BaseDocument, mut id: NodeId, root: NodeId) -> Option<Point> {
+    while id != root {
+        let parent = doc.get_node(doc.get_node(id)?.parent?)?;
+        let index = parent.children.iter().position(|&child| child == id)?;
+        let point = parent.children[index + 1..]
+            .iter()
+            .find_map(|&id| subtree_point(doc, id, false))
+            .or_else(|| {
+                parent.children[..index]
+                    .iter()
+                    .rev()
+                    .find_map(|&id| subtree_point(doc, id, true))
+            });
+        if point.is_some() {
+            return point;
+        }
+        id = parent.id;
+    }
+    Some((root, 0))
+}
+
 fn inline_root(doc: &BaseDocument, mut id: NodeId) -> Option<NodeId> {
     loop {
         let node = doc.get_node(id)?;
@@ -244,12 +278,10 @@ fn subtree_point(doc: &BaseDocument, id: NodeId, end: bool) -> Option<Point> {
         } else {
             0
         };
-        return rendered_point(doc, (id, offset));
+        return own_point(doc, (id, offset));
     }
-    if let Some(point) =
-        rendered_point(doc, (id, usize::from(end))).filter(|_| node.children.is_empty())
-    {
-        return Some(point);
+    if node.children.is_empty() {
+        return own_point(doc, (id, usize::from(end)));
     }
     if end {
         node.children

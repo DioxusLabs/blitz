@@ -190,6 +190,9 @@ pub(crate) fn build_inline_layout_into(
                                 parley::StyleProperty::TextWrapMode(
                                     stylo_to_parley::text_wrap_mode(s.clone_text_wrap_mode()),
                                 ),
+                                parley::StyleProperty::CollapsedSpace(
+                                    stylo_to_parley::collapsed_space(s.clone_text_transform()),
+                                ),
                             ]
                         });
                         builder.push_style_modification_span(
@@ -334,7 +337,9 @@ pub(crate) fn build_inline_layout_into(
                 let text =
                     text_transformer.transform(&data.content, parent_text_transform, builder);
                 let white_space = white_space(text_style(nodes, node_id).as_deref());
-                collapser.push_text(builder, node_id, &data.content, text, white_space);
+                collapser.push_text(builder, node_id, &data.content, text, white_space, |c| {
+                    parent_text_transform.map_char(c)
+                });
             }
             NodeData::Comment { .. } => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -364,19 +369,13 @@ fn white_space(style: Option<&style::properties::ComputedValues>) -> WhiteSpace 
         return WhiteSpace {
             collapse: WhiteSpaceCollapse::Collapse,
             collapsed_space: " ",
-            wrap: true,
         };
     };
     WhiteSpace {
         collapse: stylo_to_parley::white_space_collapse(style.clone_white_space_collapse()),
-        collapsed_space: if style
-            .clone_text_transform()
-            .contains(style::values::computed::TextTransform::FULL_WIDTH)
-        {
-            "\u{3000}"
-        } else {
-            " "
+        collapsed_space: match stylo_to_parley::collapsed_space(style.clone_text_transform()) {
+            parley::CollapsedSpace::IdeographicSpace => "\u{3000}",
+            parley::CollapsedSpace::Space => " ",
         },
-        wrap: style.clone_text_wrap_mode() == stylo_to_parley::stylo::TextWrapMode::Wrap,
     }
 }

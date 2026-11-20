@@ -70,6 +70,19 @@ impl CaseTransform {
         }
     }
 
+    /// Applies the `full-width` and `full-size-kana` mappings to `c`, which follow case mapping.
+    pub(crate) fn map_char(&self, mut c: char) -> char {
+        if self.text_transform.contains(TextTransform::FULL_WIDTH)
+            && !is_collapsible(self.white_space_collapse, c)
+        {
+            c = full_width(c);
+        }
+        if self.text_transform.contains(TextTransform::FULL_SIZE_KANA) {
+            c = full_size_kana(c);
+        }
+        c
+    }
+
     /// Whether the language has case mappings for ASCII characters that differ from the
     /// default ones (`i` ↔ `İ` and `ı` ↔ `I`).
     fn has_turkic_casing(&self) -> bool {

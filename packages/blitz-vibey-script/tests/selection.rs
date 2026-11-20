@@ -97,6 +97,58 @@ fn maps_collapsed_whitespace_and_case_expansions() {
 }
 
 #[test]
+fn selects_composed_text_transforms() {
+    assert_eq!(
+        select(
+            "<div id='test' style='text-transform:uppercase full-width'>aßb</div>",
+            r#"
+        const text = test.firstChild;
+        getSelection().setBaseAndExtent(text, 1, text, 2);
+        __blitz_send_message(String(getSelection()));
+    "#
+        ),
+        ["ＳＳ"]
+    );
+}
+
+#[test]
+fn empty_inline_element_is_a_selection_endpoint() {
+    assert_eq!(
+        select(
+            "<div id='test'>a<span id='empty'></span>b</div>",
+            r#"
+        const s = getSelection();
+        s.setBaseAndExtent(empty, 0, test.lastChild, 1);
+        __blitz_send_message(String(s));
+        s.setBaseAndExtent(test.firstChild, 0, empty, 0);
+        __blitz_send_message(String(s));
+    "#
+        ),
+        ["b", "a"]
+    );
+}
+
+#[test]
+fn deeply_nested_inline_elements() {
+    // Each level must search its subtree once, not once per ancestor.
+    let html = format!(
+        "<div id='test'>{}x{}</div>",
+        "<span>".repeat(40),
+        "</span>".repeat(40)
+    );
+    assert_eq!(
+        select(
+            &html,
+            r#"
+        getSelection().setBaseAndExtent(test, 0, test, 1);
+        __blitz_send_message(String(getSelection()));
+    "#
+        ),
+        ["x"]
+    );
+}
+
+#[test]
 fn selection_is_recomputed_after_style_changes() {
     assert_eq!(
         select(

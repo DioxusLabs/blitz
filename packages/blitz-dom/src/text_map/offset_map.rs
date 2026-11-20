@@ -23,20 +23,14 @@ pub(super) enum UnitKind {
     Variable = 1,
     /// The single space a collapsible white space run collapsed to. Maps like `Variable`.
     KeptSpace = 2,
-    /// Like `Identity`, in preserved white space that wraps (`pre-wrap`), where spaces at a
-    /// line end hang.
-    PreWrap = 3,
     /// Like `Identity`, in collapsible white space. Each U+0020 in it is a kept space that
     /// collapsing left unchanged, so lone spaces between words don't need units of their own.
-    CollapsibleText = 4,
+    CollapsibleText = 3,
 }
 
 impl UnitKind {
     fn is_identity(self) -> bool {
-        matches!(
-            self,
-            UnitKind::Identity | UnitKind::PreWrap | UnitKind::CollapsibleText
-        )
+        matches!(self, UnitKind::Identity | UnitKind::CollapsibleText)
     }
 }
 
@@ -65,7 +59,6 @@ impl Unit {
             0 => UnitKind::Identity,
             1 => UnitKind::Variable,
             2 => UnitKind::KeptSpace,
-            3 => UnitKind::PreWrap,
             _ => UnitKind::CollapsibleText,
         }
     }
@@ -173,6 +166,11 @@ impl<Id: Copy + Ord> TextOffsetMap<Id> {
     }
 
     /// The range of layout text produced by `node`.
+    ///
+    /// Nodes are in DOM order, so an out-of-flow box (a float or an absolutely positioned box)
+    /// is placed after a collapsible space that precedes it. Parley anchors the box before that
+    /// space instead, while the space is still pending: use the box's
+    /// [`InlineBox::index`](parley::InlineBox::index) for its layout anchor.
     pub fn layout_range(&self, node: Id) -> Option<Range<usize>> {
         let units = &self.units[self.node_units(node)?];
         Some(units.first()?.layout()..units.last()?.layout())
@@ -186,11 +184,6 @@ impl<Id: Copy + Ord> TextOffsetMap<Id> {
             Some(UnitKind::CollapsibleText) => c == ' ',
             _ => false,
         }
-    }
-
-    /// Whether white space at `layout` is preserved and wraps, so it hangs at a line end.
-    pub fn is_pre_wrap(&self, layout: usize) -> bool {
-        self.kind_at(layout) == Some(UnitKind::PreWrap)
     }
 
     fn kind_at(&self, layout: usize) -> Option<UnitKind> {

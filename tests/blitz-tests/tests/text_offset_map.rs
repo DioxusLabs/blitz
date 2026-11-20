@@ -175,3 +175,81 @@ fn line_end_white_space() {
         })
     );
 }
+
+#[test]
+fn display_contents_collapses_to_its_own_space() {
+    // The map and Parley must agree on the space a `display: contents` wrapper collapses to.
+    let doc = layout_doc(
+        "<div id=t><span style='display:contents;text-transform:full-width'>a </span>\
+         <img id=i style='width:1px;height:1px'></div>",
+    );
+    let layout = inline_layout(&doc);
+    assert_eq!(layout.text, "ａ\u{3000}\u{FFFC}");
+    let img = doc.query_selector("#i").unwrap().unwrap();
+    assert_eq!(layout.offset_map.layout_range(img), Some(6..9));
+}
+
+#[test]
+fn composed_text_transforms() {
+    let doc = layout_doc("<div id=t style='text-transform:uppercase full-width'>aßb</div>");
+    let layout = inline_layout(&doc);
+    let [node] = text_nodes(&doc)[..] else {
+        panic!()
+    };
+    assert_eq!(layout.text, "ＡＳＳＢ");
+    assert_eq!(layout_offsets(layout, node, 4), [0, 3, 9, 9, 12]);
+
+    // Greek uppercasing removes the accent and `ß` expands, so the character count is unchanged.
+    let doc = layout_doc("<div id=t lang=el style='text-transform:uppercase'>α\u{301}ßb</div>");
+    let layout = inline_layout(&doc);
+    let [node] = text_nodes(&doc)[..] else {
+        panic!()
+    };
+    assert_eq!(layout.text, "ΑSSB");
+    assert_eq!(layout_offsets(layout, node, 7), [0, 1, 2, 2, 2, 4, 4, 5]);
+}
+
+#[test]
+fn out_of_flow_boxes_follow_pending_space() {
+    // The map keeps DOM order, so the float comes after the space before it. Parley anchors it
+    // before that space.
+    let doc = layout_doc("<div id=t>a <span id=f style='float:left'>x</span>b</div>");
+    let layout = inline_layout(&doc);
+    assert_eq!(layout.text, "a b");
+    let float = doc.query_selector("#f").unwrap().unwrap();
+    assert_eq!(layout.offset_map.layout_range(float), Some(2..2));
+    let anchor = layout
+        .layout
+        .inline_boxes()
+        .find(|inline_box| inline_box.id == float.as_u64())
+        .unwrap()
+        .index;
+    assert_eq!(anchor, 1);
+}
+
+#[test]
+fn line_end_white_space_follows_layout() {
+    // Before a forced break, preserved spaces only hang if they overflow.
+    let doc = layout_doc("<div id=t style='white-space:pre-wrap'>aaa  \nbbb</div>");
+    let layout = inline_layout(&doc);
+    assert_eq!(
+        layout.line_end_whitespace(0),
+        Some(LineEndWhitespace {
+            hanging: 5..5,
+            removed: 5..5,
+        })
+    );
+    // A preserved U+3000 from `full-width` hangs too.
+    let doc = layout_doc(
+        "<div id=t style='width:0; white-space:pre-wrap; text-transform:full-width'>a b</div>",
+    );
+    let layout = inline_layout(&doc);
+    assert_eq!(layout.text, "ａ\u{3000}ｂ");
+    assert_eq!(
+        layout.line_end_whitespace(0),
+        Some(LineEndWhitespace {
+            hanging: 3..6,
+            removed: 6..6,
+        })
+    );
+}
