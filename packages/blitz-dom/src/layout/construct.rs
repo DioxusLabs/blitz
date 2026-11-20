@@ -25,7 +25,7 @@ use crate::{
     },
     node::{NodeFlags, NodeKind, SpecialElementData, TextInputData, TextLayout},
     qual_name, stylo_to_parley,
-    traversal::{iter_children, iter_children_and_pseudos},
+    traversal::iter_children_and_pseudos,
 };
 
 use super::{
@@ -551,7 +551,7 @@ fn collect_layout_children_with_wrap(
                     doc,
                     container_node_id,
                     out,
-                    true,
+                    ChildFlow::FlexOrGrid,
                     text_item_needs_wrap,
                 );
             }
@@ -652,7 +652,7 @@ fn collect_layout_children_with_wrap(
                 doc,
                 container_node_id,
                 out,
-                false,
+                ChildFlow::Block,
                 block_item_needs_wrap,
             );
         }
@@ -805,12 +805,29 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
     }
 }
 
+/// Whether the `display: contents` node `node_id` holds in-flow inline content and nothing
+/// block-level, looking through nested `display: contents` children and pseudo-elements.
+fn contents_holds_only_inlines(doc: &BaseDocument, node_id: NodeId) -> bool {
+    let mut classification = FlowClassification::default();
+    classify_flow_children(doc, node_id, &mut classification);
+    classification.all_inline && classification.has_inline_level
+}
+
+/// The kind of container whose children `collect_complex_layout_children` is collecting.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChildFlow {
+    /// A flow container: runs of text and inline-level children share an anonymous block.
+    Block,
+    /// A flex or grid container: every child is its own item and whitespace-only text is dropped.
+    FlexOrGrid,
+}
+
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
 fn collect_complex_layout_children(
     doc: &mut BaseDocument,
     container_node_id: NodeId,
     out: &mut LayoutChildren,
-    hide_whitespace: bool,
+    child_flow: ChildFlow,
     needs_wrap: fn(NodeKind, DisplayOutside) -> bool,
 ) {
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
@@ -835,17 +852,26 @@ fn collect_complex_layout_children(
         // Taffy knows how to deal with `Display::None` children.
         //
         // Also hide all-whitespace flexbox children as these should be ignored
-        if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
+        if child_node_kind == NodeKind::Comment
+            || (child_flow == ChildFlow::FlexOrGrid && is_whitespace_node)
+        {
             // return;
-        }
-        // Recurse into `Display::Contents` nodes, wrapping hoisted text and
-        // inline children as if they were direct children of this container
-        else if display_inside == DisplayInside::Contents {
-            let wrap = Some(WrapContext {
-                container_node_id,
-                needs_wrap,
-            });
-            collect_layout_children_with_wrap(doc, child_id, out, wrap)
+        } else if display_inside == DisplayInside::Contents {
+            // A `display: contents` node in block flow that holds only inline
+            // content goes into the anonymous block whole, so that its text
+            // keeps the style it inherits from the node.
+            if child_flow == ChildFlow::Block && contents_holds_only_inlines(doc, child_id) {
+                out.push_wrapped(container_node_id, child_id, doc);
+            }
+            // Otherwise recurse into the node, wrapping hoisted text and inline
+            // children as if they were direct children of this container
+            else {
+                let wrap = Some(WrapContext {
+                    container_node_id,
+                    needs_wrap,
+                });
+                collect_layout_children_with_wrap(doc, child_id, out, wrap)
+            }
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
@@ -1006,7 +1032,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                        iter_children!(nodes[node_id], |child_id| {
+                        iter_children_and_pseudos!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
                                 parent_id,
