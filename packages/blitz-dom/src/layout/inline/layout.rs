@@ -1080,9 +1080,25 @@ impl LayoutPassState<'_> {
         // glyph run on it, so lines are only walked when there are boxes to find.
         let mut span_cb_flags = StyleFlags::empty();
         let has_inline_boxes = inline_layout.layout.inline_boxes().len() > 0;
-        let lines = has_inline_boxes.then(|| inline_layout.layout.lines());
-        for line in lines.into_iter().flatten() {
+        let has_anchors = inline_layout.layout.anchors().len() > 0;
+        // The line and x offset of each absolutely positioned box's anchor
+        let mut anchor_positions: Vec<Option<(usize, f32)>> = Vec::new();
+        if has_anchors {
+            anchor_positions.resize(inline_layout.out_of_flow_boxes.len(), None);
+        }
+        let lines = (has_inline_boxes || has_anchors).then(|| inline_layout.layout.lines());
+        for (line_idx, line) in lines.into_iter().flatten().enumerate() {
             for item in line.items() {
+                if let parley::layout::PositionedLayoutItem::Anchor(anchor) = &item {
+                    let oof_boxes = &inline_layout.out_of_flow_boxes;
+                    let first = oof_boxes.partition_point(|oof| oof.index < anchor.index);
+                    let oof_idx = oof_boxes[first..]
+                        .iter()
+                        .position(|oof| oof.node_id.as_u64() == anchor.id);
+                    if let Some(oof_idx) = oof_idx {
+                        anchor_positions[first + oof_idx] = Some((line_idx, anchor.x));
+                    }
+                }
                 if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
                     if inputs.run_mode == RunMode::PerformLayout {
                         span_cb_flags |=
@@ -1168,8 +1184,7 @@ impl LayoutPassState<'_> {
             }
         }
 
-        // Out-of-flow boxes aren't part of Parley's lines. Absolutely positioned boxes are
-        // anchored at the caret position of their text index.
+        // Absolutely positioned boxes are placed at the position of their anchor.
         for (oof_idx, oof) in inline_layout.out_of_flow_boxes.iter().enumerate() {
             if inputs.run_mode == RunMode::PerformLayout {
                 span_cb_flags |= self.inline_span_cb_flags(node_id, oof.node_id);
@@ -1212,7 +1227,10 @@ impl LayoutPassState<'_> {
 
             drop(style);
 
-            let Some((line, caret_x)) = inline_layout.layout.primary_caret(oof.index) else {
+            let Some((line_idx, caret_x)) = anchor_positions[oof_idx] else {
+                continue;
+            };
+            let Some(line) = inline_layout.layout.get(line_idx) else {
                 continue;
             };
             // Document order among all the boxes of the inline context

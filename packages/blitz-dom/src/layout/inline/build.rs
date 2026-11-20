@@ -1,6 +1,8 @@
 use blitz_traits::node_id::NodeId;
 use markup5ever::local_name;
-use parley::{FloatedBox, FontContext, InlineBox, LayoutContext, TreeBuilder, WhiteSpaceCollapse};
+use parley::{
+    Anchor, FloatedBox, FontContext, InlineBox, LayoutContext, TreeBuilder, WhiteSpaceCollapse,
+};
 use style::{
     computed_values::position::T as PositionProperty,
     values::{
@@ -159,9 +161,9 @@ pub(crate) fn build_inline_layout_into(
                     |builder: &mut TreeBuilder<TextBrush>,
                      text_transformer: &mut TextTransformer| {
                         if is_absolute || is_floated {
-                            // Parley has no notion of absolutely positioned boxes: their static
-                            // position is derived from their text index after layout. Like Parley's
-                            // floated boxes, they precede any pending collapsible whitespace.
+                            // Absolutely positioned boxes are anchors in Parley, which reports
+                            // their static position once lines are broken. Like floated boxes,
+                            // they precede any pending collapsible whitespace.
                             oof_boxes.push(OutOfFlowBox {
                                 node_id,
                                 index: builder.text().len(),
@@ -171,6 +173,12 @@ pub(crate) fn build_inline_layout_into(
                                 builder.push_floated_box(FloatedBox {
                                     id: node_id.as_u64(),
                                     // Overridden by push_floated_box method
+                                    index: 0,
+                                });
+                            } else {
+                                builder.push_anchor(Anchor {
+                                    id: node_id.as_u64(),
+                                    // Overridden by push_anchor method
                                     index: 0,
                                 });
                             }
