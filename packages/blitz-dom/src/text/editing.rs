@@ -14,9 +14,10 @@ pub type TextEditor = backend::TextEditor;
 /// The size and scale of the laid-out text of an `<input>` or `<textarea>`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EditorMetrics {
-    /// How wide and tall the laid-out text is, in device pixels.
+    /// How wide and tall the laid-out text is, in CSS pixels.
     pub size: Size,
-    /// Device pixels per CSS pixel that the text is laid out at.
+    /// Device pixels per CSS pixel that the text is laid out at, which
+    /// [`caret_rect`](EditableText::caret_rect) is in.
     pub scale: f32,
 }
 
@@ -72,7 +73,7 @@ pub(crate) trait EditEngine: EditableText + Sized {
     /// Sets the scale.
     fn set_scale(&mut self, scale: f32);
 
-    /// Sets the width lines wrap at, in device pixels.
+    /// Sets the width lines wrap at, in CSS pixels.
     fn set_width(&mut self, width: Option<f32>);
 
     /// Lays the text out again, where a setter changed it since it was last laid out.
@@ -84,7 +85,7 @@ pub(crate) trait EditEngine: EditableText + Sized {
 
 /// A change to the text or the selection of an `<input>` or `<textarea>`.
 ///
-/// Points are in device pixels relative to the text's origin.
+/// Points are in CSS pixels relative to the text's origin.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Edit<'a> {
     /// Replaces the selection with the text.

@@ -315,14 +315,13 @@ impl LayoutPassState<'_> {
                         };
                         let content_width = (output.size.width - pb.horizontal_axis_sum()).max(0.0);
                         let doc = &mut *self.doc;
-                        let scale = doc.viewport.scale();
                         let node = &mut doc.nodes[dom_node_id(node_id)];
                         if let Some(input) = node
                             .data
                             .downcast_element_mut()
                             .and_then(|el| el.text_input_data_mut())
                         {
-                            input.editor.set_width(Some(content_width * scale));
+                            input.editor.set_width(Some(content_width));
                             input.editor.refresh(&mut doc.text);
                         }
                     }

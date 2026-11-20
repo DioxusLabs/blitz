@@ -82,8 +82,8 @@ impl TextInputData {
     /// `content_box_width` and `content_box_height` are the dimensions of the input's content
     /// box in CSS (unscaled) pixels.
     pub fn clamp_scroll_offset(&mut self, content_box_width: f32, content_box_height: f32) {
-        // The editor lays out at its scale, so its geometry is in scaled (device) pixels.
-        // We convert into CSS (unscaled) pixels to match `scroll_offset` and the content box.
+        // The caret is in device pixels, which we convert into CSS pixels to match the text's
+        // size, `scroll_offset` and the content box.
         let Some(EditorMetrics { size, scale }) = self.editor.metrics() else {
             return;
         };
@@ -98,14 +98,14 @@ impl TextInputData {
             (
                 caret.y0 as f32 / scale,
                 caret.y1 as f32 / scale,
-                size.height as f32 / scale,
+                size.height as f32,
                 content_box_height,
             )
         } else {
             (
                 caret.x0 as f32 / scale,
                 caret.x1 as f32 / scale,
-                size.width as f32 / scale,
+                size.width as f32,
                 content_box_width,
             )
         };
@@ -134,13 +134,13 @@ impl TextInputData {
     /// `content_box_width` and `content_box_height` are the dimensions of the input's content
     /// box in CSS (unscaled) pixels.
     pub fn max_scroll_offset(&self, content_box_width: f32, content_box_height: f32) -> f32 {
-        let Some(EditorMetrics { size, scale }) = self.editor.metrics() else {
+        let Some(EditorMetrics { size, .. }) = self.editor.metrics() else {
             return 0.0;
         };
         let (content, viewport) = if self.is_multiline {
-            (size.height as f32 / scale, content_box_height)
+            (size.height as f32, content_box_height)
         } else {
-            (size.width as f32 / scale, content_box_width)
+            (size.width as f32, content_box_width)
         };
         (content - viewport).max(0.0)
     }

@@ -860,7 +860,7 @@ impl Node {
         self.element_data_mut().and_then(|el| el.sub_doc_data_mut())
     }
 
-    pub fn text_input_v_centering_offset(&self, scale: f64) -> f64 {
+    pub fn text_input_v_centering_offset(&self) -> f64 {
         // For single-line inputs, add an offset to vertically center the text input layout
         // within the content box of it's node.
         if let Some(input_data) = self
@@ -873,7 +873,7 @@ impl Node {
                 let Some(metrics) = input_data.editor.metrics() else {
                     return 0.0;
                 };
-                let input_height = metrics.size.height as f32 / scale as f32;
+                let input_height = metrics.size.height as f32;
                 let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
                 return y_offset as f64;

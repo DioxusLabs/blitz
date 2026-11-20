@@ -16,7 +16,7 @@ use crate::text::{Edit, EditEngine, EditableText, EditorMetrics, Motion};
 #[derive(Clone)]
 pub struct TextEditor {
     editor: PlainEditor<TextBrush>,
-    /// The width lines wrap at, in device pixels, as last set.
+    /// The width lines wrap at, in CSS pixels, as last set.
     width: Option<f32>,
 }
 
@@ -65,9 +65,10 @@ impl EditableText for TextEditor {
         } else {
             layout.full_width()
         };
+        let scale = layout.scale();
         Some(EditorMetrics {
-            size: Size::new(f64::from(width), f64::from(layout.height())),
-            scale: layout.scale(),
+            size: Size::new(f64::from(width / scale), f64::from(layout.height() / scale)),
+            scale,
         })
     }
 
@@ -138,13 +139,15 @@ impl EditEngine for TextEditor {
     fn set_scale(&mut self, scale: f32) {
         if self.editor.get_scale() != scale {
             self.editor.set_scale(scale);
+            self.editor.set_width(self.width.map(|width| width * scale));
         }
     }
 
     fn set_width(&mut self, width: Option<f32>) {
         if self.width != width {
             self.width = width;
-            self.editor.set_width(width);
+            let scale = self.editor.get_scale();
+            self.editor.set_width(width.map(|width| width * scale));
         }
     }
 
@@ -156,6 +159,7 @@ impl EditEngine for TextEditor {
     }
 
     fn edit(&mut self, cx: &mut TextContext, edit: Edit<'_>) {
+        let scale = self.editor.get_scale();
         let mut font_ctx = cx.font_ctx.lock().unwrap();
         let mut driver = self.editor.driver(&mut font_ctx, &mut cx.layout_ctx);
         driver.refresh_layout();
@@ -177,11 +181,15 @@ impl EditEngine for TextEditor {
             }
             Edit::SetCompose(text, cursor) => driver.set_compose(text, cursor),
             Edit::ClearCompose => driver.clear_compose(),
-            Edit::MoveToPoint(x, y) => driver.move_to_point(x, y),
-            Edit::ExtendSelectionToPoint(x, y) => driver.extend_selection_to_point(x, y),
-            Edit::ShiftClickExtension(x, y) => driver.shift_click_extension(x, y),
-            Edit::SelectWordAtPoint(x, y) => driver.select_word_at_point(x, y),
-            Edit::SelectHardLineAtPoint(x, y) => driver.select_hard_line_at_point(x, y),
+            Edit::MoveToPoint(x, y) => driver.move_to_point(x * scale, y * scale),
+            Edit::ExtendSelectionToPoint(x, y) => {
+                driver.extend_selection_to_point(x * scale, y * scale)
+            }
+            Edit::ShiftClickExtension(x, y) => driver.shift_click_extension(x * scale, y * scale),
+            Edit::SelectWordAtPoint(x, y) => driver.select_word_at_point(x * scale, y * scale),
+            Edit::SelectHardLineAtPoint(x, y) => {
+                driver.select_hard_line_at_point(x * scale, y * scale)
+            }
         }
         driver.refresh_layout();
     }
@@ -274,7 +282,7 @@ mod tests {
         let scaled = editor.metrics().unwrap();
         assert_eq!(scaled.scale, 2.0);
         assert!(
-            scaled.size.width > metrics.size.width * 1.5,
+            (scaled.size.width - metrics.size.width).abs() < 1.0,
             "{scaled:?} {metrics:?}"
         );
     }

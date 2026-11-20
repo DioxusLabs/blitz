@@ -5,7 +5,7 @@
 use blitz_dom::node::TextLayout;
 use blitz_dom::text::{Edit, EditableText as _, InlineText as _, Motion, TextEditor};
 use blitz_dom::{BaseDocument, NodeId};
-use blitz_test_harness::Harness;
+use blitz_test_harness::{Harness, HarnessOptions};
 use markup5ever::{QualName, local_name, ns};
 
 fn page(body: &str) -> Harness {
@@ -111,4 +111,47 @@ fn textarea_wraps_at_its_width_once_laid_out() {
     let metrics = editor(&doc, node).metrics().unwrap();
     assert!(metrics.size.width <= 100.0, "{metrics:?}");
     assert!(metrics.size.height > 40.0, "{metrics:?}");
+}
+
+/// The editor's metrics, wrap width and click points are CSS pixels, whatever the scale.
+#[test]
+fn text_input_geometry_is_in_css_pixels() {
+    let at_scale = |scale: f32| {
+        let html = r#"<html><body style="margin:0; font: 16px/20px sans-serif">
+            <input id="field" value="hello world" style="width:400px; border:0; padding:0">
+            <textarea id="area" style="width:100px; height:200px">the quick brown fox jumps over the lazy dog</textarea>
+            </body></html>"#;
+        let options = HarnessOptions {
+            scale,
+            ..Default::default()
+        };
+        let mut harness = Harness::from_html_with(html, options);
+        let field = harness.node("#field");
+        let area = harness.node("#area");
+        let metrics = editor(&harness.base(), field).metrics().unwrap();
+        assert_eq!(metrics.scale, scale);
+        let area_width = editor(&harness.base(), area).metrics().unwrap().size.width;
+        assert!(area_width <= 100.0, "{area_width} at {scale}");
+
+        let (x, y) = {
+            let doc = harness.base();
+            let rect = doc.get_node(field).unwrap().final_layout();
+            (rect.location.x, rect.location.y + rect.size.height / 2.0)
+        };
+        harness.click_at(x + metrics.size.width as f32 * 0.6, y);
+        let selection = editor(&harness.base(), field).selection();
+        (metrics.size, selection)
+    };
+    let (size, selection) = at_scale(1.0);
+    let (scaled_size, scaled_selection) = at_scale(2.0);
+    assert!(
+        (size.width - scaled_size.width).abs() < 1.0,
+        "{size:?} {scaled_size:?}"
+    );
+    assert!(
+        (size.height - scaled_size.height).abs() < 1.0,
+        "{size:?} {scaled_size:?}"
+    );
+    assert!(selection.start > 0 && selection.start < 11, "{selection:?}");
+    assert_eq!(selection, scaled_selection);
 }
