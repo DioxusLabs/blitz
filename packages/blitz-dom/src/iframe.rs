@@ -64,6 +64,11 @@ impl BaseDocument {
                 tx: self.tx.clone(),
                 shell_provider: self.shell_provider.clone(),
             })),
+            top_navigation_provider: Some(
+                self.top_navigation_provider
+                    .clone()
+                    .unwrap_or_else(|| self.navigation_provider.clone()),
+            ),
             shell_provider: Some(self.shell_provider.clone()),
             html_parser_provider: Some(self.html_parser_provider.clone()),
             font_ctx: Some(self.font_ctx.lock().unwrap().clone()),
