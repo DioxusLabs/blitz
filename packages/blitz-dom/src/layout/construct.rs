@@ -856,24 +856,22 @@ fn collect_complex_layout_children(
             || (child_flow == ChildFlow::FlexOrGrid && is_whitespace_node)
         {
             // return;
-        }
-        // A `display: contents` node in block flow that holds only inline
-        // content goes into the anonymous block whole, so that its text
-        // keeps the style it inherits from the node.
-        else if display_inside == DisplayInside::Contents
-            && child_flow == ChildFlow::Block
-            && contents_holds_only_inlines(doc, child_id)
-        {
-            out.push_wrapped(container_node_id, child_id, doc);
-        }
-        // Recurse into `Display::Contents` nodes, wrapping hoisted text and
-        // inline children as if they were direct children of this container
-        else if display_inside == DisplayInside::Contents {
-            let wrap = Some(WrapContext {
-                container_node_id,
-                needs_wrap,
-            });
-            collect_layout_children_with_wrap(doc, child_id, out, wrap)
+        } else if display_inside == DisplayInside::Contents {
+            // A `display: contents` node in block flow that holds only inline
+            // content goes into the anonymous block whole, so that its text
+            // keeps the style it inherits from the node.
+            if child_flow == ChildFlow::Block && contents_holds_only_inlines(doc, child_id) {
+                out.push_wrapped(container_node_id, child_id, doc);
+            }
+            // Otherwise recurse into the node, wrapping hoisted text and inline
+            // children as if they were direct children of this container
+            else {
+                let wrap = Some(WrapContext {
+                    container_node_id,
+                    needs_wrap,
+                });
+                collect_layout_children_with_wrap(doc, child_id, out, wrap)
+            }
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
