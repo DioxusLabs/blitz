@@ -284,6 +284,8 @@ impl<Id: Copy + Ord> TextOffsetMapBuilder<Id> {
 
     pub(super) fn finish(mut self) -> TextOffsetMap<Id> {
         let map = &mut self.map;
+        map.nodes.shrink_to_fit();
+        map.units.shrink_to_fit();
         map.by_id = (0..map.nodes.len() as u32).collect();
         map.by_id
             .sort_unstable_by_key(|&index| map.nodes[index as usize].0);
