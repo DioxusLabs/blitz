@@ -6,7 +6,7 @@ use blitz_traits::{
 use keyboard_types::{Key, Modifiers, NamedKey};
 use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
 
-use crate::text_map::is_segment_break;
+use crate::text_map::line_end_whitespace;
 use crate::util::ACTION_MOD;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -42,17 +42,6 @@ pub struct TextLayout {
     pub offset_map: TextOffsetMap,
 }
 
-/// The white space at the end of a line, as byte ranges of [`TextLayout::text`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LineEndWhitespace {
-    /// Preserved spaces and tabs (`pre-wrap`) that hang past the end of the line. Before a
-    /// forced break they only hang if they overflow.
-    pub hanging: std::ops::Range<usize>,
-    /// The collapsible space that CSS removes at the end of the line. Parley keeps it in the
-    /// text as a hanging space.
-    pub removed: std::ops::Range<usize>,
-}
-
 impl TextLayout {
     pub fn new() -> Self {
         Default::default()
@@ -65,37 +54,9 @@ impl TextLayout {
     }
 
     /// The white space at the end of line `line_index`, not counting a forced line break.
-    ///
-    /// Parley only reports the total hanging advance of each line, so this scans back from the
-    /// line's end. If Parley reports these ranges itself one day, only this needs to change.
     pub fn line_end_whitespace(&self, line_index: usize) -> Option<LineEndWhitespace> {
-        let range = self.layout.get(line_index)?.text_range();
-        let text = &self.text[range.clone()];
-        let mut end = text.len();
-        if let Some(c) = text.chars().next_back().filter(|&c| is_segment_break(c)) {
-            end -= c.len_utf8();
-        }
-        let removed_end = end;
-        while let Some(c) = text[..end].chars().next_back()
-            && self
-                .offset_map
-                .is_collapsible_space(range.start + end - c.len_utf8(), c)
-        {
-            end -= c.len_utf8();
-        }
-        let hanging_end = end;
-        while let Some(c) = text[..end].chars().next_back()
-            && matches!(c, ' ' | '\t' | '\u{3000}')
-            && self
-                .offset_map
-                .is_pre_wrap(range.start + end - c.len_utf8())
-        {
-            end -= c.len_utf8();
-        }
-        Some(LineEndWhitespace {
-            hanging: range.start + end..range.start + hanging_end,
-            removed: range.start + hanging_end..range.start + removed_end,
-        })
+        let line = self.layout.get(line_index)?.text_range();
+        Some(line_end_whitespace(&self.text, line, &self.offset_map))
     }
 
     /// Whether `byte_index` of `text` is the U+FFFC character that stands in for an in-flow
@@ -120,7 +81,7 @@ impl TextLayout {
     }
 }
 
-pub use crate::text_map::INLINE_BOX_CHAR;
+pub use crate::text_map::{INLINE_BOX_CHAR, LineEndWhitespace};
 
 /// Maps DOM offsets in an inline formatting context to offsets in its layout text, and back.
 pub type TextOffsetMap = crate::text_map::TextOffsetMap<NodeId>;
