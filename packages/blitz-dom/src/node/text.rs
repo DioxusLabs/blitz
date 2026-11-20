@@ -56,7 +56,12 @@ impl TextLayout {
     /// The white space at the end of line `line_index`, not counting a forced line break.
     pub fn line_end_whitespace(&self, line_index: usize) -> Option<LineEndWhitespace> {
         let line = self.layout.get(line_index)?;
-        Some(line_end_whitespace(&self.text, &line, &self.offset_map))
+        Some(line_end_whitespace(
+            &self.text,
+            &self.layout,
+            &line,
+            &self.offset_map,
+        ))
     }
 
     /// Whether `byte_index` of `text` is the U+FFFC character that stands in for an in-flow
