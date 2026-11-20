@@ -2480,8 +2480,14 @@ impl BaseDocument {
         let mut current = Some(node_id);
         while let Some(id) = current {
             let node = &self.nodes[id];
-            pos.x += node.unrounded_layout().location.x - node.scroll_offset().x as f32;
-            pos.y += node.unrounded_layout().location.y - node.scroll_offset().y as f32;
+            // A scroll offset moves the node's contents, not its own border box.
+            let (scroll_x, scroll_y) = if id == node_id {
+                (0.0, 0.0)
+            } else {
+                (node.scroll_offset().x as f32, node.scroll_offset().y as f32)
+            };
+            pos.x += node.unrounded_layout().location.x - scroll_x;
+            pos.y += node.unrounded_layout().location.y - scroll_y;
             current = node.containing_block();
         }
         (pos, *self.nodes[node_id].unrounded_layout())
@@ -2556,8 +2562,10 @@ impl BaseDocument {
         if let Some(parent) = offset_parent.filter(|parent| !parent.is_static_body()) {
             let (parent_pos, parent_layout) = self.physical_unrounded_geometry(parent.id);
             let border = parent_layout.border;
-            x -= (parent_pos.x + border.left) as f64;
-            y -= (parent_pos.y + border.top) as f64;
+            // The fragments are scrolled by the offset parent's scroll offset, but
+            // offsetLeft/offsetTop are not.
+            x -= (parent_pos.x + border.left) as f64 - parent.scroll_offset().x;
+            y -= (parent_pos.y + border.top) as f64 - parent.scroll_offset().y;
         }
 
         Some(BoundingRect {
@@ -2595,8 +2603,9 @@ impl BaseDocument {
 
         // Fragment boxes are relative to the inline root's border box.
         let (root_pos, _) = self.physical_unrounded_geometry(inline_root.id);
-        let origin_x = root_pos.x as f64 - self.viewport_scroll().x;
-        let origin_y = root_pos.y as f64 - self.viewport_scroll().y;
+        // The fragments are part of the root's contents, so its scroll offset moves them.
+        let origin_x = root_pos.x as f64 - inline_root.scroll_offset().x - self.viewport_scroll().x;
+        let origin_y = root_pos.y as f64 - inline_root.scroll_offset().y - self.viewport_scroll().y;
 
         Some(fragments.map(move |rect| BoundingRect {
             x: snap_to_layout_unit(origin_x + rect.left as f64),
