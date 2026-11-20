@@ -7,7 +7,7 @@ use crate::convert_events::{
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
-use blitz_paint::paint_scene;
+use blitz_paint::paint_scene_with_safe_area;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase,
     BlitzWheelSource, MouseEventButton, MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
@@ -361,14 +361,13 @@ impl<Rend: WindowRenderer> View<Rend> {
         );
 
         self.renderer.render(|scene| {
-            paint_scene(
+            paint_scene_with_safe_area(
                 scene,
                 &mut inner,
                 scale,
-                width,
-                height,
-                insets.left,
-                insets.top,
+                [width, height],
+                [insets.left, insets.top],
+                canvas_rect(width, height, insets, FILL_ALL_SAFE_AREA_INSETS),
             )
         });
 
@@ -446,14 +445,13 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         if !is_blocked && is_visible {
             self.renderer.render(|scene| {
-                paint_scene(
+                paint_scene_with_safe_area(
                     scene,
                     &mut inner,
                     scale,
-                    width,
-                    height,
-                    insets.left,
-                    insets.top,
+                    [width, height],
+                    [insets.left, insets.top],
+                    canvas_rect(width, height, insets, FILL_ALL_SAFE_AREA_INSETS),
                 )
             });
         }
@@ -923,6 +921,26 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 }
 
+/// Whether the canvas background is painted behind every safe-area inset. On Android
+/// the bottom and side insets can hold the navigation buttons, so only the status bar
+/// area above the content is painted there.
+const FILL_ALL_SAFE_AREA_INSETS: bool = !cfg!(target_os = "android");
+
+/// The `[x0, y0, x1, y1]` area of the surface to paint the canvas background over, for
+/// a `width` x `height` viewport placed inside `insets`.
+fn canvas_rect(width: u32, height: u32, insets: PhysicalInsets<u32>, fill_all: bool) -> [u32; 4] {
+    if fill_all {
+        [
+            0,
+            0,
+            width + insets.left + insets.right,
+            height + insets.top + insets.bottom,
+        ]
+    } else {
+        [insets.left, 0, insets.left + width, insets.top + height]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -940,5 +958,18 @@ mod tests {
         let size = PhysicalSize::new(100, 50);
         let insets = PhysicalInsets::new(40, 80, 40, 80);
         assert_eq!(content_size(size, insets), (0, 0));
+    }
+
+    #[test]
+    fn canvas_rect_covers_every_inset() {
+        let insets = PhysicalInsets::new(136, 10, 63, 20);
+        assert_eq!(canvas_rect(1050, 2201, insets, true), [0, 0, 1080, 2400]);
+    }
+
+    #[test]
+    fn canvas_rect_can_cover_only_the_top_inset() {
+        // Leaves the bottom and side insets, where Android draws its navigation buttons.
+        let insets = PhysicalInsets::new(136, 10, 63, 20);
+        assert_eq!(canvas_rect(1050, 2201, insets, false), [10, 0, 1060, 2337]);
     }
 }
