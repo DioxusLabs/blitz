@@ -1,4 +1,4 @@
-//! White space collapsing for Parley's [`TreeBuilder`](parley::TreeBuilder) that records a
+//! White space collapsing for Parley's [`StyleRunBuilder`](parley::StyleRunBuilder) that records a
 //! bidirectional map between source text offsets and layout text offsets, and finds the
 //! hanging and removed white space at the end of each laid out line.
 //!
