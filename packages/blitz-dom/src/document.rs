@@ -1271,7 +1271,10 @@ impl BaseDocument {
     pub fn process_style_element(&mut self, target_id: NodeId) {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
-        let sheet = self.make_stylesheet(&css, Origin::Author);
+        let media = self.nodes[target_id]
+            .attr(local_name!("media"))
+            .map(|media| self.parse_media_list(media));
+        let sheet = self.make_stylesheet_with_media(&css, Origin::Author, media);
         self.add_stylesheet_for_node(sheet, target_id);
     }
 
@@ -1308,11 +1311,23 @@ impl BaseDocument {
     }
 
     pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
+        self.make_stylesheet_with_media(css, origin, None)
+    }
+
+    /// Parse a stylesheet that applies only while `media` matches. `None` is the empty
+    /// media list, which always matches.
+    pub fn make_stylesheet_with_media(
+        &self,
+        css: impl AsRef<str>,
+        origin: Origin,
+        media: Option<MediaList>,
+    ) -> DocumentStyleSheet {
+        let media = media.unwrap_or_else(MediaList::empty);
         let data = Stylesheet::from_str(
             css.as_ref(),
             self.url.url_extra_data(),
             origin,
-            ServoArc::new(self.guard.wrap(MediaList::empty())),
+            ServoArc::new(self.guard.wrap(media)),
             self.guard.clone(),
             Some(&StylesheetLoader {
                 tx: self.tx.clone(),
@@ -1330,9 +1345,31 @@ impl BaseDocument {
         DocumentStyleSheet(ServoArc::new(data))
     }
 
+    /// Parse the value of a `media` attribute. Stylo evaluates the list against the
+    /// device in each cascade, so the sheet follows viewport changes.
+    pub(crate) fn parse_media_list(&self, media: &str) -> MediaList {
+        let url_data = self.url.url_extra_data();
+        let mut context = style::parser::ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(style::stylesheets::CssRuleType::Media),
+            style_traits::ParsingMode::DEFAULT,
+            QuirksMode::NoQuirks,
+            Default::default(),
+            None,
+            None,
+            Default::default(),
+        );
+        let mut parser = cssparser::Parser::new(media);
+        MediaList::parse(&mut context, &mut parser)
+    }
+
     pub fn upsert_stylesheet_for_node(&mut self, node_id: NodeId) {
         let raw_styles = self.nodes[node_id].text_content();
-        let sheet = self.make_stylesheet(raw_styles, Origin::Author);
+        let media = self.nodes[node_id]
+            .attr(local_name!("media"))
+            .map(|media| self.parse_media_list(media));
+        let sheet = self.make_stylesheet_with_media(raw_styles, Origin::Author, media);
         self.add_stylesheet_for_node(sheet, node_id);
     }
 

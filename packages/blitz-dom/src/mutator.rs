@@ -450,6 +450,8 @@ impl DocumentMutator<'_> {
             self.load_image(node_id);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.load_custom_paint_src(node_id);
+        } else if (tag, attr) == tag_and_attr!("style", "media") {
+            self.style_nodes.insert(node_id);
         } else if (tag, attr) == tag_and_attr!("link", "href")
             || (tag, attr) == tag_and_attr!("link", "rel")
         {
@@ -561,6 +563,8 @@ impl DocumentMutator<'_> {
             element.set_checkbox_input_checked(false);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.recompute_is_animating = true;
+        } else if (tag, attr) == tag_and_attr!("style", "media") && node_is_in_document {
+            self.style_nodes.insert(node_id);
         } else if (tag, attr) == tag_and_attr!("link", "href") {
             self.unload_stylesheet(node_id);
         } else if (tag, attr) == tag_and_attr!("iframe", "srcdoc") && node_is_in_document {
