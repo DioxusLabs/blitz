@@ -808,40 +808,9 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
 /// Whether the `display: contents` node `node_id` holds in-flow inline content and nothing
 /// block-level, looking through nested `display: contents` children and pseudo-elements.
 fn contents_holds_only_inlines(doc: &BaseDocument, node_id: NodeId) -> bool {
-    fn walk(doc: &BaseDocument, node_id: NodeId, found: &mut bool) -> bool {
-        let node = &doc.nodes[node_id];
-        let children = node
-            .before()
-            .into_iter()
-            .chain(node.children.iter().copied())
-            .chain(node.after());
-        for child_id in children {
-            let child = &doc.nodes[child_id];
-            match child.data.kind() {
-                NodeKind::Comment => continue,
-                NodeKind::Text => {
-                    *found |= !child.is_whitespace_node();
-                    continue;
-                }
-                _ => {}
-            }
-            let display = child.display_style().unwrap_or(Display::inline());
-            if display.inside() == DisplayInside::Contents {
-                if !walk(doc, child_id, found) {
-                    return false;
-                }
-            } else if display.outside() != DisplayOutside::None {
-                // A table part is not inline content: the container wraps it in a table.
-                if child.is_or_contains_block() || display.outside() != DisplayOutside::Inline {
-                    return false;
-                }
-                *found = true;
-            }
-        }
-        true
-    }
-    let mut found = false;
-    walk(doc, node_id, &mut found) && found
+    let mut classification = FlowClassification::default();
+    classify_flow_children(doc, node_id, &mut classification);
+    classification.all_inline && classification.has_inline_level
 }
 
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
