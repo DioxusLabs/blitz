@@ -224,6 +224,11 @@ fn push_hoisted_child(
 ) {
     let child = &doc.nodes[child_id];
     let child_display = child.display_style().unwrap_or(Display::inline());
+    if child_display.is_none() {
+        // Preserve hidden layout without splitting the anonymous text run.
+        out.children.push(child_id);
+        return;
+    }
     if matches!(child_display.inside(), DisplayInside::Contents) {
         collect_layout_children_with_wrap(doc, child_id, out, wrap);
         return;
@@ -848,14 +853,16 @@ fn collect_complex_layout_children(
 
         let is_whitespace_node = doc.nodes[child_id].is_whitespace_node();
 
-        // Skip comment nodes. Note that we do *not* skip `Display::None` nodes as they may need to be hidden.
-        // Taffy knows how to deal with `Display::None` children.
-        //
-        // Also hide all-whitespace flexbox children as these should be ignored
+        // Ignore comments and whitespace-only text in flex/grid containers.
         if child_node_kind == NodeKind::Comment
             || (child_flow == ChildFlow::FlexOrGrid && is_whitespace_node)
         {
-            // return;
+            return;
+        }
+        if display_inside == DisplayInside::None {
+            // Taffy still lays out hidden nodes, but they generate no box and
+            // must not split adjacent anonymous text.
+            out.children.push(child_id);
         } else if display_inside == DisplayInside::Contents {
             // A `display: contents` node in block flow that holds only inline
             // content goes into the anonymous block whole, so that its text
