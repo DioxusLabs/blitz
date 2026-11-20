@@ -88,6 +88,9 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
 /// paginated layout — and delegates everything else to Blitz).
 pub struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
+    /// The percentage-height basis that an inline flow wrapper passes to its in-flow
+    /// children. An inline box does not establish a containing block for them.
+    inline_percentage_height: Option<f32>,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
     #[cfg(feature = "writing-mode")]
@@ -135,6 +138,7 @@ impl<'doc> LayoutPassState<'doc> {
                 doc.root_layout_wm(id)
             }),
             doc,
+            inline_percentage_height: None,
             #[cfg(feature = "writing-mode")]
             root_id,
             #[cfg(feature = "writing-mode")]
@@ -196,11 +200,33 @@ impl LayoutPassState<'_> {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::tree::LayoutOutput {
+        let parent_basis = self.inline_percentage_height;
+        self.inline_percentage_height = self.nodes[dom_node_id(node_id)]
+            .display_style()
+            .filter(|display| *display == style::values::specified::box_::Display::Inline)
+            .and(inputs.parent_size.height);
         let mut output = self.dispatch_child_layout(node_id, inputs, block_ctx);
+        self.inline_percentage_height = parent_basis;
         if inputs.run_mode == RunMode::PerformLayout {
             compute_oof_layout(self, node_id, &mut output);
         }
         output
+    }
+
+    fn with_inline_percentage_height(
+        &self,
+        node_id: NodeId,
+        mut inputs: taffy::LayoutInput,
+    ) -> taffy::LayoutInput {
+        if self.inline_percentage_height.is_some()
+            && !self
+                .get_core_container_style(node_id)
+                .position()
+                .is_out_of_flow()
+        {
+            inputs.parent_size.height = self.inline_percentage_height;
+        }
+        inputs
     }
 
     /// The style of a node being laid out *by* the node whose algorithm is currently running,
@@ -685,6 +711,7 @@ impl LayoutPartialTree for LayoutPassState<'_> {
         node_id: NodeId,
         inputs: taffy::LayoutInput,
     ) -> taffy::LayoutOutput {
+        let inputs = self.with_inline_percentage_height(node_id, inputs);
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             tree.compute_child_layout_internal(node_id, inputs, None)
         })
@@ -794,6 +821,7 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
         inputs: taffy::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
+        let inputs = self.with_inline_percentage_height(node_id, inputs);
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             tree.compute_child_layout_internal(node_id, inputs, block_ctx)
         })
