@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use crate::color::{Color, ToColorColor as _};
 use crate::text_decorations::{
-    DecorationRunGeometry, DecorationStackEntry, LineDecoration, ResolvedTextShadow,
-    WinAscentCache, draw_line_text_shadows, flush_line_decorations, resolve_decoration_entry,
+    DecorationRunGeometry, DecorationStackEntry, LineDecoration, ResolvedDecoration,
+    ResolvedTextShadow, WinAscentCache, draw_line_text_shadows, flush_line_decorations,
+    resolve_decoration_entry,
 };
 use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
 
@@ -138,6 +139,8 @@ pub(crate) fn stroke_text<'a>(
         deco_boxes.clear();
         run_records.clear();
         let mut line_has_shadows = false;
+        // The underline of the text an input method is composing on this line, spanning its runs.
+        let mut composing: Option<LineDecoration> = None;
 
         // Pass 1: resolve styles for every glyph run on the line (recording the values
         // needed to paint it) and accumulate decorations. Painting is deferred so text
@@ -244,6 +247,21 @@ pub(crate) fn stroke_text<'a>(
                     acc.own = Some(geometry.clone());
                 }
             }
+
+            // A text input's editor underlines the text an input method is composing.
+            if style.underline.is_some() {
+                let acc = composing.get_or_insert_with(|| LineDecoration {
+                    node_id: run_node_id,
+                    deco: ResolvedDecoration::composition_underline(fill_color),
+                    min_x: f64::INFINITY,
+                    max_x: f64::NEG_INFINITY,
+                    own: None,
+                    first: None,
+                });
+                acc.min_x = acc.min_x.min(run_x0);
+                acc.max_x = acc.max_x.max(run_x1);
+                acc.first.get_or_insert(geometry);
+            }
         }
 
         // Pass 2: text shadows, beneath all of the line's text and decorations.
@@ -276,6 +294,18 @@ pub(crate) fn stroke_text<'a>(
             line.metrics().baseline,
             None,
         );
+        if let Some(composing) = composing {
+            flush_line_decorations(
+                scene,
+                transform,
+                options,
+                std::slice::from_ref(&composing),
+                win_ascent_ratios,
+                inline_root_id,
+                line.metrics().baseline,
+                None,
+            );
+        }
     }
 }
 
