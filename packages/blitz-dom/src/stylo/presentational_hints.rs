@@ -50,6 +50,35 @@ fn parse_pixels(value: &str) -> Option<u32> {
     style::servo::attr::parse_unsigned_integer(value.chars()).ok()
 }
 
+/// Whether the element is HTML embedded content that takes the `align` attribute:
+/// `img`, `iframe`, `object`, `embed` or `<input type=image>`.
+fn is_embedded_content(elem: &ElementData) -> bool {
+    elem.name.ns == ns!(html)
+        && match elem.name.local {
+            local_name!("img")
+            | local_name!("iframe")
+            | local_name!("object")
+            | local_name!("embed") => true,
+            local_name!("input") => elem
+                .attr(local_name!("type"))
+                .is_some_and(|ty| ty.eq_ignore_ascii_case("image")),
+            _ => false,
+        }
+}
+
+/// Whether the element's `align` attribute (`middle` or `center`) asks for its
+/// box's vertical middle to sit on the parent's baseline. That is not a CSS
+/// `vertical-align` value (`middle` adds half the parent's x-height; Chromium
+/// computes it to `-webkit-baseline-middle`), so the inline layout applies it to
+/// a box whose `vertical-align` is still the initial `baseline`.
+/// https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
+pub(crate) fn aligns_middle_with_baseline(elem: &ElementData) -> bool {
+    is_embedded_content(elem)
+        && elem.attr(local_name!("align")).is_some_and(|align| {
+            align.eq_ignore_ascii_case("middle") || align.eq_ignore_ascii_case("center")
+        })
+}
+
 /// The declaration block that collects an element's hints.
 struct Hints(PropertyDeclarationBlock);
 
@@ -361,7 +390,51 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             }
         }
 
-        if *name == local_name!("align") {
+        // `align` on embedded content floats it (`left`, `right`) or maps to
+        // `vertical-align`, matched ASCII case-insensitively. `middle` and
+        // `center` align the box's middle with the baseline, which no CSS
+        // value expresses: the inline layout applies them (see
+        // `aligns_middle_with_baseline`). It does not set `text-align`.
+        // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
+        if *name == local_name!("align") && is_embedded_content(elem) {
+            use style::values::generics::box_::BaselineShiftKeyword;
+            use style::values::specified::{
+                AlignmentBaseline, BaselineShift, BaselineSource, Float,
+            };
+            let top = (
+                AlignmentBaseline::Baseline,
+                BaselineShift::Keyword(BaselineShiftKeyword::Top),
+            );
+            let (float, longhands) = match value.to_ascii_lowercase().as_str() {
+                "left" => (Some(Float::Left), Some(top)),
+                "right" => (Some(Float::Right), Some(top)),
+                "top" => (None, Some(top)),
+                "texttop" => (
+                    None,
+                    Some((AlignmentBaseline::TextTop, BaselineShift::zero())),
+                ),
+                "absmiddle" | "abscenter" => (
+                    None,
+                    Some((AlignmentBaseline::Middle, BaselineShift::zero())),
+                ),
+                "absbottom" => (
+                    None,
+                    Some((
+                        AlignmentBaseline::Baseline,
+                        BaselineShift::Keyword(BaselineShiftKeyword::Bottom),
+                    )),
+                ),
+                _ => (None, None),
+            };
+            if let Some(float) = float {
+                hints.push(PropertyDeclaration::Float(float));
+            }
+            if let Some((alignment_baseline, baseline_shift)) = longhands {
+                hints.push(PropertyDeclaration::BaselineSource(BaselineSource::Auto));
+                hints.push(PropertyDeclaration::AlignmentBaseline(alignment_baseline));
+                hints.push(PropertyDeclaration::BaselineShift(baseline_shift));
+            }
+        } else if *name == local_name!("align") {
             use style::values::specified::TextAlign;
             let keyword = match value {
                 "left" => Some(StyloTextAlign::MozLeft),
