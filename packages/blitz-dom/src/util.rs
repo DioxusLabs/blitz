@@ -168,10 +168,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
 #[cfg(feature = "svg")]
 pub(crate) fn parse_svg(
     source: &[u8],
-    images: Option<(
-        &crate::url::DocumentUrl,
-        &std::collections::HashMap<String, crate::node::ImageData>,
-    )>,
+    images: Option<(&crate::url::DocumentUrl, &crate::image_cache::ImageCache)>,
 ) -> Result<crate::node::SvgImageData, usvg::Error> {
     let options = usvg::Options {
         fontdb: Arc::clone(&*FONT_DB),
@@ -179,7 +176,7 @@ pub(crate) fn parse_svg(
             resolve_data: usvg::ImageHrefResolver::default_data_resolver(),
             resolve_string: Box::new(move |href, _| {
                 let (base_url, image_cache) = images?;
-                svg_image_kind(image_cache.get(base_url.resolve_relative(href)?.as_str())?)
+                svg_image_kind(image_cache.peek(base_url.resolve_relative(href)?.as_str())?)
             }),
         },
         ..Default::default()
