@@ -6,6 +6,7 @@ use blitz_traits::{
 use keyboard_types::{Key, Modifiers, NamedKey};
 use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
 
+use crate::text_map::line_end_whitespace;
 use crate::util::ACTION_MOD;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -37,6 +38,8 @@ pub struct TextLayout {
     /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
     /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
     pub content_box_subpixel_offset: taffy::Point<f32>,
+    /// Maps DOM offsets in the formatting context to byte offsets in `text`.
+    pub offset_map: TextOffsetMap,
 }
 
 impl TextLayout {
@@ -48,6 +51,17 @@ impl TextLayout {
         *self
             .content_widths
             .get_or_insert_with(|| self.layout.calculate_content_widths())
+    }
+
+    /// The white space at the end of line `line_index`, not counting a forced line break.
+    pub fn line_end_whitespace(&self, line_index: usize) -> Option<LineEndWhitespace> {
+        let line = self.layout.get(line_index)?;
+        Some(line_end_whitespace(
+            &self.text,
+            &self.layout,
+            &line,
+            &self.offset_map,
+        ))
     }
 
     /// Whether `byte_index` of `text` is the U+FFFC character that stands in for an in-flow
@@ -72,8 +86,10 @@ impl TextLayout {
     }
 }
 
-/// The character Parley places in the text for each in-flow inline box.
-pub const INLINE_BOX_CHAR: char = '\u{FFFC}';
+pub use crate::text_map::{INLINE_BOX_CHAR, LineEndWhitespace};
+
+/// Maps DOM offsets in an inline formatting context to offsets in its layout text, and back.
+pub type TextOffsetMap = crate::text_map::TextOffsetMap<NodeId>;
 
 impl std::fmt::Debug for TextLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

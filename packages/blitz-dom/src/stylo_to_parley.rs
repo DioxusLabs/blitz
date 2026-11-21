@@ -550,14 +550,7 @@ pub(crate) fn style(
         letter_spacing,
         text_wrap_mode,
         white_space_collapse: white_space_collapse(itext_styles.white_space_collapse),
-        collapsed_space: if itext_styles
-            .text_transform
-            .contains(stylo::TextTransform::FULL_WIDTH)
-        {
-            parley::CollapsedSpace::IdeographicSpace
-        } else {
-            parley::CollapsedSpace::Space
-        },
+        collapsed_space: collapsed_space(itext_styles.text_transform),
         overflow_wrap,
         word_break,
         line_break,
@@ -578,6 +571,15 @@ pub(crate) fn style(
         strikethrough_offset: Default::default(),
         strikethrough_size: Default::default(),
         strikethrough_brush: Default::default(),
+    }
+}
+
+/// The space a collapsible white space run collapses to.
+pub(crate) fn collapsed_space(text_transform: stylo::TextTransform) -> parley::CollapsedSpace {
+    if text_transform.contains(stylo::TextTransform::FULL_WIDTH) {
+        parley::CollapsedSpace::IdeographicSpace
+    } else {
+        parley::CollapsedSpace::Space
     }
 }
 
