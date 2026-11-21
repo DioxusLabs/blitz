@@ -1,6 +1,7 @@
 use blitz_dom::{BaseDocument, Document as _};
 use image::{ImageBuffer, ImageFormat};
 use log::warn;
+use std::borrow::Cow;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -13,8 +14,8 @@ use blitz_vibey_script::ScriptDocument;
 use wpt_manifest::{FuzzySpec, tolerance_for_reference};
 
 use super::{
-    document_has_scripts, parse_and_resolve_document, pump_net_provider, pump_timers,
-    run_document_scripts,
+    decode_test_file, document_has_scripts, parse_and_resolve_document, pump_net_provider,
+    pump_timers, run_document_scripts,
 };
 use crate::manifest::artifact_name;
 use crate::{BufferKind, HEIGHT, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
@@ -117,21 +118,29 @@ fn render_reference_and_compare(
     };
 
     // An `about:blank` reference is a blank page: render the ref as an empty document.
+    let ref_bytes;
     let (ref_relative_path, ref_html) = if ref_url.scheme() == "about" && ref_url.path() == "blank"
     {
-        (test_relative_path.to_string(), String::new())
+        (test_relative_path.to_string(), Cow::Borrowed(""))
     } else if ref_url.scheme() == ctx.dummy_base_url.scheme() {
         let ref_relative_path = ref_url[url::Position::BeforePath..]
             .trim_start_matches('/')
             .to_string();
         let ref_path = ctx.wpt_dir.join(ref_url.path().trim_start_matches('/'));
-        match fs::read_to_string(&ref_path) {
-            Ok(html) => (ref_relative_path, html),
+        ref_bytes = match fs::read(&ref_path) {
+            Ok(bytes) => bytes,
             Err(err) => {
                 warn!("Skipping {test_relative_path}: cannot read ref file {ref_file:?} ({err})");
                 return None;
             }
-        }
+        };
+        let Some(html) = decode_test_file(&ref_bytes) else {
+            warn!(
+                "Skipping {test_relative_path}: ref file {ref_file:?} is not valid in its encoding"
+            );
+            return None;
+        };
+        (ref_relative_path, html)
     } else {
         warn!("Skipping {test_relative_path}: unsupported ref url {ref_url}");
         return None;
@@ -208,7 +217,7 @@ fn resolve_reference_url(test_url: &Url, ref_file: &str) -> Result<Url, url::Par
     test_url.join(ref_file)
 }
 
-fn render_html_to_buffer(
+pub(crate) fn render_html_to_buffer(
     ctx: &mut ThreadCtx,
     buffer_kind: BufferKind,
     relative_path: &str,

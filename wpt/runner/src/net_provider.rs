@@ -69,11 +69,9 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
             }
             _ => {
                 // TODO: Should we resolve path differently if it does not begin with '/'
-                let relative_path = request
-                    .url
-                    .path()
-                    .strip_prefix('/')
-                    .unwrap_or(request.url.path());
+                let url_path =
+                    percent_encoding::percent_decode_str(request.url.path()).decode_utf8_lossy();
+                let relative_path = url_path.strip_prefix('/').unwrap_or(&url_path);
                 let path = self.base_path.join(relative_path);
                 let file_content = std::fs::read(&path).inspect_err(|err| {
                     warn!("Error loading {}: {}", path.display(), err);
