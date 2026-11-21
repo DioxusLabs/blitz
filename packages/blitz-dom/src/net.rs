@@ -15,7 +15,7 @@ use style::{
     shared_lock::{Locked, SharedRwLockReadGuard},
     stylesheets::{
         CssRule, DocumentStyleSheet, ImportRule, Origin, Stylesheet, StylesheetInDocument,
-        StylesheetLoader as ServoStylesheetLoader, UrlExtraData,
+        StylesheetLoader as ServoStylesheetLoader,
         import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition},
     },
     values::{CssUrl, SourceLocation},
@@ -154,9 +154,10 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
         // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
         // let escaped_css = html_escape::decode_html_entities(css);
 
+        let base_url = Url::parse(&resolved_url).unwrap_or_else(|_| self.data.source_url.clone());
         let sheet = Stylesheet::from_bytes(
             &bytes,
-            self.data.source_url.clone().into(),
+            base_url.into(),
             None,
             None,
             Origin::Author,
@@ -274,9 +275,10 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
         // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
         // let escaped_css = html_escape::decode_html_entities(css);
 
+        let base_url = Url::parse(&resolved_url).unwrap_or_else(|_| (*self.data.url).clone());
         let sheet = ServoArc::new(Stylesheet::from_bytes(
             &bytes,
-            UrlExtraData(self.data.url.clone()),
+            base_url.into(),
             None,
             None,
             Origin::Author,
@@ -656,7 +658,7 @@ impl ImageHandler {
 mod tests {
     use super::*;
     use parley::fontique::FontStyle as Fq;
-    use style::stylesheets::AllowImportRules;
+    use style::stylesheets::{AllowImportRules, UrlExtraData};
     use style::values::specified::Angle;
 
     fn oblique(min_deg: f32, max_deg: f32) -> FontStyleRange {
