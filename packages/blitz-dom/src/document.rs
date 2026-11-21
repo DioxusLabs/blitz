@@ -2489,13 +2489,17 @@ impl BaseDocument {
 
     /// Computes the size and position of the `Node` relative to the viewport
     pub fn get_client_bounding_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
+        let node = self.get_node(node_id)?;
+        if !node.has_boxes() {
+            return None;
+        }
+
         // Non-atomic inline elements have no layout box of their own: return
         // the union of their per-line-box fragment rects.
         if let Some(rects) = self.inline_fragment_rects(node_id) {
             return rects.reduce(BoundingRect::union);
         }
 
-        self.get_node(node_id)?;
         let (pos, layout) = self.physical_unrounded_geometry(node_id);
         let size = layout.size;
 
@@ -2517,6 +2521,9 @@ impl BaseDocument {
     /// their `offsetParent` is resolved from the containing inline root.
     pub fn offset_rect(&self, node_id: NodeId) -> Option<BoundingRect> {
         let node = self.get_node(node_id)?;
+        if !node.has_boxes() {
+            return None;
+        }
 
         // Nodes with their own layout box: use it directly
         let Some(rects) = self.inline_fragment_rects(node_id) else {
@@ -2573,6 +2580,9 @@ impl BaseDocument {
     /// return a single rect. Non-atomic inline elements (which are laid out as style
     /// spans within an inline root's text layout) return one rect per line box.
     pub fn node_client_rects(&self, node_id: NodeId) -> Vec<BoundingRect> {
+        if !self.get_node(node_id).is_some_and(Node::has_boxes) {
+            return Vec::new();
+        }
         match self.inline_fragment_rects(node_id) {
             Some(rects) => rects.collect(),
             None => self.get_client_bounding_rect(node_id).into_iter().collect(),
@@ -2587,6 +2597,9 @@ impl BaseDocument {
         node_id: NodeId,
     ) -> Option<impl Iterator<Item = BoundingRect> + '_> {
         let node = self.get_node(node_id)?;
+        if !node.has_boxes() {
+            return None;
+        }
 
         // Only non-atomic inline elements lack their own layout box: they are
         // flattened into the containing inline root's text layout as style spans.
