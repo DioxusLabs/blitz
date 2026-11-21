@@ -72,8 +72,7 @@ impl BaseDocument {
                             )
                         }
                         PositionedLayoutItem::InlineBox(ibox) => print!(
-                            "BOX {:?} (id: {} x: {} y: {} w: {}, h: {})",
-                            ibox.kind,
+                            "BOX (id: {} x: {} y: {} w: {}, h: {})",
                             ibox.id,
                             ibox.x.round(),
                             ibox.y.round(),

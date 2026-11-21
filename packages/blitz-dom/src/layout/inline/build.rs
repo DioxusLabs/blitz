@@ -1,8 +1,6 @@
 use blitz_traits::node_id::NodeId;
 use markup5ever::local_name;
-use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, TreeBuilder, WhiteSpaceCollapse,
-};
+use parley::{FloatedBox, FontContext, InlineBox, LayoutContext, TreeBuilder, WhiteSpaceCollapse};
 use style::{
     computed_values::position::T as PositionProperty,
     values::{
@@ -17,7 +15,7 @@ use crate::{
     layout::list::BULLET_FONT_FAMILY,
     layout::replaced::is_inline_box_element,
     layout::text_transform::{CaseTransform, TextTransformer},
-    node::{ListItemLayout, ListItemLayoutPosition, Marker, TextBrush, TextLayout},
+    node::{ListItemLayout, ListItemLayoutPosition, Marker, OutOfFlowBox, TextBrush, TextLayout},
     stylo_to_parley,
 };
 
@@ -83,6 +81,9 @@ pub(crate) fn build_inline_layout_into(
             Marker::String(str) => builder.push_text(str),
         }
     };
+    text_layout.out_of_flow_boxes.clear();
+    let oof_boxes = &mut text_layout.out_of_flow_boxes;
+
     // The marker is a separate box, so words in the content don't continue from it.
     let mut text_transformer = TextTransformer::default();
     text_transformer.word_break(&builder);
@@ -91,6 +92,7 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
+            oof_boxes,
             nodes,
             before_id,
             &text_transform,
@@ -100,6 +102,7 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
+            oof_boxes,
             nodes,
             child_id,
             &text_transform,
@@ -109,6 +112,7 @@ pub(crate) fn build_inline_layout_into(
         build_inline_layout_recursive(
             &mut builder,
             &mut text_transformer,
+            oof_boxes,
             nodes,
             after_id,
             &text_transform,
@@ -121,6 +125,7 @@ pub(crate) fn build_inline_layout_into(
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
         text_transformer: &mut TextTransformer,
+        oof_boxes: &mut Vec<OutOfFlowBox>,
         nodes: &crate::NodeTree,
         node_id: NodeId,
         parent_text_transform: &CaseTransform,
@@ -148,13 +153,44 @@ pub(crate) fn build_inline_layout_into(
                     .map(|s| s.clone_position())
                     .unwrap_or(PositionProperty::Static);
                 let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
-                let box_kind = if position.is_absolutely_positioned() {
-                    InlineBoxKind::OutOfFlow
-                } else if float.is_floating() {
-                    InlineBoxKind::CustomOutOfFlow
-                } else {
-                    InlineBoxKind::InFlow
-                };
+                let is_absolute = position.is_absolutely_positioned();
+                let is_floated = !is_absolute && cfg!(feature = "floats") && float.is_floating();
+                let mut push_box =
+                    |builder: &mut TreeBuilder<TextBrush>,
+                     text_transformer: &mut TextTransformer| {
+                        if is_absolute || is_floated {
+                            // Parley has no notion of absolutely positioned boxes: their static
+                            // position is derived from their text index after layout. Like Parley's
+                            // floated boxes, they precede any pending collapsible whitespace.
+                            oof_boxes.push(OutOfFlowBox {
+                                node_id,
+                                index: builder.text().len(),
+                                is_floated,
+                            });
+                            if is_floated {
+                                builder.push_floated_box(FloatedBox {
+                                    id: node_id.as_u64(),
+                                    // Overridden by push_floated_box method
+                                    index: 0,
+                                });
+                            }
+                        } else {
+                            text_transformer.word_break(builder);
+                            builder.push_inline_box(InlineBox {
+                                id: node_id.as_u64(),
+                                // Overridden by push_inline_box method
+                                index: 0,
+                                // Width and height are set during layout
+                                width: 0.0,
+                                height: 0.0,
+                                baseline: None,
+                                vertical_align: node
+                                    .primary_styles()
+                                    .map(|s| stylo_to_parley::vertical_align(&s))
+                                    .unwrap_or_default(),
+                            });
+                        }
+                    };
 
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
@@ -192,6 +228,7 @@ pub(crate) fn build_inline_layout_into(
                             build_inline_layout_recursive(
                                 builder,
                                 text_transformer,
+                                oof_boxes,
                                 nodes,
                                 child_id,
                                 &text_transform,
@@ -212,23 +249,7 @@ pub(crate) fn build_inline_layout_into(
                         let tag_name = &element_data.name.local;
 
                         if is_inline_box_element(tag_name) {
-                            if box_kind == InlineBoxKind::InFlow {
-                                text_transformer.word_break(builder);
-                            }
-                            builder.push_inline_box(InlineBox {
-                                id: node_id.as_u64(),
-                                kind: box_kind,
-                                // Overridden by push_inline_box method
-                                index: 0,
-                                // Width and height are set during layout
-                                width: 0.0,
-                                height: 0.0,
-                                baseline: None,
-                                vertical_align: node
-                                    .primary_styles()
-                                    .map(|s| stylo_to_parley::vertical_align(&s))
-                                    .unwrap_or_default(),
-                            });
+                            push_box(builder, text_transformer);
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
@@ -256,6 +277,7 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
+                                    oof_boxes,
                                     nodes,
                                     before_id,
                                     &text_transform,
@@ -266,6 +288,7 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
+                                    oof_boxes,
                                     nodes,
                                     child_id,
                                     &text_transform,
@@ -275,6 +298,7 @@ pub(crate) fn build_inline_layout_into(
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
+                                    oof_boxes,
                                     nodes,
                                     after_id,
                                     &text_transform,
@@ -286,23 +310,7 @@ pub(crate) fn build_inline_layout_into(
                     }
                     // Inline box
                     (_, _) => {
-                        if box_kind == InlineBoxKind::InFlow {
-                            text_transformer.word_break(builder);
-                        }
-                        builder.push_inline_box(InlineBox {
-                            id: node_id.as_u64(),
-                            kind: box_kind,
-                            // Overridden by push_inline_box method
-                            index: 0,
-                            // Width and height are set during layout
-                            width: 0.0,
-                            height: 0.0,
-                            baseline: None,
-                            vertical_align: node
-                                .primary_styles()
-                                .map(|s| stylo_to_parley::vertical_align(&s))
-                                .unwrap_or_default(),
-                        });
+                        push_box(builder, text_transformer);
                     }
                 };
             }
