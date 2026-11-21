@@ -54,6 +54,7 @@ mod link_cursor;
 mod link_rel_attribute;
 mod native_wheel_data;
 mod oof_dynamic_cb;
+mod outline_offset;
 mod outset_box_shadow_shape;
 mod overscroll_behavior;
 mod paint_order;
