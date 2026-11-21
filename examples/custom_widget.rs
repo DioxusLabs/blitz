@@ -106,7 +106,13 @@ impl Widget for DemoWidget {
         true
     }
 
-    fn attribute_changed(&mut self, name: &str, _old_value: Option<&str>, new_value: Option<&str>) {
+    fn attribute_changed(
+        &mut self,
+        name: &str,
+        _old_value: Option<&str>,
+        new_value: Option<&str>,
+        _cx: &mut dioxus_native::WidgetCx,
+    ) {
         if name == "color" {
             self.color = new_value
                 .and_then(|color_str| parse_color(color_str).ok())
@@ -115,7 +121,7 @@ impl Widget for DemoWidget {
         }
     }
 
-    fn handle_event(&mut self, event: &UiEvent) {
+    fn handle_event(&mut self, event: &UiEvent, _cx: &mut dioxus_native::WidgetCx) {
         match event {
             UiEvent::PointerMove(evt) => {
                 self.pos = Some(Point {
