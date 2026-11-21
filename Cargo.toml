@@ -14,6 +14,7 @@ members = [
     "packages/stylo_taffy",
     "packages/dioxus-native",
     "packages/dioxus-native-dom",
+    "packages/keyboard-types-07-08",
     "packages/blitz-test-harness",
     "packages/parley_code_editor",
     "apps/browser",
@@ -58,6 +59,7 @@ debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 accesskit_xplat = { version = "0.2", path = "./packages/accesskit_xplat", default-features = false }
 browser-persistence = { path = "./apps/browser/persistence" }
 blitz-test-harness = { path = "./packages/blitz-test-harness" }
+keyboard-types-07-08 = { version = "0.1", path = "./packages/keyboard-types-07-08" }
 
 # Servo dependencies
 style = { version = "0.24.0", package = "stylo" }
