@@ -3731,8 +3731,7 @@ dependencies = [
 [[package]]
 name = "glifo"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ae2e3b09ea1cc45c994a405e4d4154901d4caa867d3e1be3a02be641f62fefa"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1794431434-gpu-bitmap-glyph-atlas#b81d6b2de6f5f16311c046cb2a751edf9904a9dc"
 dependencies = [
  "bytemuck",
  "foldhash 0.2.0",
@@ -8563,7 +8562,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
@@ -9395,8 +9394,7 @@ dependencies = [
 [[package]]
 name = "vello_common"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d9447018538224861c1bd825471dcc67ffa973c97de666bf6296b72dbb2f166"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1794431434-gpu-bitmap-glyph-atlas#b81d6b2de6f5f16311c046cb2a751edf9904a9dc"
 dependencies = [
  "bytemuck",
  "fearless_simd",
@@ -9412,8 +9410,7 @@ dependencies = [
 [[package]]
 name = "vello_cpu"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6b3db720c5d3aa8783cb1c042d8a77142df70bd0f742dc9005f6d6efe33ebf"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1794431434-gpu-bitmap-glyph-atlas#b81d6b2de6f5f16311c046cb2a751edf9904a9dc"
 dependencies = [
  "bytemuck",
  "crossbeam-channel",
@@ -9444,8 +9441,7 @@ dependencies = [
 [[package]]
 name = "vello_gpu"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a1f838f79b2ef62a4acc61057eca19ffadf496c36317093e2d6961836d6c92f"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1794431434-gpu-bitmap-glyph-atlas#b81d6b2de6f5f16311c046cb2a751edf9904a9dc"
 dependencies = [
  "bytemuck",
  "glifo",
@@ -9463,8 +9459,7 @@ dependencies = [
 [[package]]
 name = "vello_gpu_shaders"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22815682cf60d24cf8781bd445f309622930e8b8885459b21109b4f6b205b76"
+source = "git+https://github.com/DioxusLabs/vello?branch=devin%2F1794431434-gpu-bitmap-glyph-atlas#b81d6b2de6f5f16311c046cb2a751edf9904a9dc"
 dependencies = [
  "naga 30.0.1",
  "wesl",
