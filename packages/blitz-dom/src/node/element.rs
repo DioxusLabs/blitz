@@ -2,7 +2,7 @@ use blitz_traits::node_id::NodeId;
 use cssparser::Parser;
 use kurbo::{Affine, Rect as KurboRect};
 use linebender_resource_handle::Blob;
-use markup5ever::{LocalName, QualName, local_name, ns};
+use markup5ever::{LocalName, QualName, local_name};
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use std::cell::Cell;
 use std::str::FromStr;
@@ -513,6 +513,17 @@ impl ElementData {
         Some(&attr.value)
     }
 
+    /// An SVG element's `href`, which takes precedence over `xlink:href`.
+    pub(crate) fn svg_href(&self) -> Option<&str> {
+        let find = |namespace| {
+            self.attrs
+                .iter()
+                .find(|a| a.name.local == local_name!("href") && a.name.ns == namespace)
+                .map(|a| a.value.as_str())
+        };
+        find(markup5ever::ns!()).or_else(|| find(markup5ever::ns!(xlink)))
+    }
+
     pub fn attr_parsed<T: FromStr>(&self, name: impl PartialEq<LocalName>) -> Option<T> {
         let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
         attr.value.parse::<T>().ok()
@@ -521,18 +532,6 @@ impl ElementData {
     /// Detects the presence of the attribute, treating *any* value as truthy.
     pub fn has_attr(&self, name: impl PartialEq<LocalName>) -> bool {
         self.attrs.iter().any(|attr| name == attr.name.local)
-    }
-
-    /// The `href` of an SVG element such as `<image>` or `<use>`. As in SVG 2,
-    /// an unprefixed `href` takes precedence over `xlink:href`.
-    pub fn svg_href(&self) -> Option<&str> {
-        let href = |namespace| {
-            self.attrs
-                .iter()
-                .find(|attr| attr.name.local == local_name!("href") && attr.name.ns == namespace)
-                .map(|attr| &*attr.value)
-        };
-        href(ns!()).or_else(|| href(ns!(xlink)))
     }
 
     pub fn can_be_disabled(&self) -> bool {

@@ -442,10 +442,7 @@ impl DocumentMutator<'_> {
         if (tag, attr) == tag_and_attr!("input", "checked") {
             set_input_checked_state(element, value.to_string());
         } else if (tag, attr) == tag_and_attr!("img", "src")
-            || (cfg!(feature = "svg-usvg")
-                && element.name.ns == ns!(svg)
-                && matches!(&**tag, "image" | "feImage")
-                && *attr == local_name!("href"))
+            || (loads_svg_href(self.doc.native_svg, element) && *attr == local_name!("href"))
         {
             self.load_image(node_id);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
@@ -566,6 +563,9 @@ impl DocumentMutator<'_> {
         } else if (tag, attr) == tag_and_attr!("iframe", "srcdoc") && node_is_in_document {
             // Fall back to loading from the `src` attribute (if any)
             self.load_iframe(node_id);
+        } else if self.doc.native_svg && is_svg_image(element) && *attr == local_name!("href") {
+            // Fall back to `xlink:href` after `href` is removed (or show nothing).
+            self.load_image(node_id);
         }
     }
 
@@ -1256,9 +1256,7 @@ impl<'doc> DocumentMutator<'doc> {
                 _ if has_custom_widget => {}
                 "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
                 "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
-                "image" | "feImage"
-                    if cfg!(feature = "svg-usvg") && element.name.ns == ns!(svg) =>
-                {
+                "image" | "feImage" if loads_svg_href(doc.native_svg, element) => {
                     self.eager_op_queue.push(SpecialOp::LoadImage(node_id))
                 }
                 "iframe" => self.eager_op_queue.push(SpecialOp::LoadIframe(node_id)),
@@ -1470,6 +1468,9 @@ impl<'doc> DocumentMutator<'doc> {
         let Some(element) = self.doc.nodes[target_id].element_data() else {
             return;
         };
+        if self.doc.native_svg && is_svg_image(element) {
+            return self.load_svg_image(target_id);
+        }
         let raw_src = if element.name.ns == ns!(svg) {
             // usvg resolves `data:` URLs and `#fragment` references itself
             element
@@ -1489,15 +1490,34 @@ impl<'doc> DocumentMutator<'doc> {
         if let Some(cached_image) = self.doc.image_cache.get(src.as_str()) {
             #[cfg(feature = "tracing")]
             tracing::info!("Loading image {src} from cache");
-            let node = &mut self.doc.nodes[target_id];
-            node.element_data_mut().unwrap().special_data =
-                SpecialElementData::Image(Box::new(cached_image.clone()));
-            node.clear_layout_cache();
-            node.insert_damage(ALL_DAMAGE);
+            let image = cached_image.clone();
+            self.doc.apply_image_to_node(target_id, image);
             return;
         }
 
         self.doc.fetch_image(src, target_id, ImageType::Image);
+    }
+
+    /// Load an SVG `<image>`'s `href`. Until it loads (or when it has none or
+    /// it fails) the element shows nothing.
+    fn load_svg_image(&mut self, target_id: NodeId) {
+        let element = self.doc.nodes[target_id].element_data().unwrap();
+        // A fragment-only `href` refers to an element of this document, not an image.
+        let src = element
+            .svg_href()
+            .filter(|href| !href.is_empty() && !href.trim_start().starts_with('#'))
+            .and_then(|href| self.doc.resolve_url(href));
+        self.doc.svg_images.remove(&target_id);
+        self.doc.nodes[target_id].insert_damage(style::selector_parser::RestyleDamage::REPAINT);
+        let Some(src) = src else {
+            return;
+        };
+        if let Some(image) = self.doc.image_cache.get(src.as_str()) {
+            let image = image.clone();
+            self.doc.apply_image_to_node(target_id, image);
+        } else {
+            self.doc.fetch_image(src, target_id, ImageType::Image);
+        }
     }
 
     fn load_iframe(&mut self, target_id: NodeId) {
@@ -1668,6 +1688,24 @@ impl Drop for ViewportMut<'_> {
         let changes = DeviceChanges::from_viewports(&self.initial_viewport, &self.doc.viewport);
         self.doc.queue_device_changes(changes);
     }
+}
+
+/// Whether an SVG element's `href` is an image to load: `<image>` when the
+/// document renders inline SVG natively, else what usvg reads from the image cache.
+fn loads_svg_href(native_svg: bool, element: &ElementData) -> bool {
+    if native_svg {
+        is_svg_image(element)
+    } else {
+        cfg!(feature = "svg-usvg")
+            && element.name.ns == ns!(svg)
+            && matches!(&*element.name.local, "image" | "feImage")
+    }
+}
+
+/// An SVG `<image>`, which loads its `href` like an `<img>` loads its `src`
+/// when the document renders inline SVG natively.
+fn is_svg_image(element: &crate::node::ElementData) -> bool {
+    element.name.ns == markup5ever::ns!(svg) && element.name.local == local_name!("image")
 }
 
 #[cfg(test)]
