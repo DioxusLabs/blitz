@@ -1,0 +1,9 @@
+[package]
+name = "runner"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Builds and runs the gui-bench apps and summarises their JSON lines output"
+
+[dependencies]
+serde_json = "1"

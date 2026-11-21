@@ -1,0 +1,19 @@
+[package]
+name = "bench-gpui"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+bench-core = { path = "../../bench-core" }
+# runtime_shaders: compile Metal shaders at startup, so building needs no Metal toolchain.
+gpui = { version = "0.2.2", features = ["runtime_shaders"] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+debug = "line-tables-only"
+
+# Standalone workspace: each toolkit pins its own wgpu/winit versions.
+[workspace]
