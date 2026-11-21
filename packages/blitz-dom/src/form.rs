@@ -164,7 +164,7 @@ impl BaseDocument {
         let method = method.try_into().unwrap_or_default();
 
         let navigation_options =
-            NavigationOptions::new(parsed_action, Some(enctype.to_string()), self.id())
+            NavigationOptions::new(parsed_action, Some(enctype.to_string()), Some(self.id()))
                 .set_document_resource(post_resource)
                 .set_method(method);
 

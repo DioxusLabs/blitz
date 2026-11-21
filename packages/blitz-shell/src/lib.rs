@@ -26,6 +26,7 @@ pub use crate::window::{View, WindowConfig};
 #[cfg(feature = "data-uri")]
 pub use crate::net::DataUriNetProvider;
 
+use blitz_traits::DocumentId;
 #[cfg(all(
     feature = "file-dialog",
     any(
@@ -89,10 +90,10 @@ pub fn current_android_app() -> android_activity::AndroidApp {
 pub struct BlitzShellProvider {
     window: Arc<dyn Window>,
     proxy: BlitzShellProxy,
-    doc_id: usize,
+    doc_id: DocumentId,
 }
 impl BlitzShellProvider {
-    pub fn new(window: Arc<dyn Window>, proxy: BlitzShellProxy, doc_id: usize) -> Self {
+    pub fn new(window: Arc<dyn Window>, proxy: BlitzShellProxy, doc_id: DocumentId) -> Self {
         Self {
             window,
             proxy,
@@ -162,7 +163,7 @@ impl ShellProvider for BlitzShellProvider {
     }
 
     #[cfg(feature = "devtools")]
-    fn open_devtools(&self, doc_id: usize) {
+    fn open_devtools(&self, doc_id: DocumentId) {
         self.proxy
             .send_event(BlitzShellEvent::OpenDevtools { doc_id });
     }
