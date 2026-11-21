@@ -656,7 +656,10 @@ fn collect_table_cells(
             // Column widths from `<col>` elements take precedence over cell widths
             let col_needs_width =
                 (col as usize) >= columns.len() || columns[col as usize].max.is_auto();
-            if *row == 1 && col_needs_width {
+            // The fixed table layout algorithm takes column widths from the first row, the auto one from the cells
+            // in any row that span a single column.
+            let sets_width = if is_fixed { *row == 1 } else { colspan == 1 };
+            if sets_width && col_needs_width {
                 let column: TrackSizingFunction = match style.size.width.tag() {
                     taffy::CompactLength::LENGTH_TAG => {
                         let len = style.size.width.value();
