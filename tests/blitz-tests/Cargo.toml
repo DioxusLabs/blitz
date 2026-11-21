@@ -11,6 +11,11 @@ edition.workspace = true
 autotests = false
 rust-version.workspace = true
 
+[features]
+# Runs the first-party inline `<svg>` tests. Off by default: with it on,
+# inline `<svg>` no longer goes through usvg, so the usvg inline tests are skipped.
+svg-native = ["blitz-dom/svg-native"]
+
 [dev-dependencies]
 # Blitz dependencies
 blitz-test-harness = { workspace = true }

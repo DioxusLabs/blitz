@@ -463,6 +463,11 @@ impl BaseDocument {
         #[cfg(not(feature = "writing-mode"))]
         taffy::round_layout(&mut state, root_element_id);
 
+        // Build/rebuild inline SVG fragments now that every root `<svg>`
+        // has a final content-box size.
+        #[cfg(feature = "svg-native")]
+        crate::svg::rebuild_svg_fragments(self);
+
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
     }

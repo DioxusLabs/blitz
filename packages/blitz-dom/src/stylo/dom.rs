@@ -237,7 +237,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_html_element_in_html_document(&self) -> bool {
-        true // self.has_namespace(ns!(html))
+        self.is_element() && self.has_namespace(&markup5ever::ns!(html))
     }
 
     fn has_local_name(&self, local_name: &LocalName) -> bool {
@@ -457,7 +457,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn is_html_element(&self) -> bool {
-        self.is_element()
+        self.is_element() && selectors::Element::has_namespace(self, &markup5ever::ns!(html))
     }
 
     // not implemented.....
@@ -465,9 +465,8 @@ impl<'a> TElement for BlitzNode<'a> {
         false
     }
 
-    // need to check the namespace
     fn is_svg_element(&self) -> bool {
-        false
+        self.is_element() && selectors::Element::has_namespace(self, &markup5ever::ns!(svg))
     }
 
     fn style_attribute(&self) -> Option<ArcBorrow<'_, Locked<PropertyDeclarationBlock>>> {

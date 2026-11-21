@@ -23,6 +23,9 @@ default = [
 custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg", "dep:svgtypes", "dep:png"]
+# First-party inline `<svg>` rendering: styled by Stylo, hit-testable,
+# damage-tracked, instead of handed to `usvg` as an opaque image.
+svg-native = ["svg"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
 woff = ["dep:wuff"]
 accessibility = ["accesskit"]
