@@ -301,6 +301,20 @@ vello_gpu = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 
+[patch.crates-io]
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+anyrender_tiny_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+anyrender_vello_gpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+image_filters_types = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+pixels_window_renderer = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+softbuffer_window_renderer = { git = "https://github.com/DioxusLabs/anyrender", rev = "46fb042a7685d764fb83f30253f147001e6cff52" }
+
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }

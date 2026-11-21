@@ -310,8 +310,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "anyrender"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fb671c97c38d56a3cb01f9f7ba1eaaf5dadddcce6c3acda7420bf601050ff77"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "image_filters_types",
  "kurbo",
@@ -322,10 +321,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyrender_atlas"
+version = "0.1.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
+dependencies = [
+ "etagere",
+ "hashbrown 0.17.1",
+ "pixmap",
+]
+
+[[package]]
+name = "anyrender_glyph"
+version = "0.1.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
+dependencies = [
+ "bytemuck",
+ "hashbrown 0.17.1",
+ "log",
+ "peniko",
+ "pixmap",
+ "png 0.18.1",
+ "skrifa",
+ "smallvec",
+]
+
+[[package]]
 name = "anyrender_serialize"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23344879884a7ab1027c1068caa391a3eb71b269c7a625f1af26ffdca86e1694"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
  "image",
@@ -343,8 +366,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e63f8ff10ad88e9c2dbb66a891e4e011079ea35a70ba599ecef0f8a647cba3a0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
  "ash",
@@ -376,8 +398,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d548104856232922435812de8ad889d44494c6d076ae06704f9bdd451edeea74"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
  "image",
@@ -389,8 +410,7 @@ dependencies = [
 [[package]]
 name = "anyrender_tiny_skia"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa433cd2dd73c0b912beaf3bd0911285dddd645130de1a72ecd7391cdf35ed3f"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
  "bytemuck",
@@ -406,8 +426,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daca414cad81b20e53b2c7515229d006732c822c1b2ade0bf745bd735af7d7de"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -425,17 +444,17 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d67fb8c73caa477541d7a52914bc534feca89d8c20f8a09c9ebe5d32646f8f7"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
+ "anyrender_glyph",
  "bytemuck",
  "color",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "glifo",
  "kurbo",
  "peniko",
  "pixels_window_renderer",
+ "pixmap",
  "softbuffer_window_renderer",
  "vello_common",
  "vello_cpu",
@@ -444,19 +463,22 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_gpu"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc1dd34c95c97cbc20645f0c1001d1787d784645da09447986cde1fede4ba4c2"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
+ "anyrender_atlas",
+ "anyrender_glyph",
+ "bytemuck",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-channel",
- "glifo",
  "kurbo",
  "peniko",
+ "pixmap",
  "pollster 1.0.1",
  "raw-window-handle",
  "rustc-hash 2.1.3",
  "vello_common",
+ "vello_cpu",
  "vello_gpu",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -3191,6 +3213,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "etagere"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ecb5c40d5683a270e077688f53a99eac51c1cb1ae5ba63b55590370cb3536bf"
+dependencies = [
+ "euclid",
+]
+
+[[package]]
 name = "euclid"
 version = "0.22.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4481,8 +4512,7 @@ dependencies = [
 [[package]]
 name = "image_filters_types"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9184827780888f6c0f664837d309ac0d2f0adb05f313ab9fed8a00c0bb042f21"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "kurbo",
  "peniko",
@@ -6562,8 +6592,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ef9aa28c424400987095646b84e4cea94493d885b38276a800f136557391c01"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6575,6 +6604,11 @@ dependencies = [
  "pixels",
  "raw-window-handle",
 ]
+
+[[package]]
+name = "pixmap"
+version = "0.1.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 
 [[package]]
 name = "pkg-config"
@@ -8105,8 +8139,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f158084076e7d816863157a039a4159e08a7ff4b47c6682eb5e2bd16223fae3e"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -10227,8 +10260,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "838a8b69a04e949176956b4afa8d13c28f0ce64ce184aa6aa6cd4950834617ea"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=46fb042a7685d764fb83f30253f147001e6cff52#46fb042a7685d764fb83f30253f147001e6cff52"
 dependencies = [
  "futures-intrusive",
  "objc2-core-graphics",
