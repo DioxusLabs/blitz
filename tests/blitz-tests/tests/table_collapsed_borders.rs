@@ -31,3 +31,18 @@ fn table_border_wider_than_the_cells_borders_sets_the_table_edge() {
     let table = harness.layout_rect("#t");
     assert_eq!((table.width, table.height), (24.0, 24.0));
 }
+
+#[test]
+fn a_cell_without_borders_does_not_narrow_the_collapsed_borders() {
+    // The first cell has no border and the second a 2px one. The row's top
+    // and bottom borders take the wider (2px), so the table is 14px tall, as
+    // in Chromium. Taking the borders from the first cell alone gave 10px.
+    let harness = Harness::from_html(
+        "<html><body style='margin:0'>\
+         <table id=t style='border-collapse:collapse'><tr>\
+         <td style='padding:0'><div style='width:20px; height:10px'></div></td>\
+         <td style='padding:0; border:2px solid black'><div style='width:20px; height:10px'></div></td>\
+         </tr></table></body></html>",
+    );
+    assert_eq!(harness.layout_rect("#t").height, 14.0);
+}

@@ -385,21 +385,40 @@ pub(crate) fn build_table_context(
                 height: style_helpers::length(spacing_y),
             }
         }
-        BorderCollapse::Collapse => first_cell_border
-            .as_ref()
-            .map(|border| {
-                let x = side_width(border.border_left_width.0, border.border_left_style).max(
-                    side_width(border.border_right_width.0, border.border_right_style),
-                );
-                let y = side_width(border.border_top_width.0, border.border_top_style).max(
-                    side_width(border.border_bottom_width.0, border.border_bottom_style),
-                );
-                taffy::Size {
-                    width: style_helpers::length(x),
-                    height: style_helpers::length(y),
-                }
-            })
-            .unwrap_or(taffy::Size::ZERO.map(style_helpers::length)),
+        // The grid has one gap per axis, so every collapsed border takes the widest cell
+        // border (a border between two cells resolves to the wider one, so a cell
+        // without borders next to cells with borders does not narrow the lines).
+        BorderCollapse::Collapse => {
+            let (mut x, mut y) = (0.0f32, 0.0f32);
+            for cell in &cells {
+                let Some(styles) = doc.nodes[cell.node_id].primary_styles() else {
+                    continue;
+                };
+                let border = styles.get_border();
+                x = x
+                    .max(side_width(
+                        border.border_left_width.0,
+                        border.border_left_style,
+                    ))
+                    .max(side_width(
+                        border.border_right_width.0,
+                        border.border_right_style,
+                    ));
+                y = y
+                    .max(side_width(
+                        border.border_top_width.0,
+                        border.border_top_style,
+                    ))
+                    .max(side_width(
+                        border.border_bottom_width.0,
+                        border.border_bottom_style,
+                    ));
+            }
+            taffy::Size {
+                width: style_helpers::length(x),
+                height: style_helpers::length(y),
+            }
+        }
     };
 
     if border_collapse == BorderCollapse::Collapse {
