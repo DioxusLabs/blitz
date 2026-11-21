@@ -1,7 +1,7 @@
 use crate::Document;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventDispatchSource, EventState,
-    Point, PointerCoords, UiEvent,
+    HitResult, Point, PointerCoords, UiEvent,
 };
 use blitz_traits::node_id::NodeId;
 
@@ -290,7 +290,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                     DomEventData::AppleStandardKeybinding(data),
                     EventDispatchSource::Input,
                 );
-                self.run_default_action(&mut dom_event, false);
+                self.run_default_action(&mut dom_event, None, false);
                 self.flush_pending_events();
             }
         };
@@ -350,7 +350,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let target = ptr_event.target;
 
         let mut event_state = EventState::default();
-        event_state = self.run_handler_event(&mut ptr_event, event_state);
+        let (state, hit) = self.run_handler_event(&mut ptr_event, event_state);
+        event_state = state;
 
         // Generate the corresponding compatibility event (mouse events for the
         // mouse, touch events for fingers and pen/stylus input) and expose it to
@@ -362,21 +363,21 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 if let Some(make_mouse_data) = make_mouse_data {
                     let mut mouse_event =
                         DomEvent::new(target, make_mouse_data(data), EventDispatchSource::Input);
-                    event_state = self.run_handler_event(&mut mouse_event, event_state);
+                    event_state = self.run_handler_event(&mut mouse_event, event_state).0;
                 }
             } else if data.is_finger() || data.is_pen() {
                 let mut touch_event =
                     DomEvent::new(target, make_touch_data(data), EventDispatchSource::Input);
-                event_state = self.run_handler_event(&mut touch_event, event_state);
+                event_state = self.run_handler_event(&mut touch_event, event_state).0;
             }
         }
 
-        self.run_default_action(&mut ptr_event, event_state.is_cancelled());
+        self.run_default_action(&mut ptr_event, hit, event_state.is_cancelled());
     }
 
     fn dispatch_event(&mut self, mut event: DomEvent) {
-        let event_state = self.run_handler_event(&mut event, EventState::default());
-        self.run_default_action(&mut event, event_state.is_cancelled());
+        let (event_state, hit) = self.run_handler_event(&mut event, EventState::default());
+        self.run_default_action(&mut event, hit, event_state.is_cancelled());
     }
 
     /// Dispatch the events queued on the document (see [`BaseDocument::queue_event`]) until
@@ -414,18 +415,28 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         target: NodeId,
         coords: &PointerCoords,
         element: &mut Point<f32>,
-    ) {
-        if let Some(rect) = self.doc.inner().get_client_bounding_rect(target) {
+    ) -> Option<HitResult> {
+        let doc = self.doc.inner();
+        let hit = doc
+            .hit(coords.page_x, coords.page_y)
+            .filter(|hit| hit.node_id == target);
+        if let Some(hit) = hit {
+            element.x = hit.x;
+            element.y = hit.y;
+            return Some(hit);
+        }
+        if let Some(rect) = doc.get_client_bounding_rect(target) {
             element.x = coords.client_x - rect.x as f32;
             element.y = coords.client_y - rect.y as f32;
         }
+        None
     }
 
     fn run_handler_event(
         &mut self,
         event: &mut DomEvent,
         initial_event_state: EventState,
-    ) -> EventState {
+    ) -> (EventState, Option<HitResult>) {
         let chain = if event.bubbles {
             let doc = self.doc.inner();
             doc.node_chain(event.target)
@@ -433,7 +444,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             vec![event.target]
         };
 
-        match &mut event.data {
+        let hit = match &mut event.data {
             DomEventData::PointerMove(data)
             | DomEventData::PointerDown(data)
             | DomEventData::PointerUp(data)
@@ -461,22 +472,26 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             DomEventData::Wheel(data) => {
                 self.adjust_element_coords(event.target, &data.coords, &mut data.element)
             }
-            _ => {}
-        }
+            _ => None,
+        };
 
         let mut event_state = initial_event_state;
         self.handler
             .handle_event(&chain, event, self.doc, &mut event_state);
 
-        event_state
+        (event_state, hit)
     }
 
     /// Hand an event to the document once its handlers have run. This happens for every
     /// event, including one whose default action was prevented: the document decides what,
     /// if anything, it still has to do with it.
-    fn run_default_action(&mut self, event: &mut DomEvent, default_prevented: bool) {
-        self.doc
-            .inner_mut()
-            .handle_dom_event(event, default_prevented);
+    fn run_default_action(
+        &mut self,
+        event: &mut DomEvent,
+        hit: Option<HitResult>,
+        default_prevented: bool,
+    ) {
+        let mut doc = self.doc.inner_mut();
+        super::handle_dom_event(&mut doc, event, hit, default_prevented);
     }
 }
