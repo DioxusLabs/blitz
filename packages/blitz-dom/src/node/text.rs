@@ -5,6 +5,7 @@ use blitz_traits::{
 };
 use keyboard_types::{Key, Modifiers, NamedKey};
 use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
+use std::num::NonZeroUsize;
 
 use crate::util::ACTION_MOD;
 
@@ -830,10 +831,41 @@ impl TextInputData {
                 before_bytes,
                 after_bytes,
             } => {
-                let _ = before_bytes;
-                let _ = after_bytes;
-                // TODO
-                None
+                // The byte counts are relative to the text outside the preedit, so remove the
+                // preedit, delete around the selection, then put the preedit back.
+                let preedit = driver
+                    .editor
+                    .raw_compose()
+                    .clone()
+                    .filter(|range| !range.is_empty());
+                let preedit = preedit.map(|range| {
+                    let selection = driver.editor.raw_selection().text_range();
+                    let cursor = driver.editor.is_cursor_visible().then(|| {
+                        (
+                            selection.start.saturating_sub(range.start),
+                            selection.end.saturating_sub(range.start),
+                        )
+                    });
+                    (driver.editor.raw_text()[range].to_string(), cursor)
+                });
+                if preedit.is_some() {
+                    driver.clear_compose();
+                }
+
+                let len_before = driver.editor.raw_text().len();
+                if let Some(after_bytes) = NonZeroUsize::new(after_bytes) {
+                    driver.delete_bytes_after_selection(after_bytes);
+                }
+                if let Some(before_bytes) = NonZeroUsize::new(before_bytes) {
+                    driver.delete_bytes_before_selection(before_bytes);
+                }
+                let changed = driver.editor.raw_text().len() != len_before;
+
+                if let Some((text, cursor)) = preedit {
+                    driver.set_compose(&text, cursor);
+                }
+
+                changed.then_some(GeneratedTextInputEvent::Input)
             }
         }
     }
@@ -865,6 +897,90 @@ mod tests {
                 assert_eq!(input.editor.text(), committed);
             }
         }
+    }
+
+    fn delete_surrounding(before_bytes: usize, after_bytes: usize) -> BlitzImeEvent {
+        BlitzImeEvent::DeleteSurrounding {
+            before_bytes,
+            after_bytes,
+        }
+    }
+
+    /// An input holding `text` with the caret at byte `caret`.
+    fn input_with_caret(
+        text: &str,
+        caret: usize,
+        font_ctx: &mut FontContext,
+        layout_ctx: &mut LayoutContext<TextBrush>,
+    ) -> TextInputData {
+        let mut input = TextInputData::new(false);
+        input.editor.set_text(text);
+        input
+            .editor
+            .driver(font_ctx, layout_ctx)
+            .move_to_byte(caret);
+        input
+    }
+
+    fn caret(input: &TextInputData) -> std::ops::Range<usize> {
+        input.editor.raw_selection().text_range()
+    }
+
+    #[test]
+    fn ime_delete_surrounding_deletes_around_the_caret() {
+        let mut font_ctx = FontContext::new();
+        let mut layout_ctx = LayoutContext::new();
+        let mut input = input_with_caret("abcdef", 3, &mut font_ctx, &mut layout_ctx);
+
+        let generated =
+            input.apply_ime_event(&mut font_ctx, &mut layout_ctx, delete_surrounding(1, 2));
+
+        assert!(matches!(generated, Some(GeneratedTextInputEvent::Input)));
+        assert_eq!(input.editor.text(), "abf");
+        assert_eq!(caret(&input), 2..2);
+    }
+
+    #[test]
+    fn ime_delete_surrounding_clamps_to_the_text() {
+        let mut font_ctx = FontContext::new();
+        let mut layout_ctx = LayoutContext::new();
+        let mut input = input_with_caret("hello", 5, &mut font_ctx, &mut layout_ctx);
+
+        input.apply_ime_event(&mut font_ctx, &mut layout_ctx, delete_surrounding(10, 10));
+
+        assert_eq!(input.editor.text(), "");
+    }
+
+    #[test]
+    fn ime_delete_surrounding_keeps_the_preedit() {
+        let mut font_ctx = FontContext::new();
+        let mut layout_ctx = LayoutContext::new();
+        let mut input = input_with_caret("abc", 3, &mut font_ctx, &mut layout_ctx);
+        input.apply_ime_event(
+            &mut font_ctx,
+            &mut layout_ctx,
+            BlitzImeEvent::Preedit("xy".into(), Some((1, 1))),
+        );
+
+        // The deletion counts bytes outside the preedit.
+        input.apply_ime_event(&mut font_ctx, &mut layout_ctx, delete_surrounding(1, 0));
+
+        assert_eq!(input.editor.raw_text(), "abxy");
+        assert_eq!(input.editor.raw_compose().clone(), Some(2..4));
+        assert_eq!(caret(&input), 3..3);
+    }
+
+    #[test]
+    fn ime_delete_surrounding_of_nothing_is_not_an_input() {
+        let mut font_ctx = FontContext::new();
+        let mut layout_ctx = LayoutContext::new();
+        let mut input = input_with_caret("abc", 0, &mut font_ctx, &mut layout_ctx);
+
+        let generated =
+            input.apply_ime_event(&mut font_ctx, &mut layout_ctx, delete_surrounding(1, 0));
+
+        assert!(generated.is_none());
+        assert_eq!(input.editor.text(), "abc");
     }
 
     #[test]
