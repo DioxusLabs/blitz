@@ -58,6 +58,9 @@ impl BaseDocument {
             return;
         }
 
+        self.last_animation_time = current_time_for_animations;
+        self.resolve_generation = self.resolve_generation.wrapping_add(1);
+
         self.resolve_scroll_animation();
 
         // Drop scrollbar-activity entries whose fade-out has finished (also

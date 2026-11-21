@@ -172,6 +172,27 @@ impl crate::document::BaseDocument {
                 data.may_have_animations.store(false, Ordering::Relaxed);
             }
         }
+        self.active_animation_nodes.clear();
+        self.active_transition_nodes.clear();
+        for (key, state) in sets.iter() {
+            let node_id = NodeId::from_u64(key.node.id() as u64);
+            if state.animations.iter().any(|animation| {
+                matches!(
+                    animation.state,
+                    AnimationState::Pending | AnimationState::Running
+                )
+            }) {
+                self.active_animation_nodes.insert(node_id);
+            }
+            if state.transitions.iter().any(|transition| {
+                matches!(
+                    transition.state,
+                    AnimationState::Pending | AnimationState::Running
+                )
+            }) {
+                self.active_transition_nodes.insert(node_id);
+            }
+        }
         self.has_active_animations = sets.values().any(|state| state.needs_animation_ticks());
 
         // Maybe run garbage collection. Stylo has internal to determine whether to run or not.
