@@ -273,6 +273,8 @@ pub struct BaseDocument {
     pub(crate) mousedown_node_id: Option<NodeId>,
     /// The last time a mousedown was made (for double-click detection)
     pub(crate) last_mousedown_time: Option<Instant>,
+    /// The button of the last mousedown: a click with another button starts a new count
+    pub(crate) last_mousedown_button: Option<blitz_traits::events::MouseEventButton>,
     /// The position where mousedown occurred (for selection drags and double-click detection)
     pub(crate) mousedown_position: taffy::Point<f32>,
     /// How many clicks have been made in quick succession
@@ -524,6 +526,7 @@ impl BaseDocument {
             #[cfg(feature = "devtools")]
             devtools_title: None,
             last_mousedown_time: None,
+            last_mousedown_button: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
             drag_mode: DragMode::None,
@@ -2702,6 +2705,28 @@ impl BaseDocument {
         let inline_root = hit_node.inline_root_ancestor()?;
         let byte_offset = inline_root.text_offset_at_point(hit.x, hit.y)?;
         Some((inline_root.id, byte_offset))
+    }
+
+    /// Selects the word (`clicks == 2`) or the line between hard breaks (any other count)
+    /// at a point, as a double or triple click does. Returns false when there is no
+    /// selectable text there.
+    pub fn select_text_unit_at_point(&mut self, x: f32, y: f32, clicks: u16) -> bool {
+        let Some((root, range)) = self
+            .hit(x, y)
+            .and_then(|hit| {
+                let node = self.get_node(hit.node_id)?;
+                if !node.is_user_selectable() {
+                    return None;
+                }
+                let root = node.inline_root_ancestor()?;
+                Some((root.id, root.text_unit_at_point(hit.x, hit.y, clicks)?))
+            })
+            .filter(|(_, range)| !range.is_empty())
+        else {
+            return false;
+        };
+        self.set_text_selection(root, range.start, root, range.end);
+        true
     }
 
     /// Set the text selection range (creates a new selection from anchor to focus)

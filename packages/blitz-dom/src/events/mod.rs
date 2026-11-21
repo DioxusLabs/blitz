@@ -119,7 +119,7 @@ pub(crate) fn handle_dom_event(
             // The pointer has pressed or lifted whether or not the page wanted the default
             // action.
             DomEventData::PointerDown(data) => {
-                record_pointerdown(doc, data.page_x(), data.page_y());
+                record_pointerdown(doc, data.page_x(), data.page_y(), data.button);
             }
             DomEventData::PointerUp(data) => {
                 handle_pointerup(doc, event.target, data, true);
@@ -202,7 +202,7 @@ pub(crate) fn handle_dom_event(
             // Do nothing (handled in PointerMove)
         }
         DomEventData::PointerDown(event) => {
-            record_pointerdown(doc, event.page_x(), event.page_y());
+            record_pointerdown(doc, event.page_x(), event.page_y(), event.button);
             handle_pointerdown(
                 doc,
                 target_node_id,
