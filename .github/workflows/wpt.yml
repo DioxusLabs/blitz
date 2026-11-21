@@ -69,31 +69,27 @@ jobs:
           zstd -22 --long --ultra -o ./sites/gh-pages/wptscores.json.zst ./sites/gh-pages/wptscores.json
       - name: Fetch main-branch results
         run: curl https://dioxuslabs.github.io/blitz/wptreport.json -o ./wpt/output/main-wptreport.json
-      - name: Compare WPT revisions
+      - name: Diff WPT results
+        run: |
+          wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json | tee ./wpt/output/wptdiff.txt
+          wpt diff --verbose --format json ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptdiff.json
+          python3 ./.github/scripts/wpt_area_changes.py ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptareas.json
+      - name: Check WPT revision mismatch
         if: github.event_name == 'pull_request'
-        id: wpt-revisions
         run: |
           python3 - <<'PY'
           import json
-          import os
 
           with open('./wpt/output/wptreport.json') as file:
               pr_revision = json.load(file)['run_info']['revision']
           with open('./wpt/output/main-wptreport.json') as file:
               main_revision = json.load(file)['run_info']['revision']
-          mismatch = pr_revision != main_revision
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as file:
-              file.write(f'mismatch={str(mismatch).lower()}\n')
-          if mismatch:
+          if pr_revision != main_revision:
+              with open('./wpt/output/wptdiff.json') as file:
+                  diff = json.load(file)
               with open('./wpt/output/wptdiff.json', 'w') as file:
-                  json.dump({'revision_mismatch': {'pr': pr_revision, 'main': main_revision}}, file)
+                  json.dump({'revision_mismatch': {'pr': pr_revision, 'main': main_revision}, 'diff': diff}, file)
           PY
-      - name: Diff WPT results
-        if: steps.wpt-revisions.outputs.mismatch != 'true'
-        run: |
-          wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json | tee ./wpt/output/wptdiff.txt
-          wpt diff --verbose --format json ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptdiff.json
-          python3 ./.github/scripts/wpt_area_changes.py ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptareas.json
       - name: Render results in step summary
         if: github.event_name == 'pull_request'
         env:
