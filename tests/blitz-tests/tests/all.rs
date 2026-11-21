@@ -56,6 +56,7 @@ mod lang_attribute;
 mod line_break;
 mod link_cursor;
 mod link_rel_attribute;
+mod logical_viewport_size;
 mod native_pointer_capture;
 mod native_pointer_id;
 mod native_wheel_data;

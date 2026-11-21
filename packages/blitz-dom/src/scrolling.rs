@@ -426,14 +426,14 @@ impl BaseDocument {
                 if let Some(root) = self.try_root_element() {
                     let root_id = root.id;
                     let layout = *root.final_layout();
-                    let scale = self.viewport.scale() as f64;
+                    let (client_width, client_height) = self.viewport.logical_size();
                     let event = BlitzScrollEvent {
                         scroll_top: offset.y,
                         scroll_left: offset.x,
                         scroll_width: layout.size.width.max(root.scroll_width()) as i32,
                         scroll_height: layout.size.height.max(root.scroll_height()) as i32,
-                        client_width: (self.viewport.window_size.0 as f64 / scale) as i32,
-                        client_height: (self.viewport.window_size.1 as f64 / scale) as i32,
+                        client_width: client_width as i32,
+                        client_height: client_height as i32,
                     };
                     self.queue_ua_event(root_id, DomEventData::Scroll(event));
                 }
@@ -558,9 +558,8 @@ impl BaseDocument {
                     }
                     None => (0.0, 0.0),
                 };
-                let scale = self.viewport.scale() as f64;
-                let window_width = self.viewport.window_size.0 as f64 / scale;
-                let window_height = self.viewport.window_size.1 as f64 / scale;
+                let (window_width, window_height) = self.viewport.logical_size();
+                let (window_width, window_height) = (window_width as f64, window_height as f64);
                 let max = Point {
                     x: (content_width - window_width).max(0.0),
                     y: (content_height - window_height).max(0.0),
@@ -700,9 +699,8 @@ impl BaseDocument {
         let Some(root_id) = self.try_root_element().map(|root| root.id) else {
             return;
         };
-        let scale = self.viewport.scale() as f64;
-        let viewport_width = self.viewport.window_size.0 as f64 / scale;
-        let viewport_height = self.viewport.window_size.1 as f64 / scale;
+        let (viewport_width, viewport_height) = self.viewport.logical_size();
+        let (viewport_width, viewport_height) = (viewport_width as f64, viewport_height as f64);
         let x = Self::aligned_scroll_offset(
             self.viewport_scroll().x,
             viewport_width,

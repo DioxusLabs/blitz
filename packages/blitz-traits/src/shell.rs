@@ -86,6 +86,12 @@ pub struct Viewport {
     pub window_size: (u32, u32),
     pub hidpi_scale: f32,
     pub zoom: f32,
+    /// An exact viewport size in CSS pixels, which takes the place of
+    /// `window_size / scale` when set. A window has a whole number of
+    /// physical pixels, but a paged medium does not: the page area of an A4
+    /// page with 18mm margins is 657.6px wide, and a browser lays it out at
+    /// that width. See [`set_logical_size`](Self::set_logical_size).
+    pub logical_size_override: Option<(f32, f32)>,
 }
 
 impl Default for Viewport {
@@ -95,6 +101,7 @@ impl Default for Viewport {
             hidpi_scale: 1.0,
             zoom: 1.0,
             color_scheme: ColorScheme::Light,
+            logical_size_override: None,
         }
     }
 }
@@ -111,6 +118,7 @@ impl Viewport {
             hidpi_scale: scale_factor,
             zoom: 1.0,
             color_scheme,
+            logical_size_override: None,
         }
     }
 
@@ -123,14 +131,40 @@ impl Viewport {
         self.scale() as f64
     }
 
-    /// The viewport size in CSS pixels (physical window size divided by the
-    /// total scale factor)
+    /// The viewport size in CSS pixels: the exact size set with
+    /// [`set_logical_size`](Self::set_logical_size), or else the physical
+    /// window size divided by the total scale factor
     pub fn logical_size(&self) -> (f32, f32) {
+        if let Some(size) = self.logical_size_override {
+            return size;
+        }
         let scale = self.scale();
         (
             self.window_size.0 as f32 / scale,
             self.window_size.1 as f32 / scale,
         )
+    }
+
+    /// Set an exact viewport size in CSS pixels, which may be fractional
+    /// (a page area when printing), and a matching `window_size` (rounded
+    /// up to whole physical pixels). Layout, media queries and viewport
+    /// units then use the exact size.
+    ///
+    /// Assigning `window_size` directly afterwards does not clear it; call
+    /// [`clear_logical_size`](Self::clear_logical_size) for that.
+    pub fn set_logical_size(&mut self, width: f32, height: f32) {
+        let scale = self.scale();
+        self.window_size = (
+            (width * scale).ceil() as u32,
+            (height * scale).ceil() as u32,
+        );
+        self.logical_size_override = Some((width, height));
+    }
+
+    /// Size the viewport from `window_size` again, dropping an exact size
+    /// set with [`set_logical_size`](Self::set_logical_size)
+    pub fn clear_logical_size(&mut self) {
+        self.logical_size_override = None;
     }
 
     /// Set hidpi scale factor
@@ -161,4 +195,20 @@ impl Viewport {
 pub struct FileDialogFilter {
     pub name: String,
     pub extensions: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn logical_size_keeps_a_fractional_size() {
+        let mut viewport = Viewport::new(0, 0, 2.0, ColorScheme::Light);
+        viewport.set_logical_size(657.6, 986.5);
+        assert_eq!(viewport.logical_size(), (657.6, 986.5));
+        assert_eq!(viewport.window_size, (1316, 1973));
+
+        viewport.clear_logical_size();
+        assert_eq!(viewport.logical_size(), (658.0, 986.5));
+    }
 }
