@@ -14,7 +14,9 @@ default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", 
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
-svg = ["blitz-dom/svg", "blitz-paint/svg"]
+svg = ["svg-usvg"]
+svg-usvg = ["blitz-dom/svg-usvg", "blitz-paint/svg-usvg"]
+svg-native = ["blitz-dom/svg-native", "blitz-paint/svg-native"]
 floats = ["blitz-dom/floats"]
 autofocus = ["blitz-dom/autofocus"]
 system-fonts = ["blitz-dom/system-fonts"]
