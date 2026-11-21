@@ -4,6 +4,7 @@
 use blitz_traits::events::{BlitzScrollEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
 use style::values::computed::Overflow;
+use style::values::specified::box_::DisplayInside;
 use stylo_taffy::CopyStyleGetters;
 use web_time::{SystemTime, UNIX_EPOCH};
 
@@ -36,6 +37,10 @@ fn node_scroll_range(node: &Node, include_hidden: bool) -> (Point<f64>, Point<f6
             y: if can_y_scroll { max.y } else { 0.0 },
         },
     )
+}
+
+fn can_scroll_axis(current: f64, min: f64, max: f64, delta: f64) -> bool {
+    (delta < 0.0 && current > min) || (delta > 0.0 && current < max)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -253,9 +258,9 @@ impl BaseDocument {
         let target = self.canonical_scroll_target(request.target);
 
         // Text inputs and sub-documents scroll their own content rather than an overflow
-        // scrollport, so they only take part in the chained (user-initiated) path.
-        if let (ScrollTarget::Node(node_id), ScrollAmount::By(delta), ScrollOverflow::Chain) =
-            (target, request.amount, request.overflow)
+        // scrollport, so they only take part in the user-initiated path.
+        if let (ScrollTarget::Node(node_id), ScrollAmount::By(delta), ScrollSource::User) =
+            (target, request.amount, request.source)
         {
             if let Some(has_changed) = self.scroll_inner_content_by(node_id, delta, request) {
                 return has_changed;
@@ -323,6 +328,7 @@ impl BaseDocument {
             let request = ScrollRequest {
                 target,
                 amount: ScrollAmount::By(delta),
+                overflow: ScrollOverflow::Chain,
                 ..request
             };
             return Some(sub_doc.scroll(request));
@@ -350,23 +356,25 @@ impl BaseDocument {
 
         let has_changed = remainder != delta;
 
-        // Text inputs scroll their own content, so they need no scroll container check.
-        let contains = self.nodes[node_id].contains_overscroll();
-        if contains.x {
-            remainder.x = 0.0;
-        }
-        if contains.y {
-            remainder.y = 0.0;
-        }
+        if request.overflow == ScrollOverflow::Chain {
+            // Text inputs scroll their own content, so they need no scroll container check.
+            let contains = self.nodes[node_id].contains_overscroll();
+            if contains.x {
+                remainder.x = 0.0;
+            }
+            if contains.y {
+                remainder.y = 0.0;
+            }
 
-        if remainder != Point::ZERO {
-            if let Some(next) = self.next_scroller_in_chain(ScrollTarget::Node(node_id)) {
-                let request = ScrollRequest {
-                    target: next,
-                    amount: ScrollAmount::By(remainder),
-                    ..request
-                };
-                return Some(has_changed | self.scroll(request));
+            if remainder != Point::ZERO {
+                if let Some(next) = self.next_scroller_in_chain(ScrollTarget::Node(node_id)) {
+                    let request = ScrollRequest {
+                        target: next,
+                        amount: ScrollAmount::By(remainder),
+                        ..request
+                    };
+                    return Some(has_changed | self.scroll(request));
+                }
             }
         }
 
@@ -509,25 +517,149 @@ impl BaseDocument {
         })
     }
 
-    pub(crate) fn scroll_chain_by(
+    pub(crate) fn scroll_target_by(
         &mut self,
-        anchor_node_id: Option<NodeId>,
+        target: ScrollTarget,
         scroll_x: f64,
         scroll_y: f64,
+        overflow: ScrollOverflow,
     ) -> bool {
         self.scroll(ScrollRequest {
-            target: anchor_node_id.map_or(ScrollTarget::Viewport, ScrollTarget::Node),
+            target,
             amount: ScrollAmount::By(Point {
                 x: -scroll_x,
                 y: -scroll_y,
             }),
-            overflow: ScrollOverflow::Chain,
+            overflow,
             source: ScrollSource::User,
             behavior: ScrollBehavior::Instant,
             // A user-initiated scroll aborts any smooth scroll in progress, so that the
             // two do not fight over the scroll offset for the rest of the animation.
             interrupt_animation: true,
         })
+    }
+
+    pub(crate) fn scroll_chain_by(
+        &mut self,
+        anchor_node_id: Option<NodeId>,
+        scroll_x: f64,
+        scroll_y: f64,
+    ) -> bool {
+        self.scroll_target_by(
+            anchor_node_id.map_or(ScrollTarget::Viewport, ScrollTarget::Node),
+            scroll_x,
+            scroll_y,
+            ScrollOverflow::Chain,
+        )
+    }
+
+    pub(crate) fn is_valid_scroll_target(&self, target: ScrollTarget) -> bool {
+        let ScrollTarget::Node(node_id) = target else {
+            return true;
+        };
+        let Some(node) = self.nodes.get(node_id) else {
+            return false;
+        };
+        if !node.has_boxes() {
+            return false;
+        }
+        let mut current = node.parent;
+        while let Some(parent_id) = current {
+            let Some(parent) = self.nodes.get(parent_id) else {
+                return false;
+            };
+            if !parent.flags.is_in_document()
+                || parent
+                    .display_style()
+                    .is_some_and(|d| d.inside() == DisplayInside::None)
+            {
+                return false;
+            }
+            current = parent.parent;
+        }
+        true
+    }
+
+    fn viewport_can_scroll(&self, delta: Point<f64>) -> bool {
+        let (current, min, max) = self.scroll_state(ScrollTarget::Viewport, false);
+        (delta.x != 0.0 && can_scroll_axis(current.x, min.x, max.x, delta.x))
+            || (delta.y != 0.0 && can_scroll_axis(current.y, min.y, max.y, delta.y))
+    }
+
+    fn node_accepts_wheel_scroll(&self, node_id: NodeId, delta: Point<f64>) -> bool {
+        let Some(node) = self.nodes.get(node_id) else {
+            return false;
+        };
+
+        if let Some(sub_doc) = node.subdoc() {
+            let sub = sub_doc.inner();
+            let sub_target = sub.resolve_wheel_scroll_target(sub.get_hover_node_id(), delta);
+            let sub_can_scroll = match sub_target {
+                ScrollTarget::Node(id) => sub.node_accepts_wheel_scroll(id, delta),
+                ScrollTarget::Viewport => sub.viewport_can_scroll(delta),
+            };
+            let contains = node.contains_overscroll();
+            return sub_can_scroll
+                || (delta.x != 0.0 && contains.x)
+                || (delta.y != 0.0 && contains.y);
+        }
+
+        if let Some(input) = node.element_data().and_then(|el| el.text_input_data()) {
+            let layout = node.final_layout();
+            let max_offset = input
+                .max_scroll_offset(layout.content_box_width(), layout.content_box_height())
+                as f64;
+            let current = input.scroll_offset as f64;
+            let contains = node.contains_overscroll();
+            let accepts_x = delta.x != 0.0
+                && ((!input.is_multiline && can_scroll_axis(current, 0.0, max_offset, delta.x))
+                    || contains.x);
+            let accepts_y = delta.y != 0.0
+                && ((input.is_multiline && can_scroll_axis(current, 0.0, max_offset, delta.y))
+                    || contains.y);
+            return accepts_x || accepts_y;
+        }
+
+        if !node.is_scroll_container() {
+            return false;
+        }
+        let Some(styles) = node.primary_styles() else {
+            return false;
+        };
+        let box_style = styles.get_box();
+        let (min, max) = node_scroll_range(node, false);
+        let current = *node.scroll_offset();
+        let contains = node.contains_overscroll();
+        let accepts_x = delta.x != 0.0
+            && ((box_style.overflow_x.is_scrollable()
+                && can_scroll_axis(current.x, min.x, max.x, delta.x))
+                || contains.x);
+        let accepts_y = delta.y != 0.0
+            && ((box_style.overflow_y.is_scrollable()
+                && can_scroll_axis(current.y, min.y, max.y, delta.y))
+                || contains.y);
+        accepts_x || accepts_y
+    }
+
+    pub(crate) fn resolve_wheel_scroll_target(
+        &self,
+        start: Option<NodeId>,
+        delta: Point<f64>,
+    ) -> ScrollTarget {
+        let mut current = start.map_or(ScrollTarget::Viewport, ScrollTarget::Node);
+        loop {
+            let canonical = self.canonical_scroll_target(current);
+            let ScrollTarget::Node(node_id) = canonical else {
+                return ScrollTarget::Viewport;
+            };
+            if self.node_accepts_wheel_scroll(node_id, delta) {
+                return ScrollTarget::Node(node_id);
+            }
+            let Some(next) = self.next_scroller_in_chain(canonical) else {
+                return ScrollTarget::Viewport;
+            };
+            current = next;
+        }
     }
 
     /// Duration (in milliseconds) of an animated scroll.

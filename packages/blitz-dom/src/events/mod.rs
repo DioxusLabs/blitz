@@ -116,6 +116,10 @@ pub(crate) fn handle_dom_event(
             DomEventData::Wheel(data) => {
                 doc.wheel_gesture.track(data);
             }
+            DomEventData::PointerMove(data) => {
+                doc.wheel_gesture
+                    .on_pointer_move(data.client_x(), data.client_y());
+            }
             // The pointer has pressed or lifted whether or not the page wanted the default
             // action.
             DomEventData::PointerDown(data) => {

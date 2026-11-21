@@ -211,6 +211,8 @@ pub(crate) fn handle_pointermove(
     let y = event.page_y();
     let buttons = event.buttons;
 
+    doc.wheel_gesture
+        .on_pointer_move(event.client_x(), event.client_y());
     let mut changed = doc.set_hover_to(x, y);
 
     // Check if we've moved enough to be considered a selection drag (2px threshold)
