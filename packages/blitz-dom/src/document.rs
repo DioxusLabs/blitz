@@ -1094,6 +1094,7 @@ impl BaseDocument {
         if drag_references_node {
             self.drag_mode = DragMode::None;
         }
+        self.wheel_gesture.clear_latched_node(node_id);
         self.scrollbar_activity.remove(&node_id);
     }
 
