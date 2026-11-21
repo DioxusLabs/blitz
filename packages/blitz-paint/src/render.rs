@@ -466,10 +466,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         }
 
-        // Hide elements with a visibility style other than visible
-        if styles.get_inherited_box().visibility != StyloVisibility::Visible {
-            return;
-        }
+        // `visibility: hidden`/`collapse` (CSS Display §4) makes the element's own
+        // box invisible -- background, borders, shadows, replaced content, its own
+        // text -- but not its descendants: a descendant with `visibility: visible`
+        // is still painted. So keep going, painting only the parts that are not
+        // the element's own (children, and visible runs of its inline content).
+        let visible = styles.get_inherited_box().visibility == StyloVisibility::Visible;
 
         let effects = styles.get_effects();
         let opacity = effects.opacity;
@@ -619,9 +621,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             None,
         );
 
-        let paints_own_box = !node.is_inline_with_only_block_children();
+        let paints_own_box = visible && !node.is_inline_with_only_block_children();
 
-        cx.draw_outline(scene);
+        if visible {
+            cx.draw_outline(scene);
+        }
         if paints_own_box {
             cx.draw_outset_box_shadow(scene);
         }
@@ -684,8 +688,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             cx.draw_background(scene);
                             cx.draw_inset_box_shadow(scene);
                         }
-                        cx.draw_table_row_backgrounds(scene);
-                        cx.draw_table_borders(scene);
+                        if visible {
+                            cx.draw_table_row_backgrounds(scene);
+                            cx.draw_table_borders(scene);
+                        }
                         if paints_own_box {
                             cx.draw_border(scene);
                         }
@@ -716,16 +722,21 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                                 };
 
                                 cx.transform = self.scrolled_transform(node, cx.transform);
-                                cx.draw_image(scene);
-                                #[cfg(feature = "svg")]
-                                cx.draw_svg(scene);
-                                #[cfg(feature = "custom-widget")]
-                                cx.draw_custom_widget(scene);
-                                cx.draw_sub_document(scene);
-                                cx.draw_input(scene);
-                                cx.draw_text_input_text(scene, content_position);
+                                if visible {
+                                    cx.draw_image(scene);
+                                    #[cfg(feature = "svg")]
+                                    cx.draw_svg(scene);
+                                    #[cfg(feature = "custom-widget")]
+                                    cx.draw_custom_widget(scene);
+                                    cx.draw_sub_document(scene);
+                                    cx.draw_input(scene);
+                                    cx.draw_text_input_text(scene, content_position);
+                                }
+                                // Per run: visible descendants' text still paints.
                                 cx.draw_inline_layout(scene, content_position);
-                                cx.draw_marker(scene, content_position);
+                                if visible {
+                                    cx.draw_marker(scene, content_position);
+                                }
                                 cx.draw_children(scene, cx.transform, child_clip_rect);
                             },
                         );
@@ -733,7 +744,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         // Overlay scrollbars, drawn unscrolled above the
                         // clipped content.
                         #[cfg(feature = "scrollbars")]
-                        {
+                        if visible {
                             cx.transform = unscrolled_transform;
                             cx.draw_scrollbars(scene);
                         }

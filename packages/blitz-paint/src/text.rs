@@ -44,6 +44,11 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
                 continue;
             };
+            if styles.get_inherited_box().visibility
+                != style::computed_values::visibility::T::Visible
+            {
+                continue;
+            }
 
             let current_color = styles.clone_color();
             let bg_color = styles
@@ -80,6 +85,8 @@ pub(crate) fn draw_inline_backgrounds<'a>(
 pub(crate) struct RunRecord {
     pub(crate) fill_color: Color,
     pub(crate) shadows: Option<Arc<[ResolvedTextShadow]>>,
+    /// `visibility` of the run (CSS Display §4): an invisible run paints nothing.
+    pub(crate) visible: bool,
 }
 
 /// Reusable scratch storage for drawing text across all inline formatting contexts in a
@@ -182,6 +189,19 @@ pub(crate) fn stroke_text<'a>(
                 stack.push(entry);
             }
 
+            // `visibility` (CSS Display §4): an invisible run paints nothing -- no
+            // glyphs, shadows or decorations -- while visible runs in the same
+            // inline formatting context still paint. It inherits, so the nearest
+            // styled node (a text node has none) gives the run's value.
+            if !run_is_visible(doc, style.brush.id) {
+                run_records.push(RunRecord {
+                    fill_color: Color::TRANSPARENT,
+                    shadows: None,
+                    visible: false,
+                });
+                continue;
+            }
+
             // The glyph colour and `text-shadow` come from the run's own node (the stack
             // top): both inherit, so the innermost inline element already carries the
             // right values. Shadows are not part of a `background-clip: text` mask, so
@@ -196,6 +216,7 @@ pub(crate) fn stroke_text<'a>(
             run_records.push(RunRecord {
                 fill_color,
                 shadows,
+                visible: true,
             });
 
             // Accumulate this run's contribution to each decorating box on its ancestor
@@ -280,6 +301,9 @@ pub(crate) fn stroke_text<'a>(
 
         // Pass 3: the glyphs themselves.
         for (glyph_run, record) in glyph_runs(&line).zip(run_records.iter()) {
+            if !record.visible {
+                continue;
+            }
             draw_glyph_run(scene, &glyph_run, record.fill_color, transform);
         }
 
@@ -307,6 +331,23 @@ pub(crate) fn stroke_text<'a>(
             );
         }
     }
+}
+
+/// Whether a glyph run is visible: the `visibility` of the nearest node with
+/// computed styles (a text node has none and inherits from its parent).
+fn run_is_visible(doc: &BaseDocument, node_id: NodeId) -> bool {
+    let mut walk = Some(node_id);
+    while let Some(id) = walk {
+        let Some(node) = doc.get_node(id) else {
+            return true;
+        };
+        if let Some(styles) = node.primary_styles() {
+            return styles.get_inherited_box().visibility
+                == style::computed_values::visibility::T::Visible;
+        }
+        walk = node.parent;
+    }
+    true
 }
 
 /// The glyph runs of a line, in order (matching the order of the recorded `RunRecord`s).
