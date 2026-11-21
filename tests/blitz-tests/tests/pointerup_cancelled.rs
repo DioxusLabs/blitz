@@ -1,7 +1,7 @@
 //! A script that cancels `pointerup` stops its effects, but the document still sees the
 //! pointer lift: the drag under way ends and the click is dispatched.
 
-use blitz_dom::{Document, DocumentConfig, EventDriver, EventHandler, NodeId, ScrollBehavior};
+use blitz_dom::{DocumentConfig, EventDriver, EventHandler, NodeId, ScrollBehavior};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_test_harness::pointer_event;
 use blitz_traits::events::{
@@ -16,18 +16,18 @@ use std::sync::Arc;
 /// Cancels every `pointerup` and records the names of the events it sees.
 #[derive(Default)]
 struct CancelPointerUp {
-    events: Vec<String>,
+    events: std::cell::RefCell<Vec<String>>,
 }
 
-impl EventHandler for &mut CancelPointerUp {
+impl EventHandler for &CancelPointerUp {
     fn handle_event(
-        &mut self,
+        &self,
         _chain: &[NodeId],
         event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut blitz_dom::EventContext<'_>,
         event_state: &mut EventState,
     ) {
-        self.events.push(event.name().to_string());
+        self.events.borrow_mut().push(event.name().to_string());
         if matches!(event.data, DomEventData::PointerUp(_)) {
             event_state.prevent_default();
         }
@@ -35,7 +35,7 @@ impl EventHandler for &mut CancelPointerUp {
 }
 
 /// Send mouse events as `(y, button held)` steps at x = 97, over the scroller's scrollbar.
-fn mouse(doc: &mut HtmlDocument, handler: &mut CancelPointerUp, steps: &[(f32, bool, u8)]) {
+fn mouse(doc: &mut HtmlDocument, handler: &CancelPointerUp, steps: &[(f32, bool, u8)]) {
     let mut driver = EventDriver::new(doc, handler);
     for &(y, held, kind) in steps {
         let buttons = if held {
@@ -83,13 +83,9 @@ fn scroller_doc() -> HtmlDocument {
 #[test]
 fn a_cancelled_pointerup_still_clicks() {
     let mut doc = scroller_doc();
-    let mut handler = CancelPointerUp::default();
-    mouse(
-        &mut doc,
-        &mut handler,
-        &[(50.0, true, DOWN), (50.0, false, UP)],
-    );
-    assert!(handler.events.iter().any(|name| name == "click"));
+    let handler = CancelPointerUp::default();
+    mouse(&mut doc, &handler, &[(50.0, true, DOWN), (50.0, false, UP)]);
+    assert!(handler.events.borrow().iter().any(|name| name == "click"));
 }
 
 #[test]
@@ -99,10 +95,10 @@ fn a_cancelled_pointerup_still_ends_a_scrollbar_drag() {
     // Scrolling shows the scrollbar, whose thumb then spans y in [36, 68].
     doc.scroll_by(scroller, 0.0, 450.0, ScrollBehavior::Instant);
 
-    let mut handler = CancelPointerUp::default();
+    let handler = CancelPointerUp::default();
     mouse(
         &mut doc,
-        &mut handler,
+        &handler,
         &[(50.0, true, DOWN), (50.0, false, UP), (16.0, false, MOVE)],
     );
     assert_eq!(doc.get_node(scroller).unwrap().scroll_offset().y, 450.0);

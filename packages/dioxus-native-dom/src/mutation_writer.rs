@@ -5,6 +5,8 @@ use crate::{
 use blitz_dom::{BaseDocument, Document, DocumentMutator, Widget};
 use blitz_traits::events::DomEventKind;
 use dioxus_core::{BorrowedAttributeValue, ElementId, WriteMutations};
+use std::cell::Cell;
+use std::rc::Rc;
 use std::str::FromStr as _;
 
 pub(crate) trait RealDom {
@@ -234,13 +236,17 @@ impl<R: RealDom> WriteMutations for StackWriter<'_, R> {
     }
 }
 
+/// The number of vdom event handlers of each kind of event (indexed by `DomEventKind`
+/// discriminant), shared with the event handlers which read it
+pub(crate) type EventHandlerCounts = Rc<[Cell<u32>; 64]>;
+
 /// The state of the Dioxus integration with the RealDom
 #[derive(Debug)]
 pub struct DioxusState {
     /// Stack machine state for applying dioxus mutations
     stack: StackState<NodeId>,
-    /// Count of each handler type (indexed by `DomEventKind` discriminant)
-    pub(crate) event_handler_counts: [u32; 64],
+    /// Count of each handler type
+    pub(crate) event_handler_counts: EventHandlerCounts,
     /// Mounted events queued as elements are mounted
     pub(crate) queued_mounted_events: Vec<ElementId>,
     /// Mutations written by the VirtualDom which have not yet been applied to the document
@@ -252,7 +258,7 @@ impl DioxusState {
     pub fn create(root_id: NodeId) -> Self {
         Self {
             stack: StackState::new(root_id),
-            event_handler_counts: [0; 64],
+            event_handler_counts: Rc::new(std::array::from_fn(|_| Cell::new(0))),
             queued_mounted_events: Vec::new(),
             buffered_mutations: MutationBuffer::default(),
         }
@@ -300,7 +306,7 @@ pub(crate) struct BlitzBackend<'a> {
     /// The realdom mutation handle associated with this writer
     docm: DocumentMutator<'a>,
     /// Count of each handler type, kept so event dispatch can skip unused kinds
-    event_handler_counts: &'a mut [u32; 64],
+    event_handler_counts: &'a [Cell<u32>; 64],
     /// Mounted events queued as elements are mounted
     queued_mounted_events: &'a mut Vec<ElementId>,
 }
@@ -388,14 +394,16 @@ impl RealDom for BlitzBackend<'_> {
 
         if let Ok(kind) = DomEventKind::from_str(name) {
             let idx = kind.discriminant() as usize;
-            self.event_handler_counts[idx] += 1;
+            let count = &self.event_handler_counts[idx];
+            count.set(count.get() + 1);
         }
     }
 
     fn remove_event_listener(&mut self, _node: NodeId, _element_id: ElementId, name: &str) {
         if let Ok(kind) = DomEventKind::from_str(name) {
             let idx = kind.discriminant() as usize;
-            self.event_handler_counts[idx] -= 1;
+            let count = &self.event_handler_counts[idx];
+            count.set(count.get() - 1);
         }
     }
 }

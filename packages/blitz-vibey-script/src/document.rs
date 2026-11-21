@@ -295,7 +295,7 @@ impl ScriptDocument {
     /// event listeners, and Blitz's default actions run unless prevented.
     pub fn dispatch_dom_event(&mut self, event: DomEvent) {
         let handler = ScriptEventHandler {
-            runtime: &mut self.runtime,
+            runtime: RefCell::new(&mut self.runtime),
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_dom_event(event);
@@ -423,7 +423,7 @@ impl Document for ScriptDocument {
 
     fn handle_ui_event(&mut self, event: UiEvent) {
         let handler = ScriptEventHandler {
-            runtime: &mut self.runtime,
+            runtime: RefCell::new(&mut self.runtime),
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
@@ -459,7 +459,7 @@ impl Document for ScriptDocument {
         // `element.focus()`) or by the embedder since it was last driven
         if self.inner.borrow().has_pending_events() {
             let handler = ScriptEventHandler {
-                runtime: &mut self.runtime,
+                runtime: RefCell::new(&mut self.runtime),
             };
             EventDriver::new(&mut self.inner, handler).flush_pending_events();
             ran = true;

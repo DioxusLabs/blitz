@@ -4,14 +4,14 @@ use crate::events::{
     BlitzKeyboardData, NativeConverter, NativeFocusData, NativeFormData, NativePointerData,
     NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
 };
-use crate::mutation_writer::DioxusState;
+use crate::mutation_writer::{DioxusState, EventHandlerCounts};
 use crate::qual_name;
 use blitz_dom::{
-    Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
-    EventHandler, Node,
+    Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventContext,
+    EventDriver, EventHandler, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
-use dioxus_core::{ElementId, Event, VirtualDom};
+use dioxus_core::{ElementId, Event, Runtime, VirtualDom};
 use dioxus_html::{PlatformEventData, set_event_converter};
 use futures_util::task::noop_waker;
 use std::cell::RefCell;
@@ -190,6 +190,8 @@ impl DioxusDocument {
                 let event = Event::new(
                     Rc::new(PlatformEventData::new(Box::new(NodeHandle {
                         doc: Rc::clone(&self.inner),
+                        runtime: self.vdom.runtime(),
+                        event_handler_counts: self.vdom_state.event_handler_counts.clone(),
                         node_id,
                     }))) as Rc<dyn Any>,
                     false,
@@ -263,10 +265,10 @@ impl Document for DioxusDocument {
     }
 
     fn handle_ui_event(&mut self, event: UiEvent) {
-        let handler = DioxusEventHandler {
-            vdom: &mut self.vdom,
-            vdom_state: &mut self.vdom_state,
-        };
+        let handler = DioxusEventHandler::new(
+            self.vdom.runtime(),
+            self.vdom_state.event_handler_counts.clone(),
+        );
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
     }
@@ -278,33 +280,42 @@ impl DioxusDocument {
         if !self.inner.borrow().has_pending_events() {
             return false;
         }
-        let handler = DioxusEventHandler {
-            vdom: &mut self.vdom,
-            vdom_state: &mut self.vdom_state,
-        };
+        let handler = DioxusEventHandler::new(
+            self.vdom.runtime(),
+            self.vdom_state.event_handler_counts.clone(),
+        );
         EventDriver::new(&mut self.inner, handler).flush_pending_events();
         true
     }
 }
 
-pub struct DioxusEventHandler<'v> {
-    vdom: &'v mut VirtualDom,
-    vdom_state: &'v mut DioxusState,
+pub struct DioxusEventHandler {
+    runtime: Rc<Runtime>,
+    event_handler_counts: EventHandlerCounts,
 }
 
-impl EventHandler for DioxusEventHandler<'_> {
+impl DioxusEventHandler {
+    pub(crate) fn new(runtime: Rc<Runtime>, event_handler_counts: EventHandlerCounts) -> Self {
+        Self {
+            runtime,
+            event_handler_counts,
+        }
+    }
+}
+
+impl EventHandler for DioxusEventHandler {
     fn handle_event(
-        &mut self,
+        &self,
         chain: &[NodeId],
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     ) {
+        let doc = ctx.doc();
         // As an optimisation we maintain a count of the total number event handlers of a given type
         // If this count is zero then we can skip handling that kind of event entirely.
         let event_kind_idx = event.data.discriminant() as usize;
-        let event_kind_count = self.vdom_state.event_handler_counts[event_kind_idx];
-        if event_kind_count == 0 {
+        if self.event_handler_counts[event_kind_idx].get() == 0 {
             return;
         }
 
@@ -377,8 +388,7 @@ impl EventHandler for DioxusEventHandler<'_> {
 
         // Handle event in vdom
         let dx_event = Event::new(event_data.clone(), event.bubbles);
-        self.vdom
-            .runtime()
+        self.runtime
             .handle_event(event.name(), dx_event.clone(), id);
 
         // Update event state
@@ -871,5 +881,61 @@ mod tests {
         assert!(is_err(
             mounted.scroll(Default::default(), ScrollBehavior::Instant)
         ));
+    }
+
+    #[test]
+    fn set_focus_dispatches_focus_events_before_returning() {
+        #[derive(Default)]
+        struct State {
+            input: RefCell<Option<Rc<MountedData>>>,
+            log: RefCell<Vec<&'static str>>,
+        }
+
+        fn app() -> Element {
+            let state = consume_context::<Rc<State>>();
+            let (mounted, click, focus) = (state.clone(), state.clone(), state.clone());
+            rsx!(
+                button {
+                    id: "button",
+                    onclick: move |_| {
+                        click.log.borrow_mut().push("click start");
+                        let input = click.input.borrow().clone().unwrap();
+                        drop(input.set_focus(true));
+                        click.log.borrow_mut().push("click end");
+                    },
+                }
+                input {
+                    onmounted: move |event| *mounted.input.borrow_mut() = Some(event.data()),
+                    onfocus: move |_| focus.log.borrow_mut().push("focus"),
+                }
+            )
+        }
+
+        let state = Rc::new(State::default());
+        let vdom = VirtualDom::new(app).with_root_context(Rc::clone(&state));
+        let mut doc = DioxusDocument::new(vdom, DocumentConfig::default());
+        doc.initial_build();
+        poll_until_idle(&mut doc);
+
+        let (button, click) = {
+            let inner = doc.inner.borrow();
+            let button = inner.query_selector("#button").unwrap().unwrap();
+            let click = inner
+                .get_node(button)
+                .unwrap()
+                .synthetic_click_event(Default::default());
+            (button, click)
+        };
+        let handler = DioxusEventHandler::new(
+            doc.vdom.runtime(),
+            doc.vdom_state.event_handler_counts.clone(),
+        );
+        EventDriver::new(&mut doc.inner, handler).dispatch_event(DomEvent::new(
+            button,
+            click,
+            blitz_traits::events::EventDispatchSource::UserAgent,
+        ));
+
+        assert_eq!(*state.log.borrow(), ["click start", "focus", "click end"]);
     }
 }
