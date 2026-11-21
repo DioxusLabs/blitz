@@ -389,6 +389,18 @@ fn resolve_color_stops<T>(
     item_resolver: impl Fn(CSSPixelLength, &T) -> Option<f32>,
 ) -> (f32, f32) {
     let mut hint: Option<f32> = None;
+    let hue_direction = gradient.hue_direction;
+    let subdivide_long_hue = matches!(hue_direction, HueDirection::Longer)
+        && matches!(
+            gradient.interpolation_cs,
+            ColorSpaceTag::Hsl | ColorSpaceTag::Hwb | ColorSpaceTag::Lch | ColorSpaceTag::Oklch
+        );
+    if subdivide_long_hue {
+        // Renderers may pad the gradient with copies of the endpoint colors.
+        // Shorter interpolation keeps those spans solid. Subdivide the actual
+        // color transitions below so they still follow the original long arc.
+        gradient.hue_direction = HueDirection::Shorter;
+    }
 
     for (idx, item) in items.iter().enumerate() {
         let (color, offset) = match item {
@@ -422,8 +434,16 @@ fn resolve_color_stops<T>(
                 .push(peniko::ColorStop { color, offset: 0.0 });
         }
 
+        let stop = ColorStop { color, offset };
         match hint {
-            None => gradient.stops.push(peniko::ColorStop { color, offset }),
+            None => {
+                if idx != 0 && subdivide_long_hue {
+                    if let Some(&previous) = gradient.stops.last() {
+                        append_long_hue_samples(gradient, previous, stop, 1.0);
+                    }
+                }
+                gradient.stops.push(stop);
+            }
             Some(hint) => {
                 let &last_stop = gradient.stops.last().unwrap();
 
@@ -455,18 +475,23 @@ fn resolve_color_stops<T>(
                         offset: last_stop.offset,
                     });
                 } else if hint == (last_stop.offset + offset) / 2.0 {
-                    gradient.stops.push(peniko::ColorStop { color, offset });
+                    if subdivide_long_hue {
+                        append_long_hue_samples(gradient, last_stop, stop, 1.0);
+                    }
+                    gradient.stops.push(stop);
                 } else {
                     let mid_point = (hint - last_stop.offset) / (offset - last_stop.offset);
                     let interpolator = last_stop.color.interpolate(
                         color,
                         gradient.interpolation_cs,
-                        gradient.hue_direction,
+                        hue_direction,
                     );
+                    let first_sample = gradient.stops.len();
+                    let exponent = 0.5f32.log(mid_point);
                     let mut interpolate_stop = |cur_offset: f32| {
                         let relative_offset =
                             (cur_offset - last_stop.offset) / (offset - last_stop.offset);
-                        let multiplier = relative_offset.powf(0.5f32.log(mid_point));
+                        let multiplier = relative_offset.powf(exponent);
                         gradient.stops.push(peniko::ColorStop {
                             color: interpolator.eval(multiplier),
                             offset: cur_offset,
@@ -488,7 +513,12 @@ fn resolve_color_stops<T>(
                             interpolate_stop(hint + (offset - hint) * (i as f32) / 13.0);
                         }
                     }
-                    gradient.stops.push(peniko::ColorStop { color, offset });
+                    if subdivide_long_hue {
+                        append_long_hue_samples(gradient, last_stop, stop, exponent);
+                        gradient.stops[first_sample..]
+                            .sort_by(|a, b| a.offset.total_cmp(&b.offset));
+                    }
+                    gradient.stops.push(stop);
                 }
             }
         }
@@ -518,6 +548,32 @@ fn resolve_color_stops<T>(
             }
         }
         (0.0, 1.0)
+    }
+}
+
+/// Ensure that every renderer segment follows less than half a hue turn,
+/// even when a color hint maps evenly spaced colors to uneven offsets.
+fn append_long_hue_samples(
+    gradient: &mut Gradient,
+    start: ColorStop,
+    end: ColorStop,
+    exponent: f32,
+) {
+    if end.offset <= start.offset {
+        return;
+    }
+    let interpolator =
+        start
+            .color
+            .interpolate(end.color, gradient.interpolation_cs, HueDirection::Longer);
+    for fraction in [0.25_f32, 0.5, 0.75] {
+        let offset = start.offset + (end.offset - start.offset) * fraction.powf(exponent.recip());
+        if start.offset < offset && offset < end.offset {
+            gradient.stops.push(ColorStop {
+                color: interpolator.eval(fraction),
+                offset,
+            });
+        }
     }
 }
 
