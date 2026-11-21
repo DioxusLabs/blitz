@@ -16,3 +16,18 @@ fn collapsed_borders_take_one_border_between_rows() {
     ));
     assert_eq!(harness.layout_rect("#t").height, 34.0);
 }
+
+#[test]
+fn table_border_wider_than_the_cells_borders_sets_the_table_edge() {
+    // A 2px table border around cells without borders: the table's edge is
+    // the table's own border, so two 10px rows make a 24px table, as in
+    // Chromium. Taking the edge from the cells' borders alone gave 20px.
+    let row = "<tr><td style='padding:0'><div style='width:20px; height:10px'></div></td></tr>";
+    let harness = Harness::from_html(&format!(
+        "<html><body style='margin:0'>\
+         <table id=t style='border-collapse:collapse; border:2px solid black'>{row}{row}</table>\
+         </body></html>"
+    ));
+    let table = harness.layout_rect("#t");
+    assert_eq!((table.width, table.height), (24.0, 24.0));
+}

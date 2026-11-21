@@ -403,11 +403,18 @@ pub(crate) fn build_table_context(
     };
 
     if border_collapse == BorderCollapse::Collapse {
+        // The table's edge takes the wider of its own border and the cells'
+        // (as in Chromium, which resolves each outer border to the widest of
+        // the table's and the adjoining cells' borders).
+        let own = style.border.resolve_or_zero(None, resolve_calc_value);
+        let gap = style
+            .gap
+            .resolve_or_zero(taffy::Size::NONE, resolve_calc_value);
         style.border = taffy::Rect {
-            left: style.gap.width,
-            right: style.gap.width,
-            top: style.gap.height,
-            bottom: style.gap.height,
+            left: style_helpers::length(own.left.max(gap.width)),
+            right: style_helpers::length(own.right.max(gap.width)),
+            top: style_helpers::length(own.top.max(gap.height)),
+            bottom: style_helpers::length(own.bottom.max(gap.height)),
         };
     }
 
