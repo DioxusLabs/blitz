@@ -331,3 +331,10 @@ wgpu_context = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+
+[patch.crates-io]
+parley = { git = "https://github.com/DioxusLabs/parley", branch = "devin/1794697008-fontique-ranges" }
+fontique = { git = "https://github.com/DioxusLabs/parley", branch = "devin/1794697008-fontique-ranges" }
+parlance = { git = "https://github.com/DioxusLabs/parley", branch = "devin/1794697008-fontique-ranges" }
+parley_engine = { git = "https://github.com/DioxusLabs/parley", branch = "devin/1794697008-fontique-ranges" }
+parley_data = { git = "https://github.com/DioxusLabs/parley", branch = "devin/1794697008-fontique-ranges" }

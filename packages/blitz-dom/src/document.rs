@@ -1479,10 +1479,9 @@ impl BaseDocument {
                 // reads the family name from the TTF's own metadata, which
                 // means CSS `font-family: 'Avenir Book'` won't match a font
                 // file that internally identifies as `Avenir 45 Book`.
-                let weight_override = overrides.weight.map(parley::fontique::FontWeight::new);
                 let info_override = parley::fontique::FontInfoOverride {
                     family_name: overrides.family_name.as_deref(),
-                    weight: weight_override,
+                    weight: overrides.weight,
                     style: overrides.style,
                     width: overrides.width,
                     ..Default::default()
@@ -3804,8 +3803,8 @@ mod font_face_override_tests {
                 blitz_traits::net::Bytes::from_static(crate::BULLET_FONT),
                 FontFaceOverrides {
                     family_name: Some(String::from(ALIAS)),
-                    weight: Some(800.0),
-                    style: Some(parley::fontique::FontStyle::Italic),
+                    weight: Some(parley::fontique::FontWeight::new(800.0).into()),
+                    style: Some(parley::fontique::FontStyleRange::Italic),
                     width: None,
                 },
             )),

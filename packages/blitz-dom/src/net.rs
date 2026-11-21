@@ -48,15 +48,12 @@ pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request
 pub struct FontFaceOverrides {
     /// `font-family` descriptor (the alias the rest of the stylesheet uses).
     pub family_name: Option<String>,
-    /// `font-weight` descriptor as a single CSS weight (100–900). Stylo
-    /// parses this as a range; we record the lower bound, which equals the
-    /// upper bound in the common single-value case.
-    pub weight: Option<f32>,
-    /// `font-style` descriptor mapped to fontique's `FontStyle`.
-    pub style: Option<parley::fontique::FontStyle>,
-    /// `font-stretch` (`font-width`) descriptor as a single width. Like
-    /// `weight`, we record the lower bound of Stylo's range.
-    pub width: Option<parley::fontique::FontWidth>,
+    /// `font-weight` descriptor range.
+    pub weight: Option<parley::fontique::FontWeightRange>,
+    /// `font-style` descriptor range.
+    pub style: Option<parley::fontique::FontStyleRange>,
+    /// `font-stretch` (`font-width`) descriptor range.
+    pub width: Option<parley::fontique::FontWidthRange>,
 }
 
 #[derive(Clone, Debug)]
@@ -432,15 +429,20 @@ pub(crate) fn fetch_font_face_rules<'a>(
                 // style) rather than whatever metadata the TTF reports.
                 let overrides = FontFaceOverrides {
                     family_name: Some(family.name.to_string()),
-                    weight: descriptor
-                        .font_weight
-                        .as_ref()
-                        .and_then(|range| range.0.compute().map(|w| w.value())),
+                    weight: descriptor.font_weight.as_ref().and_then(|range| {
+                        let range = range.compute()?;
+                        Some(parley::fontique::FontWeightRange::new(
+                            parley::fontique::FontWeight::new(range.0.value()),
+                            parley::fontique::FontWeight::new(range.1.value()),
+                        ))
+                    }),
                     style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
                     width: descriptor.font_width.as_ref().and_then(|range| {
-                        range
-                            .compute()
-                            .map(|w| parley::fontique::FontWidth::from_percentage(w.0.0.to_float()))
+                        let range = range.compute()?;
+                        Some(parley::fontique::FontWidthRange::new(
+                            parley::fontique::FontWidth::from_percentage(range.0.0.to_float()),
+                            parley::fontique::FontWidth::from_percentage(range.1.0.to_float()),
+                        ))
                     }),
                 };
                 Some((src, overrides))
@@ -564,25 +566,18 @@ fn font_format_from_extension(url: &Url) -> FontFaceSourceFormatKeyword {
         .map_or(FontFaceSourceFormatKeyword::None, |(_, format)| *format)
 }
 
-/// Translate stylo's `@font-face` `font-style` descriptor into the fontique
-/// `FontStyle` enum used by parley. Stylo encodes Italic and Oblique-with-
-/// angle distinctly; CSS's bare `normal` is parsed as `Oblique(0deg, 0deg)`
-/// by stylo (see the `FontStyle::parse` impl in stylo's `font_face.rs`), so
-/// that pattern is treated as `Normal` here.
-fn stylo_to_fontique_style(style: &FontStyleRange) -> parley::fontique::FontStyle {
-    use parley::fontique::FontStyle as Fq;
+/// Translate stylo's `@font-face` `font-style` descriptor into fontique's
+/// `FontStyleRange`. Both parse CSS `normal` as `oblique 0deg 0deg`.
+fn stylo_to_fontique_style(style: &FontStyleRange) -> parley::fontique::FontStyleRange {
+    use parley::fontique::FontStyleRange as Fq;
     match style {
         FontStyleRange::Italic => Fq::Italic,
         FontStyleRange::Oblique(min, max) => {
-            let angle = min.degrees();
-            // Stylo emits `Oblique(0deg, 0deg)` for the literal CSS `normal`
-            // keyword. Map that back to `Normal` so parley's font matching
-            // doesn't misclassify upright fonts.
-            if angle.is_none_or(|a| a == 0.0) && max.degrees().is_none_or(|a| a == 0.0) {
-                Fq::Normal
-            } else {
-                Fq::Oblique(angle)
-            }
+            let default = Fq::DEFAULT_OBLIQUE_ANGLE;
+            Fq::oblique(
+                min.degrees().unwrap_or(default),
+                max.degrees().unwrap_or(default),
+            )
         }
     }
 }
@@ -655,7 +650,7 @@ impl ImageHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use parley::fontique::FontStyle as Fq;
+    use parley::fontique::FontStyleRange as Fq;
     use style::stylesheets::AllowImportRules;
     use style::values::specified::Angle;
 
@@ -832,27 +827,23 @@ mod tests {
 
     #[test]
     fn oblique_zero_zero_maps_to_normal() {
-        // Stylo parses bare CSS `normal` as `Oblique(0deg, 0deg)`; the
-        // helper must round-trip that back to `FontStyle::Normal` so
-        // parley's matching doesn't misclassify upright fonts.
-        assert_eq!(stylo_to_fontique_style(&oblique(0.0, 0.0)), Fq::Normal);
+        // Stylo parses bare CSS `normal` as `Oblique(0deg, 0deg)`.
+        assert_eq!(stylo_to_fontique_style(&oblique(0.0, 0.0)), Fq::NORMAL);
     }
 
     #[test]
     fn oblique_single_angle_maps_to_oblique_with_min() {
         assert_eq!(
             stylo_to_fontique_style(&oblique(14.0, 14.0)),
-            Fq::Oblique(Some(14.0)),
+            Fq::oblique(14.0, 14.0),
         );
     }
 
     #[test]
-    fn oblique_range_uses_min_angle() {
-        // For a range, fontique's single-angle representation takes the
-        // lower bound — confirm `min` (not `max`) is what gets through.
+    fn oblique_range_keeps_both_angles() {
         assert_eq!(
             stylo_to_fontique_style(&oblique(10.0, 20.0)),
-            Fq::Oblique(Some(10.0)),
+            Fq::oblique(10.0, 20.0),
         );
     }
 }
