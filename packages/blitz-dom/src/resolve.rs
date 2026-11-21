@@ -263,10 +263,27 @@ impl BaseDocument {
             }
 
             let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
-            let _flags = doc.nodes[node_id].flags;
+            let was_unconstructed = doc.nodes[node_id].layout_children.borrow().is_none();
 
-            if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
-                //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
+            if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) || was_unconstructed {
+                if was_unconstructed {
+                    damage.insert(ALL_DAMAGE);
+                    doc.nodes[node_id].mark_damaged();
+                }
+
+                // Clear reverse `layout_parent` pointers on the previous layout
+                // children before overwriting `layout_children`, so any child
+                // dropped from this container does not retain a stale pointer.
+                let old_layout_children = doc.nodes[node_id].layout_children.borrow_mut().take();
+                if let Some(old_children) = old_layout_children {
+                    for child_id in old_children {
+                        if let Some(child) = doc.nodes.get(child_id) {
+                            if child.layout_parent.get() == Some(node_id) {
+                                child.layout_parent.set(None);
+                            }
+                        }
+                    }
+                }
 
                 // Deallocate the anonymous blocks created for this node in the
                 // previous construction round. They live only in the slab, so
@@ -295,7 +312,7 @@ impl BaseDocument {
                     }
                 }
 
-                *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
+                *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
                 // *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
 
                 damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -303,13 +320,9 @@ impl BaseDocument {
             } else {
                 //if damage.contains(CONSTRUCT_DESCENDENT) {
                 let layout_children = doc.nodes[node_id].layout_children.borrow_mut().take();
-                if let Some(layout_children) = layout_children {
+                if let Some(mut layout_children) = layout_children {
+                    layout_children.retain(|&child_id| doc.nodes.contains_key(child_id));
                     for child_id in layout_children.iter().copied() {
-                        // Anonymous blocks and pseudo-elements can be removed from the
-                        // slab between render passes; skip stale IDs.
-                        if !doc.nodes.contains_key(child_id) {
-                            continue;
-                        }
                         resolve_layout_children_recursive(doc, child_id);
                         doc.nodes[child_id].layout_parent.set(Some(node_id));
                     }
@@ -325,28 +338,136 @@ impl BaseDocument {
         }
     }
 
-    /// Every layout child must point back at its container via
-    /// `layout_parent`, which `propagate_damage_flags` relies on to reach
-    /// anonymous boxes.
+    /// Verify box-tree pointer invariants after `resolve_layout_children`:
+    /// - Detached nodes hold no box-tree pointers, owned layout-only nodes, or
+    ///   paint caches.
+    /// - Every `layout_parent`, `oof_containing_block`, `layout_children`,
+    ///   `hoisted_children`, `anonymous_blocks`, and pseudo-element edge on an
+    ///   in-document node points to a live, in-document node with matching
+    ///   reverse links.
     #[cfg(debug_assertions)]
     fn assert_layout_parents_consistent(&self) {
         use crate::node::NodeFlags;
 
-        for (parent_id, node) in self.nodes.iter() {
+        for (node_id, node) in self.nodes.iter() {
             if !node.flags.contains(NodeFlags::IS_IN_DOCUMENT) {
+                debug_assert_eq!(
+                    node.layout_parent.get(),
+                    None,
+                    "detached node {node_id:?} still has layout_parent"
+                );
+                debug_assert_eq!(
+                    node.oof_containing_block.get(),
+                    None,
+                    "detached node {node_id:?} still has oof_containing_block"
+                );
+                debug_assert!(
+                    node.hoisted_children.borrow().is_empty(),
+                    "detached node {node_id:?} still has hoisted_children"
+                );
+                debug_assert!(
+                    node.layout_children.borrow().is_none(),
+                    "detached node {node_id:?} still has layout_children"
+                );
+                debug_assert!(
+                    node.anonymous_blocks.is_empty(),
+                    "detached node {node_id:?} still owns anonymous_blocks"
+                );
+                debug_assert_eq!(
+                    node.before(),
+                    None,
+                    "detached node {node_id:?} still owns ::before pseudo"
+                );
+                debug_assert_eq!(
+                    node.after(),
+                    None,
+                    "detached node {node_id:?} still owns ::after pseudo"
+                );
+                debug_assert!(
+                    node.paint_children.borrow().is_none(),
+                    "detached node {node_id:?} still has paint_children"
+                );
+                debug_assert!(
+                    node.stacking_context.is_none(),
+                    "detached node {node_id:?} still has stacking_context"
+                );
+                debug_assert!(
+                    node.sc_contribution_cache.borrow().is_empty(),
+                    "detached node {node_id:?} still has sc_contribution_cache"
+                );
                 continue;
             }
+
+            if let Some(lp_id) = node.layout_parent.get() {
+                let Some(lp) = self.nodes.get(lp_id) else {
+                    panic!("layout_parent {lp_id:?} of {node_id:?} is not in the slab");
+                };
+                debug_assert!(
+                    lp.flags.contains(NodeFlags::IS_IN_DOCUMENT),
+                    "layout_parent {lp_id:?} of {node_id:?} is detached"
+                );
+            }
+
+            if let Some(cb_id) = node.oof_containing_block.get() {
+                let Some(cb) = self.nodes.get(cb_id) else {
+                    panic!("oof_containing_block {cb_id:?} of {node_id:?} is not in the slab");
+                };
+                debug_assert!(
+                    cb.flags.contains(NodeFlags::IS_IN_DOCUMENT),
+                    "oof_containing_block {cb_id:?} of {node_id:?} is detached"
+                );
+            }
+
+            for &hoisted_id in node.hoisted_children.borrow().iter() {
+                let Some(hoisted) = self.nodes.get(hoisted_id) else {
+                    panic!("hoisted child {hoisted_id:?} of {node_id:?} is not in the slab");
+                };
+                debug_assert!(
+                    hoisted.flags.contains(NodeFlags::IS_IN_DOCUMENT),
+                    "hoisted child {hoisted_id:?} of {node_id:?} is detached"
+                );
+                debug_assert_eq!(
+                    hoisted.oof_containing_block.get(),
+                    Some(node_id),
+                    "oof_containing_block of {hoisted_id:?} does not point at its containing block {node_id:?}"
+                );
+            }
+
+            for &anon_id in &node.anonymous_blocks {
+                let Some(anon) = self.nodes.get(anon_id) else {
+                    panic!("anonymous block {anon_id:?} of {node_id:?} is not in the slab");
+                };
+                debug_assert!(
+                    anon.flags.contains(NodeFlags::IS_IN_DOCUMENT),
+                    "anonymous block {anon_id:?} of {node_id:?} is detached"
+                );
+            }
+
+            for pe_id in [node.before(), node.after()].into_iter().flatten() {
+                let Some(pe) = self.nodes.get(pe_id) else {
+                    panic!("pseudo-element {pe_id:?} of {node_id:?} is not in the slab");
+                };
+                debug_assert!(
+                    pe.flags.contains(NodeFlags::IS_IN_DOCUMENT),
+                    "pseudo-element {pe_id:?} of {node_id:?} is detached"
+                );
+            }
+
             let Some(children) = node.layout_children.borrow().clone() else {
                 continue;
             };
             for child_id in children {
                 let Some(child) = self.nodes.get(child_id) else {
-                    panic!("layout child {child_id:?} of {parent_id:?} is not in the slab");
+                    panic!("layout child {child_id:?} of {node_id:?} is not in the slab");
                 };
+                debug_assert!(
+                    child.flags.contains(NodeFlags::IS_IN_DOCUMENT),
+                    "layout child {child_id:?} of {node_id:?} is detached"
+                );
                 debug_assert_eq!(
                     child.layout_parent.get(),
-                    Some(parent_id),
-                    "layout_parent of {child_id:?} does not point at its layout container {parent_id:?}"
+                    Some(node_id),
+                    "layout_parent of {child_id:?} does not point at its layout container {node_id:?}"
                 );
             }
         }

@@ -949,6 +949,8 @@ impl DocumentMutator<'_> {
                 self.process_added_subtree(child_id);
             } else if !new_parent_is_in_document && child_was_in_doc {
                 self.process_removed_subtree(child_id);
+            } else if new_parent_is_in_document && child_was_in_doc {
+                self.doc.clear_subtree_box_tree(child_id);
             }
         }
 
@@ -1265,7 +1267,6 @@ impl<'doc> DocumentMutator<'doc> {
 
     fn process_removed_subtree(&mut self, node_id: NodeId) {
         self.doc.iter_subtree_mut(node_id, |node_id, doc| {
-            doc.reset_node_scroll_state(node_id);
             doc.nodes[node_id]
                 .flags
                 .set(NodeFlags::IS_IN_DOCUMENT, false);
@@ -1274,6 +1275,10 @@ impl<'doc> DocumentMutator<'doc> {
             // the usual teardown steps (unhover/unactive the surviving
             // ancestor chain, IME disable on blur of a focused input).
             doc.clear_interaction_state_for_removed_node(node_id);
+
+            // Tear down box-tree pointers, owned anonymous blocks/pseudos,
+            // scroll state, and cached layout/paint state for the detached node.
+            doc.clear_node_box_tree(node_id, true);
 
             let node = &mut doc.nodes[node_id];
 
