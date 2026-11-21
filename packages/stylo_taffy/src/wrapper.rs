@@ -318,6 +318,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn border(&self) -> taffy::Rect<taffy::LengthPercentage> {
+        // In the collapsing border model a cell's borders are laid out by the
+        // table, between the cells, not inside the cell's own box.
+        if self.effective_display().inside() == stylo::DisplayInside::TableCell
+            && self.style.clone_border_collapse()
+                == style::computed_values::border_collapse::T::Collapse
+        {
+            return taffy::Rect::zero();
+        }
         let border_styles = self.style.get_border();
         self.rect(taffy::Rect {
             left: convert::border(
