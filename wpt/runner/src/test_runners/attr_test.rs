@@ -24,9 +24,10 @@ pub fn process_attr_test(
     ctx: &mut ThreadCtx,
     subtest_selector: &str,
     html: &str,
+    is_xml_document: bool,
     relative_path: &str,
 ) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
-    let mut document = parse_and_resolve_document(ctx, html, relative_path);
+    let mut document = parse_and_resolve_document(ctx, html, is_xml_document, relative_path);
 
     // Some checkLayout tests generate their test DOM with an inline script (or
     // run extra `test()`s of their own): for those, execute the document's
