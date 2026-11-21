@@ -4,7 +4,7 @@
 mod device;
 mod dom;
 mod prefs;
-mod presentational_hints;
+pub(crate) mod presentational_hints;
 #[cfg(feature = "svg")]
 mod svg_attrs;
 mod traversal;
