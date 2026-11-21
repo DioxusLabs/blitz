@@ -90,6 +90,7 @@ mod stale_node_mapping;
 mod style_property_invalidation;
 mod svg_attr_sizing;
 mod svg_background_size;
+mod table_column_widths;
 mod text_selection_anonymous_block;
 mod text_transform;
 mod touch_action;

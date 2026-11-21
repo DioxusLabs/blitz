@@ -579,7 +579,9 @@ impl LayoutPassState<'_> {
                     let mut table_wrapper = TableTreeWrapper {
                         doc: self,
                         ctx: context,
+                        style_override: None,
                     };
+                    table_wrapper.style_override = table_wrapper.auto_layout_style(inputs);
                     let mut output = compute_grid_layout(&mut table_wrapper, node_id, inputs);
 
                     // Absolutely positioned children take no part in the table grid. Their
