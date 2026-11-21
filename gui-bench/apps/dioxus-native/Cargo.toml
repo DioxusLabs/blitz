@@ -1,0 +1,30 @@
+[package]
+name = "bench-dioxus-native"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+bench-core = { path = "../../bench-core" }
+dioxus-native = { path = "../../../packages/dioxus-native", default-features = false, features = ["prelude", "vello", "system-fonts"] }
+blitz-dom = { path = "../../../packages/blitz-dom", default-features = false, features = ["system-fonts"] }
+blitz-paint = { path = "../../../packages/blitz-paint", default-features = false }
+blitz-traits = { path = "../../../packages/blitz-traits", default-features = false }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", branch = "main" }
+
+# Same patches as the Blitz workspace (keep in sync with ../../../Cargo.toml).
+[patch.crates-io]
+glifo = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
+vello_common = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
+vello_cpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
+vello_gpu = { git = "https://github.com/DioxusLabs/vello", branch = "devin/glifo-0.4.0-embolden-2049" }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+debug = "line-tables-only"
+
+# Standalone workspace: each toolkit pins its own wgpu/winit versions.
+[workspace]

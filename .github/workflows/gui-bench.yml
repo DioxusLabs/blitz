@@ -1,0 +1,46 @@
+name: gui-bench
+
+on:
+  push:
+    branches: [main]
+    paths: ["gui-bench/**", ".github/workflows/gui-bench.yml"]
+  pull_request:
+    paths: ["gui-bench/**", ".github/workflows/gui-bench.yml"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        app: [dioxus-native, iced, egui, slint, gpui, freya]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev libfontconfig-dev libegl-dev libgl-dev libgles-dev \
+            libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-xcb-dev libxcb1-dev libvulkan-dev libasound2-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui-bench/apps/${{ matrix.app }}
+      - run: cargo build --release --locked
+        working-directory: gui-bench/apps/${{ matrix.app }}
+
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all --check
+        working-directory: gui-bench
+      - run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: gui-bench
+      - run: cargo test --locked
+        working-directory: gui-bench
