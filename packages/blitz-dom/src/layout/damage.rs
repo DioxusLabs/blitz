@@ -121,11 +121,17 @@ impl BaseDocument {
         // An inline `<svg>` is rendered from a snapshot of its subtree (with
         // `currentColor` resolved) taken during box construction, so it must be
         // rebuilt whenever the style of the `<svg>` or any descendant changes.
+        //
+        // A change to the `<svg>`'s own transform doesn't touch the snapshot, so
+        // it doesn't rebuild it. Every attribute change on an SVG element
+        // already carries full damage (see `restyle_for_attribute_change`).
         #[cfg(feature = "svg")]
         if !damage.is_empty()
             && self.nodes[node_id]
                 .data
                 .is_element_with_tag_name(&local_name!("svg"))
+            && !(damage_from_children.is_empty()
+                && RestyleDamage::RECALCULATE_OVERFLOW.contains(own_damage))
         {
             damage.insert(CONSTRUCT_BOX);
         }
