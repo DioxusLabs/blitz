@@ -35,6 +35,7 @@ keyboard-types = { workspace = true }
 taffy = { workspace = true }
 test-that = { workspace = true }
 usvg = { workspace = true }
+kurbo = { workspace = true }
 
 [lib]
 path = "lib.rs"
