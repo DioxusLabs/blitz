@@ -1313,7 +1313,14 @@ impl ElementCx<'_, '_> {
         let x = x + x_offset.px() as f64;
         let y = y + y_offset.px() as f64;
 
-        let viewport = svg_viewport_affine(svg, paint_size.width, paint_size.height);
+        // An inline `<svg>` re-parsed against its laid-out size has user units in CSS px,
+        // so it is drawn unscaled rather than fitted into its box.
+        let in_own_viewport = svg.viewport_size.is_some();
+        let viewport = if in_own_viewport {
+            Affine::scale(self.scale * self.style.effective_zoom.value() as f64)
+        } else {
+            svg_viewport_affine(svg, paint_size.width, paint_size.height)
+        };
         let transform = (self.transform * viewport).then_translate(Vec2 { x, y });
 
         // An inline `<svg>`'s `transform` attribute is applied inside the tree, so its

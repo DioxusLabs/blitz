@@ -25,6 +25,11 @@ pub struct SvgIntrinsicDimensions {
 }
 
 impl SvgIntrinsicDimensions {
+    /// Whether the root has no `viewBox` at all (neither a valid nor a degenerate one).
+    pub fn lacks_view_box(&self) -> bool {
+        self.view_box.is_none() && !self.degenerate_view_box
+    }
+
     /// Extract the `width`/`height`/`viewBox` attributes declared on the root
     /// element of an already-parsed SVG document, with absent attributes as
     /// `None` and percentages unresolved. [`usvg::Tree`] does not preserve
@@ -80,6 +85,9 @@ pub struct SvgImageData {
     pub tree: Arc<usvg::Tree>,
     /// The dimensions declared on the root `<svg>` element.
     pub intrinsic_dimensions: SvgIntrinsicDimensions,
+    /// For an inline `<svg>` re-parsed against its laid-out size (see
+    /// [`Self::lacks_intrinsic_geometry`]), that size in CSS px.
+    pub viewport_size: Option<(f32, f32)>,
 }
 
 impl SvgImageData {
@@ -110,7 +118,17 @@ impl SvgImageData {
         Ok(Self {
             tree: Arc::new(tree),
             intrinsic_dimensions: SvgIntrinsicDimensions::from_xmltree(&doc),
+            viewport_size: None,
         })
+    }
+
+    /// Whether the root declares neither an absolute `width`/`height` nor a `viewBox`.
+    /// Such an SVG has no intrinsic dimensions or ratio (usvg's [`usvg::Tree::size`]
+    /// is then only a guess from the content), and its user units are CSS px.
+    pub fn lacks_intrinsic_geometry(&self) -> bool {
+        self.intrinsic_width().is_none()
+            && self.intrinsic_height().is_none()
+            && self.intrinsic_dimensions.lacks_view_box()
     }
 
     /// The intrinsic width in CSS px, present only when the root `<svg>`
