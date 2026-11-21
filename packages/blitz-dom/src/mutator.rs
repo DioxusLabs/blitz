@@ -383,7 +383,7 @@ impl DocumentMutator<'_> {
             element.flush_link_state();
         }
 
-        if name.local == local_name!("open") {
+        if name.ns == ns!() && name.local == local_name!("open") {
             element.flush_open_state();
         }
 
@@ -531,7 +531,7 @@ impl DocumentMutator<'_> {
             element.flush_link_state();
         }
 
-        if name.local == local_name!("open") {
+        if name.ns == ns!() && name.local == local_name!("open") {
             element.flush_open_state();
         }
 
