@@ -406,6 +406,8 @@ impl DocumentMutator<'_> {
                     &mut self.doc.layout_ctx,
                     value,
                 );
+                // A shorter value pulls the caret back, possibly out of the scrolled view
+                self.doc.clamp_text_input_scroll(node_id);
             }
             return;
         }
@@ -543,6 +545,8 @@ impl DocumentMutator<'_> {
                     &mut self.doc.layout_ctx,
                     "",
                 );
+                // An empty input has nothing to scroll
+                input_data.scroll_offset = 0.0;
             }
         }
 
