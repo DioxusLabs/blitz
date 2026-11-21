@@ -325,8 +325,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let mut lang = None;
 
     #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]
-    let svg_url_data =
-        (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
+    let svg_url_data = (elem.name.ns == ns!(svg)).then(|| node.tree().url_data().clone());
     // Stack buffer large enough for one declaration (or one expanded
     // shorthand), reused for every presentation attribute on the element.
     #[cfg(any(feature = "svg-usvg", feature = "svg-native"))]

@@ -45,9 +45,20 @@ pub(crate) fn svg_presentation_hint(
     if !is_presentation_attribute(tag, name) {
         return;
     }
+    // `gradientTransform` is the presentation attribute for `transform` on
+    // gradients. <https://svgwg.org/svg2-draft/pservers.html#LinearGradientElementGradientTransformAttribute>
+    let name = match name {
+        "gradientTransform" if matches!(tag, "linearGradient" | "radialGradient") => "transform",
+        _ => name,
+    };
     let translated;
     let value = match name {
         "transform" => {
+            // An empty list is an invalid value, not `none`, so it does not
+            // count as specified (a gradient then inherits its template's).
+            if value.trim().is_empty() {
+                return;
+            }
             let Some(css) = svg_transform_to_css(value) else {
                 return;
             };
@@ -91,10 +102,7 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
         // https://svgwg.org/svg2-draft/styling.html#PresentationAttributes
         // Only this list maps to CSS; any other attribute that happens to
         // name a CSS property (`padding`, `background`, `rotate` on <text>,
-        // `scale` on <feDisplacementMap>) stays a plain attribute. The spec's
-        // other presentation attributes (`clip-rule`, `stop-color`,
-        // `marker-*`, `text-anchor`, ...) name properties Stylo only parses
-        // for Gecko, so they are left out until Servo's Stylo supports them.
+        // `scale` on <feDisplacementMap>) stays a plain attribute.
         "alignment-baseline" | "baseline-shift" | "clip-path" | "color" | "cursor"
         | "direction" | "display" | "fill-opacity" | "fill-rule" | "filter" | "font-family"
         | "font-size" | "font-size-adjust" | "font-stretch" | "font-style" | "font-variant"
@@ -104,6 +112,26 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
         | "stroke-opacity" | "stroke-width" | "text-decoration" | "text-overflow"
         | "text-rendering" | "transform-origin" | "unicode-bidi" | "visibility" | "white-space"
         | "word-spacing" | "writing-mode" => true,
+        // Properties the patched Stylo enables behind
+        // `layout.css.svg-properties.enabled`.
+        "clip-rule"
+        | "color-interpolation"
+        | "color-interpolation-filters"
+        | "dominant-baseline"
+        | "flood-color"
+        | "flood-opacity"
+        | "glyph-orientation-horizontal"
+        | "glyph-orientation-vertical"
+        | "lighting-color"
+        | "marker-end"
+        | "marker-mid"
+        | "marker-start"
+        | "paint-order"
+        | "shape-rendering"
+        | "stop-color"
+        | "stop-opacity"
+        | "text-anchor"
+        | "vector-effect" => true,
         // On animation elements `fill` is the animation fill mode.
         "fill" => !matches!(
             tag,
@@ -118,6 +146,7 @@ fn is_presentation_attribute(tag: &str, name: &str) -> bool {
             matches!(tag, "rect" | "image" | "foreignObject" | "svg")
         }
         "d" => tag == "path",
+        "gradientTransform" => matches!(tag, "linearGradient" | "radialGradient"),
         _ => false,
     }
 }

@@ -15,7 +15,9 @@ use style::device::servo::MediaData;
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
-use style::queries::values::PrefersColorScheme;
+use style::queries::values::{
+    PrefersColorScheme, PrefersContrast, PrefersReducedMotion, PrefersReducedTransparency,
+};
 use style::servo::media_features::PointerCapabilities;
 
 use crate::font_metrics::BlitzFontMetricsProvider;
@@ -70,7 +72,17 @@ pub(crate) fn make_device(
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
         Box::new(BlitzFontMetricsProvider { font_ctx }),
         "Submit Query".into(),
+        document_random_hasher_key(),
         make_media_data(viewport, media_type),
+    )
+}
+
+/// A fresh key per document, so that CSS `random()` base values differ between documents.
+fn document_random_hasher_key() -> (u64, u64) {
+    use std::hash::{BuildHasher, RandomState};
+    (
+        RandomState::new().hash_one(0u8),
+        RandomState::new().hash_one(1u8),
     )
 }
 
@@ -90,6 +102,9 @@ pub(crate) fn make_media_data(viewport: &Viewport, media_type: MediaType) -> Med
             ColorScheme::Light => PrefersColorScheme::Light,
             ColorScheme::Dark => PrefersColorScheme::Dark,
         },
+        prefers_contrast: PrefersContrast::NoPreference,
+        prefers_reduced_motion: PrefersReducedMotion::NoPreference,
+        prefers_reduced_transparency: PrefersReducedTransparency::NoPreference,
         primary_pointer_capabilities: PointerCapabilities::default(),
         all_pointer_capabilities: PointerCapabilities::default(),
     }
