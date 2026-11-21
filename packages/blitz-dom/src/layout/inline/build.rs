@@ -137,10 +137,8 @@ pub(crate) fn build_inline_layout_into(
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
                 // if the input type is hidden, hide it
-                if *element_data.name.local == *"input" {
-                    if let Some("hidden") = element_data.attr(local_name!("type")) {
-                        return;
-                    }
+                if element_data.input_type() == Some("hidden") {
+                    return;
                 }
 
                 let display = node.display_style().unwrap_or(Display::inline());

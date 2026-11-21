@@ -308,12 +308,8 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
 
     // `<input type=image>` is the only input type that is replaced
     // content, and it is the only one that takes the embedded-content
-    // presentational attributes. The type attribute is matched ASCII
-    // case-insensitively, as attribute keywords always are.
-    let is_image_input = *tag == local_name!("input")
-        && elem.attrs().iter().any(|attr| {
-            attr.name.local == local_name!("type") && attr.value.eq_ignore_ascii_case("image")
-        });
+    // presentational attributes.
+    let is_image_input = elem.input_type() == Some("image");
 
     // An `hr` with `color` or `noshade` takes its `size` as border widths
     // rather than as a height.
