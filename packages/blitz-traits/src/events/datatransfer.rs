@@ -126,8 +126,8 @@ pub enum BlitzDragDataStoreMode {
 /// it depends on the [mode](BlitzDragDataStoreMode) the event is dispatched in.
 #[derive(Debug, Default)]
 pub struct BlitzDataTransfer {
-    /// `(format, data)` pairs, in the order they were added
-    data: Vec<(String, String)>,
+    /// In the order they were added, with at most one item per format
+    data: Vec<DataTransferItem>,
     /// Formats the drag source offers. Known for the whole drag, whereas `data` is
     /// only filled in for the drop.
     types: Vec<String>,
@@ -136,6 +136,14 @@ pub struct BlitzDataTransfer {
     effect_allowed: Option<BlitzDragOperations>,
     drop_effect: BlitzDragOperation,
     mode: BlitzDragDataStoreMode,
+}
+
+/// A string of dragged data
+#[derive(Debug)]
+struct DataTransferItem {
+    /// The MIME type of the data, in lowercase
+    format: String,
+    data: String,
 }
 
 /// legacy
@@ -163,9 +171,9 @@ impl BlitzDataTransfer {
     /// The formats the drag carries data in
     pub fn types(&self) -> Vec<String> {
         let mut types = self.types.clone();
-        for (format, _) in &self.data {
-            if !types.contains(format) {
-                types.push(format.clone());
+        for item in &self.data {
+            if !types.contains(&item.format) {
+                types.push(item.format.clone());
             }
         }
         if !self.files.is_empty() {
@@ -263,15 +271,18 @@ impl BlitzDataTransfer {
     pub fn data_unchecked(&self, format: &str) -> Option<&str> {
         self.data
             .iter()
-            .find(|(f, _)| f == format)
-            .map(|(_, data)| data.as_str())
+            .find(|item| item.format == format)
+            .map(|item| item.data.as_str())
     }
 
     /// Add data regardless of the mode. For the shell, not for event handlers.
     pub fn set_data_unchecked(&mut self, format: &str, data: String) {
-        match self.data.iter_mut().find(|(f, _)| f == format) {
-            Some(entry) => entry.1 = data,
-            None => self.data.push((format.to_string(), data)),
+        match self.data.iter_mut().find(|item| item.format == format) {
+            Some(item) => item.data = data,
+            None => self.data.push(DataTransferItem {
+                format: format.to_string(),
+                data,
+            }),
         }
     }
 
@@ -299,7 +310,7 @@ impl BlitzDataTransfer {
         match format {
             Some(format) => {
                 let format = normalize_format(format);
-                self.data.retain(|(f, _)| *f != format);
+                self.data.retain(|item| item.format != format);
             }
             // https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer/clearData
             None => self.data.clear(),
