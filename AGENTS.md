@@ -3,7 +3,7 @@
 Blitz is a modular HTML/CSS rendering engine (Stylo for style, Taffy for layout, Parley for text, anyrender/Vello/Skia for paint) used by Dioxus Native. Rust workspace.
 
 ## Build, lint, test
-Linux needs `build-essential pkg-config python3 libssl-dev libfontconfig-dev` (see CONTRIBUTING.MD).
+Linux needs `build-essential pkg-config python3 libfontconfig-dev` (see CONTRIBUTING.MD).
 
 Before pushing, run what CI runs:
 - `cargo fmt --all --check`

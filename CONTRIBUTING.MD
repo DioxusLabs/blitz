@@ -31,14 +31,13 @@ To **build** Blitz you need a C toolchain plus a few dependencies:
 
  * `pkg-config` and a C compiler (`build-essential`)
  * `python3` — used to generate code while building `stylo`
- * `libssl-dev` (OpenSSL) — required by `reqwest` via `blitz-net`
  * `libfontconfig-dev` (fontconfig) — required by `parley`/`fontique` for system-font enumeration
 
 For example on Ubuntu:
 
 ```sh
 sudo apt-get update
-sudo apt-get install build-essential pkg-config python3 libssl-dev libfontconfig-dev
+sudo apt-get install build-essential pkg-config python3 libfontconfig-dev
 ```
 
 To **run** Blitz as windowed application you additionally need X11 and/or Wayland. These are usually already
