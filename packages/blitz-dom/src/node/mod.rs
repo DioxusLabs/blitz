@@ -30,6 +30,6 @@ pub use stylo_data::ComputedStyleRef;
 #[cfg(feature = "svg")]
 pub use svg::{SvgImageData, SvgIntrinsicDimensions};
 pub use text::{
-    GeneratedTextInputEvent, INLINE_BOX_CHAR, LineEndWhitespace, TextBrush, TextInputData,
+    GeneratedTextInputEvent, InlineContent, InlineTextHit, LineEndWhitespace, TextInputData,
     TextLayout, TextOffsetMap,
 };

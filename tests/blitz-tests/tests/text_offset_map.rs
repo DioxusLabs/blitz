@@ -1,7 +1,9 @@
 //! The map between DOM offsets and layout text offsets that Blitz records while it collapses
 //! white space and applies `text-transform`, and the white space it reports at line ends.
 
-use blitz_dom::node::{Affinity, LineEndWhitespace, TextLayout};
+use blitz_dom::node::{Affinity, LineEndWhitespace};
+use blitz_dom::text::InlineText as _;
+use blitz_dom::text::parley::TextLayout;
 use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::node_id::NodeId;
@@ -30,6 +32,7 @@ fn inline_layout(doc: &HtmlDocument) -> &TextLayout {
         .unwrap()
         .inline_layout_data
         .as_deref()
+        .map(|layout| &layout.backend)
         .unwrap()
 }
 
@@ -63,7 +66,7 @@ fn collapsed_white_space_across_nodes() {
     let [a, b, c] = text_nodes(&doc)[..] else {
         panic!()
     };
-    assert_eq!(layout.text, "a b c");
+    assert_eq!(layout.text(), "a b c");
     // "  a  " -> "a ": the leading run is removed, the trailing one kept.
     assert_eq!(layout_offsets(layout, a, 5), [0, 0, 0, 1, 2, 2]);
     // " b " -> "b": the leading space collapses into the pending one before it.
@@ -84,7 +87,7 @@ fn text_transforms_that_change_length() {
     let [node] = text_nodes(&doc)[..] else {
         panic!()
     };
-    assert_eq!(layout.text, "ASSB");
+    assert_eq!(layout.text(), "ASSB");
     // `ß` is two bytes in both texts, but one character becomes two.
     assert_eq!(layout_offsets(layout, node, 4), [0, 1, 3, 3, 4]);
     let map = &layout.offset_map;
@@ -102,7 +105,7 @@ fn full_width_collapses_to_ideographic_space() {
     let [node] = text_nodes(&doc)[..] else {
         panic!()
     };
-    assert_eq!(layout.text, "ａ\u{3000}ｂ");
+    assert_eq!(layout.text(), "ａ\u{3000}ｂ");
     assert_eq!(layout_offsets(layout, node, 4), [0, 3, 6, 6, 9]);
 }
 
@@ -115,7 +118,7 @@ fn breaks_and_inline_boxes() {
     let layout = inline_layout(&doc);
     let nodes = text_nodes(&doc);
     // Spaces around the preserved break are removed, and the float doesn't end the run.
-    assert_eq!(layout.text, "a\nb\u{FFFC} c\nd");
+    assert_eq!(layout.text(), "a\nb\u{FFFC} c\nd");
     assert_eq!(layout_offsets(layout, nodes[0], 5), [0, 1, 1, 2, 2, 3]);
     // " c" -> "c": its space collapsed into the one before the float.
     assert_eq!(layout_offsets(layout, nodes[3], 2), [7, 7, 8]);
@@ -128,8 +131,8 @@ fn list_marker_text_comes_first() {
     let [node] = text_nodes(&doc)[..] else {
         panic!()
     };
-    let marker_len = layout.text.len() - 1;
-    assert!(marker_len > 0, "{:?}", layout.text);
+    let marker_len = layout.text().len() - 1;
+    assert!(marker_len > 0, "{:?}", layout.text());
     assert_eq!(
         layout_offsets(layout, node, 1),
         [marker_len, marker_len + 1]
@@ -184,7 +187,7 @@ fn display_contents_collapses_to_its_own_space() {
          <img id=i style='width:1px;height:1px'></div>",
     );
     let layout = inline_layout(&doc);
-    assert_eq!(layout.text, "ａ\u{3000}\u{FFFC}");
+    assert_eq!(layout.text(), "ａ\u{3000}\u{FFFC}");
     let img = doc.query_selector("#i").unwrap().unwrap();
     assert_eq!(layout.offset_map.layout_range(img), Some(6..9));
 }
@@ -196,7 +199,7 @@ fn composed_text_transforms() {
     let [node] = text_nodes(&doc)[..] else {
         panic!()
     };
-    assert_eq!(layout.text, "ＡＳＳＢ");
+    assert_eq!(layout.text(), "ＡＳＳＢ");
     assert_eq!(layout_offsets(layout, node, 4), [0, 3, 9, 9, 12]);
 
     // Greek uppercasing removes the accent and `ß` expands, so the character count is unchanged.
@@ -205,7 +208,7 @@ fn composed_text_transforms() {
     let [node] = text_nodes(&doc)[..] else {
         panic!()
     };
-    assert_eq!(layout.text, "ΑSSB");
+    assert_eq!(layout.text(), "ΑSSB");
     assert_eq!(layout_offsets(layout, node, 7), [0, 1, 2, 2, 2, 4, 4, 5]);
 }
 
@@ -215,7 +218,7 @@ fn out_of_flow_boxes_follow_pending_space() {
     // before that space.
     let doc = layout_doc("<div id=t>a <span id=f style='float:left'>x</span>b</div>");
     let layout = inline_layout(&doc);
-    assert_eq!(layout.text, "a b");
+    assert_eq!(layout.text(), "a b");
     let float = doc.query_selector("#f").unwrap().unwrap();
     assert_eq!(layout.offset_map.layout_range(float), Some(2..2));
     let anchor = layout
@@ -244,7 +247,7 @@ fn line_end_white_space_follows_layout() {
         "<div id=t style='width:0; white-space:pre-wrap; text-transform:full-width'>a b</div>",
     );
     let layout = inline_layout(&doc);
-    assert_eq!(layout.text, "ａ\u{3000}ｂ");
+    assert_eq!(layout.text(), "ａ\u{3000}ｂ");
     assert_eq!(
         layout.line_end_whitespace(0),
         Some(LineEndWhitespace {

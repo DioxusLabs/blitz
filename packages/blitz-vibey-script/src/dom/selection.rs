@@ -3,6 +3,7 @@
 use std::cell::Cell;
 
 use blitz_dom::node::NodeData;
+use blitz_dom::text::InlineText as _;
 use blitz_dom::{BaseDocument, Node, NodeId};
 use boa_engine::{
     Context, Finalize, JsData, JsNativeError, JsResult, JsValue, Trace, object::JsObject,
@@ -211,9 +212,7 @@ fn own_point(doc: &BaseDocument, point: Point) -> Option<Point> {
             NodeData::Element(_) if node.id != root => Some(usize::from(point.1 > 0)),
             _ => None,
         };
-        if let Some(offset) =
-            source.and_then(|source| layout.offset_map.layout_offset(node.id, source))
-        {
+        if let Some(offset) = source.and_then(|source| layout.source_offset(node.id, source)) {
             return Some((root, offset));
         }
     }

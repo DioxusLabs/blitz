@@ -13,7 +13,9 @@ path = "src/main.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["vello-gpu"]
+default = ["vello-gpu", "parley"]
+# The text backend, which is Parley: on by default, and required.
+parley = ["dioxus-native/parley"]
 vello = ["dioxus-native/vello"]
 vello-gpu = ["dioxus-native/vello-gpu"]
 skia = ["dioxus-native/skia"]
