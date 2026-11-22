@@ -31,7 +31,7 @@ impl ElementCx<'_, '_> {
         let clip_to_box = opacity < 1.0
             || !bg_is_opaque
             || !bg_covers_border_box
-            || self.context.canvas_background_node_id == Some(self.node.id);
+            || self.background_is_painted_on_canvas();
 
         let border_box = self.frame.border_box_shape();
         for shadow in box_shadow.iter().filter(|s| !s.inset).rev() {
