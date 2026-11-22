@@ -112,7 +112,6 @@ impl BaseDocument {
                 self.shell_provider.request_redraw();
             }
             GeneratedTextInputEvent::Submit => {
-                // TODO: Generate submit event that can be handled by script
                 implicit_form_submission(self, node_id);
             }
         }
@@ -120,14 +119,14 @@ impl BaseDocument {
 }
 
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#field-that-blocks-implicit-submission
-fn implicit_form_submission(doc: &BaseDocument, text_target: NodeId) {
-    let Some(form_owner_id) = doc.controls_to_form.get(&text_target) else {
+fn implicit_form_submission(doc: &mut BaseDocument, text_target: NodeId) {
+    let Some(form_owner_id) = doc.controls_to_form.get(&text_target).copied() else {
         return;
     };
     if doc
         .controls_to_form
         .iter()
-        .filter(|(_control_id, form_id)| *form_id == form_owner_id)
+        .filter(|(_control_id, form_id)| **form_id == form_owner_id)
         .filter_map(|(control_id, _)| doc.nodes[*control_id].element_data())
         .filter(|element_data| {
             element_data.attr(local_name!("type")).is_some_and(|t| {
@@ -154,5 +153,5 @@ fn implicit_form_submission(doc: &BaseDocument, text_target: NodeId) {
         return;
     }
 
-    doc.submit_form(*form_owner_id, *form_owner_id);
+    doc.queue_submit_form(form_owner_id, None);
 }

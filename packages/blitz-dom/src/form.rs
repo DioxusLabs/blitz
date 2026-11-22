@@ -6,6 +6,7 @@ use crate::{
     traversal::{AncestorTraverser, TreeTraverser},
 };
 use blitz_traits::{
+    events::{BlitzSubmitEvent, DomEventData},
     navigation::NavigationOptions,
     net::{Body, Entry, EntryValue, FormData, Method},
 };
@@ -59,6 +60,17 @@ impl BaseDocument {
         if let Some(final_owner_id) = final_owner_id {
             self.controls_to_form.insert(node_id, final_owner_id);
         }
+    }
+
+    pub(crate) fn queue_submit_form(&mut self, form_id: NodeId, submitter_id: Option<NodeId>) {
+        let entries = construct_entry_list(self, form_id, submitter_id.unwrap_or(form_id));
+        self.queue_ua_event(
+            form_id,
+            DomEventData::Submit(BlitzSubmitEvent {
+                submitter: submitter_id,
+                entries,
+            }),
+        );
     }
 
     /// Submits a form with the given form node ID and submitter node ID

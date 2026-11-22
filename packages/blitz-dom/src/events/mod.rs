@@ -100,6 +100,7 @@ fn map_dom_event_to_ui_event(
         DomEventData::Blur(_) => None,
         DomEventData::FocusIn(_) => None,
         DomEventData::FocusOut(_) => None,
+        DomEventData::Submit(_) => None,
     }
 }
 
@@ -312,6 +313,9 @@ pub(crate) fn handle_dom_event(
         }
         DomEventData::FocusOut(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::Submit(data) => {
+            doc.submit_form(target_node_id, data.submitter.unwrap_or(target_node_id));
         }
     }
 
