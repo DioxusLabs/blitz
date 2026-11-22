@@ -1,8 +1,8 @@
 //! Integration between Dioxus and Blitz
 use crate::NodeId;
 use crate::events::{
-    BlitzKeyboardData, NativeConverter, NativeFocusData, NativeFormData, NativePointerData,
-    NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
+    BlitzKeyboardData, NativeConverter, NativeDragData, NativeFocusData, NativeFormData,
+    NativePointerData, NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
 };
 use crate::mutation_writer::DioxusState;
 use crate::qual_name;
@@ -361,6 +361,11 @@ impl EventHandler for DioxusEventHandler<'_> {
 
             // AppleStandardKeybinding events are not exposed to script
             DomEventData::AppleStandardKeybinding(_) => None,
+
+            DomEventData::DragEnter(devent)
+            | DomEventData::DragOver(devent)
+            | DomEventData::DragLeave(devent)
+            | DomEventData::Drop(devent) => Some(wrap_event_data(NativeDragData(devent.clone()))),
         };
 
         let Some(event_data) = event_data else {

@@ -1,12 +1,6 @@
-use std::any::Any;
-use std::pin::Pin;
-use std::sync::Arc;
 use std::{path::PathBuf, str::FromStr};
 
 use bitflags::bitflags;
-use bytes::Bytes;
-
-use crate::NodeId;
 
 bitflags! {
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -75,6 +69,15 @@ pub enum BlitzDragOperation {
 }
 
 impl BlitzDragOperation {
+    fn as_flag(self) -> BlitzDragOperations {
+        match self {
+            Self::None => BlitzDragOperations::NONE,
+            Self::Copy => BlitzDragOperations::COPY,
+            Self::Move => BlitzDragOperations::MOVE,
+            Self::Link => BlitzDragOperations::LINK,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
@@ -117,80 +120,22 @@ pub enum BlitzDragDataStoreMode {
     ReadWrite,
 }
 
-impl BlitzDragDataStoreMode {
-    pub fn can_write(&self) -> bool {
-        matches!(self, Self::ReadWrite)
-    }
-
-    pub fn is_protected(&self) -> bool {
-        matches!(self, Self::Protected)
-    }
-}
-
-pub type BlitzFileType = Arc<dyn BlitzFileTrait>;
-
-pub type BlitzFileError = Box<dyn std::error::Error + Send + Sync + 'static>;
-
-pub trait BlitzFileTrait: Any + Send + Sync + std::fmt::Debug {
-    fn name(&self) -> String;
-    fn size(&self) -> u64;
-    fn last_modified(&self) -> u64;
-    fn path(&self) -> PathBuf;
-    fn content_type(&self) -> Option<String>;
-
-    fn read_bytes(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Bytes, BlitzFileError>> + Send + 'static>>;
-
-    fn byte_stream(
-        &self,
-    ) -> Pin<Box<dyn futures_core::Stream<Item = Result<Bytes, BlitzFileError>> + Send + 'static>>;
-
-    fn read_string(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = Result<String, BlitzFileError>> + Send + 'static>>;
-
-    fn inner(&self) -> &dyn std::any::Any;
-}
-
-pub trait BlitzDataTransferItemsTrait: Any + Send + Sync + std::fmt::Debug {
-    fn is_empty(&self) -> bool;
-    fn files(&self) -> Box<dyn Iterator<Item = BlitzFileType> + '_> {
-        Box::new(std::iter::empty())
-    }
-    fn get_data(&self, format: &str) -> Option<String> {
-        let _ = format;
-        None
-    }
-    fn set_data(&mut self, format: &str, data: &str) -> Result<(), String> {
-        let _ = format;
-        let _ = data;
-        Err("setData is not supported on received data transfer".into())
-    }
-    fn clear_all(&mut self) {}
-    fn clear_format(&mut self, format: &str) {
-        let _ = format;
-    }
-    fn types(&self) -> Vec<String> {
-        Vec::new()
-    }
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
-#[derive(Debug)]
+/// The data carried by a drag.
+///
+/// One of these is shared by every event of a drag. What an event handler can do with
+/// it depends on the [mode](BlitzDragDataStoreMode) the event is dispatched in.
+#[derive(Debug, Default)]
 pub struct BlitzDataTransfer {
-    pub items: Box<dyn BlitzDataTransferItemsTrait>,
-    pub effect_allowed: Option<BlitzDragOperations>,
-    pub drop_effect: BlitzDragOperation,
-    pub mode: BlitzDragDataStoreMode,
-}
-
-impl PartialEq for BlitzDataTransfer {
-    fn eq(&self, other: &Self) -> bool {
-        self.effect_allowed == other.effect_allowed
-            && self.drop_effect == other.drop_effect
-            && self.mode == other.mode
-    }
+    /// `(format, data)` pairs, in the order they were added
+    data: Vec<(String, String)>,
+    /// Formats the drag source offers. Known for the whole drag, whereas `data` is
+    /// only filled in for the drop.
+    types: Vec<String>,
+    files: Vec<PathBuf>,
+    /// `None` is "uninitialized": every operation is allowed
+    effect_allowed: Option<BlitzDragOperations>,
+    drop_effect: BlitzDragOperation,
+    mode: BlitzDragDataStoreMode,
 }
 
 /// legacy
@@ -203,106 +148,162 @@ fn normalize_format(format: &str) -> String {
 }
 
 impl BlitzDataTransfer {
-    pub fn with_writable(mut self) -> Self {
-        self.mode = BlitzDragDataStoreMode::ReadWrite;
-        self
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn protected(&mut self) {
-        self.mode = BlitzDragDataStoreMode::Protected;
+    pub fn mode(&self) -> BlitzDragDataStoreMode {
+        self.mode
     }
 
-    pub fn readable(&mut self) {
-        self.mode = BlitzDragDataStoreMode::ReadOnly;
+    pub fn set_mode(&mut self, mode: BlitzDragDataStoreMode) {
+        self.mode = mode;
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+    /// The formats the drag carries data in
+    pub fn types(&self) -> Vec<String> {
+        let mut types = self.types.clone();
+        for (format, _) in &self.data {
+            if !types.contains(format) {
+                types.push(format.clone());
+            }
+        }
+        if !self.files.is_empty() {
+            types.push("Files".to_string());
+        }
+        types
     }
 
-    pub fn files(&self) -> impl Iterator<Item = BlitzFileType> {
-        self.items.files()
+    /// Set the formats the drag source offers, for a drag whose data is not available yet
+    pub fn set_types(&mut self, types: Vec<String>) {
+        self.types = types;
     }
 
-    pub fn effect_allowed(&self) -> String {
+    /// The files being dragged. Empty until the drop.
+    pub fn files(&self) -> &[PathBuf] {
+        match self.mode {
+            BlitzDragDataStoreMode::Protected => &[],
+            _ => &self.files,
+        }
+    }
+
+    pub fn set_files(&mut self, files: Vec<PathBuf>) {
+        self.files = files;
+    }
+
+    pub fn effect_allowed(&self) -> Option<BlitzDragOperations> {
         self.effect_allowed
-            .map(|v| v.to_string())
-            .unwrap_or("uninitialized".to_string())
     }
 
-    pub fn set_effect_allowed(&mut self, effect: &str) {
-        if self.mode.can_write()
+    /// The `effectAllowed` attribute: "uninitialized" or one of the values
+    /// [`BlitzDragOperations::as_str`] returns
+    pub fn effect_allowed_str(&self) -> &'static str {
+        self.effect_allowed
+            .map(BlitzDragOperations::as_str)
+            .unwrap_or("uninitialized")
+    }
+
+    /// Set the `effectAllowed` attribute. Ignored outside of `dragstart` and for an
+    /// unknown value.
+    pub fn set_effect_allowed_str(&mut self, effect: &str) {
+        if self.mode == BlitzDragDataStoreMode::ReadWrite
             && let Ok(op) = BlitzDragOperations::from_str_opt(effect)
         {
             self.effect_allowed = op;
         }
     }
 
-    pub fn drop_effect(&self) -> String {
-        self.drop_effect.to_string()
+    pub fn drop_effect(&self) -> BlitzDragOperation {
+        self.drop_effect
     }
 
-    pub fn set_drop_effect(&mut self, effect: &str) {
+    pub fn set_drop_effect(&mut self, effect: BlitzDragOperation) {
+        self.drop_effect = effect;
+    }
+
+    /// Set the `dropEffect` attribute. Ignored for an unknown value.
+    pub fn set_drop_effect_str(&mut self, effect: &str) {
         if let Ok(op) = effect.parse() {
             self.drop_effect = op;
         }
     }
 
-    pub fn get_data_unchecked(&self, format: &str) -> Option<String> {
-        let format = normalize_format(format);
-        self.items.get_data(&format)
+    /// The `dropEffect` a `dragenter` or `dragover` event starts with: the first
+    /// operation the source allows, preferring `preferred` if it is one of them.
+    /// <https://html.spec.whatwg.org/multipage/dnd.html#fire-a-dnd-event>
+    pub fn default_drop_effect(&self, preferred: BlitzDragOperation) -> BlitzDragOperation {
+        let Some(allowed) = self.effect_allowed else {
+            return match preferred {
+                BlitzDragOperation::None => BlitzDragOperation::Copy,
+                preferred => preferred,
+            };
+        };
+        [
+            preferred,
+            BlitzDragOperation::Copy,
+            BlitzDragOperation::Link,
+            BlitzDragOperation::Move,
+        ]
+        .into_iter()
+        .find(|op| *op != BlitzDragOperation::None && allowed.contains(op.as_flag()))
+        .unwrap_or_default()
+    }
+
+    /// The operation a drop would perform: `dropEffect` if the source allows it
+    pub fn allowed_drop_effect(&self) -> BlitzDragOperation {
+        match self.effect_allowed {
+            Some(allowed) if !allowed.contains(self.drop_effect.as_flag()) => {
+                BlitzDragOperation::None
+            }
+            _ => self.drop_effect,
+        }
+    }
+
+    /// Read data regardless of the mode. For the shell, not for event handlers.
+    pub fn data_unchecked(&self, format: &str) -> Option<&str> {
+        self.data
+            .iter()
+            .find(|(f, _)| f == format)
+            .map(|(_, data)| data.as_str())
+    }
+
+    /// Add data regardless of the mode. For the shell, not for event handlers.
+    pub fn set_data_unchecked(&mut self, format: &str, data: String) {
+        match self.data.iter_mut().find(|(f, _)| f == format) {
+            Some(entry) => entry.1 = data,
+            None => self.data.push((format.to_string(), data)),
+        }
     }
 
     pub fn get_data(&self, format: &str) -> Option<String> {
         if self.mode == BlitzDragDataStoreMode::Protected {
             return None;
         }
-        let format = normalize_format(format);
-        self.items.get_data(&format)
+        self.data_unchecked(&normalize_format(format))
+            .map(str::to_string)
     }
 
     pub fn set_data(&mut self, format: &str, data: &str) -> Result<(), String> {
-        if !self.mode.can_write() {
+        if self.mode != BlitzDragDataStoreMode::ReadWrite {
             return Err("setData is only allowed during dragstart".into());
         }
-        let format = normalize_format(format);
-        self.items.set_data(&format, data)
+        self.set_data_unchecked(&normalize_format(format), data.to_string());
+        Ok(())
     }
 
     pub fn clear_data(&mut self, format: Option<&str>) -> Result<(), String> {
-        if !self.mode.can_write() {
+        if self.mode != BlitzDragDataStoreMode::ReadWrite {
             return Err("clearData is only allowed during dragstart".into());
         }
 
         match format {
-            Some(fmt) => {
-                let fmt = normalize_format(fmt);
-                self.items.clear_format(&fmt)
+            Some(format) => {
+                let format = normalize_format(format);
+                self.data.retain(|(f, _)| *f != format);
             }
             // https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer/clearData
-            None => self.items.clear_all(),
+            None => self.data.clear(),
         }
         Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum BlitzDataTransferSource {
-    Internal(Option<NodeId>),
-    External,
-}
-
-impl BlitzDataTransferSource {
-    pub fn get_node_id(&self) -> Option<NodeId> {
-        match self {
-            BlitzDataTransferSource::Internal(node) => *node,
-            BlitzDataTransferSource::External => None,
-        }
-    }
-}
-
-impl From<Option<NodeId>> for BlitzDataTransferSource {
-    fn from(value: Option<NodeId>) -> Self {
-        Self::Internal(value)
     }
 }

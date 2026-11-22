@@ -1105,6 +1105,7 @@ dependencies = [
  "keyboard-types",
  "rfd",
  "tracing",
+ "url",
  "wasm-bindgen",
  "web-sys",
  "web-time",
