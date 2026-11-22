@@ -336,6 +336,26 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         );
     }
 
+    fn propagates_overflow(&self, node: &Node, styles: &ComputedValues) -> bool {
+        self.root_element_id == Some(node.id)
+            || (node.parent == self.root_element_id
+                && node.element_data().is_some_and(|element| {
+                    element.name.local == local_name!("body")
+                        && &*element.name.ns == "http://www.w3.org/1999/xhtml"
+                })
+                && styles.get_box().slow_clone_contain().is_empty()
+                && self
+                    .dom
+                    .try_root_element()
+                    .and_then(Node::primary_styles)
+                    .is_some_and(|root| {
+                        let root = root.get_box();
+                        root.overflow_x == Overflow::Visible
+                            && root.overflow_y == Overflow::Visible
+                            && root.slow_clone_contain().is_empty()
+                    }))
+    }
+
     fn should_clip_node(&self, node: &Node, styles: &ComputedValues) -> bool {
         let box_style = styles.get_box();
         let contain_paint = box_style.slow_clone_contain().contains(Contain::PAINT) && {
@@ -346,7 +366,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             !display.is_inline_flow() && !is_internal_table_box_other_than_cell
         };
         let element = node.element_data();
-        self.root_element_id != Some(node.id)
+        !self.propagates_overflow(node, styles)
             && (element.and_then(|e| e.raster_image_data()).is_some()
                 || element.and_then(|e| e.sub_doc_data()).is_some()
                 || element.and_then(|e| e.text_input_data()).is_some()
