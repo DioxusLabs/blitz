@@ -578,9 +578,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Compute clip-path (if any) and wrap all rendering in a clip layer
         let clip_path_shape = cx.clip_path_shape();
         let has_clip_path = clip_path_shape.is_some();
-        let default_clip = cx.frame.border_box_path();
-        let mut clip_path_for_layer = clip_path_shape.unwrap_or(default_clip);
-        clip_path_for_layer.apply_affine(Affine::scale(self.scale));
+        let clip_path_for_layer = clip_path_shape.unwrap_or_default();
 
         // CSS 2 `clip` property (absolutely positioned elements only). Applies to the whole of
         // the element's rendering (including outlines and shadows), so it is the outermost layer.
@@ -621,12 +619,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let paints_own_box = !node.is_inline_with_only_block_children();
 
-        cx.draw_outline(scene);
-        if paints_own_box {
-            cx.draw_outset_box_shadow(scene);
-        }
-
-        // clip-path clip ayer
+        // Apply clip-path to decorations as well as the element's content.
         self.layer_manager.maybe_with_layer(
             scene,
             has_clip_path,
@@ -640,6 +633,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 // If the element has a CSS `mask`, then push an isolation layer for the
                 // masked content. The mask is applied when the layer is popped below.
                 let mask_layer_pushed = cx.maybe_push_css_mask_layer(scene);
+                cx.draw_outline(scene);
+                if paints_own_box {
+                    cx.draw_outset_box_shadow(scene);
+                }
                 // `cx.transform` is mutated to apply scroll offsets while drawing content.
                 // Save it so that the mask can be drawn untransformed by scroll offsets.
                 let unscrolled_transform = cx.transform;
