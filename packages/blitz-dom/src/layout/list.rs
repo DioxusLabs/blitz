@@ -137,6 +137,7 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
                 Marker::String(format!("{}. ", marker.to_ascii_uppercase()))
             }
             "decimal" => Marker::String(format!("{}. ", index + 1)),
+            "decimal-leading-zero" => Marker::String(format!("{:02}. ", index + 1)),
             "disc" => Marker::Char('•'),
             "circle" => Marker::Char('◦'),
             "square" => Marker::Char('▪'),
@@ -218,6 +219,17 @@ mod tests {
         let result_2 = marker_for_style(&list_style("decimal"), 1);
         assert_eq!(result_1, Some(Marker::String("1. ".to_string())));
         assert_eq!(result_2, Some(Marker::String("2. ".to_string())));
+    }
+
+    #[test]
+    fn test_marker_for_decimal_leading_zero() {
+        let style = list_style("decimal-leading-zero");
+        for (index, expected) in [(0, "01. "), (8, "09. "), (9, "10. "), (99, "100. ")] {
+            assert_eq!(
+                marker_for_style(&style, index),
+                Some(Marker::String(expected.into()))
+            );
+        }
     }
 
     #[test]
