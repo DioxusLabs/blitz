@@ -3,8 +3,11 @@
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 
-use blitz_traits::events::{BlitzDataTransfer, BlitzDragOperation};
-use winit::data_transfer::{DataTransfer, TransferType, TypeHint, TypedData};
+use blitz_traits::events::{BlitzDataTransfer, BlitzDragOperation, BlitzDragOperations};
+use winit::data_transfer::{
+    DataTransfer, DataTransferSend, DataTransferSendBuilder, SendData, TransferType, TypeHint,
+    TypedData,
+};
 use winit::event_loop::DndAction;
 
 pub(crate) fn blitz_drag_operation_to_winit_dnd_action(
@@ -27,6 +30,47 @@ pub(crate) fn winit_dnd_action_to_blitz_dnd_operation(
         Some(DndAction::Link) => BlitzDragOperation::Link,
         _ => BlitzDragOperation::None,
     }
+}
+
+/// The operations that the source of a drag allows a drop to perform
+pub(crate) fn allowed_dnd_actions(data_transfer: &BlitzDataTransfer) -> Vec<DndAction> {
+    let allowed = data_transfer
+        .effect_allowed()
+        .unwrap_or(BlitzDragOperations::all());
+    [
+        (BlitzDragOperations::COPY, DndAction::Copy),
+        (BlitzDragOperations::MOVE, DndAction::Move),
+        (BlitzDragOperations::LINK, DndAction::Link),
+    ]
+    .into_iter()
+    .filter(|(operation, _)| allowed.contains(*operation))
+    .map(|(_, action)| action)
+    .collect()
+}
+
+/// The data of a drag that the document started, as offered to other applications.
+/// This is the data as it is when the drag starts.
+pub(crate) fn outgoing_drag_data(data_transfer: &BlitzDataTransfer) -> Box<dyn DataTransferSend> {
+    let mut builder = DataTransferSendBuilder::new(());
+    for (type_, format) in [
+        (TypeHint::Plaintext, "text/plain"),
+        (TypeHint::UriList, "text/uri-list"),
+        (TypeHint::Html, "text/html"),
+        (TypeHint::Rtf, "text/rtf"),
+    ] {
+        let Some(data) = data_transfer.data_unchecked(format) else {
+            continue;
+        };
+        let data = if type_ == TypeHint::UriList {
+            // Lines starting with `#` are comments
+            let uris = data.lines().filter(|line| !line.starts_with('#'));
+            SendData::Uris(uris.map(str::to_string).collect())
+        } else {
+            SendData::String(data.to_string())
+        };
+        builder.add_type(type_, move |_, _| Some(data.clone()));
+    }
+    builder.build()
 }
 
 /// The format of the data that a type of dragged data is exposed as, for the types

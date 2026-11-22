@@ -39,6 +39,7 @@ pub use crate::net::DataUriNetProvider;
         target_os = "openbsd"
     )
 ))]
+use blitz_traits::events::BlitzDataTransferArc;
 use blitz_traits::shell::FileDialogFilter;
 use blitz_traits::shell::ShellProvider;
 use std::sync::Arc;
@@ -139,6 +140,15 @@ impl ShellProvider for BlitzShellProvider {
                 LogicalSize::new(width, height).into(),
             ),
         ));
+    }
+
+    fn start_drag(&self, data_transfer: BlitzDataTransferArc) -> bool {
+        // Starting a drag needs the event loop
+        self.proxy.send_event(BlitzShellEvent::StartDrag {
+            window_id: self.window.id(),
+            data_transfer,
+        });
+        true
     }
 
     fn request_window_close(&self) {

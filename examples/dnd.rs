@@ -1,4 +1,5 @@
-//! Drop files or text from another application onto the window
+//! Drop files or text from another application onto the window, or drag the
+//! "Drag me!" box or some selected text onto it or out to another application
 
 use dioxus_native::prelude::*;
 
@@ -12,6 +13,23 @@ fn app() -> Element {
     let mut texts = use_store(Vec::new);
 
     rsx! {
+        div {
+            width: "200px",
+            height: "50px",
+            border: "1px solid black",
+            draggable: "true",
+            ondragstart: move |evt| {
+                println!("dragstart");
+                if let Err(err) = evt.data_transfer().set_data("text/plain", "Some text") {
+                    println!("{err}");
+                }
+            },
+            ondragend: move |evt| {
+                println!("dragend {}", evt.data_transfer().drop_effect());
+            },
+            "Drag me!"
+        }
+        p { "Or select some of this text and drag it" }
         div {
             width: "400px",
             height: "400px",

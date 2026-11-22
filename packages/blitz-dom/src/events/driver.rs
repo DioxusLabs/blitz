@@ -239,6 +239,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         // A document the pointer has left has no say over the cursor
         let is_leave = matches!(event, UiEvent::PointerLeave(_));
+        let is_drag_end = matches!(event, UiEvent::DragEnd(_));
 
         // Update document input state (hover, focus, active, etc)
         match &event {
@@ -313,6 +314,24 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_drag_leave(event);
                 return;
             }
+            // These go to the node being dragged, wherever the drag is now
+            UiEvent::Drag(event) | UiEvent::DragEnd(event) => {
+                let mut doc = self.doc.inner_mut();
+                drag_target = doc
+                    .drag_source_node_id
+                    .filter(|id| doc.get_node(*id).is_some());
+                if is_drag_end {
+                    doc.drag_source_node_id = None;
+                }
+                drop(doc);
+
+                if drag_target.is_none() {
+                    return;
+                }
+                event
+                    .data_transfer_mut()
+                    .set_mode(BlitzDragDataStoreMode::Protected);
+            }
             _ => {}
         };
 
@@ -331,6 +350,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::DragOver(_) => drag_target,
             UiEvent::DragLeave(_) => drag_target,
             UiEvent::Drop(_) => drag_target,
+            UiEvent::Drag(_) => drag_target,
+            UiEvent::DragEnd(_) => drag_target,
         };
         // Fall back to the root element. A document without a root element (e.g. an
         // empty iframe sub-document) has no event target, so there is nothing to do.
@@ -397,6 +418,16 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             )),
             // `dragleave` was dispatched by `handle_drag_leave`
             UiEvent::DragLeave(_) => {}
+            UiEvent::Drag(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::Drag(data),
+                EventDispatchSource::Input,
+            )),
+            UiEvent::DragEnd(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::DragEnd(data),
+                EventDispatchSource::Input,
+            )),
             UiEvent::Drop(data) => {
                 // The last `dragover` left the operation a drop would perform in
                 // `dropEffect`. A drop that nothing accepted is a drag that left.
@@ -578,7 +609,10 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             DomEventData::Wheel(data) => {
                 self.adjust_element_coords(event.target, &data.coords, &mut data.element)
             }
-            DomEventData::DragEnter(data)
+            DomEventData::DragStart(data)
+            | DomEventData::Drag(data)
+            | DomEventData::DragEnd(data)
+            | DomEventData::DragEnter(data)
             | DomEventData::DragOver(data)
             | DomEventData::DragLeave(data)
             | DomEventData::Drop(data) => {
