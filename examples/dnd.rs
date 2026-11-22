@@ -7,7 +7,9 @@ fn main() {
 }
 
 fn app() -> Element {
-    let mut drag_active = use_signal(|| false);
+    // `dragenter` and `dragleave` bubble up from the children of the drop zone, so count them
+    // rather than tracking a single flag
+    let mut drag_depth = use_signal(|| 0u32);
     let mut files = use_store(Vec::new);
     let mut texts = use_store(Vec::new);
 
@@ -15,11 +17,11 @@ fn app() -> Element {
         div {
             width: "400px",
             height: "400px",
-            border: if drag_active() { "2px solid black" } else {
+            border: if drag_depth() > 0 { "2px solid black" } else {
                 "2px solid gray"
             },
             ondragenter: move |_| {
-                drag_active.set(true);
+                drag_depth += 1;
                 println!("enter");
             },
             ondragover: move |evt| {
@@ -27,12 +29,12 @@ fn app() -> Element {
                 //println!("over");
             },
             ondragleave: move |_| {
-                drag_active.set(false);
+                drag_depth.set(drag_depth().saturating_sub(1));
                 println!("leave");
             },
             ondrop: move |evt| {
                 evt.prevent_default();
-                drag_active.set(false);
+                drag_depth.set(0);
                 println!("drop");
                 for file in evt.data_transfer().files() {
                     files.push( file.name());
