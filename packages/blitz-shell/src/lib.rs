@@ -27,6 +27,7 @@ pub use crate::window::{View, WindowConfig};
 #[cfg(feature = "data-uri")]
 pub use crate::net::DataUriNetProvider;
 
+use blitz_traits::events::BlitzDataTransferArc;
 #[cfg(all(
     feature = "file-dialog",
     any(
@@ -39,7 +40,6 @@ pub use crate::net::DataUriNetProvider;
         target_os = "openbsd"
     )
 ))]
-use blitz_traits::events::BlitzDataTransferArc;
 use blitz_traits::shell::FileDialogFilter;
 use blitz_traits::shell::ShellProvider;
 use std::sync::Arc;
