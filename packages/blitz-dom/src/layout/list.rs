@@ -137,6 +137,7 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
                 Marker::String(format!("{}. ", marker.to_ascii_uppercase()))
             }
             "decimal" => Marker::String(format!("{}. ", index + 1)),
+            "cjk-decimal" => Marker::String(cjk_decimal_marker(index + 1)),
             "disc" => Marker::Char('•'),
             "circle" => Marker::Char('◦'),
             "square" => Marker::Char('▪'),
@@ -164,6 +165,18 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
             }
         }
     })
+}
+
+fn cjk_decimal_marker(ordinal: usize) -> String {
+    const DIGITS: [char; 10] = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+
+    let mut marker: String = ordinal
+        .to_string()
+        .bytes()
+        .map(|digit| DIGITS[usize::from(digit - b'0')])
+        .collect();
+    marker.push('、');
+    marker
 }
 
 // Override the font to our specific bullet font when rendering bullets
