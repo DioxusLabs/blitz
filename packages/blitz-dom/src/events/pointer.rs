@@ -713,7 +713,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
                                 doc.navigation_provider.navigate_to(NavigationOptions::new(
                                     url,
                                     None,
-                                    doc.id(),
+                                    Some(doc.id()),
                                 ));
                             }
                         } else {

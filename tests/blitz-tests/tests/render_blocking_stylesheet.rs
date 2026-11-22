@@ -9,6 +9,7 @@
 
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
+use blitz_traits::DocumentId;
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
 use std::sync::{Arc, Mutex};
 use style::properties::generated::longhands::visibility::computed_value::T as Visibility;
@@ -21,7 +22,7 @@ struct ManualNetProvider {
 }
 
 impl NetProvider for ManualNetProvider {
-    fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+    fn fetch(&self, _doc_id: DocumentId, request: Request, handler: Box<dyn NetHandler>) {
         self.requests
             .lock()
             .unwrap()

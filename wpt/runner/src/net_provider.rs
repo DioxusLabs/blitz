@@ -1,3 +1,4 @@
+use blitz_traits::DocumentId;
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
 use data_url::DataUrl;
 use log::{debug, warn};
@@ -45,7 +46,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
 
     fn fetch_inner(
         &self,
-        _doc_id: usize,
+        _doc_id: DocumentId,
         request_id: usize,
         request: Request,
         handler: Box<dyn NetHandler>,
@@ -97,7 +98,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
     }
 }
 impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
-    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+    fn fetch(&self, doc_id: DocumentId, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url.to_string();
 
         // println!("Loading {url}");

@@ -2,6 +2,7 @@
 //! each sub-document (e.g. a browser tab or iframe-like element) is an
 //! inspectable target of its own.
 
+use blitz_traits::DocumentId;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::mpsc::{Sender, channel};
@@ -29,12 +30,12 @@ impl DevtoolsWaker for TestWaker {
 /// sub-documents, the same way `blitz-shell`'s provider does
 struct DocTreeProvider(BaseDocument);
 impl DocumentProvider for DocTreeProvider {
-    fn document_ids(&self) -> Vec<usize> {
+    fn document_ids(&self) -> Vec<DocumentId> {
         let mut ids = Vec::new();
         collect_document_ids(&self.0, &mut ids);
         ids
     }
-    fn with_document(&mut self, id: usize, cb: &mut dyn FnMut(&mut BaseDocument)) {
+    fn with_document(&mut self, id: DocumentId, cb: &mut dyn FnMut(&mut BaseDocument)) {
         with_document_in(&mut self.0, id, cb);
     }
 }
@@ -93,7 +94,7 @@ fn make_doc(html: &str) -> BaseDocument {
 
 /// A parent document hosting a sub-document in an absolutely positioned
 /// element at a known offset
-fn make_doc_tree() -> (BaseDocument, usize) {
+fn make_doc_tree() -> (BaseDocument, DocumentId) {
     let mut parent = make_doc(
         "<html><body style=\"margin: 0\">\
          <div id=\"host\" style=\"position: absolute; top: 100px; left: 50px; \
@@ -277,7 +278,7 @@ fn target_ids_of_documents() {
         target_id(&mut provider, sub_id),
         Some(format!("{parent_id}.{}", host_id.as_u64()))
     );
-    assert_eq!(target_id(&mut provider, usize::MAX), None);
+    assert_eq!(target_id(&mut provider, DocumentId::new()), None);
 }
 
 /// A sub-document's target is named after its host element and follows the

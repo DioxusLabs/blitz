@@ -29,6 +29,7 @@ mod data_uri_net_provider {
     //!
     //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
+    use blitz_traits::DocumentId;
     use blitz_traits::net::{Bytes, NetHandler, NetProvider, NetWaker, Request};
     use data_url::DataUrl;
     use std::sync::Arc;
@@ -47,7 +48,7 @@ mod data_uri_net_provider {
     }
 
     impl NetProvider for DataUriNetProvider {
-        fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+        fn fetch(&self, _doc_id: DocumentId, request: Request, handler: Box<dyn NetHandler>) {
             // let callback = &self.resource_callback;
             match request.url.scheme() {
                 "data" => {
