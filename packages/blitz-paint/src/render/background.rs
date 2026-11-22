@@ -74,6 +74,7 @@ impl From<StyloBackgroundOrigin> for BoxModelBox {
 pub(super) struct ImageLayerStyles<'a> {
     /// The computed value of the `background-image`/`mask-image` layer
     pub stylo_image: &'a ComputedImage,
+    pub image_density: f32,
     /// The loaded image resource if `stylo_image` is a `url()` image
     pub image_data: Option<&'a ImageResourceData>,
     pub position_x: &'a LengthPercentage,
@@ -92,8 +93,11 @@ impl<'a> ImageLayerStyles<'a> {
         image_data: &'a [Option<ImageResourceData>],
         idx: usize,
     ) -> Self {
+        let (stylo_image, image_density) =
+            blitz_dom::resolve_style_image(&bg_styles.background_image.0[idx]);
         Self {
-            stylo_image: &bg_styles.background_image.0[idx],
+            stylo_image,
+            image_density,
             image_data: image_data.get(idx).and_then(Option::as_ref),
             position_x: get_cyclic(&bg_styles.background_position_x.0, idx),
             position_y: get_cyclic(&bg_styles.background_position_y.0, idx),
@@ -111,8 +115,11 @@ impl<'a> ImageLayerStyles<'a> {
         image_data: &'a [Option<ImageResourceData>],
         idx: usize,
     ) -> Self {
+        let (stylo_image, image_density) =
+            blitz_dom::resolve_style_image(&svg_styles.mask_image.0[idx]);
         Self {
-            stylo_image: &svg_styles.mask_image.0[idx],
+            stylo_image,
+            image_density,
             image_data: image_data.get(idx).and_then(Option::as_ref),
             position_x: get_cyclic(&svg_styles.mask_position_x.0, idx),
             position_y: get_cyclic(&svg_styles.mask_position_y.0, idx),
@@ -470,8 +477,14 @@ impl ElementCx<'_, '_> {
         // may lack an intrinsic width, height, and/or aspect ratio, so each is
         // passed separately (usvg's resolved `Tree::size` is only used as the
         // source coordinate space of the rendered tree).
-        let intrinsic_width = svg.intrinsic_width().filter(|w| w.is_finite() && *w > 0.0);
-        let intrinsic_height = svg.intrinsic_height().filter(|h| h.is_finite() && *h > 0.0);
+        let intrinsic_width = svg
+            .intrinsic_width()
+            .map(|w| w / layer.image_density)
+            .filter(|w| w.is_finite() && *w > 0.0);
+        let intrinsic_height = svg
+            .intrinsic_height()
+            .map(|h| h / layer.image_density)
+            .filter(|h| h.is_finite() && *h > 0.0);
         let aspect_ratio = match (intrinsic_width, intrinsic_height) {
             (Some(w), Some(h)) => Some(w / h),
             _ => svg.viewbox_aspect_ratio(),
@@ -539,7 +552,10 @@ impl ElementCx<'_, '_> {
             layer,
             origin_rect.width() / self.scale,
             origin_rect.height() / self.scale,
-            BackgroundSizeComputeMode::Size(image_width as f32, image_height as f32),
+            BackgroundSizeComputeMode::Size(
+                image_width as f32 / layer.image_density,
+                image_height as f32 / layer.image_density,
+            ),
         );
 
         let bg_pos = (bg_pos.to_vec2() * self.scale).to_point();

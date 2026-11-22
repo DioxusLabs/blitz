@@ -31,6 +31,20 @@
 pub const DEFAULT_CSS: &str = include_str!("../assets/default.css");
 pub const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.otf");
 
+/// Return Stylo's chosen CSS image candidate and its pixel density.
+pub fn resolve_style_image(
+    image: &style::values::computed::image::Image,
+) -> (&style::values::computed::image::Image, f32) {
+    use style::values::computed::image::Image;
+    match image {
+        Image::ImageSet(set) => set.items.get(set.selected_index).map_or(
+            (&Image::None, 1.0),
+            |candidate| (&candidate.image, candidate.resolution.dppx()),
+        ),
+        image => (image, 1.0),
+    }
+}
+
 /// The DOM implementation.
 ///
 /// This is the primary entry point for this crate.
