@@ -1125,16 +1125,16 @@ impl<Rend: WindowRenderer> View<Rend> {
                 }
             },
             WindowEvent::OutgoingDragDropped { action, .. } => {
-                let result = self.outgoing_drag.as_ref().map(|drag| {
-                    // The OS does not always know what the drop did
-                    let data_transfer = drag.event.data_transfer();
-                    match winit_dnd_action_to_blitz_dnd_operation(action) {
-                        BlitzDragOperation::None => {
-                            data_transfer.default_drop_effect(BlitzDragOperation::None)
-                        }
-                        operation => operation,
-                    }
-                });
+                let result = match winit_dnd_action_to_blitz_dnd_operation(action) {
+                    // On Windows this is a drop that its target did not take
+                    BlitzDragOperation::None if cfg!(target_os = "windows") => None,
+                    // Elsewhere the OS does not know what the drop did
+                    BlitzDragOperation::None => self.outgoing_drag.as_ref().map(|drag| {
+                        let data_transfer = drag.event.data_transfer();
+                        data_transfer.default_drop_effect(BlitzDragOperation::None)
+                    }),
+                    operation => Some(operation),
+                };
                 self.finish_outgoing_drag(result);
             },
             WindowEvent::OutgoingDragCanceled { .. } => self.finish_outgoing_drag(None),
