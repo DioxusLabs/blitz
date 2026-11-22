@@ -828,6 +828,10 @@ img::before {
     unicode-bidi: isolate;
 }
 
+img {
+    overflow: clip;
+}
+
 img[usemap],
 object[usemap] {
     color: blue;

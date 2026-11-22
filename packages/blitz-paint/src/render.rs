@@ -347,8 +347,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         };
         let element = node.element_data();
         self.root_element_id != Some(node.id)
-            && (element.and_then(|e| e.raster_image_data()).is_some()
-                || element.and_then(|e| e.sub_doc_data()).is_some()
+            && (element.and_then(|e| e.sub_doc_data()).is_some()
                 || element.and_then(|e| e.text_input_data()).is_some()
                 || contain_paint
                 || !matches!(box_style.overflow_x, Overflow::Visible)
@@ -518,10 +517,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Cull elements that fall entirely outside the current clip rectangle. In addition to
         // the viewport, `clip_rect` is narrowed by any ancestor scrollport (see below), so this
         // also culls elements scrolled out of view inside a clipping/scrolling container.
-        if screen_bbox.x1 < clip_rect.x0
-            || screen_bbox.x0 > clip_rect.x1
-            || screen_bbox.y1 < clip_rect.y0
-            || screen_bbox.y0 > clip_rect.y1
+        let raster_overflow_visible = !should_clip
+            && node.element_data().and_then(|e| e.raster_image_data()).is_some();
+        if !raster_overflow_visible
+            && (screen_bbox.x1 < clip_rect.x0
+                || screen_bbox.x0 > clip_rect.x1
+                || screen_bbox.y1 < clip_rect.y0
+                || screen_bbox.y0 > clip_rect.y1)
         {
             return;
         }
@@ -1426,16 +1428,21 @@ impl ElementCx<'_, '_> {
                 .pre_translate(Vec2 { x, y })
                 .pre_scale_non_uniform(x_scale, y_scale);
 
-            self.with_replaced_content_clip(
-                scene,
-                container_size,
-                paint_size,
-                x_offset.px(),
-                y_offset.px(),
-                |scene| {
-                    scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
-                },
-            );
+            let box_style = self.style.get_box();
+            if box_style.overflow_x == Overflow::Visible && box_style.overflow_y == Overflow::Visible {
+                scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
+            } else {
+                self.with_replaced_content_clip(
+                    scene,
+                    container_size,
+                    paint_size,
+                    x_offset.px(),
+                    y_offset.px(),
+                    |scene| {
+                        scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
+                    },
+                );
+            }
         }
     }
 
