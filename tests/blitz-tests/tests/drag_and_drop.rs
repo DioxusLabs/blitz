@@ -13,13 +13,13 @@ use blitz_html::HtmlDocument;
 use blitz_test_harness::pointer_event;
 use blitz_traits::events::{
     BlitzDataTransfer, BlitzDataTransferArc, BlitzDragDataStoreMode, BlitzDragEvent,
-    BlitzDragOperation, BlitzPointerId, DomEvent, DomEventData, EventState, MouseEventButton,
-    MouseEventButtons, PointerCoords, UiEvent,
+    BlitzDragOperation, BlitzPointerId, DataTransferItemKind, DomEvent, DomEventData, EventState,
+    MouseEventButton, MouseEventButtons, PointerCoords, UiEvent,
 };
 use blitz_traits::shell::ShellProvider;
 use keyboard_types::Modifiers;
 use std::sync::{Arc, Mutex};
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, path::Path, rc::Rc};
 
 /// What a handler saw of an event: its name, its target and the dragged text
 type Seen = (&'static str, NodeId, Option<String>);
@@ -229,6 +229,44 @@ fn drag_events_follow_the_node_under_the_drag() {
         UiEvent::DragLeave(drag_event(&drag, 75.0, 75.0)),
     );
     assert_eq!(handler.take(), []);
+}
+
+#[test]
+fn dragged_strings_and_files_are_items_of_one_list() {
+    let mut drag = BlitzDataTransfer::new();
+    drag.add_unfetched("text/plain");
+    drag.add_file("/tmp/a.txt".into());
+    drag.add_unfetched("text/html");
+
+    // What is being dragged is known before the drop, but its data can't be read
+    let items: Vec<_> = drag
+        .items()
+        .iter()
+        .map(|item| (item.format(), item.kind()))
+        .collect();
+    assert_eq!(
+        items,
+        [
+            ("text/plain", DataTransferItemKind::Text),
+            ("application/octet-stream", DataTransferItemKind::File),
+            ("text/html", DataTransferItemKind::Text),
+        ]
+    );
+    assert_eq!(drag.types(), ["text/plain", "text/html", "Files"]);
+    assert_eq!(drag.files().count(), 0);
+
+    // A string that the drag source never sent stays unreadable
+    drag.set_data_unchecked("text/plain", "hello".to_string());
+    drag.set_mode(BlitzDragDataStoreMode::ReadOnly);
+    assert_eq!(drag.items().len(), 3);
+    assert_eq!(drag.get_data("text/plain").as_deref(), Some("hello"));
+    assert_eq!(drag.get_data("text/html"), None);
+    assert_eq!(drag.files().collect::<Vec<_>>(), [Path::new("/tmp/a.txt")]);
+
+    // Clearing the data removes the strings and keeps the files
+    drag.set_mode(BlitzDragDataStoreMode::ReadWrite);
+    drag.clear_data(None).unwrap();
+    assert_eq!(drag.types(), ["Files"]);
 }
 
 #[test]

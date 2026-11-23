@@ -809,8 +809,7 @@ impl NativeDataTransfer for NativeDragData {
         self.0
             .data_transfer()
             .files()
-            .iter()
-            .map(|path| FileData::new(BlitzNativeFileData(path.clone())))
+            .map(|path| FileData::new(BlitzNativeFileData(path.to_path_buf())))
             .collect()
     }
 }

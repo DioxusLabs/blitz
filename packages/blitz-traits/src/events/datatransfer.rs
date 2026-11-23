@@ -1,4 +1,7 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use bitflags::bitflags;
 
@@ -126,24 +129,50 @@ pub enum BlitzDragDataStoreMode {
 /// it depends on the [mode](BlitzDragDataStoreMode) the event is dispatched in.
 #[derive(Debug, Default)]
 pub struct BlitzDataTransfer {
-    /// In the order they were added, with at most one item per format
-    data: Vec<DataTransferItem>,
-    /// Formats the drag source offers. Known for the whole drag, whereas `data` is
-    /// only filled in for the drop.
-    types: Vec<String>,
-    files: Vec<PathBuf>,
+    /// In the order they were added, with at most one string per format
+    items: Vec<DataTransferItem>,
     /// `None` is "uninitialized": every operation is allowed
     effect_allowed: Option<BlitzDragOperations>,
     drop_effect: BlitzDragOperation,
     mode: BlitzDragDataStoreMode,
 }
 
-/// A string of dragged data
+/// A string or a file that a drag carries
 #[derive(Debug)]
-struct DataTransferItem {
+pub struct DataTransferItem {
     /// The MIME type of the data, in lowercase
     format: String,
-    data: String,
+    data: DataTransferItemData,
+}
+
+#[derive(Debug)]
+enum DataTransferItemData {
+    /// A string that another application offers, which is not fetched until the drop
+    Unfetched,
+    Text(String),
+    File(PathBuf),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DataTransferItemKind {
+    Text,
+    File,
+}
+
+impl DataTransferItem {
+    /// The MIME type of the data, in lowercase
+    pub fn format(&self) -> &str {
+        &self.format
+    }
+
+    pub fn kind(&self) -> DataTransferItemKind {
+        match self.data {
+            DataTransferItemData::Unfetched | DataTransferItemData::Text(_) => {
+                DataTransferItemKind::Text
+            }
+            DataTransferItemData::File(_) => DataTransferItemKind::File,
+        }
+    }
 }
 
 /// legacy
@@ -168,35 +197,61 @@ impl BlitzDataTransfer {
         self.mode = mode;
     }
 
-    /// The formats the drag carries data in
+    /// What the drag carries. The data of an item is read with [`get_data`](Self::get_data)
+    /// or [`files`](Self::files).
+    pub fn items(&self) -> &[DataTransferItem] {
+        &self.items
+    }
+
+    /// The formats the drag carries strings in, followed by "Files" if it carries files
     pub fn types(&self) -> Vec<String> {
-        let mut types = self.types.clone();
-        for item in &self.data {
-            if !types.contains(&item.format) {
-                types.push(item.format.clone());
+        let mut types = Vec::new();
+        let mut has_files = false;
+        for item in &self.items {
+            match item.kind() {
+                DataTransferItemKind::Text => types.push(item.format.clone()),
+                DataTransferItemKind::File => has_files = true,
             }
         }
-        if !self.files.is_empty() {
+        if has_files {
             types.push("Files".to_string());
         }
         types
     }
 
-    /// Set the formats the drag source offers, for a drag whose data is not available yet
-    pub fn set_types(&mut self, types: Vec<String>) {
-        self.types = types;
+    /// The files being dragged. Empty until the drop.
+    pub fn files(&self) -> impl Iterator<Item = &Path> {
+        let is_protected = self.mode == BlitzDragDataStoreMode::Protected;
+        self.items.iter().filter_map(move |item| match &item.data {
+            DataTransferItemData::File(path) if !is_protected => Some(path.as_path()),
+            _ => None,
+        })
     }
 
-    /// The files being dragged. Empty until the drop.
-    pub fn files(&self) -> &[PathBuf] {
-        match self.mode {
-            BlitzDragDataStoreMode::Protected => &[],
-            _ => &self.files,
+    /// Add a string that the drag source offers but that is not available yet. For the
+    /// shell, not for event handlers.
+    pub fn add_unfetched(&mut self, format: &str) {
+        if self.text_item_mut(format).is_none() {
+            self.items.push(DataTransferItem {
+                format: format.to_string(),
+                data: DataTransferItemData::Unfetched,
+            });
         }
     }
 
-    pub fn set_files(&mut self, files: Vec<PathBuf>) {
-        self.files = files;
+    /// Add a file. For the shell, not for event handlers.
+    pub fn add_file(&mut self, path: PathBuf) {
+        self.items.push(DataTransferItem {
+            // The MIME type of a file is not known
+            format: "application/octet-stream".to_string(),
+            data: DataTransferItemData::File(path),
+        });
+    }
+
+    fn text_item_mut(&mut self, format: &str) -> Option<&mut DataTransferItem> {
+        self.items
+            .iter_mut()
+            .find(|item| item.kind() == DataTransferItemKind::Text && item.format == format)
     }
 
     pub fn effect_allowed(&self) -> Option<BlitzDragOperations> {
@@ -269,17 +324,18 @@ impl BlitzDataTransfer {
 
     /// Read data regardless of the mode. For the shell, not for event handlers.
     pub fn data_unchecked(&self, format: &str) -> Option<&str> {
-        self.data
-            .iter()
-            .find(|item| item.format == format)
-            .map(|item| item.data.as_str())
+        self.items.iter().find_map(|item| match &item.data {
+            DataTransferItemData::Text(data) if item.format == format => Some(data.as_str()),
+            _ => None,
+        })
     }
 
     /// Add data regardless of the mode. For the shell, not for event handlers.
     pub fn set_data_unchecked(&mut self, format: &str, data: String) {
-        match self.data.iter_mut().find(|item| item.format == format) {
+        let data = DataTransferItemData::Text(data);
+        match self.text_item_mut(format) {
             Some(item) => item.data = data,
-            None => self.data.push(DataTransferItem {
+            None => self.items.push(DataTransferItem {
                 format: format.to_string(),
                 data,
             }),
@@ -307,14 +363,13 @@ impl BlitzDataTransfer {
             return Err("clearData is only allowed during dragstart".into());
         }
 
-        match format {
-            Some(format) => {
-                let format = normalize_format(format);
-                self.data.retain(|item| item.format != format);
-            }
-            // https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer/clearData
-            None => self.data.clear(),
-        }
+        // Files are kept
+        // https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer/clearData
+        let format = format.map(normalize_format);
+        self.items.retain(|item| {
+            item.kind() == DataTransferItemKind::File
+                || format.as_ref().is_some_and(|format| item.format != *format)
+        });
         Ok(())
     }
 }

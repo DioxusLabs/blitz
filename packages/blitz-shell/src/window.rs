@@ -5,8 +5,9 @@ use crate::convert_events::{
     winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
 use crate::dnd::{
-    allowed_dnd_actions, blitz_drag_operation_to_winit_dnd_action, for_each_readable_type,
-    outgoing_drag_data, store_typed_data, winit_dnd_action_to_blitz_dnd_operation,
+    URI_LIST_FORMAT, allowed_dnd_actions, blitz_drag_operation_to_winit_dnd_action,
+    for_each_readable_type, outgoing_drag_data, store_typed_data,
+    winit_dnd_action_to_blitz_dnd_operation,
 };
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
@@ -642,6 +643,11 @@ impl<Rend: WindowRenderer> View<Rend> {
         let Some(drag) = &mut self.incoming_drag else {
             return;
         };
+        // The document is not told about a drag until it is known which files it carries
+        if !drag.pending_data.is_empty() {
+            drag.held_position = Some((position, proposed_action));
+            return;
+        }
         drag.event.coords = coords;
         drag.event.mods = mods;
         if drag.is_internal {
@@ -1030,6 +1036,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                         id,
                         event: outgoing.event.clone(),
                         pending_data: Vec::new(),
+                        held_position: None,
+                        is_dropped: false,
                         is_internal: true,
                     });
                     if let Some(position) = position {
@@ -1038,17 +1046,21 @@ impl<Rend: WindowRenderer> View<Rend> {
                     return;
                 }
 
-                // The types of data being dragged are known for the whole drag. The data
-                // itself is only fetched if the drag is dropped.
+                // The formats of the strings being dragged are known for the whole drag,
+                // and the strings are only fetched if the drag is dropped. Which files are
+                // being dragged is only known from the list of URIs, so that is fetched now.
                 let mut data_transfer = BlitzDataTransfer::new();
+                let mut pending_data = Vec::new();
                 if let Ok(source) = event_loop.data_transfer(id) {
-                    let mut types = Vec::new();
-                    for_each_readable_type(&*source, |_, format| {
-                        if !types.iter().any(|t| t == format) {
-                            types.push(format.to_string());
+                    for_each_readable_type(&*source, |type_, format| {
+                        if format != URI_LIST_FORMAT {
+                            data_transfer.add_unfetched(format);
+                        } else if pending_data.is_empty()
+                            && let Ok(serial) = event_loop.fetch_data_transfer(id, type_)
+                        {
+                            pending_data.push(serial);
                         }
                     });
-                    data_transfer.set_types(types);
                 }
 
                 self.incoming_drag = Some(IncomingDrag {
@@ -1061,7 +1073,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                         buttons: self.buttons,
                         data_transfer: Arc::new(AtomicRefCell::new(data_transfer)),
                     },
-                    pending_data: Vec::new(),
+                    pending_data,
+                    held_position: None,
+                    is_dropped: false,
                     is_internal: false,
                 });
 
@@ -1079,14 +1093,23 @@ impl<Rend: WindowRenderer> View<Rend> {
                     return;
                 };
 
-                // The data has to be requested now: the drag source may not keep it
+                // A drag that the document was not told about has not been accepted
+                if !drag.pending_data.is_empty() {
+                    self.incoming_drag = None;
+                    return;
+                }
+
+                // The strings have to be requested now: the drag source may not keep them
                 // available once the drop has been handled. The `drop` event is
-                // dispatched once all of it has arrived.
+                // dispatched once all of them have arrived.
+                drag.is_dropped = true;
                 if !drag.is_internal
                     && let Ok(source) = event_loop.data_transfer(id)
                 {
-                    for_each_readable_type(&*source, |type_, _| {
-                        if let Ok(serial) = event_loop.fetch_data_transfer(id, type_) {
+                    for_each_readable_type(&*source, |type_, format| {
+                        if format != URI_LIST_FORMAT
+                            && let Ok(serial) = event_loop.fetch_data_transfer(id, type_)
+                        {
                             drag.pending_data.push(serial);
                         }
                     });
@@ -1110,16 +1133,23 @@ impl<Rend: WindowRenderer> View<Rend> {
                 drag.pending_data.swap_remove(idx);
                 store_typed_data(&mut drag.event.data_transfer_mut(), &*value);
 
-                if drag.pending_data.is_empty() {
+                if !drag.pending_data.is_empty() {
+                    return;
+                }
+                if drag.is_dropped {
                     let drag = self.incoming_drag.take().unwrap();
                     self.doc.handle_ui_event(UiEvent::Drop(drag.event));
+                } else if let Some((position, proposed_action)) = drag.held_position.take() {
+                    self.handle_drag_position(event_loop, position, proposed_action);
                 }
             },
             WindowEvent::DragLeft { id } => {
-                // A drag whose drop is waiting for its data has not left
+                // A drag whose drop is waiting for its data has not left, and the document
+                // was not told about one that is still waiting for its files
                 if let Some(drag) = self
                     .incoming_drag
-                    .take_if(|drag| drag.id == id && drag.pending_data.is_empty())
+                    .take_if(|drag| drag.id == id && !drag.is_dropped)
+                    && drag.pending_data.is_empty()
                 {
                     self.doc.handle_ui_event(UiEvent::DragLeave(drag.event));
                 }
@@ -1156,8 +1186,13 @@ struct IncomingDrag {
     id: DataTransferId,
     /// The event dispatched to the document each time the drag moves
     event: BlitzDragEvent,
-    /// The requests for the dragged data that a drop is waiting for
+    /// The requests for dragged data that are yet to be answered: for the files when
+    /// the drag enters the window, and for the strings when it is dropped
     pending_data: Vec<AsyncRequestSerial>,
+    /// Where the drag last moved to while its files were not known
+    held_position: Option<(PhysicalPosition<f64>, Option<DndAction>)>,
+    /// Whether the drag has been dropped, and the drop is waiting for its data
+    is_dropped: bool,
     /// Whether this is the drag that the document started, sharing its data
     is_internal: bool,
 }

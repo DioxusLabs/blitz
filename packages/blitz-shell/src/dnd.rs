@@ -32,6 +32,9 @@ pub(crate) fn winit_dnd_action_to_blitz_dnd_operation(
     }
 }
 
+/// The format that dragged files and links are exposed as by the drag source
+pub(crate) const URI_LIST_FORMAT: &str = "text/uri-list";
+
 /// The operations that the source of a drag allows a drop to perform
 pub(crate) fn allowed_dnd_actions(data_transfer: &BlitzDataTransfer) -> Vec<DndAction> {
     let allowed = data_transfer
@@ -78,7 +81,7 @@ pub(crate) fn outgoing_drag_data(data_transfer: &BlitzDataTransfer) -> Box<dyn D
 fn transfer_type_format(type_: &dyn TransferType) -> Option<&'static str> {
     match type_.hint()? {
         TypeHint::Plaintext => Some("text/plain"),
-        TypeHint::UriList => Some("text/uri-list"),
+        TypeHint::UriList => Some(URI_LIST_FORMAT),
         TypeHint::Html => Some("text/html"),
         TypeHint::Rtf => Some("text/rtf"),
         _ => None,
@@ -105,18 +108,22 @@ pub(crate) fn store_typed_data(data_transfer: &mut BlitzDataTransfer, value: &dy
         return;
     };
 
-    if format == "text/uri-list" {
+    if format == URI_LIST_FORMAT {
         let Ok(uris) = value.try_as_uris() else {
             return;
         };
-        let files: Vec<PathBuf> = uris
-            .iter()
-            .filter_map(|uri| file_uri_to_path(uri))
-            .collect();
-        if !files.is_empty() {
-            data_transfer.set_files(files);
+        // Files are dragged as a list of `file://` URIs. They are exposed as files, which
+        // leaves the URIs that are links.
+        let mut links = Vec::new();
+        for uri in uris {
+            match file_uri_to_path(&uri) {
+                Some(path) => data_transfer.add_file(path),
+                None => links.push(uri),
+            }
         }
-        data_transfer.set_data_unchecked(format, uris.join("\r\n"));
+        if !links.is_empty() {
+            data_transfer.set_data_unchecked(format, links.join("\r\n"));
+        }
     } else if let Ok(data) = value.try_as_string() {
         data_transfer.set_data_unchecked(format, data);
     }
