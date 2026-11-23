@@ -21,9 +21,9 @@ pub(crate) struct IncomingDrag {
     /// The requests for dragged data that are yet to be answered: for the files when
     /// the drag enters the window, and for the strings when it is dropped
     pending_data: Vec<AsyncRequestSerial>,
-    /// The operation the drag source preferred when the drag last moved, if that was
-    /// while its files were not known
-    held_move: Option<Option<DndAction>>,
+    /// Set while the document is owed a `dragover` event, because the drag moved while
+    /// its files were not known. Holds the operation the drag source proposed for it.
+    deferred_drag_over: Option<Option<DndAction>>,
     /// Whether the drag has been dropped, and the drop is waiting for its data
     is_dropped: bool,
 }
@@ -69,7 +69,7 @@ impl IncomingDrag {
             id,
             event,
             pending_data,
-            held_move: None,
+            deferred_drag_over: None,
             is_dropped: false,
         }
     }
@@ -91,7 +91,7 @@ impl IncomingDrag {
         self.event.mods = mods;
         // The document is not told about a drag until it is known which files it carries
         if !self.pending_data.is_empty() {
-            self.held_move = Some(proposed_action);
+            self.deferred_drag_over = Some(proposed_action);
             return;
         }
         self.dispatch_drag_over(event_loop, doc, proposed_action);
@@ -172,7 +172,7 @@ impl IncomingDrag {
             doc.handle_ui_event(UiEvent::Drop(self.event));
             return None;
         }
-        if let Some(proposed_action) = self.held_move.take() {
+        if let Some(proposed_action) = self.deferred_drag_over.take() {
             self.dispatch_drag_over(event_loop, doc, proposed_action);
         }
         Some(self)
