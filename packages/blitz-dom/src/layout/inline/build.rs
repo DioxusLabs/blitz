@@ -187,7 +187,11 @@ pub(crate) fn build_inline_layout_into(
                                 &text_transform,
                             );
                         }
-                        for child_id in node.children.iter().copied() {
+                        let children = match node.layout_children.borrow().as_deref() {
+                            Some(wrapped) => wrapped.to_vec(),
+                            None => node.children.to_vec(),
+                        };
+                        for child_id in children {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             build_inline_layout_recursive(
                                 builder,
@@ -262,7 +266,11 @@ pub(crate) fn build_inline_layout_into(
                                 );
                             }
 
-                            for child_id in node.children.iter().copied() {
+                            let children = match node.layout_children.borrow().as_deref() {
+                                Some(wrapped) => wrapped.to_vec(),
+                                None => node.children.to_vec(),
+                            };
+                            for child_id in children {
                                 build_inline_layout_recursive(
                                     builder,
                                     text_transformer,
