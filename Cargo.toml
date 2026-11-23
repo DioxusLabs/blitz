@@ -283,6 +283,8 @@ dioxus-native = { workspace = true, features = [
     "svg",
     "prelude",
     "data-uri",
+    "net",
+    "html",
 ] }
 euclid = { workspace = true }
 url = { workspace = true }
