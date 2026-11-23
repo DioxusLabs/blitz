@@ -208,8 +208,21 @@ pub(crate) fn handle_dom_event(
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
-        if let Some(ui_event) = ui_event {
-            widget_data.widget.handle_event(&ui_event);
+        // A widget accepts a drop by setting the `dropEffect` of a `DragOver` event
+        if let Some(UiEvent::DragOver(event)) = &ui_event {
+            event
+                .data_transfer_mut()
+                .set_drop_effect(BlitzDragOperation::None);
+        }
+
+        if let Some(ui_event) = &ui_event {
+            widget_data.widget.handle_event(ui_event);
+        }
+
+        if let Some(UiEvent::DragOver(event)) = &ui_event {
+            let mut data_transfer = event.data_transfer_mut();
+            let drop_effect = data_transfer.allowed_drop_effect();
+            data_transfer.set_drop_effect(drop_effect);
         }
 
         if set_focus {
