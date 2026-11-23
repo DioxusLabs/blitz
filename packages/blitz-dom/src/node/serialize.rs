@@ -1,5 +1,7 @@
 //! Serialization of nodes to HTML, and of inline `<svg>` subtrees to SVG source for usvg.
 
+use std::borrow::Cow;
+
 use html_escape::{encode_quoted_attribute_to_string, encode_text_to_string};
 use markup5ever::{Namespace, QualName, local_name, ns};
 use style_traits::values::ToCss;
@@ -16,7 +18,9 @@ enum OutputStyle {
 #[derive(Clone, Copy)]
 struct SerializeOpts {
     style: OutputStyle,
-    /// Replace `currentColor` in attribute values with the element's computed `color`
+    /// Write each element's computed `color` as a `color` attribute where CSS set it, and spell the
+    /// `currentColor` keyword the way usvg expects, so that usvg resolves `currentColor`
+    /// (including inherited `currentColor` paint) against the element that uses it
     resolve_current_color: bool,
     /// Write the `xmlns` declarations that XML needs and HTML serialization leaves out, so that
     /// the element and attribute namespaces in the output match the DOM
@@ -57,6 +61,26 @@ fn write_attr_name(name: &QualName, writer: &mut String) {
         }
     }
     writer.push_str(&name.local);
+}
+
+/// Rewrites the ASCII case-insensitive `currentcolor` keyword as `currentColor`, the only
+/// spelling usvg recognises
+fn normalize_current_color_keyword(value: &str) -> Cow<'_, str> {
+    const KEYWORD: &str = "currentColor";
+    let lowercase = value.to_ascii_lowercase();
+    let matches: Vec<usize> = lowercase
+        .match_indices("currentcolor")
+        .map(|(index, _)| index)
+        .filter(|&index| &value[index..index + KEYWORD.len()] != KEYWORD)
+        .collect();
+    if matches.is_empty() {
+        return Cow::Borrowed(value);
+    }
+    let mut normalized = value.to_string();
+    for index in matches {
+        normalized.replace_range(index..index + KEYWORD.len(), KEYWORD);
+    }
+    Cow::Owned(normalized)
 }
 
 /// Writes an attribute's name for XML output. An attribute in a namespace other than the
@@ -152,8 +176,8 @@ impl Node {
         self.write_outer_html_in_style(writer, SerializeOpts::html(OutputStyle::Pretty), 0);
     }
 
-    /// Serializes this `<svg>` subtree as a standalone SVG document for usvg, with
-    /// `currentColor` resolved against each element's computed `color`.
+    /// Serializes this `<svg>` subtree as a standalone SVG document for usvg, with each element's
+    /// computed `color` made available to usvg's `currentColor` resolution.
     #[cfg(feature = "svg")]
     pub fn svg_source(&self) -> String {
         let mut output = String::new();
@@ -172,11 +196,21 @@ impl Node {
         const INDENT: &str = "  ";
         let style = opts.style;
         let has_children = !self.children.is_empty();
+        let computed_color = |node: &Node| node.primary_styles().map(|style| style.clone_color());
         let current_color = opts
             .resolve_current_color
-            .then(|| self.primary_styles())
+            .then(|| computed_color(self))
             .flatten()
-            .map(|style| style.clone_color())
+            .filter(|color| {
+                // usvg reads `color` attributes itself, so the computed value only needs writing
+                // where CSS changed it (or, at the root, to carry the colour inherited from outside)
+                let parent_color = self.parent.and_then(|id| computed_color(&self.tree()[id]));
+                if self.attr(local_name!("color")).is_some() {
+                    parent_color.is_some_and(|parent_color| parent_color != *color)
+                } else {
+                    nesting == 0 || parent_color != Some(*color)
+                }
+            })
             .map(|color| color.to_css_string());
 
         match &self.data {
@@ -251,6 +285,12 @@ impl Node {
                     {
                         continue;
                     }
+                    if current_color.is_some()
+                        && attr.name.ns == ns!()
+                        && attr.name.local == local_name!("color")
+                    {
+                        continue;
+                    }
                     writer.push(' ');
                     if opts.xml_namespaces {
                         if !write_xml_attr_name(&attr.name, &mut declared_prefixes, writer) {
@@ -261,11 +301,8 @@ impl Node {
                         write_attr_name(&attr.name, writer);
                     }
                     writer.push_str("=\"");
-                    #[allow(clippy::unnecessary_unwrap)] // Convert to if-let chain once stabilised
-                    if current_color.is_some() && attr.value.contains("currentColor") {
-                        let value = attr
-                            .value
-                            .replace("currentColor", current_color.as_ref().unwrap());
+                    if opts.resolve_current_color {
+                        let value = normalize_current_color_keyword(&attr.value);
                         encode_quoted_attribute_to_string(&value, writer);
                     } else {
                         encode_quoted_attribute_to_string(&attr.value, writer);
@@ -280,6 +317,11 @@ impl Node {
                         }
                         writer.push_str("background-color:initial!important");
                     }
+                    writer.push('"');
+                }
+                if let Some(color) = &current_color {
+                    writer.push_str(" color=\"");
+                    encode_quoted_attribute_to_string(color, writer);
                     writer.push('"');
                 }
                 if opts.skip_root_background
