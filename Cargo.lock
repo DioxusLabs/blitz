@@ -980,6 +980,7 @@ dependencies = [
  "markup5ever",
  "objc2 0.6.5",
  "parley",
+ "parley_css_text",
  "percent-encoding",
  "png 0.18.1",
  "rayon",
@@ -6352,6 +6353,13 @@ dependencies = [
  "png 0.18.1",
  "syntaxmate",
  "winit",
+]
+
+[[package]]
+name = "parley_css_text"
+version = "0.3.0-beta.4"
+dependencies = [
+ "parley",
 ]
 
 [[package]]

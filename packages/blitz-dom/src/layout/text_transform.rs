@@ -21,7 +21,7 @@ use stylo_taffy::CopyStyleGetters;
 #[cfg(feature = "text-transform-icu")]
 use writeable::Writeable;
 
-use crate::text_map::TextChange;
+use parley_css_text::TextChange;
 
 #[cfg(feature = "text-transform-icu")]
 const CASE_MAPPER: CaseMapperBorrowed<'static> = CaseMapper::new();

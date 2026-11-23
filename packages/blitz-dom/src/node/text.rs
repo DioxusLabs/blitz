@@ -5,8 +5,8 @@ use blitz_traits::{
 };
 use keyboard_types::{Key, Modifiers, NamedKey};
 use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
+use parley_css_text::line_end_whitespace;
 
-use crate::text_map::line_end_whitespace;
 use crate::util::ACTION_MOD;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -86,10 +86,10 @@ impl TextLayout {
     }
 }
 
-pub use crate::text_map::{INLINE_BOX_CHAR, LineEndWhitespace};
+pub use parley_css_text::{INLINE_BOX_CHAR, LineEndWhitespace};
 
 /// Maps DOM offsets in an inline formatting context to offsets in its layout text, and back.
-pub type TextOffsetMap = crate::text_map::TextOffsetMap<NodeId>;
+pub type TextOffsetMap = parley_css_text::TextOffsetMap<NodeId>;
 
 impl std::fmt::Debug for TextLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

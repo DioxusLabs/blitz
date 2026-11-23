@@ -16,6 +16,7 @@ members = [
     "packages/dioxus-native-dom",
     "packages/blitz-test-harness",
     "packages/parley_code_editor",
+    "packages/parley_css_text",
     "apps/browser",
     "apps/browser/persistence",
     "apps/readme",
@@ -52,6 +53,7 @@ blitz-shell = { version = "=0.3.0-beta.4", path = "./packages/blitz-shell", defa
 blitz-vibey-cdp-server = { version = "=0.3.0-beta.4", path = "./packages/blitz-vibey-cdp-server", default-features = false }
 blitz-traits = { version = "=0.3.0-beta.4", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "=0.3.0-beta.4", path = "./packages/stylo_taffy", default-features = false }
+parley_css_text = { version = "=0.3.0-beta.4", path = "./packages/parley_css_text" }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }

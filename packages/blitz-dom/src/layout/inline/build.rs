@@ -19,8 +19,8 @@ use crate::{
     layout::text_transform::{CaseTransform, TextTransformer},
     node::{ListItemLayout, ListItemLayoutPosition, Marker, TextBrush, TextLayout},
     stylo_to_parley,
-    text_map::{WhiteSpace, WhiteSpaceCollapser},
 };
+use parley_css_text::{WhiteSpace, WhiteSpaceCollapser};
 
 pub(crate) fn build_inline_layout_into(
     nodes: &crate::NodeTree,

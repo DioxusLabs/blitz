@@ -2,8 +2,7 @@
 //! bidirectional map between source text offsets and layout text offsets, and finds the
 //! hanging and removed white space at the end of each laid out line.
 //!
-//! Independent of the rest of Blitz: nodes are identified by a generic id, so this can be
-//! lifted into its own crate.
+//! Nodes are identified by a generic id, so this works with any document tree.
 
 mod collapse;
 mod line_end;

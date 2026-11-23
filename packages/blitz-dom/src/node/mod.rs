@@ -12,7 +12,6 @@ mod stylo_data;
 mod svg;
 mod text;
 
-pub use crate::text_map::Affinity;
 pub use attributes::{Attribute, Attributes};
 #[cfg(feature = "custom-widget")]
 pub use custom_widget::{
@@ -25,6 +24,7 @@ pub use element::{
     SpecialElementType, Status,
 };
 pub use node::*;
+pub use parley_css_text::Affinity;
 pub use scrollbar::{ScrollbarColor, ScrollbarRef, ScrollbarWidth};
 pub use stylo_data::ComputedStyleRef;
 #[cfg(feature = "svg")]

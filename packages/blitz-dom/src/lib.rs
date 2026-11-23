@@ -65,7 +65,6 @@ mod stylo_to_cursor_icon;
 mod stylo_to_kurbo;
 mod stylo_to_parley;
 /// White space collapsing and offset mapping for inline layout text.
-mod text_map;
 pub mod traversal;
 /// Versioned storage for the nodes of the DOM tree.
 mod tree;
