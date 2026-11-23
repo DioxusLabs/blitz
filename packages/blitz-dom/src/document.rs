@@ -2,7 +2,7 @@ use crate::NodeTree;
 use crate::events::{DragMode, WheelGesture, handle_dom_event};
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
-use crate::mutator::ViewportMut;
+use crate::mutator::{ViewportMut, image_source_attr, is_html_img};
 use crate::net::{
     ImageHandler, Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler,
     StylesheetLoader,
@@ -1420,7 +1420,18 @@ impl BaseDocument {
                         "Resource load failed"
                     );
                     #[cfg(not(feature = "tracing"))]
-                    let _ = (waiting_nodes, err);
+                    let _ = err;
+                    for (node_id, image_type) in waiting_nodes {
+                        if image_type == ImageType::Image
+                            && self
+                                .get_node(node_id)
+                                .and_then(|node| node.element_data())
+                                .is_some_and(is_html_img)
+                            && self.is_current_image_src(node_id, url)
+                        {
+                            self.queue_ua_event(node_id, DomEventData::Error);
+                        }
+                    }
                 } else {
                     #[cfg(feature = "tracing")]
                     tracing::warn!(error = err.as_str(), "Resource load failed (no url)");
@@ -1534,13 +1545,19 @@ impl BaseDocument {
 
         // Apply to all waiting nodes
         for (node_id, image_type) in waiting_nodes {
+            let is_current =
+                image_type != ImageType::Image || self.is_current_image_src(node_id, url);
             let Some(node) = self.get_node_mut(node_id) else {
                 continue;
             };
 
             match image_type {
                 ImageType::Image => {
+                    if !is_current {
+                        continue;
+                    }
                     let element = node.element_data_mut().unwrap();
+                    let is_html_image = is_html_img(element);
                     #[cfg(feature = "custom-widget")]
                     if element.custom_widget_data().is_some() {
                         continue;
@@ -1550,7 +1567,11 @@ impl BaseDocument {
                     // Clear layout cache
                     node.clear_layout_cache();
                     node.insert_damage(ALL_DAMAGE);
+                    if is_html_image {
+                        self.queue_ua_event(node_id, DomEventData::Load);
+                    }
                 }
+
                 ImageType::Background(idx) | ImageType::Mask(idx) => {
                     let layer_image = node.element_data_mut().and_then(|el| {
                         let images = match image_type {
@@ -1567,6 +1588,14 @@ impl BaseDocument {
                 }
             }
         }
+    }
+
+    fn is_current_image_src(&self, node_id: NodeId, url: &str) -> bool {
+        self.get_node(node_id)
+            .and_then(|node| node.element_data())
+            .and_then(image_source_attr)
+            .and_then(|src| self.resolve_url(src))
+            .is_some_and(|src| src.as_str() == url)
     }
 
     /// Snapshot the node's pre-mutation state (element state and attributes) ahead of
