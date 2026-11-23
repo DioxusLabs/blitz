@@ -40,6 +40,7 @@ mod net_provider;
 mod panic_backtrace;
 mod renderer;
 mod report;
+mod resvg;
 
 #[cfg(test)]
 use manifest::TestType;
@@ -330,12 +331,47 @@ impl TestResult {
     }
 }
 
+/// Where results go: `WPT_OUTPUT_DIR`, defaulting to `wpt/output`
+fn output_dir() -> PathBuf {
+    env::var_os("WPT_OUTPUT_DIR").map_or_else(
+        || {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("output")
+        },
+        PathBuf::from,
+    )
+}
+
 fn main() {
     env_logger::init();
     std::panic::set_hook(Box::new(panic_backtrace::stash_panic_handler));
 
-    let verbose = env::args().any(|arg| arg == "--verbose" || arg == "-v");
-    let run_quarantined = env::args().any(|arg| arg == "--run-quarantined");
+    let mut args: Vec<String> = env::args().skip(1).collect();
+    let is_resvg = args.first().is_some_and(|arg| arg == "resvg");
+    if is_resvg {
+        args.remove(0);
+    }
+    let (renderer_kind, suites) = renderer::parse_args(args.iter().cloned());
+
+    if is_resvg {
+        let suite = resvg::Suite::load();
+        let tests = suite.select_tests(&suites);
+        let out_dir = env::var_os("WPT_OUTPUT_DIR").map_or_else(resvg::output_dir, PathBuf::from);
+        if run(
+            &args,
+            renderer_kind,
+            suite.dir,
+            out_dir.clone(),
+            tests,
+            suite.font_ctx,
+        ) {
+            resvg::summarize(&out_dir.join("wpt_expectations.txt"));
+        }
+        return;
+    }
+
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
     if !wpt_dir.exists() {
@@ -343,25 +379,44 @@ fn main() {
             "WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt."
         );
     }
-    let (renderer_kind, suites) = renderer::parse_args(env::args().skip(1));
+    let tests = collect_tests(&wpt_dir, suites);
+    run(
+        &args,
+        renderer_kind,
+        wpt_dir,
+        output_dir(),
+        tests,
+        FontContext::default(),
+    );
+}
+
+/// Runs `test_paths` from `wpt_dir`, writing results to `out_dir`. Returns
+/// false if it only listed them (`--list`).
+fn run(
+    args: &[String],
+    renderer_kind: renderer::RendererKind,
+    wpt_dir: PathBuf,
+    out_dir: PathBuf,
+    test_paths: Vec<Test>,
+    base_font_context: FontContext,
+) -> bool {
+    let verbose = args.iter().any(|arg| arg == "--verbose" || arg == "-v");
+    let run_quarantined = args.iter().any(|arg| arg == "--run-quarantined");
     println!("Renderer: {}", renderer_kind.name());
-    let test_paths = collect_tests(&wpt_dir, suites);
     let count = test_paths.len();
 
     // `--list` prints the selected test URLs without running them
-    if env::args().any(|arg| arg == "--list") {
+    if args.iter().any(|arg| arg == "--list") {
         for test in &test_paths {
             println!("{}", test.url);
         }
-        return;
+        return false;
     }
 
-    let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = cargo_dir.parent().unwrap().join("output");
     if fs::exists(&out_dir).unwrap() {
         fs::remove_dir_all(&out_dir).unwrap();
     }
-    fs::create_dir(&out_dir).unwrap();
+    fs::create_dir_all(&out_dir).unwrap();
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
@@ -386,8 +441,6 @@ fn main() {
 
     let num = AtomicU32::new(0);
     let completed_num = AtomicU32::new(0);
-
-    let base_font_context = parley::FontContext::default();
 
     let thread_state: ThreadLocal<RefCell<ThreadCtx>> = ThreadLocal::new();
     let worker_counter = AtomicUsize::new(0);
@@ -685,6 +738,7 @@ fn main() {
         report_path,
         write_report_start.elapsed().as_millis()
     );
+    true
 }
 
 #[cfg(test)]

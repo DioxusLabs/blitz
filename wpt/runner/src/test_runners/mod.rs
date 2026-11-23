@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -21,12 +22,14 @@ pub mod fuzzy;
 mod harness_test;
 mod js_wrapper;
 mod ref_test;
+mod resvg_test;
 
 pub use attr_test::process_attr_test;
 pub use crash_test::process_crash_test;
 pub use harness_test::process_harness_test;
 pub use js_wrapper::wrapper_html_for_js_test;
 pub use ref_test::process_ref_test;
+pub use resvg_test::process_resvg_test;
 
 static TIMEOUT_QUARANTINE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let mut tests = HashMap::new();
@@ -197,20 +200,18 @@ pub fn process_test_file(
         );
     }
 
-    let file_contents = match fs::read_to_string(ctx.wpt_dir.join(relative_path)) {
-        Ok(contents) => contents,
-        Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
-            // Tests encoded as UTF-16 or a legacy encoding are not supported: skip them.
-            warn!("Skipping {relative_path}: not valid UTF-8");
-            return (
-                TestKind::Unknown,
-                TestFlags::empty(),
-                TestStatus::Skip,
-                SubtestCounts::ZERO_OF_ZERO,
-                Vec::new(),
-            );
-        }
-        Err(err) => panic!("Failed to read {relative_path}: {err}"),
+    let file_bytes = fs::read(ctx.wpt_dir.join(relative_path))
+        .unwrap_or_else(|err| panic!("Failed to read {relative_path}: {err}"));
+    let Some(file_contents) = decode_test_file(&file_bytes) else {
+        // Tests that aren't valid in their encoding are not supported: skip them.
+        warn!("Skipping {relative_path}: not valid in its encoding");
+        return (
+            TestKind::Unknown,
+            TestFlags::empty(),
+            TestStatus::Skip,
+            SubtestCounts::ZERO_OF_ZERO,
+            Vec::new(),
+        );
     };
 
     // Compute flags
@@ -245,7 +246,7 @@ pub fn process_test_file(
             let counts = process_ref_test(
                 ctx,
                 test_url,
-                file_contents.as_str(),
+                &file_contents,
                 match_references,
                 mismatch_references,
                 fuzzy,
@@ -287,7 +288,26 @@ pub fn process_test_file(
             let (status, counts, results) = process_harness_test(ctx, &file_contents, test_url);
             (TestKind::TestHarness, flags, status, counts, results)
         }
+        TestType::Resvg(mode) => {
+            let counts = process_resvg_test(ctx, relative_path, test_url, &file_contents, *mode);
+            let status = counts.as_status();
+            (TestKind::Ref, flags, status, counts, Vec::new())
+        }
     }
+}
+
+static XML_ENCODING_RE: LazyLock<regex::bytes::Regex> =
+    LazyLock::new(|| regex::bytes::Regex::new(r#"^\s*<\?xml[^>]*encoding="([^"]+)""#).unwrap());
+
+/// Decodes a test file using its BOM, else the encoding its XML declaration
+/// names, else UTF-8. Returns `None` if it isn't valid in that encoding.
+pub(crate) fn decode_test_file(data: &[u8]) -> Option<Cow<'_, str>> {
+    let encoding = XML_ENCODING_RE
+        .captures(data)
+        .and_then(|caps| encoding_rs::Encoding::for_label(&caps[1]))
+        .unwrap_or(encoding_rs::UTF_8);
+    let (text, _, had_errors) = encoding.decode(data);
+    (!had_errors).then_some(text)
 }
 
 fn parse_and_resolve_document(
@@ -346,6 +366,21 @@ pub fn pump_net_provider(ctx: &ThreadCtx, document: &mut BaseDocument) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_test_file_encoding() {
+        let data = b"<?xml version=\"1.0\" encoding=\"windows-1251\"?><svg>\xcf</svg>";
+        assert_eq!(
+            decode_test_file(data).unwrap(),
+            "<?xml version=\"1.0\" encoding=\"windows-1251\"?><svg>\u{41f}</svg>"
+        );
+        assert_eq!(
+            decode_test_file("<p>\u{e9}</p>".as_bytes()).unwrap(),
+            "<p>\u{e9}</p>"
+        );
+        assert_eq!(decode_test_file(b"\xff\xfe<\0p\0>\0").unwrap(), "<p>");
+        assert_eq!(decode_test_file(b"<p>\xcf</p>"), None);
+    }
 
     #[test]
     fn timeout_quarantine_is_valid() {
