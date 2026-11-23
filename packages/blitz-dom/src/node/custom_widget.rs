@@ -116,6 +116,14 @@ pub trait Widget {
         let _ = event;
     }
 
+    /// Handle input events, returning `true` if the widget consumed the event.
+    ///
+    /// Unconsumed wheel events fall through to the enclosing document's scroll chain.
+    fn handle_ui_event(&mut self, event: &UiEvent) -> bool {
+        self.handle_event(event);
+        false
+    }
+
     /// The widget's intrinsic dimensions: an intrinsic width, height and
     /// aspect ratio, each of which may independently be absent.
     ///
