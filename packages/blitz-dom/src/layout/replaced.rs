@@ -1,7 +1,7 @@
 use markup5ever::{LocalName, local_name};
 use taffy::{
-    AvailableSpace, BoxSizing, CoreStyle, LayoutInput, LayoutOutput, MaybeMath, MaybeResolve,
-    RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode,
+    AvailableSpace, BoxSizing, CalcHandle, CoreStyle, LayoutInput, LayoutOutput, MaybeMath,
+    MaybeResolve, RequestedAxis, ResolveOrZero as _, RunMode, Size, SizingMode,
 };
 
 /// Whether an element is a replaced element laid out as a leaf box with an
@@ -52,7 +52,7 @@ enum Violation {
 pub fn compute_replaced_layout(
     inputs: LayoutInput,
     style: &impl CoreStyle,
-    resolve_calc_value: impl Fn(*const (), f32) -> f32,
+    resolve_calc_value: impl Fn(CalcHandle, f32) -> f32,
     context: &ReplacedContext,
 ) -> LayoutOutput {
     let LayoutInput {
