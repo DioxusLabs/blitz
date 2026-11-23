@@ -703,7 +703,7 @@ impl BaseDocument {
     /// Events generated in the process (focus, input, click, ...) are queued with
     /// [`queue_event`](Self::queue_event).
     pub fn handle_dom_event(&mut self, event: &mut DomEvent, default_prevented: bool) {
-        handle_dom_event(self, event, default_prevented)
+        handle_dom_event(self, event, None, default_prevented)
     }
 
     /// Queue an event to be dispatched by an [`EventDriver`](crate::EventDriver).

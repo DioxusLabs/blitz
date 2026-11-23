@@ -5,7 +5,7 @@ mod pointer;
 mod wheel;
 
 use crate::util::Point;
-use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
+use blitz_traits::events::{DomEvent, DomEventData, HitResult, PointerCoords, UiEvent};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
@@ -106,6 +106,7 @@ fn map_dom_event_to_ui_event(
 pub(crate) fn handle_dom_event(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
+    _hit: Option<HitResult>,
     default_prevented: bool,
 ) {
     if default_prevented {
@@ -169,6 +170,11 @@ pub(crate) fn handle_dom_event(
 
     // Handle event forwarding for custom widget
     #[cfg(feature = "custom-widget")]
+    let widget_point = _hit.map(|hit| Point {
+        x: hit.x - node.final_layout().border.left - node.final_layout().padding.left,
+        y: hit.y - node.final_layout().border.top - node.final_layout().padding.top,
+    });
+    #[cfg(feature = "custom-widget")]
     if let Some(widget_data) = node
         .element_data_mut()
         .and_then(|el| el.custom_widget_data_mut())
@@ -180,7 +186,24 @@ pub(crate) fn handle_dom_event(
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
-        if let Some(ui_event) = ui_event {
+        if let Some(mut ui_event) = ui_event {
+            let pointer_coords = match &mut ui_event {
+                UiEvent::PointerMove(event)
+                | UiEvent::PointerDown(event)
+                | UiEvent::PointerUp(event)
+                | UiEvent::PointerCancel(event)
+                | UiEvent::PointerLeave(event) => Some((&mut event.coords, &mut event.element)),
+                UiEvent::Wheel(event) => Some((&mut event.coords, &mut event.element)),
+                _ => None,
+            };
+            if let Some(((coords, element), local)) = pointer_coords.zip(widget_point) {
+                coords.page_x = local.x;
+                coords.page_y = local.y;
+                coords.client_x = local.x;
+                coords.client_y = local.y;
+                element.x = local.x;
+                element.y = local.y;
+            }
             widget_data.widget.handle_event(&ui_event);
         }
 
