@@ -4,18 +4,14 @@ use crate::convert_events::{
     pointer_source_to_blitz_details, theme_to_color_scheme, winit_ime_to_blitz,
     winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
-use crate::dnd::{
-    URI_LIST_FORMAT, blitz_drag_operation_to_winit_dnd_action, for_each_readable_type,
-    store_typed_data, winit_dnd_action_to_blitz_dnd_operation,
-};
+use crate::dnd::IncomingDrag;
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
-    BlitzDataTransfer, BlitzDragEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta,
-    BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource, MouseEventButton, MouseEventButtons,
-    PointerCoords, PointerDetails, UiEvent,
+    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase,
+    BlitzWheelSource, MouseEventButton, MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
 use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition, PhysicalSize};
@@ -26,9 +22,8 @@ use std::any::Any;
 use std::sync::Arc;
 use std::task::Waker;
 use web_time::Instant;
-use winit::data_transfer::DataTransferId;
 use winit::event::{ButtonSource, ElementState, MouseButton};
-use winit::event_loop::{ActiveEventLoop, AsyncRequestSerial, DndAction};
+use winit::event_loop::{ActiveEventLoop, DndAction};
 use winit::window::{Theme, WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
@@ -626,8 +621,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.doc.handle_ui_event(event);
     }
 
-    /// Tell the document that a drag is over it, and the OS whether the document would
-    /// accept a drop
+    /// Tell the drag that is over the window that it has moved
     fn handle_drag_position(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
@@ -636,28 +630,9 @@ impl<Rend: WindowRenderer> View<Rend> {
     ) {
         let coords = self.pointer_coords(position);
         let mods = winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state());
-        let Some(drag) = &mut self.incoming_drag else {
-            return;
-        };
-        // The document is not told about a drag until it is known which files it carries
-        if !drag.pending_data.is_empty() {
-            drag.held_position = Some((position, proposed_action));
-            return;
+        if let Some(drag) = &mut self.incoming_drag {
+            drag.moved(event_loop, &mut *self.doc, coords, mods, proposed_action);
         }
-        drag.event.coords = coords;
-        drag.event.mods = mods;
-        // The document replaces the operation the source prefers with the one a drop
-        // would perform
-        drag.event
-            .data_transfer_mut()
-            .set_drop_effect(winit_dnd_action_to_blitz_dnd_operation(proposed_action));
-        let id = drag.id;
-        let event = drag.event.clone();
-
-        self.doc.handle_ui_event(UiEvent::DragOver(event.clone()));
-
-        let action = blitz_drag_operation_to_winit_dnd_action(event.data_transfer().drop_effect());
-        let _ = event_loop.set_valid_dnd_actions(id, action.as_slice());
     }
 
     pub fn handle_winit_event(&mut self, event_loop: &dyn ActiveEventLoop, event: WindowEvent) {
@@ -959,133 +934,41 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
             WindowEvent::DragEntered { id, position } => {
-                // The formats of the strings being dragged are known for the whole drag,
-                // and the strings are only fetched if the drag is dropped. Which files are
-                // being dragged is only known from the list of URIs, so that is fetched now.
-                let mut data_transfer = BlitzDataTransfer::new();
-                let mut pending_data = Vec::new();
-                if let Ok(source) = event_loop.data_transfer(id) {
-                    for_each_readable_type(&*source, |type_, format| {
-                        if format != URI_LIST_FORMAT {
-                            data_transfer.add_unfetched(format);
-                        } else if pending_data.is_empty()
-                            && let Ok(serial) = event_loop.fetch_data_transfer(id, type_)
-                        {
-                            pending_data.push(serial);
-                        }
-                    });
-                }
-
-                let is_held = !pending_data.is_empty();
-                self.incoming_drag = Some(IncomingDrag {
+                self.incoming_drag = Some(IncomingDrag::new(
+                    event_loop,
                     id,
-                    event: BlitzDragEvent {
-                        coords: self.pointer_coords(position.unwrap_or(self.pointer_pos)),
-                        element: Default::default(),
-                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-                        button: Default::default(),
-                        buttons: self.buttons,
-                        data_transfer: Arc::new(AtomicRefCell::new(data_transfer)),
-                    },
-                    pending_data,
-                    held_position: None,
-                    is_dropped: false,
-                });
-
-                // The OS is given an answer before the document has seen the drag. On
-                // macOS a drag that is refused as it enters the frontmost application
-                // can't be accepted later.
-                if is_held {
-                    let _ = event_loop.set_valid_dnd_actions(id, &[DndAction::Copy]);
-                }
-
+                    self.pointer_coords(position.unwrap_or(self.pointer_pos)),
+                    winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    self.buttons,
+                ));
                 if let Some(position) = position {
                     self.handle_drag_position(event_loop, position, None);
                 }
             },
             WindowEvent::DragPosition { id, position, proposed_action } => {
-                if self.incoming_drag.as_ref().is_some_and(|drag| drag.id == id) {
+                if self.incoming_drag.as_ref().is_some_and(|drag| drag.id() == id) {
                     self.handle_drag_position(event_loop, position, proposed_action);
                 }
             },
             WindowEvent::DragDropped { id, .. } => {
-                let Some(drag) = self.incoming_drag.as_mut().filter(|drag| drag.id == id) else {
-                    return;
-                };
-
-                // A drag that the document was not told about has not been accepted
-                if !drag.pending_data.is_empty() {
-                    self.incoming_drag = None;
-                    return;
-                }
-
-                // The strings have to be requested now: the drag source may not keep them
-                // available once the drop has been handled. The `drop` event is
-                // dispatched once all of them have arrived.
-                drag.is_dropped = true;
-                if let Ok(source) = event_loop.data_transfer(id) {
-                    for_each_readable_type(&*source, |type_, format| {
-                        if format != URI_LIST_FORMAT
-                            && let Ok(serial) = event_loop.fetch_data_transfer(id, type_)
-                        {
-                            drag.pending_data.push(serial);
-                        }
-                    });
-                }
-
-                if drag.pending_data.is_empty() {
-                    let drag = self.incoming_drag.take().unwrap();
-                    self.doc.handle_ui_event(UiEvent::Drop(drag.event));
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag = drag.dropped(event_loop, &mut *self.doc);
                 }
             },
             WindowEvent::DataTransferReceived { id, serial, value } => {
-                let Some(drag) = self.incoming_drag.as_mut().filter(|drag| drag.id == id) else {
-                    return;
-                };
-                let Some(idx) = drag.pending_data.iter().position(|s| *s == serial) else {
-                    return;
-                };
-                drag.pending_data.swap_remove(idx);
-                store_typed_data(&mut drag.event.data_transfer_mut(), &*value);
-
-                if !drag.pending_data.is_empty() {
-                    return;
-                }
-                if drag.is_dropped {
-                    let drag = self.incoming_drag.take().unwrap();
-                    self.doc.handle_ui_event(UiEvent::Drop(drag.event));
-                } else if let Some((position, proposed_action)) = drag.held_position.take() {
-                    self.handle_drag_position(event_loop, position, proposed_action);
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag =
+                        drag.data_received(event_loop, &mut *self.doc, serial, &*value);
                 }
             },
             WindowEvent::DragLeft { id } => {
-                // A drag whose drop is waiting for its data has not left, and the document
-                // was not told about one that is still waiting for its files
-                if let Some(drag) = self
-                    .incoming_drag
-                    .take_if(|drag| drag.id == id && !drag.is_dropped)
-                    && drag.pending_data.is_empty()
-                {
-                    self.doc.handle_ui_event(UiEvent::DragLeave(drag.event));
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag = drag.left(&mut *self.doc);
                 }
             },
             _ => {}
         }
     }
-}
-
-/// A drag from another application that is over the window
-struct IncomingDrag {
-    id: DataTransferId,
-    /// The event dispatched to the document each time the drag moves
-    event: BlitzDragEvent,
-    /// The requests for dragged data that are yet to be answered: for the files when
-    /// the drag enters the window, and for the strings when it is dropped
-    pending_data: Vec<AsyncRequestSerial>,
-    /// Where the drag last moved to while its files were not known
-    held_position: Option<(PhysicalPosition<f64>, Option<DndAction>)>,
-    /// Whether the drag has been dropped, and the drop is waiting for its data
-    is_dropped: bool,
 }
 
 #[cfg(test)]
