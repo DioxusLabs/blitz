@@ -579,6 +579,9 @@ pub(crate) fn style(
 pub(crate) fn case_transform(style: &stylo::ComputedValues) -> parley_css_text::CaseTransform {
     use stylo_taffy::CopyStyleGetters;
     let input = style.clone_text_transform();
+    if input.is_empty() {
+        return parley_css_text::CaseTransform::NONE;
+    }
     let text_transform = parley_css_text::TextTransform {
         case: match input.case() {
             stylo::TextTransformCase::None => parley_css_text::TextCase::None,

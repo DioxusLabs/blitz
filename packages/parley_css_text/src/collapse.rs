@@ -311,6 +311,7 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
 }
 
 /// The index of the last change starting at or before `pos`, or `changes.len()` if none does.
+#[inline]
 fn change_around(changes: &[TextChange], pos: usize) -> usize {
     changes
         .partition_point(|change| change.text.start <= pos)
@@ -319,6 +320,7 @@ fn change_around(changes: &[TextChange], pos: usize) -> usize {
 }
 
 /// The source offset of the transformed text offset `pos`.
+#[inline]
 fn source_at(changes: &[TextChange], pos: usize) -> usize {
     match changes.get(change_around(changes, pos)) {
         None => pos,

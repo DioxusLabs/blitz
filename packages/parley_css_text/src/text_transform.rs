@@ -91,6 +91,7 @@ impl CaseTransform {
 
     /// The transforms for text with `text-transform`, `white-space-collapse` and language
     /// `lang` (a BCP 47 tag, `""` if unknown).
+    #[inline]
     pub fn new(
         text_transform: TextTransform,
         white_space_collapse: WhiteSpaceCollapse,
