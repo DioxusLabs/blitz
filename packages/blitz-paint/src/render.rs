@@ -358,8 +358,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         if clips_both_axes {
             return BlitzPoint { x: true, y: true };
         }
-        // `overflow: clip` is the only value that leaves the other axis `visible`
-        // (hidden, scroll and auto turn it into `auto`), so clip each axis on its own.
+        // Any axis whose overflow is not `visible` clips, which covers scroll containers
+        // (hidden, scroll, auto) as well as `clip`. Scroll containers always clip both axes,
+        // because those values force a `visible` partner axis to compute to `auto`. So only
+        // `overflow: clip` can leave one axis clipped and the other visible.
         BlitzPoint {
             x: !matches!(box_style.overflow_x, Overflow::Visible),
             y: !matches!(box_style.overflow_y, Overflow::Visible),
