@@ -56,7 +56,6 @@ use style::properties::style_structs::Font;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
-use style::values::computed::UserSelect;
 use style::values::computed::ui::CursorKind;
 use style::{
     device::Device,
@@ -67,7 +66,6 @@ use style::{
     stylist::Stylist,
 };
 use style_dom::ElementState;
-use stylo_taffy::CopyStyleGetters;
 use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
@@ -2405,7 +2403,6 @@ impl BaseDocument {
         }
 
         let style = node.primary_styles()?;
-        let user_select = style.clone_user_select();
         let keyword = style.get_cursor().keyword;
 
         // Return cursor from style if it is non-auto
@@ -2433,13 +2430,12 @@ impl BaseDocument {
             maybe_node = node.parent.map(|node_id| node.with(node_id));
         }
 
-        // Return text cursor for text nodes
+        // Return text cursor for text that can be selected
         if self.hover_node_is_text {
-            return Some(match user_select {
-                UserSelect::Text | UserSelect::All | UserSelect::Auto | UserSelect::Contain => {
-                    CursorIcon::Text
-                }
-                UserSelect::None => CursorIcon::Default,
+            return Some(if node.is_user_selectable() {
+                CursorIcon::Text
+            } else {
+                CursorIcon::Default
             });
         }
 
@@ -3184,6 +3180,7 @@ mod hover_invalidation_tests {
     use super::*;
     use crate::{Attribute, QualName, qual_name};
     use blitz_traits::shell::ColorScheme;
+    use stylo_taffy::CopyStyleGetters;
 
     /// Build `<html><body style="margin:0"><div style="width:300px;height:100px">
     /// <span>text</span></div></body></html>` with a `div:hover` rule.

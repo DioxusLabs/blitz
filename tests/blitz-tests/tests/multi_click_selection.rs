@@ -1,10 +1,11 @@
 //! A double click selects the word under the pointer in page text, and a triple
 //! click the line between hard breaks it is in, wrapped or not, as browsers do.
-//! `user-select: none` on an ancestor blocks both.
+//! `user-select: none` on an ancestor blocks both, and the text cursor over it.
 
 use blitz_test_harness::Harness;
 use blitz_test_harness::{mouse_pointer_event, pointer_event};
 use blitz_traits::events::{BlitzPointerId, MouseEventButton, MouseEventButtons, UiEvent};
+use cursor_icon::CursorIcon;
 
 /// "hello world" wraps after "hello": the box is too narrow for both words.
 const STYLE: &str = "margin:0; width:80px; font-size:20px; line-height:20px";
@@ -54,6 +55,22 @@ fn user_select_none_on_an_ancestor_blocks_a_double_click() {
     let mut harness = harness("user-select:none");
     click_first_word(&mut harness, 2);
     assert_eq!(selected_text(&harness).as_deref().unwrap_or(""), "");
+}
+
+#[test]
+fn user_select_none_on_an_ancestor_hides_the_text_cursor() {
+    // The `<p>` itself has the initial `user-select: auto`, as the property isn't
+    // inherited, so the cursor has to look up to the body.
+    let cursor_over_text = |body_style| {
+        let mut harness = harness(body_style);
+        harness.move_mouse_to(10.0, 10.0);
+        harness.base().get_cursor()
+    };
+    assert_eq!(cursor_over_text(""), Some(CursorIcon::Text));
+    assert_eq!(
+        cursor_over_text("user-select:none"),
+        Some(CursorIcon::Default)
+    );
 }
 
 #[test]
