@@ -3,12 +3,15 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
 
 use crate::NodeId;
+
+mod datatransfer;
+pub use datatransfer::*;
 
 #[derive(Default)]
 pub struct EventState {
@@ -72,6 +75,12 @@ pub enum UiEvent {
     Ime(BlitzImeEvent),
     AppleStandardKeybinding(SmolStr),
     Paste(String),
+    /// A drag has entered the document or moved within it
+    DragOver(BlitzDragEvent),
+    /// A drag has left the document or been cancelled
+    DragLeave(BlitzDragEvent),
+    /// A drag has been dropped on the document
+    Drop(BlitzDragEvent),
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {
@@ -183,6 +192,11 @@ pub enum DomEventKind {
     FocusIn,
     FocusOut,
 
+    DragEnter,
+    DragOver,
+    DragLeave,
+    Drop,
+
     AppleStandardKeybinding,
 }
 impl DomEventKind {
@@ -233,6 +247,10 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+            "dragenter" => Ok(Self::DragEnter),
+            "dragover" => Ok(Self::DragOver),
+            "dragleave" => Ok(Self::DragLeave),
+            "drop" => Ok(Self::Drop),
             _ => Err(()),
         }
     }
@@ -280,6 +298,11 @@ pub enum DomEventData {
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
+
+    DragEnter(BlitzDragEvent),
+    DragOver(BlitzDragEvent),
+    DragLeave(BlitzDragEvent),
+    Drop(BlitzDragEvent),
 
     AppleStandardKeybinding(SmolStr),
 }
@@ -336,6 +359,11 @@ impl DomEventData {
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
 
+            Self::DragEnter { .. } => "dragenter",
+            Self::DragOver { .. } => "dragover",
+            Self::DragLeave { .. } => "dragleave",
+            Self::Drop { .. } => "drop",
+
             Self::AppleStandardKeybinding { .. } => "applekeybinding",
         }
     }
@@ -381,6 +409,11 @@ impl DomEventData {
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
+
+            Self::DragEnter { .. } => DomEventKind::DragEnter,
+            Self::DragOver { .. } => DomEventKind::DragOver,
+            Self::DragLeave { .. } => DomEventKind::DragLeave,
+            Self::Drop { .. } => DomEventKind::Drop,
 
             Self::AppleStandardKeybinding { .. } => DomEventKind::AppleStandardKeybinding,
         }
@@ -428,6 +461,11 @@ impl DomEventData {
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
 
+            Self::DragEnter { .. } => true,
+            Self::DragOver { .. } => true,
+            Self::DragLeave { .. } => false,
+            Self::Drop { .. } => true,
+
             Self::AppleStandardKeybinding { .. } => true,
         }
     }
@@ -474,8 +512,81 @@ impl DomEventData {
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
 
+            Self::DragEnter { .. } => true,
+            Self::DragOver { .. } => true,
+            Self::DragLeave { .. } => true,
+            Self::Drop { .. } => true,
+
             Self::AppleStandardKeybinding { .. } => false,
         }
+    }
+}
+
+/// The data transfer of a drag, shared by every event of that drag
+pub type BlitzDataTransferArc = Arc<AtomicRefCell<BlitzDataTransfer>>;
+
+#[derive(Clone, Debug)]
+pub struct BlitzDragEvent {
+    pub coords: PointerCoords,
+    pub element: Point<f32>,
+    pub mods: Modifiers,
+    pub button: MouseEventButton,
+    pub buttons: MouseEventButtons,
+    pub data_transfer: BlitzDataTransferArc,
+}
+
+impl BlitzDragEvent {
+    /// A drag event at `coords`, with no modifiers or buttons pressed
+    pub fn new(coords: PointerCoords, data_transfer: BlitzDataTransfer) -> Self {
+        Self {
+            coords,
+            element: Point::default(),
+            mods: Modifiers::default(),
+            button: MouseEventButton::default(),
+            buttons: MouseEventButtons::default(),
+            data_transfer: Arc::new(AtomicRefCell::new(data_transfer)),
+        }
+    }
+
+    #[inline(always)]
+    pub fn page_x(&self) -> f32 {
+        self.coords.page_x
+    }
+    #[inline(always)]
+    pub fn page_y(&self) -> f32 {
+        self.coords.page_y
+    }
+    #[inline(always)]
+    pub fn client_x(&self) -> f32 {
+        self.coords.client_x
+    }
+    #[inline(always)]
+    pub fn client_y(&self) -> f32 {
+        self.coords.client_y
+    }
+    #[inline(always)]
+    pub fn screen_x(&self) -> f32 {
+        self.coords.screen_x
+    }
+    #[inline(always)]
+    pub fn screen_y(&self) -> f32 {
+        self.coords.screen_y
+    }
+    #[inline(always)]
+    pub fn element_x(&self) -> f32 {
+        self.element.x
+    }
+    #[inline(always)]
+    pub fn element_y(&self) -> f32 {
+        self.element.y
+    }
+    #[inline(always)]
+    pub fn data_transfer(&self) -> AtomicRef<'_, BlitzDataTransfer> {
+        self.data_transfer.borrow()
+    }
+    #[inline(always)]
+    pub fn data_transfer_mut(&self) -> AtomicRefMut<'_, BlitzDataTransfer> {
+        self.data_transfer.borrow_mut()
     }
 }
 
