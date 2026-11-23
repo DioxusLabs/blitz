@@ -65,8 +65,8 @@ pub(crate) mod stylo {
 
 use crate::CopyStyleGetters;
 use stylo::Atom;
-use taffy::CompactLength;
 use taffy::style_helpers::*;
+use taffy::{CalcHandle, CompactLength};
 
 #[inline]
 #[cfg(any(feature = "flexbox", feature = "grid"))]
@@ -86,8 +86,9 @@ pub(crate) fn saturating_u16<T: Ord + From<u16> + TryInto<i32>>(input: T) -> u16
 pub fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
     match val.unpack() {
         stylo::UnpackedLengthPercentage::Calc(calc_ptr) => {
-            let val =
-                CompactLength::calc(calc_ptr as *const stylo::CalcLengthPercentage as *const ());
+            let val = CompactLength::calc(CalcHandle::from_ptr(
+                calc_ptr as *const stylo::CalcLengthPercentage as *const (),
+            ));
             // SAFETY: calc is a valid value for LengthPercentage
             unsafe { taffy::LengthPercentage::from_raw(val) }
         }
@@ -113,7 +114,7 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
                 taffy::Dimension::fit_content_percent(percentage.0)
             }
             stylo::UnpackedLengthPercentage::Calc(calc_ptr) => taffy::Dimension::fit_content_calc(
-                calc_ptr as *const stylo::CalcLengthPercentage as *const (),
+                CalcHandle::from_ptr(calc_ptr as *const stylo::CalcLengthPercentage as *const ()),
             ),
         },
 
@@ -282,8 +283,8 @@ pub fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
 #[inline]
 /// Resolve a `calc()` length-percentage (as stored in a [`taffy::LengthPercentage`] created by
 /// [`length_percentage`]) against `parent_size`
-pub fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
-    let calc = unsafe { &*(calc_ptr as *const stylo::CalcLengthPercentage) };
+pub fn resolve_calc_value(calc: CalcHandle, parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc.ptr() as *const stylo::CalcLengthPercentage) };
     calc.resolve(stylo::CSSPixelLength::new(parent_size)).px()
 }
 
@@ -714,28 +715,35 @@ pub fn flex_line_count(input: i32) -> u16 {
 
 #[inline]
 #[cfg(feature = "floats")]
-pub fn float(input: stylo::Float) -> taffy::Float {
+/// Line-relative `float`. `inline-start` and `inline-end` are the containing block's sides, as
+/// its direction has them: `ltr` is whether that direction is left-to-right.
+pub fn float(input: stylo::Float, ltr: bool) -> taffy::Float {
     match input {
         stylo::Float::Left => taffy::Float::Left,
         stylo::Float::Right => taffy::Float::Right,
         stylo::Float::None => taffy::Float::None,
 
-        stylo::Float::InlineStart => taffy::Float::Left,
-        stylo::Float::InlineEnd => taffy::Float::Right,
+        stylo::Float::InlineStart if ltr => taffy::Float::Left,
+        stylo::Float::InlineStart => taffy::Float::Right,
+        stylo::Float::InlineEnd if ltr => taffy::Float::Right,
+        stylo::Float::InlineEnd => taffy::Float::Left,
     }
 }
 
 #[inline]
 #[cfg(feature = "floats")]
-pub fn clear(input: stylo::Clear) -> taffy::Clear {
+/// Line-relative `clear`, with `inline-start` and `inline-end` resolved as for [`float`].
+pub fn clear(input: stylo::Clear, ltr: bool) -> taffy::Clear {
     match input {
         stylo::Clear::Left => taffy::Clear::Left,
         stylo::Clear::Right => taffy::Clear::Right,
         stylo::Clear::Both => taffy::Clear::Both,
         stylo::Clear::None => taffy::Clear::None,
 
-        stylo::Clear::InlineStart => taffy::Clear::Left,
-        stylo::Clear::InlineEnd => taffy::Clear::Right,
+        stylo::Clear::InlineStart if ltr => taffy::Clear::Left,
+        stylo::Clear::InlineStart => taffy::Clear::Right,
+        stylo::Clear::InlineEnd if ltr => taffy::Clear::Right,
+        stylo::Clear::InlineEnd => taffy::Clear::Left,
     }
 }
 
@@ -979,9 +987,9 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         contain: self::contain(style.clone_contain(), style.clone_display()),
 
         #[cfg(feature = "floats")]
-        float: self::float(style.clone_float()),
+        float: self::float(style.clone_float(), style.writing_mode.is_bidi_ltr()),
         #[cfg(feature = "floats")]
-        clear: self::clear(style.clone_clear()),
+        clear: self::clear(style.clone_clear(), style.writing_mode.is_bidi_ltr()),
 
         size: taffy::Size {
             width: self::dimension(&pos.width),

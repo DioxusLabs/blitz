@@ -208,7 +208,13 @@ impl ServoStylesheetLoader for StylesheetLoader {
         supports: Option<ImportSupportsCondition>,
         layer: ImportLayer,
     ) -> ServoArc<Locked<ImportRule>> {
-        if self.import_depth >= MAX_IMPORT_DEPTH || !supports.as_ref().is_none_or(|s| s.enabled) {
+        // An `@import` whose URL does not parse (`url("http://[::1")`) has
+        // nothing to fetch.
+        let resolved = url.url().cloned();
+        if self.import_depth >= MAX_IMPORT_DEPTH
+            || !supports.as_ref().is_none_or(|s| s.enabled)
+            || resolved.is_none()
+        {
             return ServoArc::new(lock.wrap(ImportRule {
                 url,
                 stylesheet: ImportSheet::new_refused(),
@@ -226,7 +232,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
             source_location: location,
         };
 
-        let url = import.url.url().unwrap().clone();
+        let url = resolved.expect("checked above");
         let import = ServoArc::new(lock.wrap(import));
         self.net_provider.fetch(
             self.doc_id,
@@ -683,6 +689,48 @@ mod tests {
             })
             .map(|src| preferred_font_source(&src).map(|(url, format)| (url.to_string(), format)))
             .collect()
+    }
+
+    /// Counts the requests it is asked to make, and makes none.
+    #[derive(Default)]
+    struct CountingNetProvider(AtomicUsize);
+    impl NetProvider for CountingNetProvider {
+        fn fetch(&self, _doc_id: usize, _request: Request, _handler: Box<dyn NetHandler>) {
+            self.0.fetch_add(1, Ao::SeqCst);
+        }
+    }
+
+    #[test]
+    fn import_with_unparsable_url_is_refused() {
+        // `http://[::1` does not parse, so the rule has no resolved URL.
+        let net = Arc::new(CountingNetProvider::default());
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let loader = StylesheetLoader {
+            tx,
+            doc_id: 0,
+            net_provider: net.clone(),
+            shell_provider: Arc::new(blitz_traits::shell::DummyShellProvider),
+            abort_signal: None,
+            import_depth: 0,
+        };
+        let lock = SharedRwLock::new();
+        let base_url = Url::parse("https://example.com/style.css").unwrap();
+        Stylesheet::from_str(
+            r#"@import url("http://[::1"); @import "ok.css";"#,
+            UrlExtraData(ServoArc::new(base_url)),
+            Origin::Author,
+            ServoArc::new(lock.wrap(MediaList::empty())),
+            lock.clone(),
+            Some(&loader),
+            None,
+            QuirksMode::NoQuirks,
+            AllowImportRules::Yes,
+        );
+        assert_eq!(
+            net.0.load(Ao::SeqCst),
+            1,
+            "only the valid import is fetched"
+        );
     }
 
     #[test]

@@ -4,6 +4,7 @@ use crate::convert_events::{
     pointer_source_to_blitz_details, theme_to_color_scheme, winit_ime_to_blitz,
     winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
+use crate::dnd::IncomingDrag;
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
@@ -22,7 +23,7 @@ use std::sync::Arc;
 use std::task::Waker;
 use web_time::Instant;
 use winit::event::{ButtonSource, ElementState, MouseButton};
-use winit::event_loop::ActiveEventLoop;
+use winit::event_loop::{ActiveEventLoop, DndAction};
 use winit::window::{Theme, WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
@@ -89,6 +90,8 @@ pub struct View<Rend: WindowRenderer> {
     pub theme_override: Option<Theme>,
     pub keyboard_modifiers: Modifiers,
     pub buttons: MouseEventButtons,
+    /// The drag from another application that is over the window (if any)
+    incoming_drag: Option<IncomingDrag>,
     pub pointer_pos: PhysicalPosition<f64>,
     /// The non-mouse pointers (touch/pen) that are currently pressed, in the
     /// order they were pressed.
@@ -218,6 +221,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             waker: None,
             animation_timer: None,
             keyboard_modifiers: Default::default(),
+            incoming_drag: None,
             proxy: proxy.clone(),
             window: winit_window.clone(),
             doc,
@@ -617,7 +621,21 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.doc.handle_ui_event(event);
     }
 
-    pub fn handle_winit_event(&mut self, event: WindowEvent) {
+    /// Tell the drag that is over the window that it has moved
+    fn handle_drag_position(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        position: PhysicalPosition<f64>,
+        proposed_action: Option<DndAction>,
+    ) {
+        let coords = self.pointer_coords(position);
+        let mods = winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state());
+        if let Some(drag) = &mut self.incoming_drag {
+            drag.moved(event_loop, &mut *self.doc, coords, mods, proposed_action);
+        }
+    }
+
+    pub fn handle_winit_event(&mut self, event_loop: &dyn ActiveEventLoop, event: WindowEvent) {
         // Update accessibility focus and window size state in response to a Winit WindowEvent
         #[cfg(feature = "accessibility")]
         self.accessibility
@@ -915,9 +933,39 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::PanGesture { .. } => {},
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
-            WindowEvent::DragEntered { .. } => {},
-            WindowEvent::DragDropped { .. } => {},
-            WindowEvent::DragLeft { .. } => {},
+            WindowEvent::DragEntered { id, position } => {
+                self.incoming_drag = Some(IncomingDrag::new(
+                    event_loop,
+                    id,
+                    self.pointer_coords(position.unwrap_or(self.pointer_pos)),
+                    winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    self.buttons,
+                ));
+                if let Some(position) = position {
+                    self.handle_drag_position(event_loop, position, None);
+                }
+            },
+            WindowEvent::DragPosition { id, position, proposed_action } => {
+                if self.incoming_drag.as_ref().is_some_and(|drag| drag.id() == id) {
+                    self.handle_drag_position(event_loop, position, proposed_action);
+                }
+            },
+            WindowEvent::DragDropped { id, .. } => {
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag = drag.dropped(event_loop, &mut *self.doc);
+                }
+            },
+            WindowEvent::DataTransferReceived { id, serial, value } => {
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag =
+                        drag.data_received(event_loop, &mut *self.doc, serial, &*value);
+                }
+            },
+            WindowEvent::DragLeft { id } => {
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag = drag.left(&mut *self.doc);
+                }
+            },
             _ => {}
         }
     }

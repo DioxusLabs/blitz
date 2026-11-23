@@ -1105,6 +1105,7 @@ dependencies = [
  "keyboard-types",
  "rfd",
  "tracing",
+ "url",
  "wasm-bindgen",
  "web-sys",
  "web-time",
@@ -8519,8 +8520,9 @@ dependencies = [
 
 [[package]]
 name = "taffy"
-version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=a3997d55bacd1fb6cd12fe31db0be15b20f91528#a3997d55bacd1fb6cd12fe31db0be15b20f91528"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cae92eb1b204bfd239b5c463e1bd2c3ce4913d2d3abfb5c64f5cfee9d65e5c68"
 dependencies = [
  "serde",
  "slotmap",
