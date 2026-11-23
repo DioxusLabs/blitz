@@ -969,10 +969,6 @@ dependencies = [
  "debug_timer 0.1.3",
  "euclid",
  "html-escape",
- "icu_casemap",
- "icu_locale_core",
- "icu_properties",
- "icu_segmenter",
  "image",
  "keyboard-types",
  "kurbo",
@@ -1001,7 +997,6 @@ dependencies = [
  "url",
  "usvg",
  "web-time",
- "writeable",
  "wuff",
 ]
 
@@ -6359,7 +6354,12 @@ dependencies = [
 name = "parley_css_text"
 version = "0.3.0-beta.4"
 dependencies = [
+ "icu_casemap",
+ "icu_locale_core",
+ "icu_properties",
+ "icu_segmenter",
  "parley",
+ "writeable",
 ]
 
 [[package]]

@@ -16,11 +16,10 @@ use crate::{
     NodeData,
     layout::list::BULLET_FONT_FAMILY,
     layout::replaced::is_inline_box_element,
-    layout::text_transform::{CaseTransform, TextTransformer},
     node::{ListItemLayout, ListItemLayoutPosition, Marker, TextBrush, TextLayout},
     stylo_to_parley,
 };
-use parley_css_text::{WhiteSpace, WhiteSpaceCollapser};
+use parley_css_text::{CaseTransform, TextTransformer, WhiteSpace, WhiteSpaceCollapser};
 
 pub(crate) fn build_inline_layout_into(
     nodes: &crate::NodeTree,
@@ -60,7 +59,7 @@ pub(crate) fn build_inline_layout_into(
 
     let text_transform = root_node_style
         .as_deref()
-        .map(|s| CaseTransform::from_style(s))
+        .map(|s| stylo_to_parley::case_transform(s))
         .unwrap_or(CaseTransform::NONE);
 
     // Render position-inside list items
@@ -150,7 +149,7 @@ pub(crate) fn build_inline_layout_into(
         let style = style.as_ref();
 
         let text_transform = style
-            .map(|s| CaseTransform::from_style(s))
+            .map(|s| stylo_to_parley::case_transform(s))
             .unwrap_or(CaseTransform::NONE);
 
         match &node.data {

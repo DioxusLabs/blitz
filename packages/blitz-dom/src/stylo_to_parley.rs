@@ -37,6 +37,7 @@ pub(crate) mod stylo {
     pub(crate) use style::values::generics::box_::BaselineShiftKeyword;
     pub(crate) use style::values::specified::TextAlignKeyword;
     pub(crate) use style::values::specified::TextAlignLast;
+    pub(crate) use style::values::specified::text::TextTransformCase;
 }
 
 pub(crate) mod parley {
@@ -572,6 +573,28 @@ pub(crate) fn style(
         strikethrough_size: Default::default(),
         strikethrough_brush: Default::default(),
     }
+}
+
+/// The `text-transform`, `white-space-collapse` and language of `style`'s text.
+pub(crate) fn case_transform(style: &stylo::ComputedValues) -> parley_css_text::CaseTransform {
+    use stylo_taffy::CopyStyleGetters;
+    let input = style.clone_text_transform();
+    let text_transform = parley_css_text::TextTransform {
+        case: match input.case() {
+            stylo::TextTransformCase::None => parley_css_text::TextCase::None,
+            stylo::TextTransformCase::Uppercase => parley_css_text::TextCase::Uppercase,
+            stylo::TextTransformCase::Lowercase => parley_css_text::TextCase::Lowercase,
+            stylo::TextTransformCase::Capitalize => parley_css_text::TextCase::Capitalize,
+            stylo::TextTransformCase::MathAuto => parley_css_text::TextCase::MathAuto,
+        },
+        full_width: input.contains(stylo::TextTransform::FULL_WIDTH),
+        full_size_kana: input.contains(stylo::TextTransform::FULL_SIZE_KANA),
+    };
+    parley_css_text::CaseTransform::new(
+        text_transform,
+        white_space_collapse(style.clone_white_space_collapse()),
+        &style.get_font()._x_lang.0,
+    )
 }
 
 /// The space a collapsible white space run collapses to.

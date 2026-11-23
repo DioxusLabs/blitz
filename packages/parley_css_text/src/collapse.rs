@@ -23,7 +23,8 @@ pub fn is_segment_break(c: char) -> bool {
     matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
-fn is_collapsible(mode: WhiteSpaceCollapse, c: char) -> bool {
+/// Whether Parley collapses `c` with the given `white-space-collapse`.
+pub(crate) fn is_collapsible(mode: WhiteSpaceCollapse, c: char) -> bool {
     match mode {
         WhiteSpaceCollapse::Collapse => c.is_ascii_whitespace(),
         WhiteSpaceCollapse::PreserveBreaks => matches!(c, ' ' | '\t'),
