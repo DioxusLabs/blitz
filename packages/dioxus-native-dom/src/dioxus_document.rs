@@ -11,8 +11,9 @@ use blitz_dom::{
     EventHandler, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
+use blitz_traits::net::{Entry, EntryValue};
 use dioxus_core::{ElementId, Event, VirtualDom};
-use dioxus_html::{PlatformEventData, set_event_converter};
+use dioxus_html::{FormValue, PlatformEventData, set_event_converter};
 use futures_util::task::noop_waker;
 use std::cell::RefCell;
 use std::future::Future;
@@ -355,6 +356,24 @@ impl EventHandler for DioxusEventHandler<'_> {
                 value: data.value.clone(),
                 values: vec![],
             })),
+
+            DomEventData::Submit(data) => {
+                let values = data
+                    .entries
+                    .iter()
+                    .map(|Entry { name, value }| {
+                        let form_value = match value {
+                            EntryValue::String(s) => FormValue::Text(s.clone()),
+                            EntryValue::File(_) | EntryValue::EmptyFile => FormValue::File(None),
+                        };
+                        (name.clone(), form_value)
+                    })
+                    .collect();
+                Some(wrap_event_data(NativeFormData {
+                    value: String::new(),
+                    values,
+                }))
+            }
 
             // TODO: Implement IME handling
             DomEventData::Ime(_) => None,

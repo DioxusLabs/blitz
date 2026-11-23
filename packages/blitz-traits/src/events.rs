@@ -9,6 +9,7 @@ use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
 
 use crate::NodeId;
+use crate::net::FormData;
 
 #[derive(Default)]
 pub struct EventState {
@@ -183,6 +184,8 @@ pub enum DomEventKind {
     FocusIn,
     FocusOut,
 
+    Submit,
+
     AppleStandardKeybinding,
 }
 impl DomEventKind {
@@ -233,6 +236,7 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+            "submit" => Ok(Self::Submit),
             _ => Err(()),
         }
     }
@@ -280,6 +284,8 @@ pub enum DomEventData {
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
+
+    Submit(BlitzSubmitEvent),
 
     AppleStandardKeybinding(SmolStr),
 }
@@ -336,6 +342,8 @@ impl DomEventData {
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
 
+            Self::Submit { .. } => "submit",
+
             Self::AppleStandardKeybinding { .. } => "applekeybinding",
         }
     }
@@ -381,6 +389,8 @@ impl DomEventData {
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
+
+            Self::Submit { .. } => DomEventKind::Submit,
 
             Self::AppleStandardKeybinding { .. } => DomEventKind::AppleStandardKeybinding,
         }
@@ -428,6 +438,8 @@ impl DomEventData {
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
 
+            Self::Submit { .. } => true,
+
             Self::AppleStandardKeybinding { .. } => true,
         }
     }
@@ -473,6 +485,8 @@ impl DomEventData {
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
+
+            Self::Submit { .. } => true,
 
             Self::AppleStandardKeybinding { .. } => false,
         }
@@ -802,6 +816,12 @@ pub struct BlitzKeyEvent {
 #[derive(Clone, Debug)]
 pub struct BlitzInputEvent {
     pub value: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzSubmitEvent {
+    pub submitter: Option<NodeId>,
+    pub entries: FormData,
 }
 
 #[derive(Clone, Debug)]
