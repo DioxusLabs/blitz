@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-/// Which side of a position to prefer when several DOM positions map to the same layout offset
+/// Which side of a position to prefer when several source positions map to the same layout offset
 /// (e.g. at the boundary between two text nodes, or at a collapsed white space run).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Affinity {
@@ -129,7 +129,7 @@ impl<Id: Copy + Ord> TextOffsetMap<Id> {
         })
     }
 
-    /// The DOM position (node and source offset) of the layout offset `layout`.
+    /// The source position (node and source offset) of the layout offset `layout`.
     pub fn source_position(&self, layout: usize, affinity: Affinity) -> Option<(Id, usize)> {
         let downstream = self.units.partition_point(|unit| unit.layout() <= layout);
         let index = match affinity {
@@ -167,7 +167,7 @@ impl<Id: Copy + Ord> TextOffsetMap<Id> {
 
     /// The range of layout text produced by `node`.
     ///
-    /// Nodes are in DOM order, so an out-of-flow box (a float or an absolutely positioned box)
+    /// Nodes are in document order, so an out-of-flow box (a float or an absolutely positioned box)
     /// is placed after a collapsible space that precedes it. Parley anchors the box before that
     /// space instead, while the space is still pending: use the box's
     /// [`InlineBox::index`](parley::InlineBox::index) for its layout anchor.

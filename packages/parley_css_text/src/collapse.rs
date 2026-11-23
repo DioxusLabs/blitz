@@ -35,6 +35,7 @@ pub(crate) fn is_collapsible(mode: WhiteSpaceCollapse, c: char) -> bool {
 /// The white space handling of the span a text node is in.
 #[derive(Debug, Clone, Copy)]
 pub struct WhiteSpace {
+    /// `white-space-collapse`.
     pub collapse: WhiteSpaceCollapse,
     /// The space a collapsible run collapses to: U+3000 under `text-transform: full-width`.
     pub collapsed_space: &'static str,
@@ -52,7 +53,9 @@ struct Pending {
 /// map; text outside every change is its source, byte for byte.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextChange {
+    /// The byte range in the source text.
     pub source: Range<usize>,
+    /// The byte range in the transformed text that `source` became.
     pub text: Range<usize>,
 }
 
@@ -140,7 +143,7 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
     /// Records the position of an inline box. Only in-flow boxes take up a character
     /// (U+FFFC) of the text, and only they end a collapsible run.
     ///
-    /// An out-of-flow box is recorded after any collapsible space before it, in DOM order,
+    /// An out-of-flow box is recorded after any collapsible space before it, in document order,
     /// though Parley anchors it before that space (see [`TextOffsetMap::layout_range`]).
     pub fn push_inline_box(&mut self, node: Id, in_flow: bool) {
         self.map.begin_node(node);

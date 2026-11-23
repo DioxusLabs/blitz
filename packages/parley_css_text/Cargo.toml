@@ -1,6 +1,6 @@
 [package]
 name = "parley_css_text"
-description = "CSS white space collapsing for Parley's TreeBuilder, with a map between source and layout text offsets"
+description = "CSS text-transform and white space collapsing for Parley, with a map between source and layout text offsets"
 documentation = "https://docs.rs/parley_css_text"
 version.workspace = true
 license.workspace = true
