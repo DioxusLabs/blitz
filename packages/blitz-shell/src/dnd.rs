@@ -124,9 +124,11 @@ impl IncomingDrag {
         event_loop: &dyn ActiveEventLoop,
         doc: &mut dyn Document,
     ) -> Option<Self> {
-        // A drag that the document was not told about has not been accepted
+        // The OS was told that a drag whose files are not known yet would be accepted,
+        // so it can be dropped before the document has seen it. The document is asked
+        // whether it accepts the drop once the files have arrived.
         if !self.pending_data.is_empty() {
-            return None;
+            self.deferred_drag_over.get_or_insert(None);
         }
 
         // The strings have to be requested now: the drag source may not keep them
@@ -168,12 +170,12 @@ impl IncomingDrag {
         if !self.pending_data.is_empty() {
             return Some(self);
         }
+        if let Some(proposed_action) = self.deferred_drag_over.take() {
+            self.dispatch_drag_over(event_loop, doc, proposed_action);
+        }
         if self.is_dropped {
             doc.handle_ui_event(UiEvent::Drop(self.event));
             return None;
-        }
-        if let Some(proposed_action) = self.deferred_drag_over.take() {
-            self.dispatch_drag_over(event_loop, doc, proposed_action);
         }
         Some(self)
     }
