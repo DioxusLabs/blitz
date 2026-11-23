@@ -7,7 +7,7 @@
 
 use blitz_dom::{
     BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, EventHandler,
-    NodeId, UserAgentStylesheet,
+    NodeId, UserAgentStylesheet, Widget,
 };
 use blitz_html::HtmlDocument;
 use blitz_test_harness::pointer_event;
@@ -313,6 +313,53 @@ fn drop_effect_must_be_allowed_by_the_drag_source() {
     };
     let op = drag_over(&mut doc, &handler, &drag, (75.0, 75.0));
     assert_eq!(op, BlitzDragOperation::None);
+}
+
+/// A widget that sets the `dropEffect` of the drags over it
+struct DropWidget(Option<BlitzDragOperation>);
+
+impl Widget for DropWidget {
+    fn handle_event(&mut self, event: &UiEvent) {
+        if let (UiEvent::DragOver(event), Some(drop_effect)) = (event, self.0) {
+            event.data_transfer_mut().set_drop_effect(drop_effect);
+        }
+    }
+}
+
+#[test]
+fn widget_accepts_a_drop_by_setting_the_drop_effect() {
+    let html = r#"<html><body style="margin:0">
+        <canvas id="widget" width="100" height="100" style="display:block"></canvas>
+    </body></html>"#;
+    let handler = Handler::default();
+    let drag = text_drag();
+    {
+        let mut data_transfer = drag.borrow_mut();
+        data_transfer.set_mode(BlitzDragDataStoreMode::ReadWrite);
+        data_transfer.set_effect_allowed_str("copyLink");
+    }
+
+    // A widget that ignores the drag refuses the drop, as does one that asks for an
+    // operation the drag source does not allow
+    for (widget, accepted) in [
+        (DropWidget(None), BlitzDragOperation::None),
+        (
+            DropWidget(Some(BlitzDragOperation::Move)),
+            BlitzDragOperation::None,
+        ),
+        (
+            DropWidget(Some(BlitzDragOperation::Link)),
+            BlitzDragOperation::Link,
+        ),
+    ] {
+        let mut doc = document(html);
+        let widget_id = node(&doc, "#widget");
+        doc.mutate().set_custom_widget(widget_id, Box::new(widget));
+        doc.resolve(0.0);
+
+        let op = drag_over(&mut doc, &handler, &drag, (50.0, 50.0));
+        assert_eq!(op, accepted);
+    }
 }
 
 /// A sub-document whose events are seen by `handler`

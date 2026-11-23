@@ -48,7 +48,7 @@ impl IncomingDrag {
         let mut data_transfer = BlitzDataTransfer::new();
         let mut pending_data = Vec::new();
         if let Ok(source) = event_loop.data_transfer(id) {
-            for_each_readable_type(&*source, |type_, format| {
+            for_each_readable_type(event_loop, &*source, |type_, format| {
                 if format != URI_LIST_FORMAT {
                     data_transfer.add_unfetched(format);
                 } else if pending_data.is_empty()
@@ -155,9 +155,11 @@ impl IncomingDrag {
         event_loop: &dyn ActiveEventLoop,
         doc: &mut dyn Document,
     ) -> Option<Self> {
-        // A drag that the document was not told about has not been accepted
+        // The OS was told that a drag whose files are not known yet would be accepted,
+        // so it can be dropped before the document has seen it. The document is asked
+        // whether it accepts the drop once the files have arrived.
         if !self.pending_data.is_empty() {
-            return None;
+            self.deferred_drag_over.get_or_insert(None);
         }
 
         // The strings have to be requested now: the drag source may not keep them
@@ -167,7 +169,7 @@ impl IncomingDrag {
         if !self.is_internal
             && let Ok(source) = event_loop.data_transfer(self.id)
         {
-            for_each_readable_type(&*source, |type_, format| {
+            for_each_readable_type(event_loop, &*source, |type_, format| {
                 if format != URI_LIST_FORMAT
                     && let Ok(serial) = event_loop.fetch_data_transfer(self.id, type_)
                 {
@@ -201,12 +203,12 @@ impl IncomingDrag {
         if !self.pending_data.is_empty() {
             return Some(self);
         }
+        if let Some(proposed_action) = self.deferred_drag_over.take() {
+            self.dispatch_drag_over(event_loop, doc, proposed_action);
+        }
         if self.is_dropped {
             doc.handle_ui_event(UiEvent::Drop(self.event));
             return None;
-        }
-        if let Some(proposed_action) = self.deferred_drag_over.take() {
-            self.dispatch_drag_over(event_loop, doc, proposed_action);
         }
         Some(self)
     }
@@ -301,14 +303,36 @@ fn transfer_type_format(type_: &dyn TransferType) -> Option<&'static str> {
     }
 }
 
+/// Whether winit can read dragged data of a type as a string
+fn is_readable_type(event_loop: &dyn ActiveEventLoop, type_: &dyn TransferType) -> bool {
+    // winit can't read RTF on X11
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    if type_.hint() == Some(TypeHint::Rtf) {
+        use winit::platform::x11::ActiveEventLoopExtX11;
+        return !event_loop.is_x11();
+    }
+
+    let _ = (event_loop, type_);
+    true
+}
+
 /// Call `callback` with each type of data a drag carries that Blitz can read, along
 /// with the format it is exposed as
 fn for_each_readable_type(
+    event_loop: &dyn ActiveEventLoop,
     data_transfer: &dyn DataTransfer,
     mut callback: impl FnMut(&dyn TransferType, &'static str),
 ) {
     data_transfer.for_each_available_type(&mut |type_| {
-        if let Some(format) = transfer_type_format(type_) {
+        if let Some(format) = transfer_type_format(type_)
+            && is_readable_type(event_loop, type_)
+        {
             callback(type_, format);
         }
         ControlFlow::Continue(())
