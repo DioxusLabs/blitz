@@ -351,32 +351,36 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         let mut event_state = EventState::default();
         event_state = self.run_handler_event(&mut ptr_event, event_state);
+        let mut default_prevented = is_default_prevented(&ptr_event, &event_state);
 
         // Generate the corresponding compatibility event (mouse events for the
         // mouse, touch events for fingers and pen/stylus input) and expose it to
         // script. The default action is always run on the pointer event, after the
         // compatibility event's handlers (which can also prevent it), so that the
         // shell layer and default actions remain pointer-based.
-        if !event_state.is_cancelled() {
+        if !default_prevented {
             if data.is_mouse() {
                 if let Some(make_mouse_data) = make_mouse_data {
                     let mut mouse_event =
                         DomEvent::new(target, make_mouse_data(data), EventDispatchSource::Input);
                     event_state = self.run_handler_event(&mut mouse_event, event_state);
+                    default_prevented = is_default_prevented(&mouse_event, &event_state);
                 }
             } else if data.is_finger() || data.is_pen() {
                 let mut touch_event =
                     DomEvent::new(target, make_touch_data(data), EventDispatchSource::Input);
                 event_state = self.run_handler_event(&mut touch_event, event_state);
+                default_prevented = is_default_prevented(&touch_event, &event_state);
             }
         }
 
-        self.run_default_action(&mut ptr_event, event_state.is_cancelled());
+        self.run_default_action(&mut ptr_event, default_prevented);
     }
 
     fn dispatch_event(&mut self, mut event: DomEvent) {
         let event_state = self.run_handler_event(&mut event, EventState::default());
-        self.run_default_action(&mut event, event_state.is_cancelled());
+        let default_prevented = is_default_prevented(&event, &event_state);
+        self.run_default_action(&mut event, default_prevented);
     }
 
     /// Dispatch the events queued on the document (see [`BaseDocument::queue_event`]) until
@@ -465,7 +469,6 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
 
         let mut event_state = initial_event_state;
-        event_state.set_cancelable(event.cancelable);
         self.handler
             .handle_event(&chain, event, self.doc, &mut event_state);
 
@@ -480,4 +483,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             .inner_mut()
             .handle_dom_event(event, default_prevented);
     }
+}
+
+/// `preventDefault()` does nothing on an event that isn't cancelable
+fn is_default_prevented(event: &DomEvent, event_state: &EventState) -> bool {
+    event.cancelable && event_state.is_cancelled()
 }

@@ -10,36 +10,16 @@ use smol_str::SmolStr;
 
 use crate::NodeId;
 
+#[derive(Default)]
 pub struct EventState {
-    cancelable: bool,
     cancelled: bool,
     propagation_stopped: bool,
     redraw_requested: bool,
 }
-impl Default for EventState {
-    fn default() -> Self {
-        Self {
-            cancelable: true,
-            cancelled: false,
-            propagation_stopped: false,
-            redraw_requested: false,
-        }
-    }
-}
 impl EventState {
-    /// Set whether the event being handled can be cancelled. When it can't,
-    /// [`prevent_default`](Self::prevent_default) does nothing.
-    #[inline(always)]
-    pub fn set_cancelable(&mut self, cancelable: bool) {
-        self.cancelable = cancelable;
-    }
-
-    /// Prevent the event's default action. Does nothing for an event that isn't cancelable.
     #[inline(always)]
     pub fn prevent_default(&mut self) {
-        if self.cancelable {
-            self.cancelled = true;
-        }
+        self.cancelled = true;
     }
 
     #[inline(always)]
@@ -70,7 +50,6 @@ impl EventState {
     #[inline]
     pub fn merge(&self, other: &EventState) -> EventState {
         EventState {
-            cancelable: self.cancelable,
             cancelled: self.cancelled | other.cancelled,
             propagation_stopped: self.propagation_stopped | other.propagation_stopped,
             redraw_requested: self.redraw_requested | other.redraw_requested,
