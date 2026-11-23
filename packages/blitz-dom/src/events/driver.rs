@@ -465,6 +465,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
 
         let mut event_state = initial_event_state;
+        event_state.set_cancelable(event.cancelable);
         self.handler
             .handle_event(&chain, event, self.doc, &mut event_state);
 
