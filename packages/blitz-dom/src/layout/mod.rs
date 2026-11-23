@@ -16,11 +16,11 @@ use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::CopyStyleGetters;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
-    FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
-    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_oof_layout, prelude::*,
+    AxisStaticEdge, AxisStaticPosition, BlockContext, CalcHandle, CoreStyle as _,
+    DetailedLayoutInfo, FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _,
+    NodeId, OofCandidate, ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -74,8 +74,8 @@ fn tag_intrinsic_sizes(
     (IntrinsicSizes::default(), DEFAULT_OBJECT_SIZE)
 }
 
-pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
-    let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
+pub(crate) fn resolve_calc_value(calc: CalcHandle, parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc.ptr() as *const CalcLengthPercentage) };
     let result = calc.resolve(CSSPixelLength::new(parent_size));
     result.px()
 }
@@ -675,8 +675,8 @@ impl LayoutPartialTree for LayoutPassState<'_> {
         *self.node_from_id_mut(node_id).unrounded_layout_mut() = *layout;
     }
 
-    fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
-        resolve_calc_value(calc_ptr, parent_size)
+    fn resolve_calc_value(&self, calc: CalcHandle, parent_size: f32) -> f32 {
+        resolve_calc_value(calc, parent_size)
     }
 
     #[inline(always)]
