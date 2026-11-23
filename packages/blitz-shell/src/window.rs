@@ -976,6 +976,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     });
                 }
 
+                let is_held = !pending_data.is_empty();
                 self.incoming_drag = Some(IncomingDrag {
                     id,
                     event: BlitzDragEvent {
@@ -990,6 +991,13 @@ impl<Rend: WindowRenderer> View<Rend> {
                     held_position: None,
                     is_dropped: false,
                 });
+
+                // The OS is given an answer before the document has seen the drag. On
+                // macOS a drag that is refused as it enters the frontmost application
+                // can't be accepted later.
+                if is_held {
+                    let _ = event_loop.set_valid_dnd_actions(id, &[DndAction::Copy]);
+                }
 
                 if let Some(position) = position {
                     self.handle_drag_position(event_loop, position, None);
