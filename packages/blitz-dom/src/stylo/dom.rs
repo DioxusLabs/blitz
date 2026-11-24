@@ -568,18 +568,12 @@ impl<'a> TElement for BlitzNode<'a> {
         self.try_stylo_element_data().is_some_and(|s| s.has_data())
     }
 
-    // Stylo reads the existence of element data as "has been styled" (its invalidators
-    // unwrap the primary style of every element with data they descend into), but an
-    // element here can carry data before it has styles (`create_element` initialises it).
     fn borrow_data(&self) -> Option<ElementDataRef<'_>> {
-        self.try_stylo_element_data()
-            .and_then(|s| s.get())
-            .filter(|data| data.styles.primary.is_some())
+        self.try_stylo_element_data().and_then(|s| s.get())
     }
 
     fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
         unsafe { self.stylo_element_data().unsafe_stylo_only_mut() }
-            .filter(|data| data.styles.primary.is_some())
     }
 
     fn skip_item_display_fixup(&self) -> bool {
