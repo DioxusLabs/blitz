@@ -390,6 +390,14 @@ impl DocumentMutator<'_> {
         let tag = &element.name.local;
         let attr = &name.local;
 
+        if name.ns == ns!()
+            && *attr == local_name!("media")
+            && matches!(tag.as_ref(), "style" | "link")
+        {
+            self.doc.update_stylesheet_media(node_id, value);
+            return;
+        }
+
         if *attr == local_name!("id") {
             element.id = Some(Atom::from(value))
         }
@@ -548,6 +556,14 @@ impl DocumentMutator<'_> {
 
         let tag = &element.name.local;
         let attr = &name.local;
+
+        if name.ns == ns!()
+            && *attr == local_name!("media")
+            && matches!(tag.as_ref(), "style" | "link")
+        {
+            self.doc.update_stylesheet_media(node_id, "");
+            return;
+        }
 
         if *attr == local_name!("disabled") && element.can_be_disabled() {
             node.enable();
