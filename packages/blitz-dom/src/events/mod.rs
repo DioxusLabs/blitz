@@ -5,7 +5,7 @@ mod pointer;
 mod wheel;
 
 use crate::util::Point;
-use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
+use blitz_traits::events::{BlitzDragOperation, DomEvent, DomEventData, PointerCoords, UiEvent};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
@@ -100,6 +100,24 @@ fn map_dom_event_to_ui_event(
         DomEventData::Blur(_) => None,
         DomEventData::FocusIn(_) => None,
         DomEventData::FocusOut(_) => None,
+
+        // `dragenter` will be recreated by the sub-document's event driver from
+        // `DragOver` events
+        DomEventData::DragEnter(_) => None,
+        DomEventData::DragOver(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::DragOver(event))
+        }
+        // The sub-document receives no further drag events once the drag has left it,
+        // so the leave must be forwarded for it to end the drag
+        DomEventData::DragLeave(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::DragLeave(event))
+        }
+        DomEventData::Drop(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::Drop(event))
+        }
     }
 }
 
@@ -108,6 +126,9 @@ pub(crate) fn handle_dom_event(
     event: &mut DomEvent,
     default_prevented: bool,
 ) {
+    // `dragleave` can't be cancelled
+    let default_prevented = default_prevented && !matches!(event.data, DomEventData::DragLeave(_));
+
     if default_prevented {
         // What the document still has to do with an event whose default action was
         // prevented: follow the input, without applying its effects.
@@ -123,6 +144,13 @@ pub(crate) fn handle_dom_event(
             }
             DomEventData::PointerUp(data) => {
                 handle_pointerup(doc, event.target, data, true);
+            }
+            // Cancelling `dragover` accepts the drop, with the `dropEffect` the event
+            // was left with if that is an operation the source allows
+            DomEventData::DragOver(data) => {
+                let mut data_transfer = data.data_transfer_mut();
+                let drop_effect = data_transfer.allowed_drop_effect();
+                data_transfer.set_drop_effect(drop_effect);
             }
             _ => {}
         }
@@ -180,8 +208,21 @@ pub(crate) fn handle_dom_event(
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
-        if let Some(ui_event) = ui_event {
-            widget_data.widget.handle_event(&ui_event);
+        // A widget accepts a drop by setting the `dropEffect` of a `DragOver` event
+        if let Some(UiEvent::DragOver(event)) = &ui_event {
+            event
+                .data_transfer_mut()
+                .set_drop_effect(BlitzDragOperation::None);
+        }
+
+        if let Some(ui_event) = &ui_event {
+            widget_data.widget.handle_event(ui_event);
+        }
+
+        if let Some(UiEvent::DragOver(event)) = &ui_event {
+            let mut data_transfer = event.data_transfer_mut();
+            let drop_effect = data_transfer.allowed_drop_effect();
+            data_transfer.set_drop_effect(drop_effect);
         }
 
         if set_focus {
@@ -312,6 +353,19 @@ pub(crate) fn handle_dom_event(
         }
         DomEventData::FocusOut(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::DragEnter(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::DragLeave(_) => {
+            // Do nothing (no default action)
+        }
+        // A `dragover` or `drop` that no handler cancelled rejects the drop
+        // TODO: accept text dropped on a text input
+        DomEventData::DragOver(event) | DomEventData::Drop(event) => {
+            event
+                .data_transfer_mut()
+                .set_drop_effect(BlitzDragOperation::None);
         }
     }
 

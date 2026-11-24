@@ -1,7 +1,7 @@
 use crate::Document;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventDispatchSource, EventState,
-    Point, PointerCoords, UiEvent,
+    BlitzDragDataStoreMode, BlitzDragEvent, BlitzDragOperation, BlitzPointerEvent, BlitzPointerId,
+    DomEvent, DomEventData, EventDispatchSource, EventState, Point, PointerCoords, UiEvent,
 };
 use blitz_traits::node_id::NodeId;
 
@@ -170,6 +170,59 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         }
     }
 
+    /// Move the drag target to the node under a drag, dispatching `dragenter` to the new
+    /// target and then `dragleave` to the old one
+    fn handle_drag_move(&mut self, event: &BlitzDragEvent) -> Option<NodeId> {
+        let mut doc = self.doc.inner_mut();
+        let prev_target = doc
+            .drag_target_node_id
+            .filter(|id| doc.get_node(*id).is_some());
+        let target = doc
+            .hit(event.page_x(), event.page_y())
+            .and_then(|hit| doc.nearest_non_anonymous_ancestor(hit.node_id))
+            .or_else(|| doc.try_root_element().map(|el| el.id));
+        doc.drag_target_node_id = target;
+        drop(doc);
+
+        if target != prev_target {
+            if let Some(target) = target {
+                self.handle_dom_event(DomEvent::new(
+                    target,
+                    DomEventData::DragEnter(event.clone()),
+                    EventDispatchSource::Input,
+                ));
+            }
+            if let Some(prev_target) = prev_target {
+                self.handle_dom_event(DomEvent::new(
+                    prev_target,
+                    DomEventData::DragLeave(event.clone()),
+                    EventDispatchSource::Input,
+                ));
+            }
+        }
+
+        target
+    }
+
+    /// End a drag over the document without a drop, dispatching `dragleave` to the
+    /// drag target
+    fn handle_drag_leave(&mut self, event: &BlitzDragEvent) {
+        let mut doc = self.doc.inner_mut();
+        let target = doc
+            .drag_target_node_id
+            .take()
+            .filter(|id| doc.get_node(*id).is_some());
+        drop(doc);
+
+        if let Some(target) = target {
+            self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::DragLeave(event.clone()),
+                EventDispatchSource::Input,
+            ));
+        }
+    }
+
     pub fn handle_ui_event(&mut self, event: UiEvent) {
         // Events queued on the document since a driver last ran come before the new event
         self.flush_pending_events();
@@ -180,6 +233,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let mut hover_end_event = None;
         let mut hover_node_id = doc.hover_node_id;
         let focussed_node_id = doc.focus_node_id;
+        let mut drag_target = None;
         let prev_hover = doc.hover_state();
         drop(doc);
 
@@ -219,6 +273,46 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_pointer_leave(event);
                 hover_node_id = None;
             }
+            UiEvent::DragOver(event) => {
+                // `dragenter` and `dragover` start out proposing the operation the
+                // source prefers. The data itself can't be read until the drop.
+                let mut data_transfer = event.data_transfer_mut();
+                data_transfer.set_mode(BlitzDragDataStoreMode::Protected);
+                let drop_effect = data_transfer.default_drop_effect(data_transfer.drop_effect());
+                data_transfer.set_drop_effect(drop_effect);
+                drop(data_transfer);
+
+                drag_target = self.handle_drag_move(event);
+
+                // Nothing to drop on rejects the drop. Otherwise `dragover` starts from
+                // the same `dropEffect` that `dragenter` did.
+                let drop_effect = match drag_target {
+                    Some(_) => drop_effect,
+                    None => BlitzDragOperation::None,
+                };
+                event.data_transfer_mut().set_drop_effect(drop_effect);
+            }
+            // A drop goes to the node that the last `DragOver` accepted it for, not to
+            // whatever is under the pointer now
+            UiEvent::Drop(event) => {
+                let mut doc = self.doc.inner_mut();
+                drag_target = doc
+                    .drag_target_node_id
+                    .take()
+                    .filter(|id| doc.get_node(*id).is_some());
+                drop(doc);
+
+                if drag_target.is_none() {
+                    event
+                        .data_transfer_mut()
+                        .set_drop_effect(BlitzDragOperation::None);
+                    return;
+                }
+            }
+            UiEvent::DragLeave(event) => {
+                self.handle_drag_leave(event);
+                return;
+            }
             _ => {}
         };
 
@@ -234,6 +328,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::Ime(_) => focussed_node_id,
             UiEvent::Paste(_) => focussed_node_id,
             UiEvent::AppleStandardKeybinding(_) => focussed_node_id,
+            UiEvent::DragOver(_) => drag_target,
+            UiEvent::DragLeave(_) => drag_target,
+            UiEvent::Drop(_) => drag_target,
         };
         // Fall back to the root element. A document without a root element (e.g. an
         // empty iframe sub-document) has no event target, so there is nothing to do.
@@ -293,6 +390,26 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.run_default_action(&mut dom_event, false);
                 self.flush_pending_events();
             }
+            UiEvent::DragOver(data) => self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::DragOver(data),
+                EventDispatchSource::Input,
+            )),
+            // `dragleave` was dispatched by `handle_drag_leave`
+            UiEvent::DragLeave(_) => {}
+            UiEvent::Drop(data) => {
+                // The last `dragover` left the operation a drop would perform in
+                // `dropEffect`. A drop that nothing accepted is a drag that left.
+                let accepted = data.data_transfer().drop_effect() != BlitzDragOperation::None;
+                let data = if accepted {
+                    data.data_transfer_mut()
+                        .set_mode(BlitzDragDataStoreMode::ReadOnly);
+                    DomEventData::Drop(data)
+                } else {
+                    DomEventData::DragLeave(data)
+                };
+                self.handle_dom_event(DomEvent::new(target, data, EventDispatchSource::Input));
+            }
         };
 
         // Update document input state (hover, focus, active, etc)
@@ -351,32 +468,36 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         let mut event_state = EventState::default();
         event_state = self.run_handler_event(&mut ptr_event, event_state);
+        let mut default_prevented = is_default_prevented(&ptr_event, &event_state);
 
         // Generate the corresponding compatibility event (mouse events for the
         // mouse, touch events for fingers and pen/stylus input) and expose it to
         // script. The default action is always run on the pointer event, after the
         // compatibility event's handlers (which can also prevent it), so that the
         // shell layer and default actions remain pointer-based.
-        if !event_state.is_cancelled() {
+        if !default_prevented {
             if data.is_mouse() {
                 if let Some(make_mouse_data) = make_mouse_data {
                     let mut mouse_event =
                         DomEvent::new(target, make_mouse_data(data), EventDispatchSource::Input);
                     event_state = self.run_handler_event(&mut mouse_event, event_state);
+                    default_prevented = is_default_prevented(&mouse_event, &event_state);
                 }
             } else if data.is_finger() || data.is_pen() {
                 let mut touch_event =
                     DomEvent::new(target, make_touch_data(data), EventDispatchSource::Input);
                 event_state = self.run_handler_event(&mut touch_event, event_state);
+                default_prevented = is_default_prevented(&touch_event, &event_state);
             }
         }
 
-        self.run_default_action(&mut ptr_event, event_state.is_cancelled());
+        self.run_default_action(&mut ptr_event, default_prevented);
     }
 
     fn dispatch_event(&mut self, mut event: DomEvent) {
         let event_state = self.run_handler_event(&mut event, EventState::default());
-        self.run_default_action(&mut event, event_state.is_cancelled());
+        let default_prevented = is_default_prevented(&event, &event_state);
+        self.run_default_action(&mut event, default_prevented);
     }
 
     /// Dispatch the events queued on the document (see [`BaseDocument::queue_event`]) until
@@ -461,6 +582,12 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             DomEventData::Wheel(data) => {
                 self.adjust_element_coords(event.target, &data.coords, &mut data.element)
             }
+            DomEventData::DragEnter(data)
+            | DomEventData::DragOver(data)
+            | DomEventData::DragLeave(data)
+            | DomEventData::Drop(data) => {
+                self.adjust_element_coords(event.target, &data.coords, &mut data.element)
+            }
             _ => {}
         }
 
@@ -479,4 +606,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             .inner_mut()
             .handle_dom_event(event, default_prevented);
     }
+}
+
+/// `preventDefault()` does nothing on an event that isn't cancelable
+fn is_default_prevented(event: &DomEvent, event_state: &EventState) -> bool {
+    event.cancelable && event_state.is_cancelled()
 }
