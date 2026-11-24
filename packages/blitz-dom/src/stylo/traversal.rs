@@ -131,8 +131,11 @@ impl crate::document::BaseDocument {
             style::driver::traverse_dom(&traverser, token, rayon_pool);
             nodes_needing_style_image_flush =
                 std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
+            // A subtree that becomes `display: none` skips the out-of-flow pass.
+            // Clear its hoisted lists so rounding won't visit boxes from the
+            // last visible layout that have lost their styles or been removed.
             for node_id in traverser.newly_hidden_nodes.into_inner().unwrap() {
-                self.clear_hidden_hoisted_children(node_id);
+                self.clear_subtree_hoisted_children(node_id);
             }
         }
         self.pending_style_image_nodes

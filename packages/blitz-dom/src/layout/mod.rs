@@ -157,16 +157,15 @@ impl DerefMut for LayoutPassState<'_> {
 }
 
 impl BaseDocument {
-    /// A `display: none` subtree gets no out-of-flow pass, so the hoisted child lists in it
-    /// would keep the boxes from its last visible layout, which may since have lost their
-    /// styles or been removed. Clear them so that rounding does not visit those boxes.
-    pub(crate) fn clear_hidden_hoisted_children(&self, node_id: DomNodeId) {
+    /// Recursively clear hoisted child lists for this node and its subtree,
+    /// including anonymous blocks and pseudo-elements.
+    pub(crate) fn clear_subtree_hoisted_children(&self, node_id: DomNodeId) {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
         self.clear_hoisted_children(node);
         for &child in &node.anonymous_blocks {
-            self.clear_hidden_hoisted_children(child);
+            self.clear_subtree_hoisted_children(child);
         }
         // Anonymous blocks borrow their children from the DOM tree.
         if !node.is_anonymous() {
@@ -177,7 +176,7 @@ impl BaseDocument {
                 .chain(node.before())
                 .chain(node.after())
             {
-                self.clear_hidden_hoisted_children(child);
+                self.clear_subtree_hoisted_children(child);
             }
         }
     }
