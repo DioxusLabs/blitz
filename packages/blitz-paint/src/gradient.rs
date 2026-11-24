@@ -207,6 +207,24 @@ fn linear_gradient(
         });
     }
 
+    if !repeating && gradient.stops.len() > 1 {
+        let first = f64::from(gradient.stops[0].offset.min(0.0));
+        let last = f64::from(gradient.stops.last().unwrap().offset.max(1.0));
+        if first < 0.0 || last > 1.0 {
+            // Keep the CSS gradient line's mapping when the backend requires
+            // the color stop domain to be normalized.
+            let span = last - first;
+            for stop in &mut *gradient.stops {
+                stop.offset = ((f64::from(stop.offset) - first) / span) as f32;
+            }
+            let direction = end - start;
+            gradient.kind = peniko::GradientKind::Linear(LinearGradientPosition {
+                start: start + direction * first,
+                end: start + direction * last,
+            });
+        }
+    }
+
     (gradient, None)
 }
 
@@ -402,40 +420,66 @@ fn resolve_color_stops<T>(
         gradient.hue_direction = HueDirection::Shorter;
     }
 
-    for (idx, item) in items.iter().enumerate() {
-        let (color, offset) = match item {
-            GenericGradientItem::SimpleColorStop(color) => {
-                let step = 1.0 / (items.len() as f32 - 1.0);
-                (
-                    color.resolve_to_absolute(current_color).as_dynamic_color(),
-                    step * idx as f32,
-                )
-            }
+    // Resolve CSS stop fixup before adding renderer padding or hint samples.
+    // Unpositioned stops are evenly spaced between their positioned neighbors.
+    let mut resolved: Vec<_> = items
+        .iter()
+        .filter_map(|item| match item {
+            GenericGradientItem::SimpleColorStop(color) => Some((
+                Some(color.resolve_to_absolute(current_color).as_dynamic_color()),
+                None,
+            )),
             GenericGradientItem::ComplexColorStop { color, position } => {
-                let offset = item_resolver(gradient_length, position);
-                if let Some(offset) = offset {
+                item_resolver(gradient_length, position).map(|offset| {
                     (
-                        color.resolve_to_absolute(current_color).as_dynamic_color(),
-                        offset,
+                        Some(color.resolve_to_absolute(current_color).as_dynamic_color()),
+                        Some(offset),
                     )
-                } else {
-                    continue;
-                }
+                })
             }
             GenericGradientItem::InterpolationHint(position) => {
-                hint = item_resolver(gradient_length, position);
-                continue;
+                item_resolver(gradient_length, position).map(|offset| (None, Some(offset)))
             }
+        })
+        .collect();
+
+    if let Some((_, first)) = resolved.first_mut() {
+        first.get_or_insert(0.0);
+    }
+    if let Some((_, last)) = resolved.last_mut() {
+        last.get_or_insert(1.0);
+    }
+    let mut previous = None;
+    for index in 0..resolved.len() {
+        let Some(offset) = resolved[index].1 else {
+            continue;
+        };
+        if let Some((left, start)) = previous {
+            let offset = offset.max(start);
+            let span = f64::from(offset) - f64::from(start);
+            let distance = (index - left) as f64;
+            for (step, (_, unpositioned)) in resolved[left + 1..index].iter_mut().enumerate() {
+                *unpositioned =
+                    Some((f64::from(start) + span * (step + 1) as f64 / distance) as f32);
+            }
+            resolved[index].1 = Some(offset);
+        }
+        previous = Some((index, resolved[index].1.unwrap()));
+    }
+
+    for (idx, (color, offset)) in resolved.into_iter().enumerate() {
+        let offset = offset.unwrap();
+        let Some(color) = color else {
+            hint = Some(offset);
+            continue;
         };
 
-        if idx == 0 && !repeating && offset != 0.0 {
-            gradient
-                .stops
-                .push(peniko::ColorStop { color, offset: 0.0 });
+        if idx == 0 && !repeating && offset > 0.0 {
+            gradient.stops.push(ColorStop { color, offset: 0.0 });
         }
 
         let stop = ColorStop { color, offset };
-        match hint {
+        match hint.take() {
             None => {
                 if idx != 0 && subdivide_long_hue {
                     if let Some(&previous) = gradient.stops.last() {
@@ -448,32 +492,17 @@ fn resolve_color_stops<T>(
                 let &last_stop = gradient.stops.last().unwrap();
 
                 if hint <= last_stop.offset {
-                    // Upstream code has a bug here, so we're going to do something different
-                    match gradient.stops.len() {
-                        0 => (),
-                        1 => {
-                            gradient.stops.pop();
-                        }
-                        _ => {
-                            let prev_stop = gradient.stops[gradient.stops.len() - 2];
-                            if prev_stop.offset == hint {
-                                gradient.stops.pop();
-                            }
-                        }
-                    }
-                    gradient.stops.push(peniko::ColorStop {
-                        color,
-                        offset: hint,
-                    });
-                } else if hint >= offset {
-                    gradient.stops.push(peniko::ColorStop {
-                        color: last_stop.color,
-                        offset: hint,
-                    });
-                    gradient.stops.push(peniko::ColorStop {
+                    gradient.stops.push(ColorStop {
                         color,
                         offset: last_stop.offset,
                     });
+                    gradient.stops.push(stop);
+                } else if hint >= offset {
+                    gradient.stops.push(ColorStop {
+                        color: last_stop.color,
+                        offset,
+                    });
+                    gradient.stops.push(stop);
                 } else if hint == (last_stop.offset + offset) / 2.0 {
                     if subdivide_long_hue {
                         append_long_hue_samples(gradient, last_stop, stop, 1.0);
