@@ -1273,8 +1273,9 @@ impl BaseDocument {
     }
 
     pub fn process_style_element(&mut self, target_id: NodeId) {
+        // The document parser already supplies the style element's text.
+        // HTML raw text and XML CDATA must retain literal entity spellings.
         let css = self.nodes[target_id].text_content();
-        let css = html_escape::decode_html_entities(&css);
         let sheet = self.make_stylesheet(&css, Origin::Author);
         self.add_stylesheet_for_node(sheet, target_id);
     }
