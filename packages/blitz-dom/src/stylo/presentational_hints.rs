@@ -320,10 +320,6 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     let is_solid_hr = *tag == local_name!("hr")
         && (elem.has_attr(local_name!("color")) || elem.has_attr(local_name!("noshade")));
 
-    // https://html.spec.whatwg.org/multipage/#the-lang-and-xml:lang-attributes
-    let accepts_lang = elem.name.ns == ns!(html) || elem.name.ns == ns!(svg);
-    let mut lang = None;
-
     #[cfg(feature = "svg")]
     let svg_url_data =
         (elem.name.ns == ns!(svg)).then(|| crate::url::DocumentUrl::default().url_extra_data());
@@ -335,14 +331,6 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
     for attr in elem.attrs() {
         let name = &attr.name.local;
         let value = attr.value.as_str();
-
-        if *name == local_name!("lang") {
-            if attr.name.ns == ns!(xml) {
-                lang = Some(value);
-            } else if attr.name.ns == ns!() && accepts_lang {
-                lang = lang.or(Some(value));
-            }
-        }
 
         // A `font` element's `face` sets `font-family` to the attribute's value, and
         // its `size` maps to a font size keyword.
@@ -636,7 +624,7 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         }
     }
 
-    if let Some(lang) = lang {
+    if let Some(lang) = elem.declared_language() {
         hints.push(PropertyDeclaration::XLang(XLang(Atom::from(lang))));
     }
 
