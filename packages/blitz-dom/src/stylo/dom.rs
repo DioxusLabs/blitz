@@ -579,6 +579,7 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
         unsafe { self.stylo_element_data().unsafe_stylo_only_mut() }
+            .filter(|data| data.styles.primary.is_some())
     }
 
     fn skip_item_display_fixup(&self) -> bool {
