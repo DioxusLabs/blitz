@@ -354,11 +354,20 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             }
             // Out/leave events were dispatched by `handle_pointer_leave`
             UiEvent::PointerLeave(_) => {}
-            UiEvent::Wheel(data) => self.handle_dom_event(DomEvent::new(
-                target,
-                DomEventData::Wheel(data),
-                EventDispatchSource::Input,
-            )),
+            UiEvent::Wheel(data) => {
+                let mut doc = self.doc.inner_mut();
+                let mut gesture = doc.wheel_gesture;
+                let (target, cancelable) = gesture.begin_wheel_dispatch(&doc, &data, target);
+                doc.wheel_gesture = gesture;
+                drop(doc);
+                let mut dom_event = DomEvent::new(
+                    target,
+                    DomEventData::Wheel(data),
+                    EventDispatchSource::Input,
+                );
+                dom_event.cancelable = cancelable;
+                self.handle_dom_event(dom_event);
+            }
             UiEvent::KeyUp(data) => self.handle_dom_event(DomEvent::new(
                 target,
                 DomEventData::KeyUp(data),
