@@ -17,9 +17,7 @@ use taffy::{
 #[cfg(feature = "floats")]
 use parley::{BreakerState, LineBreakData, YieldData};
 #[cfg(feature = "floats")]
-use taffy::{
-    BlockItemStyle as _, Clear, ContentSlot, Float, FloatInsets, prelude::TaffyMaxContent,
-};
+use taffy::{BlockItemStyle as _, Clear, ContentSlot, Float, FloatInsets};
 
 use stylo_taffy::StyleFlags;
 
@@ -36,6 +34,20 @@ fn subtract_margins(mut child_inputs: LayoutInput, margin: taffy::Rect<f32>) -> 
         .maybe_sub(margin.sum_axes())
         .maybe_max(Size::ZERO);
     child_inputs
+}
+
+/// Layout inputs for a float in an inline formatting context, from `child_inputs`, those of the
+/// pass: sized in the containing block's inline room less its margins, with any sizing keyword on
+/// its `width` style resolved, and as tall as it needs.
+#[cfg(feature = "floats")]
+fn float_box_inputs(
+    width_style: taffy::Dimension,
+    margin: taffy::Rect<f32>,
+    child_inputs: LayoutInput,
+) -> LayoutInput {
+    let mut inputs = inline_box_inputs(width_style, margin, child_inputs);
+    inputs.available_space.height = AvailableSpace::MaxContent;
+    inputs
 }
 
 /// Layout inputs for an atomic inline box, with any sizing keyword on its `width` style
@@ -500,11 +512,6 @@ impl LayoutPassState<'_> {
             vertical_margins_are_collapsible: taffy::Line::FALSE,
             ..inputs
         };
-        #[cfg(feature = "floats")]
-        let float_child_inputs = taffy::tree::LayoutInput {
-            available_space: Size::MAX_CONTENT,
-            ..child_inputs
-        };
 
         // Update inline boxes
         let inline_box_count = inline_layout.layout.inline_boxes().len();
@@ -626,11 +633,12 @@ impl LayoutPassState<'_> {
                     AvailableSpace::MinContent => {
                         let mut width: f32 = 0.0;
                         for ibox in inline_layout.layout.inline_boxes() {
-                            let (is_floated, margin) = {
+                            let (is_floated, width_style, margin) = {
                                 let style =
                                     self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
                                 (
                                     style.float().is_floated(),
+                                    style.size().width,
                                     style
                                         .margin()
                                         .resolve_or_zero(inputs.parent_size, resolve_calc_value),
@@ -640,7 +648,7 @@ impl LayoutPassState<'_> {
                             if is_floated {
                                 let output = self.compute_child_layout(
                                     taffy::NodeId::from(ibox.id),
-                                    subtract_margins(child_inputs, margin),
+                                    float_box_inputs(width_style, margin, child_inputs),
                                 );
                                 width = width.max(output.size.width + margin.left + margin.right);
                             }
@@ -663,12 +671,13 @@ impl LayoutPassState<'_> {
                         let mut right_band: f32 = 0.0;
                         let mut width: f32 = 0.0;
                         for ibox in inline_layout.layout.inline_boxes() {
-                            let (float, clear, margin) = {
+                            let (float, clear, width_style, margin) = {
                                 let style =
                                     self.child_layout_style(&self.nodes[NodeId::from_u64(ibox.id)]);
                                 (
                                     style.float(),
                                     style.clear(),
+                                    style.size().width,
                                     style
                                         .margin()
                                         .resolve_or_zero(inputs.parent_size, resolve_calc_value),
@@ -685,7 +694,7 @@ impl LayoutPassState<'_> {
 
                                 let output = self.compute_child_layout(
                                     taffy::NodeId::from(ibox.id),
-                                    subtract_margins(child_inputs, margin),
+                                    float_box_inputs(width_style, margin, child_inputs),
                                 );
                                 let box_width = output.size.width + margin.left + margin.right;
 
@@ -913,7 +922,7 @@ impl LayoutPassState<'_> {
                         let state = breaker.state_mut();
                         let node_id = NodeId::from_u64(box_break_data.inline_box_id);
 
-                        let (direction, clear, margin) = {
+                        let (direction, clear, width_style, margin) = {
                             let style = self.child_layout_style(&self.nodes[node_id]);
                             // We can assume that the box is a float because we only set `break_on_box: true` for floats
                             let direction = match style.float() {
@@ -924,6 +933,7 @@ impl LayoutPassState<'_> {
                             (
                                 direction,
                                 style.clear(),
+                                style.size().width,
                                 style
                                     .margin()
                                     .resolve_or_zero(inputs.parent_size, resolve_calc_value),
@@ -932,7 +942,7 @@ impl LayoutPassState<'_> {
 
                         let output = self.compute_child_layout(
                             crate::taffy_node_id(node_id),
-                            float_child_inputs,
+                            float_box_inputs(width_style, margin, child_inputs),
                         );
                         let float_width = (output.size.width + margin.left + margin.right) * scale;
                         let float = PendingFloat {

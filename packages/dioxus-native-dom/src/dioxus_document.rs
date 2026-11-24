@@ -1,8 +1,9 @@
 //! Integration between Dioxus and Blitz
 use crate::NodeId;
 use crate::events::{
-    BlitzKeyboardData, NativeConverter, NativeFocusData, NativeFormData, NativePointerData,
-    NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
+    BlitzKeyboardData, NativeConverter, NativeDragData, NativeFocusData, NativeFormData,
+    NativePointerData, NativeResizeData, NativeScrollData, NativeTouchData, NativeWheelData,
+    NodeHandle,
 };
 use crate::mutation_writer::DioxusState;
 use crate::qual_name;
@@ -229,6 +230,10 @@ impl Document for DioxusDocument {
         // their own (e.g. JavaScript timers)
         let subdoc_changes = self.inner.borrow_mut().poll_subdocuments(Some(&waker));
 
+        // Dispatch events queued on the document since it was last driven, before running
+        // the vdom so that it picks up any work their handlers schedule.
+        self.flush_pending_dom_events();
+
         {
             let fut = self.vdom.wait_for_work();
             let mut pinned_fut = pin!(fut);
@@ -248,6 +253,13 @@ impl Document for DioxusDocument {
             .apply_buffered_mutations(&mut self.inner.borrow_mut());
         self.flush_queued_mounted_events();
 
+        // Applying mutations and running mounted handlers can queue events (e.g. focus
+        // events from a mounted handler calling `set_focus`). Their handlers may leave the
+        // vdom with more work, so ask to be polled again.
+        if self.flush_pending_dom_events() {
+            waker.wake_by_ref();
+        }
+
         true
     }
 
@@ -258,6 +270,21 @@ impl Document for DioxusDocument {
         };
         let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
+    }
+}
+
+impl DioxusDocument {
+    /// Dispatch the events queued on the document to the vdom. Returns whether there were any.
+    fn flush_pending_dom_events(&mut self) -> bool {
+        if !self.inner.borrow().has_pending_events() {
+            return false;
+        }
+        let handler = DioxusEventHandler {
+            vdom: &mut self.vdom,
+            vdom_state: &mut self.vdom_state,
+        };
+        EventDriver::new(&mut self.inner, handler).flush_pending_events();
+        true
     }
 }
 
@@ -313,6 +340,7 @@ impl EventHandler for DioxusEventHandler<'_> {
 
             DomEventData::Scroll(sevent) => Some(wrap_event_data(NativeScrollData(sevent.clone()))),
             DomEventData::Wheel(wevent) => Some(wrap_event_data(NativeWheelData(wevent.clone()))),
+            DomEventData::Resize(revent) => Some(wrap_event_data(NativeResizeData(*revent))),
 
             DomEventData::Focus(_) => Some(wrap_event_data(NativeFocusData)),
             DomEventData::Blur(_) => Some(wrap_event_data(NativeFocusData)),
@@ -335,6 +363,11 @@ impl EventHandler for DioxusEventHandler<'_> {
 
             // AppleStandardKeybinding events are not exposed to script
             DomEventData::AppleStandardKeybinding(_) => None,
+
+            DomEventData::DragEnter(devent)
+            | DomEventData::DragOver(devent)
+            | DomEventData::DragLeave(devent)
+            | DomEventData::Drop(devent) => Some(wrap_event_data(NativeDragData(devent.clone()))),
         };
 
         let Some(event_data) = event_data else {

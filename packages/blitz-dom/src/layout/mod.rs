@@ -17,11 +17,11 @@ use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::CopyStyleGetters;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
-    FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
-    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_oof_layout, prelude::*,
+    AxisStaticEdge, AxisStaticPosition, BlockContext, CalcHandle, CoreStyle as _,
+    DetailedLayoutInfo, FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _,
+    NodeId, OofCandidate, ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -75,15 +75,19 @@ fn tag_intrinsic_sizes(
     (IntrinsicSizes::default(), DEFAULT_OBJECT_SIZE)
 }
 
-pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
-    let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
+pub(crate) fn resolve_calc_value(calc: CalcHandle, parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc.ptr() as *const CalcLengthPercentage) };
     let result = calc.resolve(CSSPixelLength::new(parent_size));
     result.px()
 }
 
 /// Per-pass layout state: wraps the document for the duration of a layout pass and carries
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
-pub(crate) struct LayoutPassState<'doc> {
+///
+/// Public so that embedders can drive Taffy over a Blitz document themselves (e.g. a
+/// custom `LayoutPartialTree` wrapper which intercepts some nodes — multi-column or
+/// paginated layout — and delegates everything else to Blitz).
+pub struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
@@ -122,7 +126,8 @@ impl<'doc> LayoutPassState<'doc> {
         }
     }
 
-    pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
+    /// Start a layout pass over `doc`.
+    pub fn new(doc: &'doc mut BaseDocument) -> Self {
         #[cfg(feature = "writing-mode")]
         let root_id = doc.try_root_element().map(|root| root.id);
         Self {
@@ -710,8 +715,8 @@ impl LayoutPartialTree for LayoutPassState<'_> {
         *self.node_from_id_mut(node_id).unrounded_layout_mut() = *layout;
     }
 
-    fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
-        resolve_calc_value(calc_ptr, parent_size)
+    fn resolve_calc_value(&self, calc: CalcHandle, parent_size: f32) -> f32 {
+        resolve_calc_value(calc, parent_size)
     }
 
     #[inline(always)]
@@ -882,6 +887,7 @@ impl RoundTree for LayoutPassState<'_> {
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
         *self.node_from_id_mut(node_id).final_layout_mut() = *layout;
+        self.clamp_node_scroll_offset(dom_node_id(node_id));
     }
 
     fn is_out_of_flow(&self, node_id: NodeId) -> bool {

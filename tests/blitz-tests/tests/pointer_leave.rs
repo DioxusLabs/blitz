@@ -3,12 +3,14 @@
 //! leaves its host.
 
 use blitz_dom::{
-    BaseDocument, DocumentConfig, EventDriver, LocalName, NodeId, NoopEventHandler, PlainDocument,
-    QualName, UserAgentStylesheet, ns,
+    BaseDocument, Document, DocumentConfig, EventDriver, EventHandler, LocalName, NodeId,
+    NoopEventHandler, PlainDocument, QualName, UserAgentStylesheet, ns,
 };
 use blitz_html::HtmlDocument;
 use blitz_test_harness::{Harness, HarnessOptions, pointer_event};
-use blitz_traits::events::{BlitzPointerId, MouseEventButton, MouseEventButtons, UiEvent};
+use blitz_traits::events::{
+    BlitzPointerId, DomEvent, EventState, MouseEventButton, MouseEventButtons, UiEvent,
+};
 use blitz_traits::shell::ShellProvider;
 use cursor_icon::CursorIcon;
 use keyboard_types::Modifiers;
@@ -160,6 +162,37 @@ fn leaving_window_clears_sub_document_hover() {
 
     send(&mut parent, UiEvent::PointerLeave(mouse_event(100.0, -1.0)));
     assert_eq!(parent.0.get_hover_node_id(), None);
+    assert_eq!(child_hover(&parent, host), None);
+}
+
+/// Calls `preventDefault()` on every event
+struct PreventDefault;
+
+impl EventHandler for PreventDefault {
+    fn handle_event(
+        &mut self,
+        _chain: &[NodeId],
+        _event: &mut DomEvent,
+        _doc: &mut dyn Document,
+        event_state: &mut EventState,
+    ) {
+        event_state.prevent_default();
+    }
+}
+
+#[test]
+fn prevent_default_does_not_cancel_pointerleave() {
+    let window = Arc::new(Window::default());
+    let (mut parent, host) = hosted_doc(&window);
+    let go = child_go(&parent, host);
+
+    send(&mut parent, UiEvent::PointerMove(mouse_event(100.0, 25.0)));
+    assert_eq!(child_hover(&parent, host), Some(go));
+
+    // `pointerleave` isn't cancelable, so it is still forwarded to the sub-document
+    EventDriver::new(&mut parent, PreventDefault)
+        .handle_ui_event(UiEvent::PointerLeave(mouse_event(100.0, -1.0)));
+    parent.0.resolve(0.0);
     assert_eq!(child_hover(&parent, host), None);
 }
 

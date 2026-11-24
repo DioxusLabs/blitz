@@ -145,3 +145,27 @@ fn abspos_child_hoisted_through_contents_stretches() {
         "abspos hoisted through display:contents must stretch to the containing block"
     );
 }
+
+#[test]
+fn block_inside_contents_inside_inline_fills_width() {
+    // The block is hoisted through display:contents into the span, so the span contains a block
+    // and the parent must not lay it out in an inline formatting context.
+    let doc = layout_doc(
+        r#"<html><body style="margin:0">
+            <div style="width:300px;">
+                <span>
+                    <div style="display:contents;">
+                        <p id="p" style="margin:0; height:50px;"></p>
+                    </div>
+                </span>
+            </div>
+        </body></html>"#,
+    );
+    let p = doc.query_selector("#p").unwrap().expect("#p not found");
+    let lp = doc.get_node(p).unwrap().final_layout();
+    assert_eq!(
+        (lp.size.width, lp.size.height),
+        (300.0, 50.0),
+        "block hoisted through display:contents into an inline must fill the container width"
+    );
+}

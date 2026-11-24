@@ -110,10 +110,23 @@ impl<D: Document> Harness<D> {
         self.time
     }
 
-    /// Poll pending async work (e.g. the Dioxus VirtualDom) and resolve style/layout
+    /// Poll pending async work (e.g. the Dioxus VirtualDom) and resolve style/layout,
+    /// settling any events generated during layout (e.g. resize observer events) in a
+    /// bounded loop matching `blitz-shell`.
     pub fn pump(&mut self) {
+        const MAX_SETTLE_PASSES: usize = 3;
+
         self.doc.poll(None);
-        self.doc.inner_mut().resolve(self.time);
+        for pass in 0..=MAX_SETTLE_PASSES {
+            let has_pending_events = {
+                let mut inner = self.doc.inner_mut();
+                inner.resolve(self.time);
+                inner.has_pending_events()
+            };
+            if !has_pending_events || pass == MAX_SETTLE_PASSES || !self.doc.poll(None) {
+                break;
+            }
+        }
     }
 
     /// Advance the animation clock by `dt_seconds` and [`pump`](Self::pump)
@@ -136,7 +149,7 @@ impl<D: Document> Harness<D> {
     /// so document-specific event handling (e.g. forwarding to a Dioxus VirtualDom) is
     /// bypassed. Does not [`pump`](Self::pump).
     pub fn dispatch_recorded(&mut self, events: impl IntoIterator<Item = UiEvent>) -> Vec<String> {
-        use blitz_dom::{EventDriver, EventHandler};
+        use blitz_dom::{EventDriver, EventHandler, NoopEventHandler};
         use blitz_traits::events::{DomEvent, EventState};
         use std::cell::RefCell;
         use std::rc::Rc;
@@ -158,9 +171,14 @@ impl<D: Document> Harness<D> {
             }
         }
 
+        let mut doc = self.doc.inner_mut();
+
+        // Events queued before this call (e.g. the focus events of an autofocused element)
+        // are not part of the recording
+        EventDriver::new(&mut *doc, NoopEventHandler).flush_pending_events();
+
         let handler = RecordingHandler::default();
         let recorded = handler.events.clone();
-        let mut doc = self.doc.inner_mut();
         let mut driver = EventDriver::new(&mut *doc, handler);
         for event in events {
             driver.handle_ui_event(event);
