@@ -220,7 +220,7 @@ fn construct_entry_list(doc: &BaseDocument, form_id: NodeId, submitter_id: NodeI
             continue;
         }
 
-        let element_type = element.attr(local_name!("type"));
+        let element_type = element.input_type();
 
         //  If any of the following are true:
         //   field has a datalist element ancestor;
