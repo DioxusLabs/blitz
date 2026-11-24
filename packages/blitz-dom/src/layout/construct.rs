@@ -810,6 +810,77 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             }
         }
     }
+
+    flush_first_letter(doc, node_id);
+}
+
+/// Index of `::first-letter` among Stylo's eager pseudo-elements (after, before,
+/// selection, first-letter, first-line).
+const FIRST_LETTER_PSEUDO_INDEX: usize = 3;
+
+/// Keep the node that carries an element's `::first-letter` style in step with its
+/// styles: created when the element has such a style, updated when it changes, removed
+/// when it no longer has one.
+fn flush_first_letter(doc: &mut BaseDocument, node_id: NodeId) {
+    let node = &doc.nodes[node_id];
+    let existing = node.first_letter();
+    let style = node
+        .try_stylo_element_data()
+        .and_then(|s| s.get())
+        .and_then(|d| d.styles.pseudos.as_array()[FIRST_LETTER_PSEUDO_INDEX].clone());
+    match (existing, style) {
+        (None, None) => {}
+        (Some(fl_id), None) => {
+            doc.remove_and_drop_pe(fl_id);
+            let node = &mut doc.nodes[node_id];
+            if let Some(data) = node.element_data_mut() {
+                data.first_letter = None;
+            }
+            node.insert_damage(ALL_DAMAGE);
+        }
+        (None, Some(style)) => {
+            let fl_id = doc.create_node(NodeData::AnonymousBlock(Box::new(ElementData::new(
+                DUMMY_NAME,
+                Vec::new(),
+            ))));
+            doc.nodes[fl_id].parent = Some(node_id);
+            if doc.nodes[node_id].flags.contains(NodeFlags::IS_IN_DOCUMENT) {
+                doc.nodes[fl_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
+            }
+            let mut element_data = StyloElementData::default();
+            element_data.styles.primary = Some(style);
+            element_data.set_restyled();
+            element_data.damage = ALL_DAMAGE;
+            *doc.nodes[fl_id].stylo_element_data_mut().ensure_init_mut() = element_data;
+            let node = &mut doc.nodes[node_id];
+            if let Some(data) = node.element_data_mut() {
+                data.first_letter = Some(fl_id);
+            }
+            node.insert_damage(ALL_DAMAGE);
+        }
+        (Some(fl_id), Some(style)) => {
+            let mut changed = false;
+            if let Some(mut styles) = doc.nodes[fl_id]
+                .try_stylo_element_data_mut()
+                .and_then(|s| s.get_mut())
+            {
+                let same = styles
+                    .styles
+                    .primary
+                    .as_ref()
+                    .is_some_and(|current| std::ptr::eq(&**current, &*style));
+                if !same {
+                    styles.styles.primary = Some(style);
+                    styles.set_restyled();
+                    styles.damage.insert(ALL_DAMAGE);
+                    changed = true;
+                }
+            }
+            if changed {
+                doc.nodes[node_id].insert_damage(ALL_DAMAGE);
+            }
+        }
+    }
 }
 
 /// Whether the `display: contents` node `node_id` holds in-flow inline content and nothing
