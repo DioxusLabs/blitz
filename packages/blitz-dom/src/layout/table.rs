@@ -201,13 +201,20 @@ impl TableTreeWrapper<'_, '_> {
             };
         }
         let sum_min: f32 = min.iter().sum();
+        // Percentage columns widen a table without a specified width so that each gets its
+        // share with its max-content width in it.
+        let wanted = percent_max_width(&max, &columns);
         let mut available = match (specified, intrinsic) {
             (Some(width), _) => width - extras - gaps,
             (None, Some(taffy::AvailableSpace::MinContent)) => sum_min,
-            (None, Some(_)) => max.iter().sum(),
-            (None, None) => (available_width - extras - gaps)
-                .min(max.iter().sum())
-                .max(sum_min),
+            (None, Some(_)) => {
+                if wanted.is_finite() {
+                    wanted
+                } else {
+                    max.iter().sum()
+                }
+            }
+            (None, None) => (available_width - extras - gaps).min(wanted).max(sum_min),
         };
         let mut style = self.ctx.style.clone();
         if available + 0.01 < sum_min {
@@ -232,6 +239,42 @@ impl TableTreeWrapper<'_, '_> {
         style.grid_template_columns = widths.into_iter().map(style_helpers::length).collect();
         Some(style)
     }
+}
+
+/// The width a table without a specified width wants for its columns' content (the
+/// spacing between them left out), as Blink's automatic table layout
+/// (`TableLayoutAlgorithmAuto::CalcEffectiveLogicalWidth`) has it: the largest of the
+/// columns' summed max-content widths, each percentage column's max-content width over
+/// its percentage, and the other columns' summed max-content widths over the percentage
+/// left to them. Percentages are taken in column order and cut where they pass 100% in
+/// total. Infinite when a column with content gets no percentage left (the table then
+/// takes all the width it is offered).
+fn percent_max_width(max: &[f32], columns: &[ColumnWidth]) -> f32 {
+    let mut wanted: f32 = max.iter().sum();
+    let mut percent_left = 1.0f32;
+    let mut other_max = 0.0f32;
+    let mut has_percent = false;
+    for (&max, column) in max.iter().zip(columns) {
+        match *column {
+            ColumnWidth::Percent(p) => {
+                has_percent = true;
+                let p = p.min(percent_left).max(0.0);
+                percent_left -= p;
+                if max > 0.0 {
+                    wanted = wanted.max(if p > 0.0 { max / p } else { f32::INFINITY });
+                }
+            }
+            _ => other_max += max,
+        }
+    }
+    if has_percent && other_max > 0.0 {
+        wanted = wanted.max(if percent_left > 0.0 {
+            other_max / percent_left
+        } else {
+            f32::INFINITY
+        });
+    }
+    wanted
 }
 
 /// A column's width in the automatic table layout algorithm.
@@ -1289,6 +1332,24 @@ impl taffy::LayoutGridContainer for TableTreeWrapper<'_, '_> {
 mod tests {
     use super::{ColumnWidth, distribute_auto_table_width};
     use ColumnWidth::*;
+
+    #[test]
+    fn percentage_columns_widen_an_auto_table() {
+        use super::percent_max_width;
+        let w = |max: &[f32], columns: &[ColumnWidth]| {
+            (percent_max_width(max, columns) * 100.0).round() / 100.0
+        };
+        // Each percentage column holds its max-content width at its share.
+        assert_eq!(w(&[57.0, 56.0], &[Percent(0.3), Percent(0.3)]), 190.0);
+        // Past 100%, the last percentages are cut: 56 / 0.4.
+        assert_eq!(w(&[51.0, 56.0], &[Percent(0.6), Percent(0.6)]), 140.0);
+        // The other columns share what the percentages leave: 56 / 0.5.
+        assert_eq!(w(&[28.0, 56.0], &[Percent(0.5), Auto]), 112.0);
+        // Without percentages the columns' max-content widths.
+        assert_eq!(w(&[28.0, 56.0], &[Auto, Fixed(56.0)]), 84.0);
+        // No percentage left for a column with content.
+        assert!(percent_max_width(&[28.0, 56.0], &[Percent(1.0), Auto]).is_infinite());
+    }
 
     fn round(widths: Vec<f32>) -> Vec<f32> {
         widths

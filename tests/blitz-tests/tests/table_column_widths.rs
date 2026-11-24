@@ -120,3 +120,48 @@ fn fixed_width_cells_of_a_nested_table_shrink_to_fit_their_column() {
     );
     assert_close(&widths, &[160.0, 240.0]);
 }
+
+#[test]
+fn percentage_columns_widen_an_auto_width_table() {
+    // A table without a width is wide enough for each percentage column to
+    // hold its max-content width at its share (as in Chromium): 30px at 60%
+    // and 40px at 40% want 50px and 100px, so the table is 100px wide.
+    // Before, it was the content's 70px.
+    let widths = widths(
+        &format!(
+            "<table><tr><td id=a width='60%'>{}</td><td id=b width='40%'>{}</td></tr></table>",
+            boxes(1, 30),
+            boxes(1, 40)
+        ),
+        &["a", "b"],
+    );
+    assert_close(&widths, &[60.0, 40.0]);
+}
+
+#[test]
+fn percentages_past_100_are_cut_before_widening_the_table() {
+    // 60% + 60%: the second column gets the 40% left, so 40px wants 100px.
+    let widths = widths(
+        &format!(
+            "<table><tr><td id=a width='60%'>{}</td><td id=b width='60%'>{}</td></tr></table>",
+            boxes(1, 30),
+            boxes(1, 40)
+        ),
+        &["a", "b"],
+    );
+    assert_close(&widths, &[60.0, 40.0]);
+}
+
+#[test]
+fn other_columns_widen_the_table_into_the_percentage_left() {
+    // 50% + auto: the auto column's 40px fills the 50% left, so 80px.
+    let widths = widths(
+        &format!(
+            "<table><tr><td id=a width='50%'>{}</td><td id=b>{}</td></tr></table>",
+            boxes(1, 20),
+            boxes(1, 40)
+        ),
+        &["a", "b"],
+    );
+    assert_close(&widths, &[40.0, 40.0]);
+}
