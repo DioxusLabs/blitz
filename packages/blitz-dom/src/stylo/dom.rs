@@ -63,7 +63,7 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 
     fn is_html_document(&self) -> bool {
-        true
+        !self.tree().is_xml_document
     }
 
     fn quirks_mode(&self) -> QuirksMode {
@@ -237,7 +237,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_html_element_in_html_document(&self) -> bool {
-        true // self.has_namespace(ns!(html))
+        !self.tree().is_xml_document && self.has_namespace(&markup5ever::ns!(html))
     }
 
     fn has_local_name(&self, local_name: &LocalName) -> bool {

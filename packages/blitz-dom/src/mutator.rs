@@ -99,6 +99,11 @@ impl Drop for DocumentMutator<'_> {
 }
 
 impl DocumentMutator<'_> {
+    /// Set the document syntax before parsing a complete document.
+    pub fn set_xml_document(&mut self, is_xml: bool) {
+        self.doc.nodes.is_xml_document = is_xml;
+    }
+
     pub fn new<'doc>(doc: &'doc mut BaseDocument) -> DocumentMutator<'doc> {
         DocumentMutator {
             doc,
