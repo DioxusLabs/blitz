@@ -38,6 +38,7 @@ mod harness_smoke;
 mod hidden_checkbox_input;
 mod hit_inline_embedded_box;
 mod hit_test_dropped_nodes;
+mod hoisted_child_removal;
 mod hover_dom_ancestors;
 mod ime_preedit_underline;
 mod incremental_oracle;
