@@ -23,7 +23,9 @@ use crate::{
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::EventDispatchSource;
-use blitz_traits::events::{BlitzFocusEvent, DomEvent, DomEventData, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzFocusEvent, BlitzResizeEvent, DomEvent, DomEventData, HitResult, UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -192,6 +194,12 @@ pub enum DocumentEvent {
     },
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ResizeObserverEntry {
+    pub(crate) count: u32,
+    pub(crate) last_size: Option<BlitzResizeEvent>,
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -292,6 +300,8 @@ pub struct BaseDocument {
     /// Events which have been generated but not yet dispatched. Drained by the
     /// [`EventDriver`](crate::EventDriver).
     pub(crate) pending_events: VecDeque<DomEvent>,
+    /// Nodes being observed for layout size changes, refcounted per node.
+    pub(crate) resize_observers: HashMap<NodeId, ResizeObserverEntry>,
     /// The trackpad scroll gesture under way, locked to its main axis
     pub(crate) wheel_gesture: WheelGesture,
 
@@ -535,6 +545,7 @@ impl BaseDocument {
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
             pending_events: VecDeque::new(),
+            resize_observers: HashMap::new(),
             wheel_gesture: WheelGesture::default(),
             text_selection: TextSelection::default(),
             scratch: DocumentScratch::default(),
@@ -731,6 +742,15 @@ impl BaseDocument {
             *last = event;
             return;
         }
+        if matches!(event.data, DomEventData::Resize(_))
+            && let Some(last) = self.pending_events.back_mut()
+            && matches!(last.data, DomEventData::Resize(_))
+            && last.target == event.target
+            && last.source == event.source
+        {
+            *last = event;
+            return;
+        }
 
         // Bound the queue in case the embedder never drains it
         const MAX_PENDING_EVENTS: usize = 1024;
@@ -762,6 +782,90 @@ impl BaseDocument {
     /// Whether there are queued events waiting to be dispatched
     pub fn has_pending_events(&self) -> bool {
         !self.pending_events.is_empty()
+    }
+
+    /// Observe `node_id` for layout size changes. Observations are reference-counted per node:
+    /// each call to `observe_resize` should be paired with a matching [`unobserve_resize`](Self::unobserve_resize).
+    /// A node is also automatically unobserved when removed from the tree.
+    pub fn observe_resize(&mut self, node_id: NodeId) {
+        self.resize_observers
+            .entry(node_id)
+            .and_modify(|entry| entry.count = entry.count.saturating_add(1))
+            .or_insert(ResizeObserverEntry {
+                count: 1,
+                last_size: None,
+            });
+    }
+
+    /// Stop observing `node_id` for layout size changes (decrements its observer count and
+    /// removes the entry once the count reaches zero).
+    pub fn unobserve_resize(&mut self, node_id: NodeId) {
+        if let std::collections::hash_map::Entry::Occupied(mut entry) =
+            self.resize_observers.entry(node_id)
+        {
+            if entry.get().count <= 1 {
+                entry.remove();
+            } else {
+                entry.get_mut().count -= 1;
+            }
+        }
+    }
+
+    /// Check all resize-observed nodes against their latest resolved layout and queue
+    /// `DomEventData::Resize` events for any whose size changed (or which have not yet reported).
+    pub(crate) fn check_resize_observers(&mut self) {
+        if self.resize_observers.is_empty() {
+            return;
+        }
+
+        let mut changed: SmallVec<[(NodeId, BlitzResizeEvent); 4]> = SmallVec::new();
+        for (&node_id, entry) in self.resize_observers.iter_mut() {
+            let Some(node) = self.nodes.get(node_id) else {
+                continue;
+            };
+            if !node.flags.is_in_document() {
+                continue;
+            }
+
+            let layout = node.final_layout();
+            #[cfg(feature = "writing-mode")]
+            let vertical = node.layout_data().writing_mode.is_vertical();
+            #[cfg(not(feature = "writing-mode"))]
+            let vertical = false;
+
+            let (border_box_width, border_box_height, content_box_width, content_box_height) =
+                if vertical {
+                    (
+                        layout.size.height,
+                        layout.size.width,
+                        layout.content_box_height(),
+                        layout.content_box_width(),
+                    )
+                } else {
+                    (
+                        layout.size.width,
+                        layout.size.height,
+                        layout.content_box_width(),
+                        layout.content_box_height(),
+                    )
+                };
+
+            let current = BlitzResizeEvent {
+                border_box_width,
+                border_box_height,
+                content_box_width,
+                content_box_height,
+            };
+
+            if entry.last_size != Some(current) {
+                entry.last_size = Some(current);
+                changed.push((node_id, current));
+            }
+        }
+
+        for (node_id, event) in changed {
+            self.queue_ua_event(node_id, DomEventData::Resize(event));
+        }
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -1095,6 +1199,7 @@ impl BaseDocument {
             self.drag_mode = DragMode::None;
         }
         self.scrollbar_activity.remove(&node_id);
+        self.resize_observers.remove(&node_id);
     }
 
     pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: NodeId) -> Option<Node> {

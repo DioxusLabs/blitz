@@ -96,6 +96,7 @@ fn map_dom_event_to_ui_event(
         DomEventData::Input(_) => None,
         DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
         DomEventData::Scroll(_) => None,
+        DomEventData::Resize(_) => None,
         DomEventData::Focus(_) => None,
         DomEventData::Blur(_) => None,
         DomEventData::FocusIn(_) => None,
@@ -338,6 +339,9 @@ pub(crate) fn handle_dom_event(
         }
         DomEventData::Scroll(_) => {
             // Handled elsewhere
+        }
+        DomEventData::Resize(_) => {
+            // Do nothing (no default action)
         }
         DomEventData::Wheel(event) => {
             handle_wheel(doc, target_node_id, event.clone());
