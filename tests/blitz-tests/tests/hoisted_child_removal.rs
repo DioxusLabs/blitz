@@ -60,3 +60,41 @@ fn remove_abspos_child_from_hidden_host() {
     doc.mutate().remove_and_drop_node(child);
     doc.resolve(0.0);
 }
+
+#[test]
+fn restyle_clears_hoisted_children_when_contents_ancestor_becomes_hidden() {
+    let mut doc = doc(
+        r#"<!doctype html><div id="wrapper" style="display: contents">
+            <div id="panel" style="position: fixed; width: 200px">
+                <div id="child" style="position: absolute; inset: -10px"></div>
+            </div>
+        </div>"#,
+    );
+    doc.resolve(0.0);
+    let wrapper = doc.query_selector("#wrapper").unwrap().unwrap();
+    let panel = doc.query_selector("#panel").unwrap().unwrap();
+    let child = doc.query_selector("#child").unwrap().unwrap();
+    assert_eq!(
+        &**doc.get_node(panel).unwrap().hoisted_children.borrow(),
+        &[child]
+    );
+    assert_eq!(
+        doc.get_node(child).unwrap().oof_containing_block.get(),
+        Some(panel)
+    );
+
+    doc.mutate()
+        .set_attribute(wrapper, qual_name!("style"), "display: none");
+    doc.resolve_stylist(0.0);
+    assert!(
+        doc.get_node(panel)
+            .unwrap()
+            .hoisted_children
+            .borrow()
+            .is_empty()
+    );
+    assert_eq!(
+        doc.get_node(child).unwrap().oof_containing_block.get(),
+        None
+    );
+}
