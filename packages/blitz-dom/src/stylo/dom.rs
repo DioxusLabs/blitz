@@ -569,12 +569,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn borrow_data(&self) -> Option<ElementDataRef<'_>> {
-        // Stylo reads the existence of element data as "has been styled" (its invalidator
-        // unwraps the primary style of every element with data it descends into), but an
-        // element here can carry data before it has styles.
-        self.try_stylo_element_data()
-            .and_then(|s| s.get())
-            .filter(|data| data.styles.primary.is_some())
+        self.try_stylo_element_data().and_then(|s| s.get())
     }
 
     fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
