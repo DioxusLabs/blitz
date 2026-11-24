@@ -1397,7 +1397,7 @@ impl<'doc> DocumentMutator<'doc> {
 
         self.doc.net_provider.fetch(
             self.doc.id(),
-            self.doc.build_request(url),
+            crate::net::stylesheet_request(self.doc.build_request(url)),
             Box::new(handler),
         );
     }

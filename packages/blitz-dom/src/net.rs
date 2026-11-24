@@ -36,6 +36,14 @@ pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request
     req
 }
 
+pub(crate) fn stylesheet_request(mut request: Request) -> Request {
+    // Fetch's default Accept value for a request with the "style" destination.
+    request
+        .headers
+        .insert("accept", "text/css,*/*;q=0.1".parse().unwrap());
+    request
+}
+
 /// Carries `@font-face` descriptors from CSS parsing through to font
 /// registration so `parley::Collection::register_fonts` can alias the bytes
 /// under the `font-family` declared in CSS rather than whatever family name
@@ -236,7 +244,10 @@ impl ServoStylesheetLoader for StylesheetLoader {
         let import = ServoArc::new(lock.wrap(import));
         self.net_provider.fetch(
             self.doc_id,
-            stamped_request(url.as_ref().clone(), self.abort_signal.as_ref()),
+            stylesheet_request(stamped_request(
+                url.as_ref().clone(),
+                self.abort_signal.as_ref(),
+            )),
             ResourceHandler::boxed(
                 self.tx.clone(),
                 self.doc_id,
@@ -697,6 +708,62 @@ mod tests {
     impl NetProvider for CountingNetProvider {
         fn fetch(&self, _doc_id: usize, _request: Request, _handler: Box<dyn NetHandler>) {
             self.0.fetch_add(1, Ao::SeqCst);
+        }
+    }
+
+    #[test]
+    fn linked_and_imported_stylesheets_advertise_css() {
+        use crate::{Attribute, BaseDocument, DocumentConfig, qual_name};
+        use std::sync::Mutex;
+
+        #[derive(Default)]
+        struct RecordingNetProvider(Mutex<Vec<Request>>);
+
+        impl NetProvider for RecordingNetProvider {
+            fn fetch(&self, _doc_id: usize, request: Request, _handler: Box<dyn NetHandler>) {
+                self.0.lock().unwrap().push(request);
+            }
+        }
+
+        let net = Arc::new(RecordingNetProvider::default());
+        let mut doc = BaseDocument::new(DocumentConfig {
+            base_url: Some("https://example.com/".into()),
+            net_provider: Some(net.clone()),
+            ..Default::default()
+        });
+        let root = doc.root_node().id;
+        {
+            let mut mutator = doc.mutate();
+            let html = mutator.create_element(qual_name!("html", html), vec![]);
+            let link = mutator.create_element(
+                qual_name!("link", html),
+                vec![
+                    Attribute {
+                        name: qual_name!("rel"),
+                        value: "stylesheet".into(),
+                    },
+                    Attribute {
+                        name: qual_name!("href"),
+                        value: "linked.css".into(),
+                    },
+                ],
+            );
+            mutator.append_children(root, &[html]);
+            mutator.append_children(html, &[link]);
+        }
+        doc.make_stylesheet(r#"@import "imported.css";"#, Origin::Author);
+
+        let requests = net.0.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for (request, path) in requests.iter().zip(["/linked.css", "/imported.css"]) {
+            assert_eq!(request.url.path(), path);
+            assert_eq!(
+                request
+                    .headers
+                    .get("accept")
+                    .map(|value| value.to_str().unwrap()),
+                Some("text/css,*/*;q=0.1"),
+            );
         }
     }
 
