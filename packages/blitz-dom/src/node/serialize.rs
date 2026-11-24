@@ -25,6 +25,11 @@ struct SerializeOpts {
     skip_root_transform: bool,
     /// Leave the root background to CSS box painting rather than usvg
     skip_root_background: bool,
+    /// Write each SVG element's computed paint properties (`fill`, `stroke`, ...) into its
+    /// `style` attribute, so that a renderer that only sees the SVG markup gets the result
+    /// of the whole cascade: the page's style sheets, the SVG's own `<style>` and the
+    /// presentation attributes.
+    computed_svg_paint: bool,
 }
 
 impl SerializeOpts {
@@ -35,8 +40,59 @@ impl SerializeOpts {
             xml_namespaces: false,
             skip_root_transform: false,
             skip_root_background: false,
+            computed_svg_paint: false,
         }
     }
+}
+
+/// The computed paint properties of an SVG element as CSS declarations, `currentcolor`
+/// resolved to `current_color`.
+fn svg_paint_declarations(node: &Node, current_color: Option<&str>) -> String {
+    let Some(styles) = node.primary_styles() else {
+        return String::new();
+    };
+    let svg = styles.get_inherited_svg();
+    let mut css = String::new();
+    let mut push = |name: &str, value: String| {
+        if !css.is_empty() {
+            css.push(';');
+        }
+        css.push_str(name);
+        css.push(':');
+        match current_color {
+            Some(color) => css.push_str(&value.replace("currentcolor", color)),
+            None => css.push_str(&value),
+        }
+    };
+    // A paint server (`url(#gradient)`) or `context-fill` stays as the markup has it:
+    // the computed URL is resolved against the document, which usvg cannot follow.
+    let plain = |paint: &style::values::computed::SVGPaint| {
+        matches!(
+            paint.kind,
+            style::values::generics::svg::SVGPaintKind::None
+                | style::values::generics::svg::SVGPaintKind::Color(_)
+        )
+    };
+    if plain(&svg.fill) {
+        push("fill", svg.fill.to_css_string());
+    }
+    push("fill-opacity", svg.fill_opacity.to_css_string());
+    push("fill-rule", svg.fill_rule.to_css_string());
+    if plain(&svg.stroke) {
+        push("stroke", svg.stroke.to_css_string());
+    }
+    push("stroke-width", svg.stroke_width.to_css_string());
+    push("stroke-opacity", svg.stroke_opacity.to_css_string());
+    push("stroke-linecap", svg.stroke_linecap.to_css_string());
+    push("stroke-linejoin", svg.stroke_linejoin.to_css_string());
+    push("stroke-miterlimit", svg.stroke_miterlimit.to_css_string());
+    push("stroke-dasharray", svg.stroke_dasharray.to_css_string());
+    push("stroke-dashoffset", svg.stroke_dashoffset.to_css_string());
+    push(
+        "visibility",
+        styles.get_inherited_box().visibility.to_css_string(),
+    );
+    css
 }
 
 const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
@@ -163,6 +219,7 @@ impl Node {
             xml_namespaces: true,
             skip_root_transform: true,
             skip_root_background: true,
+            computed_svg_paint: true,
         };
         self.write_outer_html_in_style(&mut output, opts, 0);
         output
@@ -242,6 +299,19 @@ impl Node {
                     }
                 }
 
+                // Declarations appended to the element's `style` attribute (or written as
+                // one): computed SVG paint, and the root's background left to CSS.
+                let mut extra_style = String::new();
+                if opts.computed_svg_paint && data.name.ns == ns!(svg) {
+                    extra_style = svg_paint_declarations(self, current_color.as_deref());
+                }
+                if opts.skip_root_background && nesting == 0 {
+                    if !extra_style.is_empty() {
+                        extra_style.push(';');
+                    }
+                    extra_style.push_str("background-color:initial!important");
+                }
+
                 let mut declared_prefixes = Vec::new();
                 for attr in data.attrs() {
                     if opts.skip_root_transform
@@ -270,23 +340,21 @@ impl Node {
                     } else {
                         encode_quoted_attribute_to_string(&attr.value, writer);
                     }
-                    if opts.skip_root_background
-                        && nesting == 0
+                    if !extra_style.is_empty()
                         && attr.name.ns == ns!()
                         && attr.name.local == local_name!("style")
                     {
                         if !attr.value.trim().is_empty() {
                             writer.push(';');
                         }
-                        writer.push_str("background-color:initial!important");
+                        encode_quoted_attribute_to_string(&extra_style, writer);
                     }
                     writer.push('"');
                 }
-                if opts.skip_root_background
-                    && nesting == 0
-                    && data.attr(local_name!("style")).is_none()
-                {
-                    writer.push_str(" style=\"background-color:initial!important\"");
+                if !extra_style.is_empty() && data.attr(local_name!("style")).is_none() {
+                    writer.push_str(" style=\"");
+                    encode_quoted_attribute_to_string(&extra_style, writer);
+                    writer.push('"');
                 }
                 if !has_children {
                     writer.push_str(" /");

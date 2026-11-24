@@ -74,3 +74,35 @@ fn outer_html_does_not_resolve_current_color() {
     let html = doc.get_node(svg_id).unwrap().outer_html();
     assert!(html.contains(r#"fill="currentColor""#), "{html}");
 }
+
+#[test]
+fn page_css_reaches_inline_svg_shapes() {
+    // Page CSS selecting a shape inside an inline <svg> applies, as in browsers.
+    let doc = load(&format!(
+        "<style>#icon path {{ fill: rgb(255, 0, 0) }}</style>{}",
+        r#"<svg id="icon" width="24" height="24"><path d="M0 0h24v24H0z"/></svg>"#
+    ));
+    assert_eq!(icon_fill(&doc), Some((255, 0, 0)));
+}
+
+#[test]
+fn page_css_beats_presentation_attributes() {
+    // Author CSS wins over a `fill` presentation attribute.
+    let doc = load(&format!(
+        "<style>.shape {{ fill: rgb(0, 0, 255) }}</style>{}",
+        r#"<svg id="icon" width="24" height="24"><path class="shape" fill="red" d="M0 0h24v24H0z"/></svg>"#
+    ));
+    assert_eq!(icon_fill(&doc), Some((0, 0, 255)));
+}
+
+#[test]
+fn gradient_fills_from_the_markup_keep_working() {
+    // A paint server stays as the markup has it: usvg resolves the fragment itself.
+    let doc = load(
+        r##"<svg id="icon" width="24" height="24"><defs><linearGradient id="g"><stop offset="0" stop-color="lime"/><stop offset="1" stop-color="lime"/></linearGradient></defs><path fill="url(#g)" d="M0 0h24v24H0z"/></svg>"##,
+    );
+    let svg_id = doc.query_selector("#icon").unwrap().unwrap();
+    let source = doc.get_node(svg_id).unwrap().svg_source();
+    assert!(!source.contains("fill:url"), "{source}");
+    assert!(source.contains(r##"fill="url(#g)""##), "{source}");
+}
