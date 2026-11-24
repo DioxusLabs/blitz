@@ -1312,9 +1312,33 @@ impl BaseDocument {
     }
 
     pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
+        fn base_href(node: &Node) -> Option<&str> {
+            let element = node.element_data()?;
+            if element.name.ns != markup5ever::ns!(html)
+                || element.name.local != local_name!("base")
+            {
+                return None;
+            }
+            element
+                .attrs
+                .iter()
+                .find(|attr| {
+                    attr.name.ns == markup5ever::ns!() && attr.name.local == local_name!("href")
+                })
+                .map(|attr| attr.value.as_str())
+        }
+
+        let base = (origin == Origin::Author)
+            .then(|| self.next_node(self.root_node(), |node| base_href(node).is_some()))
+            .flatten()
+            .and_then(|id| self.get_node(id))
+            .and_then(base_href)
+            .and_then(|href| self.url.resolve_relative(href))
+            .filter(|url| !matches!(url.scheme(), "data" | "javascript"))
+            .map(DocumentUrl::from);
         let data = Stylesheet::from_str(
             css.as_ref(),
-            self.url.url_extra_data(),
+            base.as_ref().unwrap_or(&self.url).url_extra_data(),
             origin,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
