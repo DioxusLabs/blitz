@@ -311,29 +311,37 @@ pub fn position(input: stylo::Position) -> taffy::Position {
     }
 }
 
+/// Whether a style establishes a transform space, including a will-change hint.
+pub fn establishes_transform_space(style: &stylo::ComputedValues) -> bool {
+    use style::values::computed::{Perspective, Rotate, Scale, Translate};
+    use style::values::specified::box_::WillChangeBits;
+
+    let box_style = style.get_box();
+    !box_style.transform.0.is_empty()
+        || !matches!(box_style.translate, Translate::None)
+        || !matches!(box_style.rotate, Rotate::None)
+        || !matches!(box_style.scale, Scale::None)
+        || !matches!(box_style.perspective, Perspective::None)
+        || box_style
+            .will_change
+            .bits
+            .intersects(WillChangeBits::TRANSFORM | WillChangeBits::PERSPECTIVE)
+}
+
 /// Whether a style establishes a containing block for `position: fixed` (and therefore also
 /// `position: absolute`) descendants, independently of its `position` value.
 ///
 /// <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Containing_block#identifying_the_containing_block>
 pub fn establishes_fixed_containing_block(style: &stylo::ComputedValues) -> bool {
-    use style::values::computed::{Perspective, Rotate, Scale, Translate};
     use style::values::specified::box_::{Contain, ContainerType, WillChangeBits};
 
     let box_style = style.get_box();
-    if !box_style.transform.0.is_empty()
-        || !matches!(box_style.translate, Translate::None)
-        || !matches!(box_style.rotate, Rotate::None)
-        || !matches!(box_style.scale, Scale::None)
-        || !matches!(box_style.perspective, Perspective::None)
+    if establishes_transform_space(style)
+        || box_style
+            .will_change
+            .bits
+            .intersects(WillChangeBits::FIXPOS_CB_NON_SVG | WillChangeBits::CONTAIN)
     {
-        return true;
-    }
-    if box_style.will_change.bits.intersects(
-        WillChangeBits::TRANSFORM
-            | WillChangeBits::PERSPECTIVE
-            | WillChangeBits::FIXPOS_CB_NON_SVG
-            | WillChangeBits::CONTAIN,
-    ) {
         return true;
     }
     if box_style
