@@ -56,7 +56,6 @@ use style::properties::style_structs::Font;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
-use style::values::computed::UserSelect;
 use style::values::computed::ui::CursorKind;
 use style::{
     device::Device,
@@ -67,7 +66,6 @@ use style::{
     stylist::Stylist,
 };
 use style_dom::ElementState;
-use stylo_taffy::CopyStyleGetters;
 use thin_vec::ThinVec;
 use url::Url;
 use web_time::Instant;
@@ -276,6 +274,8 @@ pub struct BaseDocument {
     pub(crate) mousedown_node_id: Option<NodeId>,
     /// The last time a mousedown was made (for double-click detection)
     pub(crate) last_mousedown_time: Option<Instant>,
+    /// The button of the last mousedown: a click with another button starts a new count
+    pub(crate) last_mousedown_button: Option<blitz_traits::events::MouseEventButton>,
     /// The position where mousedown occurred (for selection drags and double-click detection)
     pub(crate) mousedown_position: taffy::Point<f32>,
     /// How many clicks have been made in quick succession
@@ -528,6 +528,7 @@ impl BaseDocument {
             #[cfg(feature = "devtools")]
             devtools_title: None,
             last_mousedown_time: None,
+            last_mousedown_button: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
             drag_mode: DragMode::None,
@@ -2406,7 +2407,6 @@ impl BaseDocument {
         }
 
         let style = node.primary_styles()?;
-        let user_select = style.clone_user_select();
         let keyword = style.get_cursor().keyword;
 
         // Return cursor from style if it is non-auto
@@ -2434,13 +2434,12 @@ impl BaseDocument {
             maybe_node = node.parent.map(|node_id| node.with(node_id));
         }
 
-        // Return text cursor for text nodes
+        // Return text cursor for text that can be selected
         if self.hover_node_is_text {
-            return Some(match user_select {
-                UserSelect::Text | UserSelect::All | UserSelect::Auto | UserSelect::Contain => {
-                    CursorIcon::Text
-                }
-                UserSelect::None => CursorIcon::Default,
+            return Some(if node.is_user_selectable() {
+                CursorIcon::Text
+            } else {
+                CursorIcon::Default
             });
         }
 
@@ -2706,6 +2705,28 @@ impl BaseDocument {
         let inline_root = hit_node.inline_root_ancestor()?;
         let byte_offset = inline_root.text_offset_at_point(hit.x, hit.y)?;
         Some((inline_root.id, byte_offset))
+    }
+
+    /// Selects the word (`clicks == 2`) or the line between hard breaks (any other count)
+    /// at a point, as a double or triple click does. Returns false when there is no
+    /// selectable text there.
+    pub fn select_text_unit_at_point(&mut self, x: f32, y: f32, clicks: u16) -> bool {
+        let Some((root, range)) = self
+            .hit(x, y)
+            .and_then(|hit| {
+                let node = self.get_node(hit.node_id)?;
+                if !node.is_user_selectable() {
+                    return None;
+                }
+                let root = node.inline_root_ancestor()?;
+                Some((root.id, root.text_unit_at_point(hit.x, hit.y, clicks)?))
+            })
+            .filter(|(_, range)| !range.is_empty())
+        else {
+            return false;
+        };
+        self.set_text_selection(root, range.start, root, range.end);
+        true
     }
 
     /// Set the text selection range (creates a new selection from anchor to focus)
@@ -3163,6 +3184,7 @@ mod hover_invalidation_tests {
     use super::*;
     use crate::{Attribute, QualName, qual_name};
     use blitz_traits::shell::ColorScheme;
+    use stylo_taffy::CopyStyleGetters;
 
     /// Build `<html><body style="margin:0"><div style="width:300px;height:100px">
     /// <span>text</span></div></body></html>` with a `div:hover` rule.

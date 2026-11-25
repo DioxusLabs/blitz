@@ -10,11 +10,11 @@ use euclid::{Point2D, Rect, Size2D};
 use keyboard_types::Modifiers;
 use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
-use parley::{BreakReason, Cluster, ClusterSide};
+use parley::{BreakReason, Cluster, ClusterSide, Selection};
 use selectors::matching::ElementSelectorFlags;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use style::computed_values::flex_direction::T as FlexDirection;
@@ -32,6 +32,7 @@ use style::stylesheets::UrlExtraData;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::Display as StyloDisplay;
 use style::values::computed::Rotate;
+use style::values::computed::UserSelect;
 use style::values::generics::transform::{Scale, Translate};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
@@ -1762,6 +1763,39 @@ impl Node {
         };
 
         Some(offset)
+    }
+
+    /// Whether text here can be selected: `user-select` isn't `none` here or on an
+    /// ancestor that `auto` defers to.
+    pub fn is_user_selectable(&self) -> bool {
+        let mut maybe_node = Some(self);
+        while let Some(node) = maybe_node {
+            match node.primary_styles().map(|style| style.clone_user_select()) {
+                Some(UserSelect::None) => return false,
+                Some(UserSelect::Auto) | None => {}
+                Some(_) => return true,
+            }
+            maybe_node = node.parent.map(|id| node.with(id));
+        }
+        true
+    }
+
+    /// The byte range of the word (`clicks == 2`) or of the line between hard breaks
+    /// (any other count) at a point, as a double or triple click selects. Takes the same
+    /// coordinates as [`Self::text_offset_at_point`].
+    pub fn text_unit_at_point(&self, x: f32, y: f32, clicks: u16) -> Option<Range<usize>> {
+        if !self.flags.is_inline_root() {
+            return None;
+        }
+        let inline_layout = self.element_data()?.inline_layout_data.as_ref()?;
+        let layout = &inline_layout.layout;
+        let scale = layout.scale();
+        let (x, y) = (x * scale, (y - inline_layout.block_offset) * scale);
+        let selection = match clicks {
+            2 => Selection::word_from_point(layout, x, y),
+            _ => Selection::hard_line_from_point(layout, x, y),
+        };
+        Some(selection.text_range())
     }
 
     /// Whether this node is a non-atomic inline element: one that has no layout box of its
