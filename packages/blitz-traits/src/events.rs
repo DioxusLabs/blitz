@@ -610,12 +610,12 @@ pub enum BlitzPointerId {
 }
 
 impl BlitzPointerId {
-    /// The DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
+    /// The DOM `pointerId`: 0 for the mouse, 1 for the pen and the shell-assigned ID for fingers
     pub fn as_i32(&self) -> i32 {
         match self {
             BlitzPointerId::Mouse => 0,
             BlitzPointerId::Pen => 1,
-            BlitzPointerId::Finger(id) => (id % (i32::MAX as u64 - 1)) as i32 + 2,
+            BlitzPointerId::Finger(id) => *id as i32,
         }
     }
 }

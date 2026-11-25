@@ -67,19 +67,36 @@ pub(crate) fn winit_key_event_to_blitz(
 /// shell assigns each finger a fresh ID from a counter when it first appears
 /// and forgets it when the finger leaves. Only a handful of fingers are ever
 /// active, so a linear search is enough.
-#[derive(Default)]
+///
+/// IDs are DOM `pointerId`s: they start after the mouse (0) and pen (1) and
+/// wrap before overflowing an `i32`.
 pub(crate) struct PointerIds {
     active: Vec<(FingerId, u64)>,
     next: u64,
 }
 
+impl Default for PointerIds {
+    fn default() -> Self {
+        Self {
+            active: Vec::new(),
+            next: Self::FIRST_FINGER_ID,
+        }
+    }
+}
+
 impl PointerIds {
+    const FIRST_FINGER_ID: u64 = 2;
+
     pub(crate) fn get_or_assign(&mut self, finger_id: FingerId) -> BlitzPointerId {
         if let Some((_, id)) = self.active.iter().find(|(f, _)| *f == finger_id) {
             return BlitzPointerId::Finger(*id);
         }
         let id = self.next;
-        self.next += 1;
+        self.next = if id >= i32::MAX as u64 {
+            Self::FIRST_FINGER_ID
+        } else {
+            id + 1
+        };
         self.active.push((finger_id, id));
         BlitzPointerId::Finger(id)
     }
@@ -217,12 +234,12 @@ mod tests {
         let a = FingerId::from_raw(0xdead_beef);
         let b = FingerId::from_raw(7);
 
-        assert_eq!(ids.get_or_assign(a), BlitzPointerId::Finger(0));
-        assert_eq!(ids.get_or_assign(b), BlitzPointerId::Finger(1));
-        assert_eq!(ids.get_or_assign(a), BlitzPointerId::Finger(0));
+        assert_eq!(ids.get_or_assign(a), BlitzPointerId::Finger(2));
+        assert_eq!(ids.get_or_assign(b), BlitzPointerId::Finger(3));
+        assert_eq!(ids.get_or_assign(a), BlitzPointerId::Finger(2));
 
         // A raw id the platform reuses after the finger left is a new finger
         ids.remove(a);
-        assert_eq!(ids.get_or_assign(a), BlitzPointerId::Finger(2));
+        assert_eq!(ids.get_or_assign(a), BlitzPointerId::Finger(4));
     }
 }
