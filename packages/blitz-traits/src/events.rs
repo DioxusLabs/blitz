@@ -609,6 +609,28 @@ pub enum BlitzPointerId {
     Finger(u64),
 }
 
+impl BlitzPointerId {
+    const FIRST_FINGER_ID: u64 = 2;
+
+    /// How many finger indexes [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
+    pub const FINGER_INDEX_COUNT: u64 = i32::MAX as u64 - Self::FIRST_FINGER_ID + 1;
+
+    /// The ID of the finger with the given index, placed after the mouse and pen IDs
+    pub const fn finger(index: u64) -> Self {
+        debug_assert!(index < Self::FINGER_INDEX_COUNT);
+        BlitzPointerId::Finger(index + Self::FIRST_FINGER_ID)
+    }
+
+    /// The DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
+    pub fn as_i32(&self) -> i32 {
+        match self {
+            BlitzPointerId::Mouse => 0,
+            BlitzPointerId::Pen => 1,
+            BlitzPointerId::Finger(id) => *id as i32,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct PointerCoords {
     pub page_x: f32,
