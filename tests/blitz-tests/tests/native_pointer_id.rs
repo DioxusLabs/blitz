@@ -24,8 +24,8 @@ fn mouse_pen_and_fingers_get_distinct_pointer_ids() {
     for id in [
         BlitzPointerId::Mouse,
         BlitzPointerId::Pen,
-        BlitzPointerId::Finger(2),
-        BlitzPointerId::Finger(3),
+        BlitzPointerId::finger(0),
+        BlitzPointerId::finger(1),
     ] {
         let event = pointer_event(
             id,
