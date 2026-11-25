@@ -1,6 +1,6 @@
 use crate::BlitzShellProvider;
 use crate::convert_events::{
-    FingerIds, button_source_to_blitz, color_scheme_to_theme, pointer_kind_to_blitz,
+    PointerIds, button_source_to_blitz, color_scheme_to_theme, pointer_kind_to_blitz,
     pointer_source_to_blitz, pointer_source_to_blitz_details, theme_to_color_scheme,
     winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
@@ -108,7 +108,7 @@ pub struct View<Rend: WindowRenderer> {
     /// The events stored here always have an empty `active_pointers` list to
     /// avoid a reference cycle.
     pub active_events: Arc<AtomicRefCell<Vec<BlitzPointerEvent>>>,
-    finger_ids: FingerIds,
+    pointer_ids: PointerIds,
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
@@ -229,7 +229,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             theme_override: None,
             buttons: MouseEventButtons::None,
             active_events: Arc::new(AtomicRefCell::new(Vec::new())),
-            finger_ids: FingerIds::default(),
+            pointer_ids: PointerIds::default(),
             safe_area_insets,
             #[cfg(target_arch = "wasm32")]
             pending_resize: None,
@@ -752,7 +752,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::PointerEntered { /*device_id*/.. } => {}
             WindowEvent::PointerLeft { position, primary, kind, .. } => {
-                let id = pointer_kind_to_blitz(&kind, &mut self.finger_ids);
+                let id = pointer_kind_to_blitz(&kind, &mut self.pointer_ids);
 
                 // A `PointerLeft` for a non-mouse pointer that is still pressed
                 // (i.e. we never saw a `PointerButton` with `Released` for it)
@@ -800,13 +800,13 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 self.doc.handle_ui_event(UiEvent::PointerLeave(event));
                 if let PointerKind::Touch(finger_id) = kind {
-                    self.finger_ids.remove(finger_id);
+                    self.pointer_ids.remove(finger_id);
                 }
                 self.request_redraw();
             }
             WindowEvent::PointerMoved { position, source, primary, .. } => {
                 self.pointer_pos = position;
-                let id = pointer_source_to_blitz(&source, &mut self.finger_ids);
+                let id = pointer_source_to_blitz(&source, &mut self.pointer_ids);
                 let event = BlitzPointerEvent {
                     id,
                     is_primary: primary,
@@ -825,7 +825,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.doc.handle_ui_event(UiEvent::PointerMove(event));
             }
             WindowEvent::PointerButton { button, state, primary, position, .. } => {
-                let id = button_source_to_blitz(&button, &mut self.finger_ids);
+                let id = button_source_to_blitz(&button, &mut self.pointer_ids);
                 let coords = self.pointer_coords(position);
                 self.pointer_pos = position;
                 let button = match &button {

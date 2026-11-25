@@ -68,12 +68,12 @@ pub(crate) fn winit_key_event_to_blitz(
 /// and forgets it when the finger leaves. Only a handful of fingers are ever
 /// active, so a linear search is enough.
 #[derive(Default)]
-pub(crate) struct FingerIds {
+pub(crate) struct PointerIds {
     active: Vec<(FingerId, u64)>,
     next: u64,
 }
 
-impl FingerIds {
+impl PointerIds {
     pub(crate) fn get_or_assign(&mut self, finger_id: FingerId) -> BlitzPointerId {
         if let Some((_, id)) = self.active.iter().find(|(f, _)| *f == finger_id) {
             return BlitzPointerId::Finger(*id);
@@ -91,11 +91,11 @@ impl FingerIds {
 
 pub(crate) fn pointer_source_to_blitz(
     source: &PointerSource,
-    finger_ids: &mut FingerIds,
+    pointer_ids: &mut PointerIds,
 ) -> BlitzPointerId {
     match source {
         PointerSource::Mouse => BlitzPointerId::Mouse,
-        PointerSource::Touch { finger_id, .. } => finger_ids.get_or_assign(*finger_id),
+        PointerSource::Touch { finger_id, .. } => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: TabletTool and Unknown events
         PointerSource::TabletTool { .. } => BlitzPointerId::Pen,
@@ -110,11 +110,11 @@ pub(crate) fn pointer_source_to_blitz(
 
 pub(crate) fn pointer_kind_to_blitz(
     kind: &PointerKind,
-    finger_ids: &mut FingerIds,
+    pointer_ids: &mut PointerIds,
 ) -> BlitzPointerId {
     match kind {
         PointerKind::Mouse => BlitzPointerId::Mouse,
-        PointerKind::Touch(finger_id) => finger_ids.get_or_assign(*finger_id),
+        PointerKind::Touch(finger_id) => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: TabletTool and Unknown events
         PointerKind::TabletTool(_) => BlitzPointerId::Pen,
@@ -129,12 +129,12 @@ pub(crate) fn pointer_kind_to_blitz(
 
 pub(crate) fn button_source_to_blitz(
     source: &ButtonSource,
-    finger_ids: &mut FingerIds,
+    pointer_ids: &mut PointerIds,
 ) -> BlitzPointerId {
     match source {
         ButtonSource::Mouse(_) => BlitzPointerId::Mouse,
         ButtonSource::TabletTool { .. } => BlitzPointerId::Pen,
-        ButtonSource::Touch { finger_id, .. } => finger_ids.get_or_assign(*finger_id),
+        ButtonSource::Touch { finger_id, .. } => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: Unknown events
         ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
@@ -212,8 +212,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finger_ids_are_stable_while_active_and_fresh_after_leaving() {
-        let mut ids = FingerIds::default();
+    fn pointer_ids_are_stable_while_active_and_fresh_after_leaving() {
+        let mut ids = PointerIds::default();
         let a = FingerId::from_raw(0xdead_beef);
         let b = FingerId::from_raw(7);
 
