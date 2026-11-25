@@ -986,3 +986,36 @@ fn class_list_replace() {
         "true|a x c|false|a x c|true|a x|true|c b"
     );
 }
+
+/// CSSOM View: an element with no associated box -- here, one inside a
+/// `display: none` ancestor, whose layout is not computed -- reports zero
+/// offset/client sizes, an all-zero bounding rect and no client rects, also
+/// after it has been laid out while its ancestor was still displayed.
+#[test]
+fn elements_inside_display_none_have_no_geometry() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="pane"><div id="item" style="width: 180px; height: 140px"></div></div>
+            <div id="out"></div>
+            <script>
+                const item = document.getElementById("item");
+                const shown = [item.offsetWidth, item.getClientRects().length];
+                document.getElementById("pane").style.display = "none";
+                const rect = item.getBoundingClientRect();
+                const hidden = [
+                    item.offsetWidth,
+                    item.offsetHeight,
+                    item.clientWidth,
+                    item.getClientRects().length,
+                    rect.width,
+                    rect.height,
+                ];
+                document.getElementById("out").textContent =
+                    shown.join(",") + "|" + hidden.join(",");
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(text_of_selector(&doc, "#out"), "180,1|0,0,0,0,0,0");
+}
