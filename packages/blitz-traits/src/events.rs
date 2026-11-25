@@ -609,6 +609,17 @@ pub enum BlitzPointerId {
     Finger(u64),
 }
 
+impl BlitzPointerId {
+    /// The DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
+    pub fn as_i32(&self) -> i32 {
+        match self {
+            BlitzPointerId::Mouse => 0,
+            BlitzPointerId::Pen => 1,
+            BlitzPointerId::Finger(id) => (id % (i32::MAX as u64 - 1)) as i32 + 2,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct PointerCoords {
     pub page_x: f32,
