@@ -1,4 +1,5 @@
 use super::{ALMOST_OPAQUE, ElementCx, to_image_quality, to_peniko_image};
+use crate::blend::{StyloBlendMode, convert_blend_mode};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use anyrender::{AntiAliasing, NonUniformRoundedRect, PaintScene};
@@ -129,7 +130,34 @@ impl<'a> ImageLayerStyles<'a> {
 
 impl ElementCx<'_, '_> {
     pub(super) fn draw_background(&self, scene: &mut impl PaintScene) {
-        let bg_styles = &self.style.get_background();
+        let bg_styles = self.style.get_background();
+        let blend = bg_styles
+            .background_blend_mode
+            .0
+            .iter()
+            .take(bg_styles.background_image.0.len())
+            .any(|mode| *mode != StyloBlendMode::Normal);
+
+        // Blend only against this element's own background, not the scene behind it.
+        self.context.layer_manager.maybe_with_layer(
+            scene,
+            blend,
+            BlendMode::default(),
+            ALMOST_OPAQUE,
+            self.transform,
+            &self.frame.border_box,
+            None,
+            None,
+            |scene| self.draw_background_layers(scene, bg_styles, blend),
+        );
+    }
+
+    fn draw_background_layers(
+        &self,
+        scene: &mut impl PaintScene,
+        bg_styles: &Background,
+        blend: bool,
+    ) {
         let image_data = &self.element.background_images;
         let layer_count = bg_styles.background_image.0.len();
 
@@ -147,10 +175,14 @@ impl ElementCx<'_, '_> {
         if self.context.canvas_background_node_id != Some(self.node.id) {
             self.draw_solid_bg(scene, &background_clip_path);
         }
+        if blend && text_run {
+            self.end_text_clip_group(scene);
+            text_run = false;
+        }
 
         for idx in (0..layer_count).rev() {
             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
-            if layer.text_clip != text_run {
+            if !blend && layer.text_clip != text_run {
                 if text_run {
                     self.end_text_clip_group(scene);
                 } else {
@@ -166,14 +198,21 @@ impl ElementCx<'_, '_> {
             self.context.layer_manager.maybe_with_layer(
                 scene,
                 true,
-                peniko::BlendMode::default(),
+                convert_blend_mode(*get_cyclic(&bg_styles.background_blend_mode.0, idx)),
                 1.0,
                 self.transform,
                 &background_clip_path,
                 None,
                 None,
                 |scene| {
+                    // Clip this source before it mixes with lower layers.
+                    if blend && layer.text_clip {
+                        self.begin_text_clip_group(scene);
+                    }
                     self.draw_image_layer(scene, &layer);
+                    if blend && layer.text_clip {
+                        self.end_text_clip_group(scene);
+                    }
                 },
             );
         }
