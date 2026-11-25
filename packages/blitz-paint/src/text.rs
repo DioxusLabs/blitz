@@ -50,8 +50,9 @@ pub(crate) fn draw_inline_backgrounds<'a>(
                 .get_background()
                 .background_color
                 .resolve_to_absolute(&current_color)
-                .as_srgb_color();
-            if bg_color == Color::TRANSPARENT {
+                .as_srgb_color()
+                .multiply_alpha(inline_opacity(doc, node_id, inline_root_id));
+            if bg_color.components[3] == 0.0 {
                 continue;
             }
 
@@ -73,6 +74,21 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             );
         }
     }
+}
+
+/// The combined `opacity` of `node_id` and its inline ancestors, without the inline
+/// root, whose opacity is a paint layer.
+fn inline_opacity(doc: &BaseDocument, node_id: NodeId, inline_root_id: NodeId) -> f32 {
+    let mut opacity = 1.0;
+    let mut walk_id = Some(node_id);
+    while let Some(id) = walk_id.filter(|&id| id != inline_root_id) {
+        let Some(node) = doc.get_node(id) else { break };
+        if let Some(styles) = node.primary_styles() {
+            opacity *= styles.get_effects().opacity;
+        }
+        walk_id = node.parent;
+    }
+    opacity
 }
 
 /// Per glyph run values recorded while walking a line, so the line can be painted in
@@ -178,7 +194,22 @@ pub(crate) fn stroke_text<'a>(
                 .count();
             stack.truncate(shared);
             for &node_id in &path_scratch[shared..] {
-                let entry = resolve_decoration_entry(doc, node_id, stack.last(), scale);
+                let mut entry = resolve_decoration_entry(doc, node_id, stack.last(), scale);
+                entry.opacity = match stack.last() {
+                    _ if node_id == inline_root_id => 1.0,
+                    Some(parent) => parent.opacity * entry.opacity,
+                    None => entry.opacity,
+                };
+                if entry.opacity < 1.0 {
+                    entry.fill_color = entry.fill_color.multiply_alpha(entry.opacity);
+                    if let Some(deco) = entry.decoration.as_mut() {
+                        deco.color = deco.color.multiply_alpha(entry.opacity);
+                    }
+                    if let Some(shadows) = &entry.text_shadows {
+                        entry.text_shadows =
+                            Some(ResolvedTextShadow::with_opacity(shadows, entry.opacity));
+                    }
+                }
                 stack.push(entry);
             }
 

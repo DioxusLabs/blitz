@@ -77,7 +77,7 @@ fn select_best_dash_gap(stroke_length: f64, dash_length: f64, gap_length: f64) -
 pub(crate) struct ResolvedDecoration {
     line: TextDecorationLine,
     style: TextDecorationStyle,
-    color: Color,
+    pub(crate) color: Color,
     thickness: TextDecorationLength,
     /// `text-underline-offset`; `None` for `auto`. Resolved per run.
     underline_offset: Option<LengthPercentage>,
@@ -120,6 +120,10 @@ pub(crate) struct DecorationStackEntry {
     /// Shared (via `Arc`) with the per-run records and decorating boxes so that
     /// consecutive runs with the same shadow can be batched by pointer equality.
     pub(crate) text_shadows: Option<Arc<[ResolvedTextShadow]>>,
+    /// The product of the `opacity` of this node and its inline ancestors, without the
+    /// inline root, whose opacity is a paint layer. A non-atomic inline box paints no
+    /// layer of its own, so its opacity applies to its glyphs and decorations here.
+    pub(crate) opacity: f32,
 }
 
 /// One `text-shadow` layer with all lengths resolved to device pixels.
@@ -132,6 +136,16 @@ pub(crate) struct ResolvedTextShadow {
 }
 
 impl ResolvedTextShadow {
+    /// The same shadow list with every colour scaled by `opacity`.
+    pub(crate) fn with_opacity(list: &[Self], opacity: f32) -> Arc<[Self]> {
+        list.iter()
+            .map(|shadow| Self {
+                color: shadow.color.multiply_alpha(opacity),
+                ..*shadow
+            })
+            .collect()
+    }
+
     fn is_blurred(&self) -> bool {
         self.std_dev > 0.0
     }
@@ -150,6 +164,7 @@ pub(crate) fn resolve_decoration_entry(
             fill_color: Color::BLACK,
             decoration: None,
             text_shadows: None,
+            opacity: 1.0,
         };
     };
 
@@ -228,6 +243,7 @@ pub(crate) fn resolve_decoration_entry(
         fill_color,
         decoration,
         text_shadows,
+        opacity: styles.get_effects().opacity,
     }
 }
 
