@@ -638,7 +638,7 @@ impl BaseDocument {
         amount: ScrollAmount,
         behavior: ScrollBehavior,
     ) {
-        if self.nodes.get(node_id).is_none() {
+        if !self.nodes.get(node_id).is_some_and(Node::has_boxes) {
             return;
         }
 
@@ -694,6 +694,9 @@ impl BaseDocument {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
+        if !node.has_boxes() {
+            return;
+        }
         let target =
             node.absolute_position(node.scroll_offset().x as f32, node.scroll_offset().y as f32);
         let target_size = node.final_layout().size;

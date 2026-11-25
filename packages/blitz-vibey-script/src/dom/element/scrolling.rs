@@ -10,18 +10,21 @@ use boa_engine::{JsNativeError, js_string};
 
 /// The current scroll offset of an element. The root element scrolls the
 /// viewport (per the CSS overflow propagation rules), so its offset is the
-/// viewport scroll offset.
+/// viewport scroll offset. Returns (0, 0) for boxless elements.
 fn current_scroll_offset(doc: &blitz_dom::BaseDocument, node_id: NodeId) -> blitz_dom::Point<f64> {
+    let Some(node) = doc.get_node(node_id) else {
+        return blitz_dom::Point { x: 0.0, y: 0.0 };
+    };
+    if !node.has_boxes() {
+        return blitz_dom::Point { x: 0.0, y: 0.0 };
+    }
     if doc
         .try_root_element()
         .is_some_and(|root| root.id == node_id)
     {
         doc.viewport_scroll()
     } else {
-        doc.get_node(node_id)
-            .filter(|node| node.element_data().is_some())
-            .map(|node| *node.scroll_offset())
-            .unwrap_or(blitz_dom::Point { x: 0.0, y: 0.0 })
+        *node.scroll_offset()
     }
 }
 
@@ -119,7 +122,8 @@ pub(super) fn get_scroll_top(
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let doc = ctx.doc.borrow();
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
     Ok(JsValue::from(current_scroll_offset(&doc, node_id).y))
 }
 
@@ -130,7 +134,8 @@ pub(super) fn get_scroll_left(
 ) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;
     let node_id = this_node_id(this)?;
-    let doc = ctx.doc.borrow();
+    let mut doc = ctx.doc.borrow_mut();
+    doc.resolve(0.0);
     Ok(JsValue::from(current_scroll_offset(&doc, node_id).x))
 }
 
