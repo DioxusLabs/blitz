@@ -1546,6 +1546,19 @@ impl BaseDocument {
 
         // Apply to all waiting nodes
         for (node_id, image_type) in waiting_nodes {
+            if matches!(image_type, ImageType::Image)
+                && let Some(element) = self.get_node(node_id).and_then(|node| node.element_data())
+                && element.is_image_embed()
+                && (!matches!(image, ImageData::Raster(_))
+                    || element
+                        .embedded_image_source()
+                        .and_then(|src| self.resolve_url(src))
+                        .as_ref()
+                        .map(url::Url::as_str)
+                        != Some(url))
+            {
+                continue;
+            }
             let Some(node) = self.get_node_mut(node_id) else {
                 continue;
             };
