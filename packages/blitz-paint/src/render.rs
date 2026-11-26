@@ -348,6 +348,20 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 && self
                     .dom
                     .try_root_element()
+                    .filter(|root| {
+                        // Only the first HTML body is eligible, even when it
+                        // generates no box. A later body still clips locally.
+                        root.children
+                            .iter()
+                            .filter_map(|id| self.dom.get_node(*id))
+                            .find(|child| {
+                                child.element_data().is_some_and(|element| {
+                                    element.name.local == local_name!("body")
+                                        && &*element.name.ns == "http://www.w3.org/1999/xhtml"
+                                })
+                            })
+                            .is_some_and(|body| body.id == node.id)
+                    })
                     .and_then(Node::primary_styles)
                     .is_some_and(|root| {
                         let root = root.get_box();
