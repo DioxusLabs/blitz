@@ -136,6 +136,9 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
                 build_alpha_marker(index, &mut marker);
                 Marker::String(format!("{}. ", marker.to_ascii_uppercase()))
             }
+            "khmer" | "cambodian" => localized_decimal(index + 1, "០១២៣៤៥៦៧៨៩"),
+            "oriya" => localized_decimal(index + 1, "୦୧୨୩୪୫୬୭୮୯"),
+            "hiragana" => hiragana_marker(index + 1),
             "decimal" => Marker::String(format!("{}. ", index + 1)),
             "cjk-decimal" => Marker::String(cjk_decimal_marker(index + 1)),
             "disc" => Marker::Char('•'),
@@ -165,6 +168,31 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
             }
         }
     })
+}
+
+fn localized_decimal(ordinal: usize, digits: &str) -> Marker {
+    let digits: Vec<_> = digits.chars().collect();
+    let mut text = String::new();
+    for digit in ordinal.to_string().bytes() {
+        text.push(digits[(digit - b'0') as usize]);
+    }
+    text.push_str(". ");
+    Marker::String(text)
+}
+
+fn hiragana_marker(mut ordinal: usize) -> Marker {
+    let alphabet: Vec<_> = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわゐゑをん"
+        .chars()
+        .collect();
+    let mut reversed = Vec::new();
+    while ordinal > 0 {
+        ordinal -= 1;
+        reversed.push(alphabet[ordinal % alphabet.len()]);
+        ordinal /= alphabet.len();
+    }
+    let mut text: String = reversed.into_iter().rev().collect();
+    text.push('、');
+    Marker::String(text)
 }
 
 fn cjk_decimal_marker(ordinal: usize) -> String {
@@ -234,6 +262,20 @@ mod tests {
         let result_2 = marker_for_style(&list_style("decimal"), 1);
         assert_eq!(result_1, Some(Marker::String("1. ".to_string())));
         assert_eq!(result_2, Some(Marker::String("2. ".to_string())));
+    }
+
+    #[test]
+    fn test_localized_list_markers() {
+        for (style, index, expected) in [
+            ("khmer", 10, "១១. "),
+            ("oriya", 10, "୧୧. "),
+            ("hiragana", 0, "あ、"),
+        ] {
+            assert_eq!(
+                marker_for_style(&list_style(style), index),
+                Some(Marker::String(expected.into()))
+            );
+        }
     }
 
     #[test]
