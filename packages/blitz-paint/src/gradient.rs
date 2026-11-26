@@ -1,9 +1,9 @@
 use crate::color::ToColorColor;
-use color::{ColorSpaceTag, HueDirection};
+use color::{ColorSpaceTag, DynamicColor, Flags, HueDirection, Missing};
 use kurbo::{self, Affine, Point, Rect, Vec2};
 use peniko::{self, ColorStop, Gradient, LinearGradientPosition, SweepGradientPosition};
 use style::color::{
-    AbsoluteColor, ColorSpace,
+    AbsoluteColor, ColorFlags, ColorSpace,
     mix::{ColorInterpolationMethod, HueInterpolationMethod},
 };
 use style::{
@@ -104,7 +104,19 @@ pub(crate) fn to_peniko_gradient(
 
 /// Preserve Stylo's interpolation metadata before producing any color stops.
 fn set_color_interpolation(gradient: &mut Gradient, method: &ColorInterpolationMethod) {
-    gradient.interpolation_cs = match method.space {
+    gradient.interpolation_cs = gradient_color_space(method.space);
+    gradient.hue_direction = match method.hue {
+        HueInterpolationMethod::Shorter => HueDirection::Shorter,
+        HueInterpolationMethod::Longer => HueDirection::Longer,
+        HueInterpolationMethod::Increasing => HueDirection::Increasing,
+        HueInterpolationMethod::Decreasing => HueDirection::Decreasing,
+        // Stylo’s specified-hue extension has no counterpart in color 0.3.
+        HueInterpolationMethod::Specified => HueDirection::Shorter,
+    };
+}
+
+fn gradient_color_space(space: ColorSpace) -> ColorSpaceTag {
+    match space {
         ColorSpace::Srgb => ColorSpaceTag::Srgb,
         ColorSpace::SrgbLinear => ColorSpaceTag::LinearSrgb,
         ColorSpace::Hsl => ColorSpaceTag::Hsl,
@@ -122,16 +134,38 @@ fn set_color_interpolation(gradient: &mut Gradient, method: &ColorInterpolationM
         ColorSpace::Rec2020 => ColorSpaceTag::Rec2020,
         ColorSpace::XyzD50 => ColorSpaceTag::XyzD50,
         ColorSpace::XyzD65 => ColorSpaceTag::XyzD65,
-    };
-    gradient.hue_direction = match method.hue {
-        HueInterpolationMethod::Shorter => HueDirection::Shorter,
-        HueInterpolationMethod::Longer => HueDirection::Longer,
-        HueInterpolationMethod::Increasing => HueDirection::Increasing,
-        HueInterpolationMethod::Decreasing => HueDirection::Decreasing,
-        // Stylo's non-standard "specified hue" extension has no counterpart
-        // in color 0.3. Keep the previous shorter-hue fallback for this mode.
-        HueInterpolationMethod::Specified => HueDirection::Shorter,
-    };
+    }
+}
+
+fn gradient_stop_color(color: AbsoluteColor, interpolation: ColorSpaceTag) -> DynamicColor {
+    let mut missing = Missing::default();
+    for (index, flag) in [
+        ColorFlags::C0_IS_NONE,
+        ColorFlags::C1_IS_NONE,
+        ColorFlags::C2_IS_NONE,
+        ColorFlags::ALPHA_IS_NONE,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if color.flags.contains(flag) {
+            missing.insert(index);
+        }
+    }
+    let space = gradient_color_space(color.color_space);
+    // Preserve authored LCH hues when interpolation uses the same space.
+    // An RGB round trip can change an equal-hue pair into a near-equal
+    // pair and reverse its longer arc.
+    let preserve_hue =
+        space == interpolation && matches!(space, ColorSpaceTag::Lch | ColorSpaceTag::Oklch);
+    if (missing.is_empty() && !preserve_hue) || color.color_space == ColorSpace::DisplayP3Linear {
+        return color.as_dynamic_color();
+    }
+    DynamicColor {
+        cs: space,
+        flags: Flags::from_missing(missing),
+        components: *color.raw_components(),
+    }
 }
 
 fn linear_gradient(
@@ -426,13 +460,19 @@ fn resolve_color_stops<T>(
         .iter()
         .filter_map(|item| match item {
             GenericGradientItem::SimpleColorStop(color) => Some((
-                Some(color.resolve_to_absolute(current_color).as_dynamic_color()),
+                Some(gradient_stop_color(
+                    color.resolve_to_absolute(current_color),
+                    gradient.interpolation_cs,
+                )),
                 None,
             )),
             GenericGradientItem::ComplexColorStop { color, position } => {
                 item_resolver(gradient_length, position).map(|offset| {
                     (
-                        Some(color.resolve_to_absolute(current_color).as_dynamic_color()),
+                        Some(gradient_stop_color(
+                            color.resolve_to_absolute(current_color),
+                            gradient.interpolation_cs,
+                        )),
                         Some(offset),
                     )
                 })
@@ -467,6 +507,7 @@ fn resolve_color_stops<T>(
         previous = Some((index, resolved[index].1.unwrap()));
     }
 
+    let mut previous_color: Option<ColorStop> = None;
     for (idx, (color, offset)) in resolved.into_iter().enumerate() {
         let offset = offset.unwrap();
         let Some(color) = color else {
@@ -474,11 +515,50 @@ fn resolve_color_stops<T>(
             continue;
         };
 
-        if idx == 0 && !repeating && offset > 0.0 {
-            gradient.stops.push(ColorStop { color, offset: 0.0 });
+        let authored = ColorStop { color, offset };
+        let mut stop = authored;
+        if let Some(previous) = previous_color.replace(authored) {
+            if !previous.color.flags.missing().is_empty() || !color.flags.missing().is_empty() {
+                // A shared stop can inherit different components on either side.
+                let mut start = ColorStop {
+                    color: previous.color.convert(gradient.interpolation_cs),
+                    ..previous
+                };
+                stop.color = color.convert(gradient.interpolation_cs);
+                let start_missing = start.color.flags.missing();
+                let end_missing = stop.color.flags.missing();
+                for index in 0..4 {
+                    match (start_missing.contains(index), end_missing.contains(index)) {
+                        (true, false) => {
+                            start.color.components[index] = stop.color.components[index]
+                        }
+                        (false, true) => {
+                            stop.color.components[index] = start.color.components[index]
+                        }
+                        (true, true) => {
+                            start.color.components[index] = 0.0;
+                            stop.color.components[index] = 0.0;
+                        }
+                        (false, false) => {}
+                    }
+                }
+                start.color.flags = Flags::default();
+                stop.color.flags = Flags::default();
+                if gradient.stops.len() == 1 {
+                    gradient.stops[0] = start;
+                } else if gradient.stops.last() != Some(&start) {
+                    gradient.stops.push(start);
+                }
+            }
+            if gradient.stops.len() == 1 && gradient.stops[0].offset > 0.0 && !repeating {
+                let first = ColorStop {
+                    offset: 0.0,
+                    ..gradient.stops[0]
+                };
+                gradient.stops.insert(0, first);
+            }
         }
-
-        let stop = ColorStop { color, offset };
+        let color = stop.color;
         match hint.take() {
             None => {
                 if idx != 0 && subdivide_long_hue {
