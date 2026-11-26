@@ -337,9 +337,43 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         );
     }
 
+    fn propagates_overflow(&self, node: &Node, styles: &ComputedValues) -> bool {
+        self.root_element_id == Some(node.id)
+            || (node.parent == self.root_element_id
+                && node.element_data().is_some_and(|element| {
+                    element.name.local == local_name!("body")
+                        && &*element.name.ns == "http://www.w3.org/1999/xhtml"
+                })
+                && styles.get_box().slow_clone_contain().is_empty()
+                && self
+                    .dom
+                    .try_root_element()
+                    .filter(|root| {
+                        // Only the first HTML body is eligible, even when it
+                        // generates no box. A later body still clips locally.
+                        root.children
+                            .iter()
+                            .filter_map(|id| self.dom.get_node(*id))
+                            .find(|child| {
+                                child.element_data().is_some_and(|element| {
+                                    element.name.local == local_name!("body")
+                                        && &*element.name.ns == "http://www.w3.org/1999/xhtml"
+                                })
+                            })
+                            .is_some_and(|body| body.id == node.id)
+                    })
+                    .and_then(Node::primary_styles)
+                    .is_some_and(|root| {
+                        let root = root.get_box();
+                        root.overflow_x == Overflow::Visible
+                            && root.overflow_y == Overflow::Visible
+                            && root.slow_clone_contain().is_empty()
+                    }))
+    }
+
     /// The axes in which a node clips its overflow.
     fn clipped_axes(&self, node: &Node, styles: &ComputedValues) -> BlitzPoint<bool> {
-        if self.root_element_id == Some(node.id) {
+        if self.propagates_overflow(node, styles) {
             return BlitzPoint { x: false, y: false };
         }
         let box_style = styles.get_box();
