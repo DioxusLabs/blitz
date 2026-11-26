@@ -79,8 +79,14 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                     warn!("Error loading {}: {}", path.display(), err);
                     callback.queue.record_failure(request_id);
                 })?;
+                let mut bytes = Bytes::from(file_content);
+                if let Some((_, pipe)) = request.url.query_pairs().find(|(name, _)| name == "pipe")
+                    && let Some(range) = slice_range(&pipe, bytes.len())
+                {
+                    bytes = bytes.slice(range);
+                }
                 catch_unwind(AssertUnwindSafe(|| {
-                    handler.bytes(request.url.to_string(), Bytes::from(file_content))
+                    handler.bytes(request.url.to_string(), bytes)
                 }))
                 .map_err(|err| {
                     let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
@@ -96,6 +102,27 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         Ok(())
     }
 }
+/// Wptserve's slice pipe uses Python's signed, end-exclusive slice bounds.
+fn slice_range(pipe: &str, len: usize) -> Option<std::ops::Range<usize>> {
+    let args = pipe.strip_prefix("slice(")?.strip_suffix(')')?;
+    let (start, end) = args.split_once(',').unwrap_or((args, "null"));
+    let normalize = |value: &str, default| {
+        if value == "null" {
+            return Some(default);
+        }
+        let offset = value.parse::<i64>().ok()?;
+        let index = if offset < 0 {
+            len.saturating_sub(usize::try_from(offset.unsigned_abs()).unwrap_or(usize::MAX))
+        } else {
+            usize::try_from(offset).unwrap_or(usize::MAX).min(len)
+        };
+        Some(index)
+    };
+    let start = normalize(start, 0)?;
+    let end = normalize(end, len)?.max(start);
+    Some(start..end)
+}
+
 impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
     fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url.to_string();
@@ -254,3 +281,19 @@ struct InternalCallback<T> {
 //         }
 //     }
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::slice_range;
+
+    #[test]
+    fn slice_pipe_uses_wptserve_bounds() {
+        assert_eq!(slice_range("slice(1,200)", 100), Some(1..100));
+        assert_eq!(slice_range("slice(-4,-1)", 10), Some(6..9));
+        assert_eq!(slice_range("slice(null,3)", 10), Some(0..3));
+        assert_eq!(slice_range("slice(3)", 10), Some(3..10));
+        assert_eq!(slice_range("slice(8,2)", 10), Some(8..8));
+        assert_eq!(slice_range("slice(1,nope)", 10), None);
+        assert_eq!(slice_range("trickle(d1)", 10), None);
+    }
+}
