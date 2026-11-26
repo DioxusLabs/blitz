@@ -140,6 +140,7 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
             "oriya" => localized_decimal(index + 1, "୦୧୨୩୪୫୬୭୮୯"),
             "hiragana" => hiragana_marker(index + 1),
             "decimal" => Marker::String(format!("{}. ", index + 1)),
+            "cjk-decimal" => Marker::String(cjk_decimal_marker(index + 1)),
             "disc" => Marker::Char('•'),
             "circle" => Marker::Char('◦'),
             "square" => Marker::Char('▪'),
@@ -192,6 +193,21 @@ fn hiragana_marker(mut ordinal: usize) -> Marker {
     let mut text: String = reversed.into_iter().rev().collect();
     text.push('、');
     Marker::String(text)
+}
+
+fn cjk_decimal_marker(ordinal: usize) -> String {
+    const DIGITS: [char; 10] = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+
+    let exponent = ordinal.checked_ilog10().unwrap_or(0);
+    // The digits and suffix each occupy three UTF-8 bytes.
+    let mut marker = String::with_capacity(3 * (exponent as usize + 2));
+    let mut divisor = 10usize.pow(exponent);
+    while divisor != 0 {
+        marker.push(DIGITS[(ordinal / divisor) % 10]);
+        divisor /= 10;
+    }
+    marker.push('、');
+    marker
 }
 
 // Override the font to our specific bullet font when rendering bullets
