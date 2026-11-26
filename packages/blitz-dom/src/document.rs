@@ -1549,13 +1549,12 @@ impl BaseDocument {
             if matches!(image_type, ImageType::Image)
                 && let Some(element) = self.get_node(node_id).and_then(|node| node.element_data())
                 && element.is_image_embed()
-                && (!matches!(image, ImageData::Raster(_))
-                    || element
-                        .embedded_image_source()
-                        .and_then(|src| self.resolve_url(src))
-                        .as_ref()
-                        .map(url::Url::as_str)
-                        != Some(url))
+                && element
+                    .embedded_image_source()
+                    .and_then(|src| self.resolve_url(src))
+                    .as_ref()
+                    .map(url::Url::as_str)
+                    != Some(url)
             {
                 continue;
             }

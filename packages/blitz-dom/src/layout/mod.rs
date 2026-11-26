@@ -448,6 +448,38 @@ impl LayoutPassState<'_> {
                                 )
                             }
                             #[cfg(feature = "svg")]
+                            ImageData::Svg(svg) if element_data.is_image_embed() => {
+                                let width = svg.intrinsic_width();
+                                let height = svg.intrinsic_height();
+                                let ratio = match (width, height) {
+                                    (Some(width), Some(height)) => Some(width / height),
+                                    _ => svg.viewbox_aspect_ratio(),
+                                };
+                                let mut default_size = DEFAULT_OBJECT_SIZE;
+                                if width.is_none() && height.is_none() && ratio.is_none() {
+                                    // The embedding box supplies the viewport width for an
+                                    // SVG document without natural dimensions.
+                                    #[cfg(feature = "writing-mode")]
+                                    let containing_width = if node.writing_mode().is_vertical() {
+                                        inputs.parent_size.height
+                                    } else {
+                                        inputs.parent_size.width
+                                    };
+                                    #[cfg(not(feature = "writing-mode"))]
+                                    let containing_width = inputs.parent_size.width;
+                                    default_size.width =
+                                        containing_width.unwrap_or(default_size.width);
+                                }
+                                (
+                                    IntrinsicSizes {
+                                        width,
+                                        height,
+                                        ratio,
+                                    },
+                                    default_size,
+                                )
+                            }
+                            #[cfg(feature = "svg")]
                             ImageData::Svg(svg) => {
                                 let mut width = svg.intrinsic_width();
                                 let mut height = svg.intrinsic_height();

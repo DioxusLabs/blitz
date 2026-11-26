@@ -1436,7 +1436,7 @@ impl<'doc> DocumentMutator<'doc> {
         self.doc.stylesheet_generation += 1;
     }
 
-    /// Load an HTML image or raster image embedding, or cache an SVG
+    /// Load an HTML image or image embedding, or cache an SVG
     /// `<image>` or `<feImage>` resource for usvg.
     fn load_image(&mut self, target_id: NodeId) {
         let node = &mut self.doc.nodes[target_id];
@@ -1468,11 +1468,6 @@ impl<'doc> DocumentMutator<'doc> {
 
         // Check cache first
         if let Some(cached_image) = self.doc.image_cache.get(src.as_str()) {
-            if element.is_image_embed()
-                && !matches!(cached_image, crate::node::ImageData::Raster(_))
-            {
-                return;
-            }
             #[cfg(feature = "tracing")]
             tracing::info!("Loading image {src} from cache");
             let node = &mut self.doc.nodes[target_id];

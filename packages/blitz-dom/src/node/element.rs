@@ -588,12 +588,12 @@ impl ElementData {
         if source.is_empty() {
             return None;
         }
-        let raster_mime = |value: &str| {
+        let image_mime = |value: &str| {
             let essence = value.split(';').next().unwrap_or_default().trim();
             essence
                 .get(..6)
                 .is_some_and(|prefix| prefix.eq_ignore_ascii_case("image/"))
-                && !essence.eq_ignore_ascii_case("image/svg+xml")
+                && (cfg!(feature = "svg") || !essence.eq_ignore_ascii_case("image/svg+xml"))
         };
         if let Some(kind) = self
             .attrs
@@ -601,7 +601,7 @@ impl ElementData {
             .map(|attr| attr.value.trim())
             .filter(|kind| !kind.is_empty())
         {
-            return raster_mime(kind).then_some(source);
+            return image_mime(kind).then_some(source);
         }
 
         if let Some(data) = source
@@ -610,7 +610,7 @@ impl ElementData {
         {
             return source[data.len()..]
                 .split_once(',')
-                .is_some_and(|(media_type, _)| raster_mime(media_type))
+                .is_some_and(|(media_type, _)| image_mime(media_type))
                 .then_some(source);
         }
         let extension = source
@@ -619,11 +619,11 @@ impl ElementData {
             .rsplit_once('.')?
             .1
             .to_ascii_lowercase();
-        matches!(
+        (matches!(
             extension.as_str(),
             "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "ico" | "bmp"
-        )
-        .then_some(source)
+        ) || (cfg!(feature = "svg") && extension == "svg"))
+            .then_some(source)
     }
 
     pub(crate) fn object_has_image(&self) -> bool {
@@ -631,7 +631,7 @@ impl ElementData {
             && self.name.local == local_name!("object")
             && self
                 .image_data()
-                .is_some_and(|image| matches!(image, ImageData::Raster(_)))
+                .is_some_and(|image| !matches!(image, ImageData::None))
     }
 
     pub(crate) fn is_replaced(&self) -> bool {
