@@ -3401,8 +3401,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb17c03da08e75b2a84346a7548f34c038fa24d9d5cb12b1ed18c1ea8dbe86d8"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1794697008-fontique-ranges#5a066b94c4a2e0a8179753267a0664cc6052e8c9"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -6319,8 +6318,7 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73072a9470554c8e794778acece2312661218aaabb635600957d952cf01c716e"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1794697008-fontique-ranges#5a066b94c4a2e0a8179753267a0664cc6052e8c9"
 dependencies = [
  "bytemuck",
 ]
@@ -6328,8 +6326,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f00d9e3b12cd601fbd38535b7a8dbc1f761bcc842c4be4803f7ac2d89bb78e01"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1794697008-fontique-ranges#5a066b94c4a2e0a8179753267a0664cc6052e8c9"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -6359,8 +6356,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcd6506d5b966f3324e191691325077cbac6e08ea1b828ba9cd86f660e10d9e5"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1794697008-fontique-ranges#5a066b94c4a2e0a8179753267a0664cc6052e8c9"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6369,14 +6365,12 @@ dependencies = [
 [[package]]
 name = "parley_emoji"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66dbd709d00551ad2305b8a9479ca04d722a3d21276eba3d74596359b8a64eaa"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1794697008-fontique-ranges#5a066b94c4a2e0a8179753267a0664cc6052e8c9"
 
 [[package]]
 name = "parley_engine"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd9c37658a7f75addef6fb3183cde6ed16fdf7757436dc64f073144f2b99879f"
+source = "git+https://github.com/DioxusLabs/parley?branch=devin%2F1794697008-fontique-ranges#5a066b94c4a2e0a8179753267a0664cc6052e8c9"
 dependencies = [
  "fontique",
  "harfrust",
@@ -8565,7 +8559,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",
