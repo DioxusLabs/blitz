@@ -1211,6 +1211,12 @@ impl Node {
 
         let mut flags = stylo_taffy::StyleFlags::empty();
         if let Some(el) = self.data.downcast_element() {
+            if self
+                .parent
+                .is_some_and(|id| matches!(self.tree()[id].data, NodeData::Document(_)))
+            {
+                flags |= stylo_taffy::StyleFlags::IS_DOCUMENT_ROOT;
+            }
             if crate::layout::replaced::is_replaced_element(&el.name.local) {
                 flags |= stylo_taffy::StyleFlags::IS_REPLACED;
             }
