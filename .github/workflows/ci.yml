@@ -111,6 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - run: cargo doc --workspace --no-deps
 
   matrix_test:
