@@ -270,13 +270,13 @@ pub fn compute_replaced_layout(
         .min_size()
         .maybe_resolve(parent_size, &resolve_calc_value)
         .maybe_sub(box_sizing_adjustment);
-    let max_size = style
+    let mut max_size = style
         .max_size()
         .maybe_resolve(basis_for_max_and_preferred, &resolve_calc_value)
         .maybe_max(min_size)
         .maybe_sub(box_sizing_adjustment);
 
-    // For ContentSize mode, ignore preferred/min size styles in the axis being measured: the
+    // For ContentSize mode, ignore preferred/min/max size styles in the axis being measured: the
     // parent layout algorithm applies them itself, and content-based measurement should return
     // the content size (the intrinsic size for replaced elements). Constraints in the opposite
     // axis are retained as they transfer through the aspect ratio (transferred size suggestion).
@@ -286,10 +286,16 @@ pub fn compute_replaced_layout(
             RequestedAxis::Horizontal => {
                 style_size.width = None;
                 min_size.width = None;
+                if available_space.width != AvailableSpace::MinContent {
+                    max_size.width = None;
+                }
             }
             RequestedAxis::Vertical => {
                 style_size.height = None;
                 min_size.height = None;
+                if available_space.height != AvailableSpace::MinContent {
+                    max_size.height = None;
+                }
             }
             RequestedAxis::Both => {}
         }
@@ -300,11 +306,18 @@ pub fn compute_replaced_layout(
     if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
         // Style max sizes without the available-space fallback: available space must not
         // constrain the aspect-ratio transfer of parent-resolved dimensions.
-        let style_max_size = style
+        let mut style_max_size = style
             .max_size()
             .maybe_resolve(basis_for_max_and_preferred, &resolve_calc_value)
             .maybe_sub(box_sizing_adjustment)
             .maybe_max(min_size);
+        if sizing_mode == SizingMode::ContentSize {
+            match requested_axis {
+                RequestedAxis::Horizontal => style_max_size.width = None,
+                RequestedAxis::Vertical => style_max_size.height = None,
+                RequestedAxis::Both => {}
+            }
+        }
 
         let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
         let transferred = content_box_known_dimensions
