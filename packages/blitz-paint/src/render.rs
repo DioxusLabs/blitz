@@ -48,6 +48,13 @@ use style::computed_values::isolation::T as Isolation;
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ElementPaint {
+    Full,
+    Decoration,
+    Content,
+}
+
 /// An opacity just below 1.0, used to force the renderer to allocate an isolated
 /// buffer for mask and text-clip isolation layers. Renderers (e.g. vello_cpu) may optimize
 /// layers with `Mix::Normal`/`Compose::SrcOver` and an opacity of exactly 1.0 into
@@ -260,6 +267,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 y: self.initial_y - (viewport_scroll.y * self.scale),
             }),
             viewport_clip_rect,
+            ElementPaint::Full,
         );
 
         // Render debug overlay
@@ -459,6 +467,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         node_id: NodeId,
         parent_style_transform: Affine,
         clip_rect: Rect,
+        paint: ElementPaint,
     ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
@@ -636,8 +645,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let paints_own_box = !node.is_inline_with_only_block_children();
 
-        cx.draw_outline(scene);
-        if paints_own_box {
+        if paint != ElementPaint::Decoration {
+            cx.draw_outline(scene);
+        }
+        if paints_own_box && paint != ElementPaint::Content {
             cx.draw_outset_box_shadow(scene);
         }
 
@@ -695,16 +706,21 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     filter,
                     backdrop_filter,
                     |scene| {
-                        if paints_own_box {
-                            cx.draw_background(scene);
-                            cx.draw_inset_box_shadow(scene);
+                        if paint != ElementPaint::Content {
+                            if paints_own_box {
+                                cx.draw_background(scene);
+                                cx.draw_inset_box_shadow(scene);
+                            }
+                            cx.draw_table_row_backgrounds(scene);
+                            cx.draw_table_borders(scene);
+                            if paints_own_box {
+                                cx.draw_border(scene);
+                            }
+                            cx.stroke_devtools(scene);
                         }
-                        cx.draw_table_row_backgrounds(scene);
-                        cx.draw_table_borders(scene);
-                        if paints_own_box {
-                            cx.draw_border(scene);
+                        if paint == ElementPaint::Decoration {
+                            return;
                         }
-                        cx.stroke_devtools(scene);
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
                         let clip = if is_text_input {
@@ -777,9 +793,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.data {
-            NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
-                self.render_element(scene, node_id, parent_style_transform, clip_rect)
-            }
+            NodeData::Element(_) | NodeData::AnonymousBlock(_) => self.render_element(
+                scene,
+                node_id,
+                parent_style_transform,
+                clip_rect,
+                ElementPaint::Full,
+            ),
             NodeData::Text(TextNodeData { .. }) => {
                 // Text nodes should never be rendered directly
                 // (they should always be rendered as part of an inline layout)
@@ -1236,7 +1256,54 @@ impl ElementCx<'_, '_> {
 
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
-            for child_id in children {
+            let tree = self.node.tree();
+            let block_flow = matches!(
+                self.style.clone_display().inside(),
+                DisplayInside::Flow | DisplayInside::FlowRoot
+            );
+            let ordinary_block = |id: &NodeId| {
+                let child = &tree[*id];
+                block_flow
+                    && child.primary_styles().is_some_and(|style| {
+                        let display = style.clone_display();
+                        display.outside() == DisplayOutside::Block
+                            && matches!(
+                                display.inside(),
+                                DisplayInside::Flow | DisplayInside::FlowRoot
+                            )
+                            && child.taffy_position() == taffy::Position::Static
+                            && !style.clone_float().is_floating()
+                            && !child.is_stacking_context_root(false)
+                            && child.lifted_paint_offset(self.node.id).is_none()
+                            && style.clone_overflow_x() == Overflow::Visible
+                            && style.clone_overflow_y() == Overflow::Visible
+                            && style.get_effects().backdrop_filter.0.is_empty()
+                    })
+            };
+            let mut pending = children.as_slice();
+            while let Some((child_id, rest)) = pending.split_first() {
+                if ordinary_block(child_id) {
+                    let count = 1 + rest.iter().take_while(|id| ordinary_block(id)).count();
+                    if count > 1 {
+                        let (blocks, remainder) = pending.split_at(count);
+                        // CSS 2 Appendix E paints in-flow block backgrounds and borders
+                        // before the inline contents of those blocks.
+                        for paint in [ElementPaint::Decoration, ElementPaint::Content] {
+                            for &id in blocks {
+                                self.context.render_element(
+                                    scene,
+                                    id,
+                                    parent_style_transform,
+                                    clip_rect,
+                                    paint,
+                                );
+                            }
+                        }
+                        pending = remainder;
+                        continue;
+                    }
+                }
+                pending = rest;
                 // Fixed-position children of the root element are positioned against
                 // the viewport and do not scroll with it, so cancel out the viewport
                 // scroll (applied in `paint_scene`). A fixed box contained by a
