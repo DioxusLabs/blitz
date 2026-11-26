@@ -43,3 +43,12 @@ fn mouse_pen_and_fingers_get_distinct_pointer_ids() {
         "mouse 0, pen 1, touch 2, touch 3"
     );
 }
+
+#[test]
+fn harness_tap_uses_a_finger_pointer_id() {
+    let mut harness = Harness::from_component(app);
+    harness.click("#target");
+    harness.tap("#target");
+
+    assert_eq!(harness.text_content("#seen"), "mouse 0, touch 2");
+}
