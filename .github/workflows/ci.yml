@@ -111,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo doc
+      - run: cargo doc --workspace --no-deps
 
   matrix_test:
     runs-on: ${{ matrix.platform.os }}
