@@ -10923,6 +10923,7 @@ dependencies = [
  "owo-colors",
  "parley",
  "peniko",
+ "percent-encoding",
  "png 0.17.16",
  "pollster 0.4.0",
  "rayon",
