@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "accesskit_xplat"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "accesskit",
  "accesskit_android",
@@ -580,9 +580,9 @@ dependencies = [
 
 [[package]]
 name = "async-executor"
-version = "1.14.0"
+version = "1.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c96bf972d85afc50bf5ab8fe2d54d1586b4e0b46c97c50a0c9e71e2f7bcd812a"
+checksum = "f426a31126c735126297bc5ea7a521263c9faff4f63ca415267ee625651c4f37"
 dependencies = [
  "async-task",
  "concurrent-queue",
@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "blitz"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "anyrender_vello",
  "blitz-dom",
@@ -955,7 +955,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-dom"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "accesskit",
  "anyrender",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-html"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "blitz-dom",
  "blitz-traits",
@@ -1053,7 +1053,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-net"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "blitz-traits",
  "data-url",
@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-paint"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "anyrender",
  "anyrender_svg",
@@ -1089,7 +1089,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-shell"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "accesskit",
  "accesskit_xplat",
@@ -1105,6 +1105,7 @@ dependencies = [
  "keyboard-types",
  "rfd",
  "tracing",
+ "url",
  "wasm-bindgen",
  "web-sys",
  "web-time",
@@ -1114,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-test-harness"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "blitz-dom",
  "blitz-html",
@@ -1127,7 +1128,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-tests"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "accesskit",
  "anyrender",
@@ -1151,7 +1152,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-traits"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "atomic_refcell",
  "bitflags 2.13.2",
@@ -1166,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-vibey-cdp-server"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "blitz-chrome-devtools-frontend",
  "blitz-dom",
@@ -1182,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-vibey-script"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "blitz-dom",
  "blitz-html",
@@ -8349,7 +8350,7 @@ dependencies = [
 
 [[package]]
 name = "stylo_taffy"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "bitflags 2.13.2",
  "stylo",
@@ -8519,8 +8520,9 @@ dependencies = [
 
 [[package]]
 name = "taffy"
-version = "0.15.0"
-source = "git+https://github.com/DioxusLabs/taffy?rev=a3997d55bacd1fb6cd12fe31db0be15b20f91528#a3997d55bacd1fb6cd12fe31db0be15b20f91528"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cae92eb1b204bfd239b5c463e1bd2c3ce4913d2d3abfb5c64f5cfee9d65e5c68"
 dependencies = [
  "serde",
  "slotmap",

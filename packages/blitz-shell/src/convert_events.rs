@@ -5,7 +5,7 @@ use blitz_traits::shell::ColorScheme;
 use keyboard_types::{Code, Key, Modifiers, NamedKey};
 use winit::event::KeyEvent as WinitKeyEvent;
 use winit::event::{ButtonSource, ElementState};
-use winit::event::{Ime, PointerKind, PointerSource};
+use winit::event::{FingerId, Ime, PointerKind, PointerSource};
 use winit::keyboard::Key as WinitKey;
 use winit::keyboard::ModifiersState as WinitModifiers;
 use winit::keyboard::PhysicalKey as WinitPhysicalKey;
@@ -60,12 +60,42 @@ pub(crate) fn winit_key_event_to_blitz(
     }
 }
 
-pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId {
+/// Blitz's own IDs for the fingers winit currently reports.
+///
+/// winit's `FingerId`s are platform values (on iOS a `UITouch` pointer, on
+/// Windows/X11 a system counter, on Android/Wayland a reused slot), so the
+/// shell assigns each finger a fresh ID from a counter when it first appears
+/// and forgets it when the finger leaves. Only a handful of fingers are ever
+/// active, so a linear search is enough.
+#[derive(Default)]
+pub(crate) struct PointerIds {
+    active: Vec<(FingerId, BlitzPointerId)>,
+    next_index: u64,
+}
+
+impl PointerIds {
+    pub(crate) fn get_or_assign(&mut self, finger_id: FingerId) -> BlitzPointerId {
+        if let Some((_, id)) = self.active.iter().find(|(f, _)| *f == finger_id) {
+            return *id;
+        }
+        let id = BlitzPointerId::finger(self.next_index);
+        self.next_index = (self.next_index + 1) % BlitzPointerId::FINGER_INDEX_COUNT;
+        self.active.push((finger_id, id));
+        id
+    }
+
+    pub(crate) fn remove(&mut self, finger_id: FingerId) {
+        self.active.retain(|(f, _)| *f != finger_id);
+    }
+}
+
+pub(crate) fn pointer_source_to_blitz(
+    source: &PointerSource,
+    pointer_ids: &mut PointerIds,
+) -> BlitzPointerId {
     match source {
         PointerSource::Mouse => BlitzPointerId::Mouse,
-        PointerSource::Touch { finger_id, .. } => {
-            BlitzPointerId::Finger(finger_id.into_raw() as u64)
-        }
+        PointerSource::Touch { finger_id, .. } => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: TabletTool and Unknown events
         PointerSource::TabletTool { .. } => BlitzPointerId::Pen,
@@ -78,10 +108,13 @@ pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId 
     }
 }
 
-pub(crate) fn pointer_kind_to_blitz(kind: &PointerKind) -> BlitzPointerId {
+pub(crate) fn pointer_kind_to_blitz(
+    kind: &PointerKind,
+    pointer_ids: &mut PointerIds,
+) -> BlitzPointerId {
     match kind {
         PointerKind::Mouse => BlitzPointerId::Mouse,
-        PointerKind::Touch(finger_id) => BlitzPointerId::Finger(finger_id.into_raw() as u64),
+        PointerKind::Touch(finger_id) => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: TabletTool and Unknown events
         PointerKind::TabletTool(_) => BlitzPointerId::Pen,
@@ -94,13 +127,14 @@ pub(crate) fn pointer_kind_to_blitz(kind: &PointerKind) -> BlitzPointerId {
     }
 }
 
-pub(crate) fn button_source_to_blitz(source: &ButtonSource) -> BlitzPointerId {
+pub(crate) fn button_source_to_blitz(
+    source: &ButtonSource,
+    pointer_ids: &mut PointerIds,
+) -> BlitzPointerId {
     match source {
         ButtonSource::Mouse(_) => BlitzPointerId::Mouse,
         ButtonSource::TabletTool { .. } => BlitzPointerId::Pen,
-        ButtonSource::Touch { finger_id, .. } => {
-            BlitzPointerId::Finger(finger_id.into_raw() as u64)
-        }
+        ButtonSource::Touch { finger_id, .. } => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: Unknown events
         ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
@@ -170,5 +204,25 @@ pub(crate) fn winit_key_to_kbt_key(winit_key: &WinitKey) -> Key {
         WinitKey::Character(c) => Key::Character(c.to_string()),
         WinitKey::Unidentified(_) => Key::Named(NamedKey::Unidentified),
         WinitKey::Dead(_) => Key::Named(NamedKey::Dead),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pointer_ids_are_stable_while_active_and_fresh_after_leaving() {
+        let mut ids = PointerIds::default();
+        let a = FingerId::from_raw(0xdead_beef);
+        let b = FingerId::from_raw(7);
+
+        assert_eq!(ids.get_or_assign(a), BlitzPointerId::finger(0));
+        assert_eq!(ids.get_or_assign(b), BlitzPointerId::finger(1));
+        assert_eq!(ids.get_or_assign(a), BlitzPointerId::finger(0));
+
+        // A raw id the platform reuses after the finger left is a new finger
+        ids.remove(a);
+        assert_eq!(ids.get_or_assign(a), BlitzPointerId::finger(2));
     }
 }
