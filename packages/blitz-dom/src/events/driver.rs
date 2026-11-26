@@ -42,7 +42,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let mut doc = self.doc.inner_mut();
 
         let prev_hover_node_id = doc.hover_node_id;
-        let changed = doc.set_hover_to(event.page_x(), event.page_y());
+        let changed = doc.set_pointer_hover_to(event.id, event.page_x(), event.page_y());
         let hover_node_id = doc.hover_node_id;
 
         drop(doc);
@@ -231,6 +231,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         // A non-hovering pointer (finger) ends hover once it is lifted or cancelled
         let mut hover_end_event = None;
+        // Lifting or cancelling a pointer ends its capture
+        let mut capture_end_event = None;
         let mut hover_node_id = doc.hover_node_id;
         let focussed_node_id = doc.focus_node_id;
         let mut drag_target = None;
@@ -255,6 +257,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 hover_node_id = self.handle_pointer_move(event);
                 let mut doc = self.doc.inner_mut();
                 doc.unactive_node();
+                capture_end_event = Some(event.clone());
 
                 if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
                     hover_end_event = Some(event.clone());
@@ -264,10 +267,17 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 hover_node_id = self.handle_pointer_move(event);
                 let mut doc = self.doc.inner_mut();
                 doc.unactive_node();
+                capture_end_event = Some(event.clone());
 
                 if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
                     hover_end_event = Some(event.clone());
                 }
+            }
+            // A captured pointer keeps hovering its capture target outside the document
+            UiEvent::PointerLeave(event)
+                if self.doc.inner().pointer_capture_target(event.id).is_some() =>
+            {
+                return;
             }
             UiEvent::PointerLeave(event) => {
                 self.handle_pointer_leave(event);
@@ -411,6 +421,14 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_dom_event(DomEvent::new(target, data, EventDispatchSource::Input));
             }
         };
+
+        // The pointer goes back to hovering whatever is under it
+        if let Some(event) = capture_end_event
+            && self.doc.inner_mut().release_pointer_capture(event.id, None)
+        {
+            self.handle_pointer_move(&event);
+            self.flush_pending_events();
+        }
 
         // Update document input state (hover, focus, active, etc)
         if let Some(event) = hover_end_event {

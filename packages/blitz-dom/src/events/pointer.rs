@@ -211,10 +211,14 @@ pub(crate) fn handle_pointermove(
     let y = event.page_y();
     let buttons = event.buttons;
 
-    let mut changed = doc.set_hover_to(x, y);
+    let mut changed = doc.set_pointer_hover_to(event.id, x, y);
 
-    // Check if we've moved enough to be considered a selection drag (2px threshold)
-    if buttons != MouseEventButtons::None && doc.drag_mode == DragMode::None {
+    // Check if we've moved enough to be considered a selection drag (2px threshold).
+    // A captured pointer is being dragged by the application, so it doesn't select text.
+    if buttons != MouseEventButtons::None
+        && doc.drag_mode == DragMode::None
+        && doc.pointer_capture_target(event.id).is_none()
+    {
         let dx = x - doc.mousedown_position.x;
         let dy = y - doc.mousedown_position.y;
         if dx.abs() > 2.0 || dy.abs() > 2.0 {

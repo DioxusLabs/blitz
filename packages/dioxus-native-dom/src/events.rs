@@ -186,6 +186,24 @@ impl NodeHandle {
         })
     }
 
+    /// Send the given pointer's events to this node instead of the node under the pointer,
+    /// until the pointer is released or cancelled. Returns `false` if the node is not in
+    /// the document.
+    pub fn set_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc_mut().set_pointer_capture(self.node_id, pointer_id)
+    }
+
+    /// Stop capturing the given pointer, returning whether this node had captured it
+    pub fn release_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc_mut()
+            .release_pointer_capture(pointer_id, Some(self.node_id))
+    }
+
+    /// Whether this node has captured the given pointer
+    pub fn has_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc().has_pointer_capture(self.node_id, pointer_id)
+    }
+
     fn node_not_exist_err<T>(&self) -> Pin<Box<dyn Future<Output = MountedResult<T>>>> {
         let node_id = self.node_id;
         let err = MountedError::OperationFailed(Box::new(NodeNotExistErr(node_id)));
