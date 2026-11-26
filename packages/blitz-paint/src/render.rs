@@ -678,6 +678,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .unwrap_or(Rect::ZERO);
 
                 let mut effect_layer_clip = border_box;
+                if Some(node_id) == self.root_element_id && filter.is_some() {
+                    // The root filter covers the document in the viewport, including
+                    // content scrolled beyond the root element's own border box.
+                    let viewport = screen_transform.inverse().transform_rect_bbox(clip_rect);
+                    if viewport.is_finite() {
+                        effect_layer_clip = effect_layer_clip.union(viewport);
+                    }
+                }
                 effect_layer_clip.x0 += filter_expansion_area.x0;
                 effect_layer_clip.y0 += filter_expansion_area.y0;
                 effect_layer_clip.x1 += filter_expansion_area.x1;

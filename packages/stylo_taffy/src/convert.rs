@@ -316,6 +316,13 @@ pub fn position(input: stylo::Position) -> taffy::Position {
 ///
 /// <https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Containing_block#identifying_the_containing_block>
 pub fn establishes_fixed_containing_block(style: &stylo::ComputedValues) -> bool {
+    establishes_fixed_containing_block_for_element(style, false)
+}
+
+fn establishes_fixed_containing_block_for_element(
+    style: &stylo::ComputedValues,
+    is_document_root: bool,
+) -> bool {
     use style::values::computed::{Perspective, Rotate, Scale, Translate};
     use style::values::specified::box_::{Contain, ContainerType, WillChangeBits};
 
@@ -329,10 +336,7 @@ pub fn establishes_fixed_containing_block(style: &stylo::ComputedValues) -> bool
         return true;
     }
     if box_style.will_change.bits.intersects(
-        WillChangeBits::TRANSFORM
-            | WillChangeBits::PERSPECTIVE
-            | WillChangeBits::FIXPOS_CB_NON_SVG
-            | WillChangeBits::CONTAIN,
+        WillChangeBits::TRANSFORM | WillChangeBits::PERSPECTIVE | WillChangeBits::CONTAIN,
     ) {
         return true;
     }
@@ -349,8 +353,15 @@ pub fn establishes_fixed_containing_block(style: &stylo::ComputedValues) -> bool
         return true;
     }
 
+    // Filter effects do not establish a containing block on the document root.
     let effects = style.get_effects();
-    !effects.filter.0.is_empty() || !effects.backdrop_filter.0.is_empty()
+    !is_document_root
+        && (box_style
+            .will_change
+            .bits
+            .contains(WillChangeBits::FIXPOS_CB_NON_SVG)
+            || !effects.filter.0.is_empty()
+            || !effects.backdrop_filter.0.is_empty())
 }
 
 /// Whether a style establishes a containing block for `position: absolute` descendants even
@@ -373,8 +384,15 @@ pub fn establishes_absolute_containing_block(style: &stylo::ComputedValues) -> b
 /// establish a fixed containing block (transforms, filters, `will-change`, `contain`, ...) are
 /// containing blocks for both `absolute` and `fixed` boxes.
 pub fn containing_block_claims(style: &stylo::ComputedValues) -> taffy::ContainingBlockClaims {
+    containing_block_claims_for_element(style, false)
+}
+
+pub(crate) fn containing_block_claims_for_element(
+    style: &stylo::ComputedValues,
+    is_document_root: bool,
+) -> taffy::ContainingBlockClaims {
     let is_positioned = style.get_box().position != stylo::Position::Static;
-    let fixed = establishes_fixed_containing_block(style);
+    let fixed = establishes_fixed_containing_block_for_element(style, is_document_root);
     taffy::ContainingBlockClaims {
         absolute: is_positioned || fixed || establishes_absolute_containing_block(style),
         fixed,

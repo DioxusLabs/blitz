@@ -34,6 +34,7 @@ bitflags! {
         const IS_BUTTON = 1 << 3;
         /// Whether the node is a button-type input whose label always uses block layout
         const IS_BUTTON_INPUT = 1 << 4;
+        const IS_DOCUMENT_ROOT = 1 << 5;
     }
 }
 
@@ -236,7 +237,10 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
 
     #[inline]
     fn is_containing_block(&self) -> taffy::ContainingBlockClaims {
-        let mut claims = convert::containing_block_claims(&self.style);
+        let mut claims = convert::containing_block_claims_for_element(
+            &self.style,
+            self.flags.contains(StyleFlags::IS_DOCUMENT_ROOT),
+        );
         claims.absolute |= self.flags.contains(StyleFlags::SPAN_ABSOLUTE_CB);
         claims.fixed |= self.flags.contains(StyleFlags::SPAN_FIXED_CB);
         claims
