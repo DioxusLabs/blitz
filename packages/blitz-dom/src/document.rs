@@ -23,7 +23,10 @@ use crate::{
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::EventDispatchSource;
-use blitz_traits::events::{BlitzFocusEvent, DomEvent, DomEventData, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzFocusEvent, BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, HitResult,
+    MouseEventButtons, PointerCoords, UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -268,6 +271,8 @@ pub struct BaseDocument {
     pub(crate) hover_node_is_text: bool,
     /// The last known pointer position in client coordinates (viewport-relative, unscrolled).
     pub(crate) last_client_pointer_position: Option<taffy::Point<f32>>,
+    /// The node each captured pointer's events are sent to, instead of the node under it
+    pub(crate) pointer_captures: SmallVec<[(BlitzPointerId, NodeId); 2]>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<NodeId>,
     /// The node which is currently active (if any)
@@ -531,6 +536,7 @@ impl BaseDocument {
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
             drag_mode: DragMode::None,
+            pointer_captures: SmallVec::new(),
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
@@ -1075,6 +1081,8 @@ impl BaseDocument {
         if self.mousedown_node_id == Some(node_id) {
             self.mousedown_node_id = None;
         }
+        self.pointer_captures
+            .retain(|(_, target)| *target != node_id);
         if self.text_selection.anchor.node_or_parent == Some(node_id)
             || self.text_selection.focus.node_or_parent == Some(node_id)
         {
@@ -2064,15 +2072,35 @@ impl BaseDocument {
         // not reference layout-generated nodes, whose ids die on box-tree
         // reconstruction).
         let hit_node_id = hit.map(|hit| hit.node_id);
-        let hover_node_id = hit_node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
         let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
 
+        self.set_hover_node(hit_node_id, new_is_text) || scrollbar_changed
+    }
+
+    /// Like [`Self::set_hover_to`], except that a captured pointer hovers its capture
+    /// target wherever it is, so the target keeps `:hover` and its cursor during a drag.
+    pub fn set_pointer_hover_to(&mut self, pointer_id: BlitzPointerId, x: f32, y: f32) -> bool {
+        let Some(target) = self.pointer_capture_target(pointer_id) else {
+            return self.set_hover_to(x, y);
+        };
+
+        self.last_client_pointer_position = Some(taffy::Point {
+            x: x - self.viewport_scroll().x as f32,
+            y: y - self.viewport_scroll().y as f32,
+        });
+        self.set_hover_node(Some(target), false)
+    }
+
+    /// Hover the given (possibly anonymous) node, returning whether the hovered node changed
+    fn set_hover_node(&mut self, hit_node_id: Option<NodeId>, is_text: bool) -> bool {
+        let hover_node_id = hit_node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
+
         self.hover_hit_node_id = hit_node_id;
-        self.hover_node_is_text = new_is_text;
+        self.hover_node_is_text = is_text;
 
         // Return early if the new node is the same as the already-hovered node
         if hover_node_id == self.hover_node_id {
-            return scrollbar_changed;
+            return false;
         }
 
         let old_node_path = self.maybe_node_element_ancestors(self.hover_node_id);
@@ -2130,6 +2158,10 @@ impl BaseDocument {
         let Some(pos) = self.last_client_pointer_position else {
             return false;
         };
+        // A captured pointer hovers its capture target, whatever is under it
+        if !self.pointer_captures.is_empty() {
+            return false;
+        }
         let x = pos.x + self.viewport_scroll().x as f32;
         let y = pos.y + self.viewport_scroll().y as f32;
         let prev_hover = self.hover_state();
@@ -2156,6 +2188,91 @@ impl BaseDocument {
     /// sub-document is only known once the sub-document has handled the event.
     pub(crate) fn update_cursor(&self) {
         self.shell_provider.set_cursor(self.get_cursor());
+    }
+
+    /// The node that the given pointer is captured by (if any)
+    pub fn pointer_capture_target(&self, pointer_id: BlitzPointerId) -> Option<NodeId> {
+        self.pointer_captures
+            .iter()
+            .find(|(id, _)| *id == pointer_id)
+            .map(|(_, target)| *target)
+    }
+
+    /// Whether the given node has captured the given pointer
+    pub fn has_pointer_capture(&self, node_id: NodeId, pointer_id: BlitzPointerId) -> bool {
+        self.pointer_capture_target(pointer_id) == Some(node_id)
+    }
+
+    /// Send the given pointer's events to the given node instead of the node under the
+    /// pointer, until the pointer is released or cancelled or the capture is released.
+    ///
+    /// This replaces any other node's capture of the pointer. Returns `false` if the node
+    /// is not in the document.
+    pub fn set_pointer_capture(&mut self, node_id: NodeId, pointer_id: BlitzPointerId) -> bool {
+        if !self
+            .get_node(node_id)
+            .is_some_and(|node| node.flags.is_in_document())
+        {
+            return false;
+        }
+        if self.has_pointer_capture(node_id, pointer_id) {
+            return true;
+        }
+
+        self.release_pointer_capture(pointer_id, None);
+        self.pointer_captures.push((pointer_id, node_id));
+        self.queue_event(DomEvent::new(
+            node_id,
+            DomEventData::GotPointerCapture(self.pointer_capture_event(pointer_id)),
+            EventDispatchSource::UserAgent,
+        ));
+        true
+    }
+
+    /// Stop capturing the given pointer, returning whether it was captured. If `node_id`
+    /// is given then the capture is only released if that node holds it.
+    pub fn release_pointer_capture(
+        &mut self,
+        pointer_id: BlitzPointerId,
+        node_id: Option<NodeId>,
+    ) -> bool {
+        let Some(idx) = self.pointer_captures.iter().position(|(id, target)| {
+            *id == pointer_id && node_id.is_none_or(|node_id| node_id == *target)
+        }) else {
+            return false;
+        };
+
+        let (_, target) = self.pointer_captures.remove(idx);
+        self.queue_event(DomEvent::new(
+            target,
+            DomEventData::LostPointerCapture(self.pointer_capture_event(pointer_id)),
+            EventDispatchSource::UserAgent,
+        ));
+        true
+    }
+
+    /// The data of a got/lost pointer capture event, which no input event stands behind
+    fn pointer_capture_event(&self, pointer_id: BlitzPointerId) -> BlitzPointerEvent {
+        let client = self.last_client_pointer_position.unwrap_or_default();
+        let scroll = self.viewport_scroll();
+        BlitzPointerEvent {
+            id: pointer_id,
+            is_primary: true,
+            coords: PointerCoords {
+                page_x: client.x + scroll.x as f32,
+                page_y: client.y + scroll.y as f32,
+                screen_x: client.x,
+                screen_y: client.y,
+                client_x: client.x,
+                client_y: client.y,
+            },
+            button: Default::default(),
+            buttons: MouseEventButtons::None,
+            mods: Default::default(),
+            details: Default::default(),
+            element: Default::default(),
+            active_pointers: Default::default(),
+        }
     }
 
     pub fn get_hover_node_id(&self) -> Option<NodeId> {
