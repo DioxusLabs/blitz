@@ -634,6 +634,7 @@ impl ElementCx<'_, '_> {
     /// ❌ dotted - Defines a dotted border
     /// ❌ dashed - Defines a dashed border
     /// ✅ solid - Defines a solid border
+    /// ✅ auto - Defines a user-agent outline (rendered as solid)
     /// ❌ double - Defines a double border
     /// ❌ groove - Defines a 3D grooved border. The effect depends on the border-color value
     /// ❌ ridge - Defines a 3D ridged border. The effect depends on the border-color value
@@ -643,32 +644,35 @@ impl ElementCx<'_, '_> {
     /// ✅ hidden - Defines a hidden border
     pub(crate) fn draw_outline(&self, scene: &mut impl PaintScene) {
         let outline = self.style.get_outline();
+        match outline.outline_style {
+            OutlineStyle::BorderStyle(BorderStyle::None | BorderStyle::Hidden) => return,
+            OutlineStyle::Auto | OutlineStyle::BorderStyle(BorderStyle::Solid) => {}
+            // TODO: Implement other border styles
+            OutlineStyle::BorderStyle(
+                BorderStyle::Inset
+                | BorderStyle::Groove
+                | BorderStyle::Outset
+                | BorderStyle::Ridge
+                | BorderStyle::Dotted
+                | BorderStyle::Dashed
+                | BorderStyle::Double,
+            ) => {}
+        }
+
+        if self.frame.outline_width <= 0.0 {
+            return;
+        }
 
         let current_color = self.style.clone_color();
         let color = outline
             .outline_color
             .resolve_to_absolute(&current_color)
             .as_srgb_color();
+        if color.components[3] <= 0.0 {
+            return;
+        }
 
-        let style = match outline.outline_style {
-            OutlineStyle::Auto => return,
-            OutlineStyle::BorderStyle(style) => style,
-        };
-
-        let path = match style {
-            BorderStyle::None | BorderStyle::Hidden => return,
-            BorderStyle::Solid => self.frame.outline(),
-
-            // TODO: Implement other border styles
-            BorderStyle::Inset
-            | BorderStyle::Groove
-            | BorderStyle::Outset
-            | BorderStyle::Ridge
-            | BorderStyle::Dotted
-            | BorderStyle::Dashed
-            | BorderStyle::Double => self.frame.outline(),
-        };
-
+        let path = self.frame.outline();
         scene.fill(
             Fill::NonZero,
             self.transform,
