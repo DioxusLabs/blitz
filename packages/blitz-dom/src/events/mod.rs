@@ -96,7 +96,10 @@ fn map_dom_event_to_ui_event(
         DomEventData::ContextMenu(_) => None,
         DomEventData::DoubleClick(_) => None,
         DomEventData::Input(_) => None,
-        DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
+        DomEventData::Wheel(mut data) => {
+            adjust_coords_for_subdocument(&mut data.coords, node_offset, viewport_scroll);
+            Some(UiEvent::Wheel(data))
+        }
         DomEventData::Scroll(_) => None,
         DomEventData::Focus(_) => None,
         DomEventData::Blur(_) => None,
@@ -217,9 +220,9 @@ pub(crate) fn handle_dom_event(
                 .set_drop_effect(BlitzDragOperation::None);
         }
 
-        if let Some(ui_event) = &ui_event {
-            widget_data.widget.handle_event(ui_event);
-        }
+        let handled = ui_event
+            .as_ref()
+            .is_some_and(|ui_event| widget_data.widget.handle_ui_event(ui_event));
 
         if let Some(UiEvent::DragOver(event)) = &ui_event {
             let mut data_transfer = event.data_transfer_mut();
@@ -231,7 +234,14 @@ pub(crate) fn handle_dom_event(
             doc.set_focus_to(target_node_id);
         }
 
-        return;
+        match &event.data {
+            DomEventData::Wheel(data) if handled => {
+                doc.wheel_gesture.track(data);
+                return;
+            }
+            DomEventData::Wheel(_) => {}
+            _ => return,
+        }
     }
 
     match &event.data {
