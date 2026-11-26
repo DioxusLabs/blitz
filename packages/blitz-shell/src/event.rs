@@ -1,3 +1,4 @@
+use blitz_traits::events::BlitzDataTransferArc;
 use blitz_traits::navigation::NavigationOptions;
 use blitz_traits::net::NetWaker;
 use futures_util::task::ArcWake;
@@ -15,6 +16,11 @@ pub enum BlitzShellEvent {
     },
     RequestClipboardText {
         window_id: WindowId,
+    },
+    /// Start dragging data out of a window's document
+    StartDrag {
+        window_id: WindowId,
+        data_transfer: BlitzDataTransferArc,
     },
     Poll {
         window_id: WindowId,

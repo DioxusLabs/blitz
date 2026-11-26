@@ -81,6 +81,10 @@ pub enum UiEvent {
     DragLeave(BlitzDragEvent),
     /// A drag has been dropped on the document
     Drop(BlitzDragEvent),
+    /// A drag that the document started is still under way
+    Drag(BlitzDragEvent),
+    /// A drag that the document started has been dropped or cancelled
+    DragEnd(BlitzDragEvent),
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {
@@ -192,6 +196,9 @@ pub enum DomEventKind {
     FocusIn,
     FocusOut,
 
+    DragStart,
+    Drag,
+    DragEnd,
     DragEnter,
     DragOver,
     DragLeave,
@@ -247,6 +254,9 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+            "dragstart" => Ok(Self::DragStart),
+            "drag" => Ok(Self::Drag),
+            "dragend" => Ok(Self::DragEnd),
             "dragenter" => Ok(Self::DragEnter),
             "dragover" => Ok(Self::DragOver),
             "dragleave" => Ok(Self::DragLeave),
@@ -299,6 +309,9 @@ pub enum DomEventData {
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
 
+    DragStart(BlitzDragEvent),
+    Drag(BlitzDragEvent),
+    DragEnd(BlitzDragEvent),
     DragEnter(BlitzDragEvent),
     DragOver(BlitzDragEvent),
     DragLeave(BlitzDragEvent),
@@ -359,6 +372,9 @@ impl DomEventData {
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
 
+            Self::DragStart { .. } => "dragstart",
+            Self::Drag { .. } => "drag",
+            Self::DragEnd { .. } => "dragend",
             Self::DragEnter { .. } => "dragenter",
             Self::DragOver { .. } => "dragover",
             Self::DragLeave { .. } => "dragleave",
@@ -410,6 +426,9 @@ impl DomEventData {
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
 
+            Self::DragStart { .. } => DomEventKind::DragStart,
+            Self::Drag { .. } => DomEventKind::Drag,
+            Self::DragEnd { .. } => DomEventKind::DragEnd,
             Self::DragEnter { .. } => DomEventKind::DragEnter,
             Self::DragOver { .. } => DomEventKind::DragOver,
             Self::DragLeave { .. } => DomEventKind::DragLeave,
@@ -461,6 +480,9 @@ impl DomEventData {
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
 
+            Self::DragStart { .. } => true,
+            Self::Drag { .. } => true,
+            Self::DragEnd { .. } => false,
             Self::DragEnter { .. } => true,
             Self::DragOver { .. } => true,
             Self::DragLeave { .. } => false,
@@ -512,6 +534,9 @@ impl DomEventData {
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
 
+            Self::DragStart { .. } => true,
+            Self::Drag { .. } => true,
+            Self::DragEnd { .. } => true,
             Self::DragEnter { .. } => true,
             Self::DragOver { .. } => true,
             Self::DragLeave { .. } => true,

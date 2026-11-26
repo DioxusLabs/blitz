@@ -4,14 +4,17 @@ use crate::convert_events::{
     pointer_source_to_blitz, pointer_source_to_blitz_details, theme_to_color_scheme,
     winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
-use crate::dnd::IncomingDrag;
+use crate::dnd::{
+    IncomingDrag, allowed_dnd_actions, outgoing_drag_data, winit_dnd_action_to_blitz_dnd_operation,
+};
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase,
-    BlitzWheelSource, MouseEventButton, MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
+    BlitzDataTransferArc, BlitzDragEvent, BlitzDragOperation, BlitzPointerEvent, BlitzPointerId,
+    BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource, MouseEventButton,
+    MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
 use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition, PhysicalSize};
@@ -90,8 +93,10 @@ pub struct View<Rend: WindowRenderer> {
     pub theme_override: Option<Theme>,
     pub keyboard_modifiers: Modifiers,
     pub buttons: MouseEventButtons,
-    /// The drag from another application that is over the window (if any)
+    /// The drag that is over the window (if any)
     incoming_drag: Option<IncomingDrag>,
+    /// The drag that the document started (if any)
+    outgoing_drag: Option<OutgoingDrag>,
     pub pointer_pos: PhysicalPosition<f64>,
     /// The non-mouse pointers (touch/pen) that are currently pressed, in the
     /// order they were pressed.
@@ -223,6 +228,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             animation_timer: None,
             keyboard_modifiers: Default::default(),
             incoming_drag: None,
+            outgoing_drag: None,
             proxy: proxy.clone(),
             window: winit_window.clone(),
             doc,
@@ -637,6 +643,66 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
     }
 
+    /// Start dragging data out of the document
+    pub fn start_drag(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        data_transfer: BlitzDataTransferArc,
+    ) {
+        let event = BlitzDragEvent {
+            coords: self.pointer_coords(self.pointer_pos),
+            element: Default::default(),
+            mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+            button: Default::default(),
+            buttons: self.buttons,
+            data_transfer,
+        };
+        let data = outgoing_drag_data(&event.data_transfer());
+        let actions = allowed_dnd_actions(&event.data_transfer());
+
+        // The drag may come back to the window before `start_drag` returns
+        self.outgoing_drag = Some(OutgoingDrag {
+            event,
+            drop_effect: None,
+        });
+        match event_loop.start_drag(self.window_id(), data, &actions, None) {
+            // The OS has the pointer now, and does not report the button's release
+            Ok(_) => self.buttons.remove(MouseEventButtons::Primary),
+            Err(_error) => {
+                #[cfg(feature = "tracing")]
+                tracing::warn!("Failed to start drag: {_error}");
+                self.finish_outgoing_drag(None);
+            }
+        }
+    }
+
+    /// Tell the document that the drag it started is over. `result` is the operation
+    /// that a drop performed, or `None` if the drag was cancelled.
+    fn finish_outgoing_drag(&mut self, result: Option<BlitzDragOperation>) {
+        let Some(mut drag) = self.outgoing_drag.take() else {
+            return;
+        };
+
+        // The drag may end before the window is told what happened to it as a drop target
+        if let Some(incoming) = self.incoming_drag.take_if(|drag| drag.is_internal()) {
+            if result.is_some() {
+                self.doc
+                    .handle_ui_event(UiEvent::Drop(incoming.into_event()));
+                drag.drop_effect = Some(drag.event.data_transfer().drop_effect());
+            } else {
+                self.doc
+                    .handle_ui_event(UiEvent::DragLeave(incoming.into_event()));
+            }
+        }
+
+        // What a drop on this window did is known better than the OS reports it
+        let drop_effect = drag.drop_effect.or(result).unwrap_or_default();
+        drag.event.coords = self.pointer_coords(self.pointer_pos);
+        drag.event.data_transfer_mut().set_drop_effect(drop_effect);
+        self.doc.handle_ui_event(UiEvent::DragEnd(drag.event));
+        self.request_redraw();
+    }
+
     pub fn handle_winit_event(&mut self, event_loop: &dyn ActiveEventLoop, event: WindowEvent) {
         // Update accessibility focus and window size state in response to a Winit WindowEvent
         #[cfg(feature = "accessibility")]
@@ -840,8 +906,13 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
 
                 match state {
-                    ElementState::Pressed => self.buttons |= button.into(),
-                    ElementState::Released => self.buttons ^= button.into(),
+                    ElementState::Pressed => {
+                        // The OS has the pointer for the length of a drag, so a press
+                        // means that the end of the drag was never reported
+                        self.finish_outgoing_drag(None);
+                        self.buttons |= button.into();
+                    }
+                    ElementState::Released => self.buttons.remove(button.into()),
                 }
 
                 let pointer_event = BlitzPointerEvent {
@@ -939,13 +1010,18 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
             WindowEvent::DragEntered { id, position } => {
-                self.incoming_drag = Some(IncomingDrag::new(
-                    event_loop,
-                    id,
-                    self.pointer_coords(position.unwrap_or(self.pointer_pos)),
-                    winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-                    self.buttons,
-                ));
+                // A drag that enters while the document is dragging is that drag: there
+                // is only one at a time. Its data is already here.
+                self.incoming_drag = Some(match &self.outgoing_drag {
+                    Some(outgoing) => IncomingDrag::internal(id, outgoing.event.clone()),
+                    None => IncomingDrag::new(
+                        event_loop,
+                        id,
+                        self.pointer_coords(position.unwrap_or(self.pointer_pos)),
+                        winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                        self.buttons,
+                    ),
+                });
                 if let Some(position) = position {
                     self.handle_drag_position(event_loop, position, None);
                 }
@@ -957,7 +1033,12 @@ impl<Rend: WindowRenderer> View<Rend> {
             },
             WindowEvent::DragDropped { id, .. } => {
                 if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    let is_internal = drag.is_internal();
                     self.incoming_drag = drag.dropped(event_loop, &mut *self.doc);
+                    // The drop of the document's own drag does not wait for data
+                    if is_internal && let Some(outgoing) = &mut self.outgoing_drag {
+                        outgoing.drop_effect = Some(outgoing.event.data_transfer().drop_effect());
+                    }
                 }
             },
             WindowEvent::DataTransferReceived { id, serial, value } => {
@@ -971,9 +1052,31 @@ impl<Rend: WindowRenderer> View<Rend> {
                     self.incoming_drag = drag.left(&mut *self.doc);
                 }
             },
+            WindowEvent::OutgoingDragDropped { action, .. } => {
+                let result = match winit_dnd_action_to_blitz_dnd_operation(action) {
+                    // On Windows this is a drop that its target did not take
+                    BlitzDragOperation::None if cfg!(target_os = "windows") => None,
+                    // Elsewhere the OS does not know what the drop did
+                    BlitzDragOperation::None => self.outgoing_drag.as_ref().map(|drag| {
+                        let data_transfer = drag.event.data_transfer();
+                        data_transfer.default_drop_effect(BlitzDragOperation::None)
+                    }),
+                    operation => Some(operation),
+                };
+                self.finish_outgoing_drag(result);
+            },
+            WindowEvent::OutgoingDragCanceled { .. } => self.finish_outgoing_drag(None),
             _ => {}
         }
     }
+}
+
+/// A drag that the document started
+struct OutgoingDrag {
+    /// The event dispatched to the document as the drag goes on
+    event: BlitzDragEvent,
+    /// What dropping the drag on this window did, if that is where it was dropped
+    drop_effect: Option<BlitzDragOperation>,
 }
 
 #[cfg(test)]

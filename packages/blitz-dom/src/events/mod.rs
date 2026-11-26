@@ -11,7 +11,8 @@ pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
 pub(crate) use pointer::DragMode;
 use pointer::{
-    handle_click, handle_pointerdown, handle_pointermove, handle_pointerup, record_pointerdown,
+    handle_click, handle_dragstart, handle_pointerdown, handle_pointermove, handle_pointerup,
+    record_pointerdown,
 };
 pub(crate) use wheel::WheelGesture;
 
@@ -104,6 +105,16 @@ fn map_dom_event_to_ui_event(
         // `dragenter` will be recreated by the sub-document's event driver from
         // `DragOver` events
         DomEventData::DragEnter(_) => None,
+        // A sub-document dispatches its own `dragstart`
+        DomEventData::DragStart(_) => None,
+        DomEventData::Drag(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::Drag(event))
+        }
+        DomEventData::DragEnd(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::DragEnd(event))
+        }
         DomEventData::DragOver(mut event) => {
             adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
             Some(UiEvent::DragOver(event))
@@ -184,8 +195,17 @@ pub(crate) fn handle_dom_event(
         );
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
+        let mut started_drag = false;
         if let Some(ui_event) = ui_event {
+            let is_move = matches!(ui_event, UiEvent::PointerMove(_));
             sub_doc.handle_ui_event(ui_event);
+            started_drag = is_move && sub_doc.inner().drag_source_node_id.is_some();
+        }
+
+        // A drag that a sub-document starts is dragging its node, as far as this
+        // document is concerned
+        if started_drag {
+            doc.drag_source_node_id = Some(target_node_id);
         }
 
         if set_focus {
@@ -353,6 +373,12 @@ pub(crate) fn handle_dom_event(
         }
         DomEventData::FocusOut(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::DragStart(event) => {
+            handle_dragstart(doc, target_node_id, event);
+        }
+        DomEventData::Drag(_) | DomEventData::DragEnd(_) => {
+            // Do nothing (cancelling `drag` does not cancel a drag the shell is running)
         }
         DomEventData::DragEnter(_) => {
             // Do nothing (no default action)

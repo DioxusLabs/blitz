@@ -27,6 +27,7 @@ pub use crate::window::{View, WindowConfig};
 #[cfg(feature = "data-uri")]
 pub use crate::net::DataUriNetProvider;
 
+use blitz_traits::events::BlitzDataTransferArc;
 #[cfg(all(
     feature = "file-dialog",
     any(
@@ -139,6 +140,15 @@ impl ShellProvider for BlitzShellProvider {
                 LogicalSize::new(width, height).into(),
             ),
         ));
+    }
+
+    fn start_drag(&self, data_transfer: BlitzDataTransferArc) -> bool {
+        // Starting a drag needs the event loop
+        self.proxy.send_event(BlitzShellEvent::StartDrag {
+            window_id: self.window.id(),
+            data_transfer,
+        });
+        true
     }
 
     fn request_window_close(&self) {

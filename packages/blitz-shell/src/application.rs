@@ -92,6 +92,14 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                     self.pending_clipboard.insert(serial, window_id);
                 }
             }
+            BlitzShellEvent::StartDrag {
+                window_id,
+                data_transfer,
+            } => {
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    window.start_drag(event_loop, data_transfer);
+                }
+            }
             BlitzShellEvent::Poll { window_id } => {
                 if let Some(window) = self.windows.get_mut(&window_id) {
                     window.poll();

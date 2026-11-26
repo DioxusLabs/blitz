@@ -260,6 +260,9 @@ pub struct BaseDocument {
     /// The node an ongoing drag is over (if any). In a parent document this is the
     /// sub-document's node while the drag is over a sub-document.
     pub(crate) drag_target_node_id: Option<NodeId>,
+    /// The node that a drag started by this document is dragging (if any). In a parent
+    /// document this is the sub-document's node while a sub-document is the source.
+    pub(crate) drag_source_node_id: Option<NodeId>,
     /// The precise (may be anonymous) layout node under the pointer (if any).
     /// This can be invalidated by box-tree reconstruction, and is re-resolved against
     /// fresh layout at the end of every `resolve` pass.
@@ -494,6 +497,7 @@ impl BaseDocument {
 
             hover_node_id: None,
             drag_target_node_id: None,
+            drag_source_node_id: None,
             hover_hit_node_id: None,
             hover_node_is_text: false,
             last_client_pointer_position: None,
@@ -2706,6 +2710,21 @@ impl BaseDocument {
         let inline_root = hit_node.inline_root_ancestor()?;
         let byte_offset = inline_root.text_offset_at_point(hit.x, hit.y)?;
         Some((inline_root.id, byte_offset))
+    }
+
+    /// Whether the text at the given point is part of the text selection
+    pub(crate) fn is_text_selected_at(&self, x: f32, y: f32) -> bool {
+        if !self.text_selection.is_active() {
+            return false;
+        }
+        let Some((inline_root_id, offset)) = self.find_text_position(x, y) else {
+            return false;
+        };
+        self.get_text_selection_ranges()
+            .iter()
+            .any(|&(node_id, start, end)| {
+                node_id == inline_root_id && (start..end).contains(&offset)
+            })
     }
 
     /// Set the text selection range (creates a new selection from anchor to focus)

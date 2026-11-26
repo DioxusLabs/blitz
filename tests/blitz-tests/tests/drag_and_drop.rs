@@ -1,17 +1,24 @@
 //! A drag over a document fires `dragenter`/`dragover`/`dragleave`/`drop` at the node
 //! under it, a drop is accepted by cancelling `dragover`, and a sub-document takes
 //! part in a drag over its host.
+//!
+//! Pressing and moving a `draggable` element or the text selection fires `dragstart`
+//! and hands the drag to the shell, which sends `drag` and `dragend` back to the node.
 
 use blitz_dom::{
     BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, EventHandler,
     NodeId, UserAgentStylesheet, Widget,
 };
 use blitz_html::HtmlDocument;
+use blitz_test_harness::pointer_event;
 use blitz_traits::events::{
     BlitzDataTransfer, BlitzDataTransferArc, BlitzDragDataStoreMode, BlitzDragEvent,
-    BlitzDragOperation, DataTransferItemKind, DomEvent, DomEventData, EventState, PointerCoords,
-    UiEvent,
+    BlitzDragOperation, BlitzPointerId, DataTransferItemKind, DomEvent, DomEventData, EventState,
+    MouseEventButton, MouseEventButtons, PointerCoords, UiEvent,
 };
+use blitz_traits::shell::ShellProvider;
+use keyboard_types::Modifiers;
+use std::sync::{Arc, Mutex};
 use std::{cell::RefCell, path::Path, rc::Rc};
 
 /// What a handler saw of an event: its name, its target and the dragged text
@@ -23,6 +30,9 @@ struct Handler {
     seen: Rc<RefCell<Vec<Seen>>>,
     accepts: Option<NodeId>,
     drop_effect: Option<&'static str>,
+    /// The text that `dragstart` sets as the data to drag
+    drags: Option<&'static str>,
+    cancels_dragstart: bool,
 }
 
 impl Handler {
@@ -39,7 +49,10 @@ impl EventHandler for Handler {
         _doc: &mut dyn Document,
         event_state: &mut EventState,
     ) {
-        let (DomEventData::DragEnter(data)
+        let (DomEventData::DragStart(data)
+        | DomEventData::Drag(data)
+        | DomEventData::DragEnd(data)
+        | DomEventData::DragEnter(data)
         | DomEventData::DragOver(data)
         | DomEventData::DragLeave(data)
         | DomEventData::Drop(data)) = &event.data
@@ -50,6 +63,17 @@ impl EventHandler for Handler {
         self.seen
             .borrow_mut()
             .push((event.name(), event.target, text));
+
+        if matches!(event.data, DomEventData::DragStart(_)) {
+            if let Some(text) = self.drags {
+                data.data_transfer_mut()
+                    .set_data("text/plain", text)
+                    .unwrap();
+            }
+            if self.cancels_dragstart {
+                event_state.prevent_default();
+            }
+        }
 
         let accepted = self.accepts.is_some_and(|id| chain.contains(&id));
         if accepted
@@ -66,8 +90,26 @@ impl EventHandler for Handler {
     }
 }
 
+/// A shell that records the drags it is asked to start
+#[derive(Default)]
+struct Shell {
+    drags: Mutex<Vec<BlitzDataTransferArc>>,
+}
+
+impl ShellProvider for Shell {
+    fn start_drag(&self, data_transfer: BlitzDataTransferArc) -> bool {
+        self.drags.lock().unwrap().push(data_transfer);
+        true
+    }
+}
+
 fn document(html: &str) -> BaseDocument {
+    document_in(html, None)
+}
+
+fn document_in(html: &str, shell: Option<&Arc<Shell>>) -> BaseDocument {
     let config = DocumentConfig {
+        shell_provider: shell.map(|shell| shell.clone() as Arc<dyn ShellProvider>),
         ua_stylesheets: vec![UserAgentStylesheet::default_sheet()],
         ..Default::default()
     };
@@ -393,5 +435,190 @@ fn sub_document_accepts_and_leaves_a_drag_over_its_host() {
     assert_eq!(
         child_handler.take(),
         [("drop", inner, Some("hello".to_string()))]
+    );
+}
+
+fn mouse_event(x: f32, y: f32) -> blitz_traits::events::BlitzPointerEvent {
+    pointer_event(
+        BlitzPointerId::Mouse,
+        x,
+        y,
+        MouseEventButton::Main,
+        MouseEventButtons::Primary,
+        Modifiers::default(),
+    )
+}
+
+/// Press the mouse at `(x, y)` and move it far enough to start a drag
+fn press_and_move(doc: &mut dyn Document, handler: &Handler, (x, y): (f32, f32)) {
+    send(doc, handler, UiEvent::PointerDown(mouse_event(x, y)));
+    send(doc, handler, UiEvent::PointerMove(mouse_event(x + 5.0, y)));
+    send(doc, handler, UiEvent::PointerMove(mouse_event(x + 9.0, y)));
+}
+
+const SOURCE: &str = r#"<html><body style="margin:0">
+<div id="source" draggable="true" style="width:100px;height:100px"><div id="handle" style="width:50px;height:50px"></div></div>
+<div id="zone" style="width:100px;height:100px"></div>
+</body></html>"#;
+
+#[test]
+fn draggable_element_is_dragged_and_dropped() {
+    let shell = Arc::new(Shell::default());
+    let mut doc = document_in(SOURCE, Some(&shell));
+    let [source, zone] = ["#source", "#zone"].map(|s| node(&doc, s));
+    let handler = Handler {
+        accepts: Some(zone),
+        drags: Some("dragged"),
+        ..Default::default()
+    };
+
+    // Pressing a descendant drags the draggable element, once
+    press_and_move(&mut doc, &handler, (25.0, 25.0));
+    assert_eq!(handler.take(), [("dragstart", source, None)]);
+    let drags = std::mem::take(&mut *shell.drags.lock().unwrap());
+    let [drag] = &drags[..] else {
+        panic!("expected one drag, got {}", drags.len());
+    };
+
+    // The shell reports the drag to its source and to the node under it. The data set
+    // in `dragstart` is the data that is dropped.
+    send(
+        &mut doc,
+        &handler,
+        UiEvent::Drag(drag_event(drag, 50.0, 150.0)),
+    );
+    let op = drag_over(&mut doc, &handler, drag, (50.0, 150.0));
+    assert_eq!(op, BlitzDragOperation::Copy);
+    send(
+        &mut doc,
+        &handler,
+        UiEvent::Drop(drag_event(drag, 50.0, 150.0)),
+    );
+    send(
+        &mut doc,
+        &handler,
+        UiEvent::DragEnd(drag_event(drag, 50.0, 150.0)),
+    );
+    assert_eq!(
+        handler.take(),
+        [
+            ("drag", source, None),
+            ("dragenter", zone, None),
+            ("dragover", zone, None),
+            ("drop", zone, Some("dragged".to_string())),
+            ("dragend", source, None),
+        ]
+    );
+
+    // The drag is over
+    send(
+        &mut doc,
+        &handler,
+        UiEvent::Drag(drag_event(drag, 50.0, 150.0)),
+    );
+    assert_eq!(handler.take(), []);
+}
+
+#[test]
+fn drag_that_does_not_start_never_reaches_the_shell() {
+    // Cancelling `dragstart` stops the drag
+    let shell = Arc::new(Shell::default());
+    let mut doc = document_in(SOURCE, Some(&shell));
+    let source = node(&doc, "#source");
+    let handler = Handler {
+        cancels_dragstart: true,
+        ..Default::default()
+    };
+    press_and_move(&mut doc, &handler, (25.0, 25.0));
+    assert_eq!(handler.take(), [("dragstart", source, None)]);
+    assert!(shell.drags.lock().unwrap().is_empty());
+
+    // Only a `draggable` element can be dragged
+    press_and_move(&mut doc, &handler, (50.0, 150.0));
+    assert_eq!(handler.take(), []);
+
+    // A drag that the shell can't start ends straight away
+    let mut doc = document(SOURCE);
+    let handler = Handler::default();
+    press_and_move(&mut doc, &handler, (25.0, 25.0));
+    assert_eq!(
+        handler.take(),
+        [("dragstart", source, None), ("dragend", source, None)]
+    );
+}
+
+#[test]
+fn selected_text_is_dragged() {
+    let shell = Arc::new(Shell::default());
+    let mut doc = document_in(
+        r#"<html><body style="margin:0"><p id="text" style="margin:0;font-size:20px">Drag this text</p></body></html>"#,
+        Some(&shell),
+    );
+    let text = node(&doc, "#text");
+    let handler = Handler::default();
+
+    // Text that is not selected is selected by pressing and moving, not dragged
+    press_and_move(&mut doc, &handler, (2.0, 10.0));
+    assert_eq!(handler.take(), []);
+
+    let (inline_root, _) = doc.find_text_position(2.0, 10.0).unwrap();
+    doc.set_text_selection(inline_root, 0, inline_root, 14);
+    press_and_move(&mut doc, &handler, (2.0, 10.0));
+    assert_eq!(
+        handler.take(),
+        [("dragstart", text, Some("Drag this text".to_string()))]
+    );
+    assert_eq!(shell.drags.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn sub_document_is_the_source_of_a_drag_from_its_host() {
+    let shell = Arc::new(Shell::default());
+    let mut parent = document_in(
+        r#"<html><body style="margin:0">
+        <div style="height:50px"></div>
+        <div id="host" style="width:300px;height:100px"></div>
+        </body></html>"#,
+        Some(&shell),
+    );
+    let child = document_in(
+        r#"<html><body style="margin:0"><div id="inner" draggable="true" style="width:200px;height:50px"></div></body></html>"#,
+        Some(&shell),
+    );
+    let host = node(&parent, "#host");
+    let inner = node(&child, "#inner");
+    let child_handler = Handler::default();
+    let child = Child {
+        doc: child,
+        handler: child_handler.clone(),
+    };
+    parent.set_sub_document(host, Box::new(child));
+    parent.resolve(0.0);
+    let parent_handler = Handler::default();
+
+    // The sub-document starts the drag...
+    press_and_move(&mut parent, &parent_handler, (100.0, 75.0));
+    assert_eq!(parent_handler.take(), []);
+    assert_eq!(child_handler.take(), [("dragstart", inner, None)]);
+    let drag = shell.drags.lock().unwrap().pop().unwrap();
+
+    // ...and is told how it goes through its host
+    send(
+        &mut parent,
+        &parent_handler,
+        UiEvent::Drag(drag_event(&drag, 250.0, 20.0)),
+    );
+    send(
+        &mut parent,
+        &parent_handler,
+        UiEvent::DragEnd(drag_event(&drag, 250.0, 20.0)),
+    );
+    assert_eq!(
+        parent_handler.take(),
+        [("drag", host, None), ("dragend", host, None)]
+    );
+    assert_eq!(
+        child_handler.take(),
+        [("drag", inner, None), ("dragend", inner, None)]
     );
 }

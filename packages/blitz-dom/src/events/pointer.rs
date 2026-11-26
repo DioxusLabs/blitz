@@ -6,8 +6,9 @@ use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, DomEventData, MouseEventButton,
-        MouseEventButtons,
+        BlitzDataTransfer, BlitzDragDataStoreMode, BlitzDragEvent, BlitzDragOperation,
+        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData,
+        EventDispatchSource, MouseEventButton, MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
@@ -202,6 +203,76 @@ fn touch_action_pan_axes(doc: &BaseDocument, node_id: NodeId) -> (bool, bool) {
     (allow_x, allow_y)
 }
 
+/// Start dragging the node that was pressed, if it is in a `draggable` element or in
+/// the text selection. Returns whether a drag was started.
+fn start_drag_and_drop(
+    doc: &mut BaseDocument,
+    mousedown_node_id: NodeId,
+    event: &BlitzPointerEvent,
+) -> bool {
+    if doc.drag_source_node_id.is_some() || !event.buttons.contains(MouseEventButtons::Primary) {
+        return false;
+    }
+
+    let draggable_ancestor = doc.node_chain(mousedown_node_id).into_iter().find(|id| {
+        doc.nodes[*id]
+            .attr(local_name!("draggable"))
+            .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+    });
+    let mut data_transfer = BlitzDataTransfer::new();
+    let source = match draggable_ancestor {
+        Some(source) => source,
+        None => {
+            let pressed = doc.mousedown_position;
+            if !doc.is_text_selected_at(pressed.x, pressed.y) {
+                return false;
+            }
+            if let Some(text) = doc.get_selected_text() {
+                data_transfer.set_data_unchecked("text/plain", text);
+            }
+            mousedown_node_id
+        }
+    };
+
+    // `dragstart` is where the page fills in the data to drag
+    data_transfer.set_mode(BlitzDragDataStoreMode::ReadWrite);
+    let mut drag_event = BlitzDragEvent::new(event.coords, data_transfer);
+    drag_event.mods = event.mods;
+    drag_event.buttons = event.buttons;
+
+    doc.drag_source_node_id = Some(source);
+    doc.queue_event(DomEvent::new(
+        source,
+        DomEventData::DragStart(drag_event),
+        EventDispatchSource::Input,
+    ));
+    true
+}
+
+/// The default action of `dragstart`: hand the drag over to the shell, which takes over
+/// the pointer until the drag ends
+pub(crate) fn handle_dragstart(doc: &mut BaseDocument, target: NodeId, event: &BlitzDragEvent) {
+    // The press that started the drag is over: its `pointerup` goes to the drag
+    doc.unactive_node();
+    doc.set_mousedown_node_id(None);
+
+    event
+        .data_transfer_mut()
+        .set_mode(BlitzDragDataStoreMode::Protected);
+    if !doc.shell_provider.start_drag(event.data_transfer.clone()) {
+        // A drag that can't be started is one that was cancelled straight away
+        event
+            .data_transfer_mut()
+            .set_drop_effect(BlitzDragOperation::None);
+        doc.drag_source_node_id = None;
+        doc.queue_event(DomEvent::new(
+            target,
+            DomEventData::DragEnd(event.clone()),
+            EventDispatchSource::Input,
+        ));
+    }
+}
+
 pub(crate) fn handle_pointermove(
     doc: &mut BaseDocument,
     target: NodeId,
@@ -221,6 +292,9 @@ pub(crate) fn handle_pointermove(
             match event.id {
                 BlitzPointerId::Mouse | BlitzPointerId::Pen => {
                     if let Some(mousedown_node_id) = doc.mousedown_node_id {
+                        if start_drag_and_drop(doc, mousedown_node_id, event) {
+                            return changed;
+                        }
                         let node = &doc.nodes[mousedown_node_id];
                         if let Some(style) = node.primary_styles() {
                             let user_select = style.clone_user_select();
@@ -398,6 +472,9 @@ pub(crate) fn record_pointerdown(doc: &mut BaseDocument, x: f32, y: f32) {
     doc.last_mousedown_time = Some(Instant::now());
     doc.mousedown_position = taffy::Point { x, y };
     doc.drag_mode = DragMode::None;
+    // The shell takes the pointer for the length of a drag, so a press means that any
+    // drag this document started is over
+    doc.drag_source_node_id = None;
     doc.scroll_animation = ScrollAnimationState::None;
 }
 
@@ -499,7 +576,10 @@ pub(crate) fn handle_pointerdown(
         ClickTarget::Disabled => (),
         ClickTarget::SelectableText => {
             // Handle text selection for non-input elements
-            if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
+            if doc.is_text_selected_at(x, y) {
+                // Keep the selection, which this press may be about to drag. A click
+                // clears it.
+            } else if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
                 doc.set_text_selection(inline_root_id, byte_offset, inline_root_id, byte_offset);
                 doc.shell_provider.request_redraw();
             } else {
@@ -599,6 +679,11 @@ pub(crate) fn handle_pointerup(
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
+        // A press on the text selection left it in place in case it was dragged
+        if doc.is_text_selected_at(event.page_x(), event.page_y()) {
+            doc.clear_text_selection();
+            doc.shell_provider.request_redraw();
+        }
         doc.queue_ua_event(target, DomEventData::Click(event.clone()));
     }
 

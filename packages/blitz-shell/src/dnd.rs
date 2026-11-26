@@ -6,14 +6,17 @@ use std::path::PathBuf;
 
 use blitz_dom::Document;
 use blitz_traits::events::{
-    BlitzDataTransfer, BlitzDragEvent, BlitzDragOperation, MouseEventButtons, PointerCoords,
-    UiEvent,
+    BlitzDataTransfer, BlitzDragEvent, BlitzDragOperation, BlitzDragOperations, MouseEventButtons,
+    PointerCoords, UiEvent,
 };
 use keyboard_types::Modifiers;
-use winit::data_transfer::{DataTransfer, DataTransferId, TransferType, TypeHint, TypedData};
+use winit::data_transfer::{
+    DataTransfer, DataTransferId, DataTransferSend, DataTransferSendBuilder, SendData,
+    TransferType, TypeHint, TypedData,
+};
 use winit::event_loop::{ActiveEventLoop, AsyncRequestSerial, DndAction};
 
-/// A drag from another application that is over the window
+/// A drag that is over the window
 pub(crate) struct IncomingDrag {
     id: DataTransferId,
     /// The event dispatched to the document each time the drag moves
@@ -26,10 +29,12 @@ pub(crate) struct IncomingDrag {
     deferred_drag_over: Option<Option<DndAction>>,
     /// Whether the drag has been dropped, and the drop is waiting for its data
     is_dropped: bool,
+    /// Whether this is the drag that the document started, sharing its data
+    is_internal: bool,
 }
 
 impl IncomingDrag {
-    /// Track a drag that has entered the window
+    /// Track a drag from another application that has entered the window
     pub(crate) fn new(
         event_loop: &dyn ActiveEventLoop,
         id: DataTransferId,
@@ -71,11 +76,34 @@ impl IncomingDrag {
             pending_data,
             deferred_drag_over: None,
             is_dropped: false,
+            is_internal: false,
+        }
+    }
+
+    /// Track the drag that the document started, which has entered the window.
+    /// `event` is the event of that drag.
+    pub(crate) fn internal(id: DataTransferId, event: BlitzDragEvent) -> Self {
+        Self {
+            id,
+            event,
+            pending_data: Vec::new(),
+            deferred_drag_over: None,
+            is_dropped: false,
+            is_internal: true,
         }
     }
 
     pub(crate) fn id(&self) -> DataTransferId {
         self.id
+    }
+
+    pub(crate) fn is_internal(&self) -> bool {
+        self.is_internal
+    }
+
+    /// The event dispatched to the document for the drag
+    pub(crate) fn into_event(self) -> BlitzDragEvent {
+        self.event
     }
 
     /// Handle the drag moving over the window
@@ -93,6 +121,9 @@ impl IncomingDrag {
         if !self.pending_data.is_empty() {
             self.deferred_drag_over = Some(proposed_action);
             return;
+        }
+        if self.is_internal {
+            doc.handle_ui_event(UiEvent::Drag(self.event.clone()));
         }
         self.dispatch_drag_over(event_loop, doc, proposed_action);
     }
@@ -135,7 +166,9 @@ impl IncomingDrag {
         // available once the drop has been handled. The `drop` event is
         // dispatched once all of them have arrived.
         self.is_dropped = true;
-        if let Ok(source) = event_loop.data_transfer(self.id) {
+        if !self.is_internal
+            && let Ok(source) = event_loop.data_transfer(self.id)
+        {
             for_each_readable_type(event_loop, &*source, |type_, format| {
                 if format != URI_LIST_FORMAT
                     && let Ok(serial) = event_loop.fetch_data_transfer(self.id, type_)
@@ -203,7 +236,9 @@ fn blitz_drag_operation_to_winit_dnd_action(data: BlitzDragOperation) -> Option<
     }
 }
 
-fn winit_dnd_action_to_blitz_dnd_operation(action: Option<DndAction>) -> BlitzDragOperation {
+pub(crate) fn winit_dnd_action_to_blitz_dnd_operation(
+    action: Option<DndAction>,
+) -> BlitzDragOperation {
     match action {
         Some(DndAction::Move) => BlitzDragOperation::Move,
         Some(DndAction::Copy) => BlitzDragOperation::Copy,
@@ -214,6 +249,47 @@ fn winit_dnd_action_to_blitz_dnd_operation(action: Option<DndAction>) -> BlitzDr
 
 /// The format that dragged files and links are exposed as by the drag source
 const URI_LIST_FORMAT: &str = "text/uri-list";
+
+/// The operations that the source of a drag allows a drop to perform
+pub(crate) fn allowed_dnd_actions(data_transfer: &BlitzDataTransfer) -> Vec<DndAction> {
+    let allowed = data_transfer
+        .effect_allowed()
+        .unwrap_or(BlitzDragOperations::all());
+    [
+        (BlitzDragOperations::COPY, DndAction::Copy),
+        (BlitzDragOperations::MOVE, DndAction::Move),
+        (BlitzDragOperations::LINK, DndAction::Link),
+    ]
+    .into_iter()
+    .filter(|(operation, _)| allowed.contains(*operation))
+    .map(|(_, action)| action)
+    .collect()
+}
+
+/// The data of a drag that the document started, as offered to other applications.
+/// This is the data as it is when the drag starts.
+pub(crate) fn outgoing_drag_data(data_transfer: &BlitzDataTransfer) -> Box<dyn DataTransferSend> {
+    let mut builder = DataTransferSendBuilder::new(());
+    for (type_, format) in [
+        (TypeHint::Plaintext, "text/plain"),
+        (TypeHint::UriList, "text/uri-list"),
+        (TypeHint::Html, "text/html"),
+        (TypeHint::Rtf, "text/rtf"),
+    ] {
+        let Some(data) = data_transfer.data_unchecked(format) else {
+            continue;
+        };
+        let data = if type_ == TypeHint::UriList {
+            // Lines starting with `#` are comments
+            let uris = data.lines().filter(|line| !line.starts_with('#'));
+            SendData::Uris(uris.map(str::to_string).collect())
+        } else {
+            SendData::String(data.to_string())
+        };
+        builder.add_type(type_, move |_, _| Some(data.clone()));
+    }
+    builder.build()
+}
 
 /// The format of the data that a type of dragged data is exposed as, for the types
 /// whose data is text

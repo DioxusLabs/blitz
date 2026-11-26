@@ -1,5 +1,6 @@
 //! Abstraction over windowing / operating system ("shell") functionality
 
+use crate::events::BlitzDataTransferArc;
 use cursor_icon::CursorIcon;
 
 /// Type representing an error performing a clipboard operation
@@ -42,6 +43,16 @@ pub trait ShellProvider: Send + Sync + 'static {
         let _ = multiple;
         let _ = filter;
         vec![]
+    }
+
+    /// Start dragging `data_transfer` out of the document, with the operating system
+    /// taking over the pointer until the drag ends. The shell then sends the document
+    /// the `UiEvent`s of the drag, ending with `UiEvent::DragEnd`.
+    ///
+    /// Returns `false` if the shell cannot start drags.
+    fn start_drag(&self, data_transfer: BlitzDataTransferArc) -> bool {
+        let _ = data_transfer;
+        false
     }
 
     // Window chrome controls, for documents that draw their own titlebar
