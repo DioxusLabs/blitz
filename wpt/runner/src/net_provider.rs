@@ -68,13 +68,14 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                 callback.queue.record_success(None, request_id);
             }
             _ => {
-                // TODO: Should we resolve path differently if it does not begin with '/'
-                let relative_path = request
-                    .url
-                    .path()
-                    .strip_prefix('/')
-                    .unwrap_or(request.url.path());
-                let path = self.base_path.join(relative_path);
+                let path = self
+                    .base_path
+                    .join(fixture_path(&request.url).ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "invalid fixture path",
+                        )
+                    })?);
                 let file_content = std::fs::read(&path).inspect_err(|err| {
                     warn!("Error loading {}: {}", path.display(), err);
                     callback.queue.record_failure(request_id);
@@ -96,6 +97,27 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         Ok(())
     }
 }
+fn fixture_path(url: &url::Url) -> Option<PathBuf> {
+    let mut path = PathBuf::new();
+    for segment in url.path_segments()?.filter(|segment| !segment.is_empty()) {
+        let segment = percent_encoding::percent_decode_str(segment)
+            .decode_utf8()
+            .ok()?;
+        // URL decoding must not introduce path separators, traversal, or a
+        // platform-specific path prefix.
+        if segment.contains(['/', '\\', ':', '\0'])
+            || !matches!(
+                Path::new(segment.as_ref()).components().next(),
+                Some(std::path::Component::Normal(_))
+            )
+        {
+            return None;
+        }
+        path.push(segment.as_ref());
+    }
+    Some(path)
+}
+
 impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
     fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url.to_string();

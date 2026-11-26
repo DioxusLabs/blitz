@@ -34,6 +34,7 @@ parley = { workspace = true }
 peniko = { workspace = true }
 image = { workspace = true, features = ["png"] }
 url = { workspace = true }
+percent-encoding = { workspace = true }
 data-url = { workspace = true }
 png = { version = "0.17" }
 glob = { version = "0.3.1" }
