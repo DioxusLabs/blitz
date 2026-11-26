@@ -28,10 +28,7 @@ use crate::{
     traversal::iter_children_and_pseudos,
 };
 
-use super::{
-    damage::ALL_DAMAGE, list::collect_list_item_children, replaced::is_inline_box_element,
-    table::build_table_context,
-};
+use super::{damage::ALL_DAMAGE, list::collect_list_item_children, table::build_table_context};
 
 const DUMMY_NAME: QualName = qual_name!("div", html);
 
@@ -431,6 +428,9 @@ fn collect_layout_children_with_wrap(
         .reset_construction_flags();
     if let Some(element_data) = doc.nodes[container_node_id].element_data_mut() {
         element_data.take_inline_layout();
+        if element_data.object_has_image() {
+            return;
+        }
     }
 
     flush_pseudo_elements(doc, container_node_id);
@@ -1059,7 +1059,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if is_inline_box_element(tag_name) {
+                        if element_data.is_inline_box() {
                             layout_children.push(node_id);
                         } else if *tag_name == local_name!("br") {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);

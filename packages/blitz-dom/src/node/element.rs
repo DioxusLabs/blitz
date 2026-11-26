@@ -557,6 +557,91 @@ impl ElementData {
         self.element_state.set(ElementState::OPEN, is_open);
     }
 
+    pub(crate) fn is_image_embed(&self) -> bool {
+        self.name.ns == ns!(html) && matches!(self.name.local.as_ref(), "object" | "embed")
+    }
+
+    fn embedded_image_attribute(&self) -> LocalName {
+        if self.name.local == local_name!("object") {
+            local_name!("data")
+        } else {
+            local_name!("src")
+        }
+    }
+
+    pub(crate) fn is_embedded_image_attribute(&self, name: &QualName) -> bool {
+        self.is_image_embed()
+            && name.ns == ns!()
+            && (name.local == self.embedded_image_attribute() || name.local == local_name!("type"))
+    }
+
+    pub(crate) fn embedded_image_source(&self) -> Option<&str> {
+        if !self.is_image_embed() {
+            return None;
+        }
+        let attribute = self.embedded_image_attribute();
+        let source = self
+            .attrs
+            .get(&QualName::new(None, ns!(), attribute))?
+            .value
+            .trim();
+        if source.is_empty() {
+            return None;
+        }
+        let raster_mime = |value: &str| {
+            let essence = value.split(';').next().unwrap_or_default().trim();
+            essence
+                .get(..6)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("image/"))
+                && !essence.eq_ignore_ascii_case("image/svg+xml")
+        };
+        if let Some(kind) = self
+            .attrs
+            .get(&QualName::new(None, ns!(), local_name!("type")))
+            .map(|attr| attr.value.trim())
+            .filter(|kind| !kind.is_empty())
+        {
+            return raster_mime(kind).then_some(source);
+        }
+
+        if let Some(data) = source
+            .get(..5)
+            .filter(|prefix| prefix.eq_ignore_ascii_case("data:"))
+        {
+            return source[data.len()..]
+                .split_once(',')
+                .is_some_and(|(media_type, _)| raster_mime(media_type))
+                .then_some(source);
+        }
+        let extension = source
+            .split(['?', '#'])
+            .next()?
+            .rsplit_once('.')?
+            .1
+            .to_ascii_lowercase();
+        matches!(
+            extension.as_str(),
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "ico" | "bmp"
+        )
+        .then_some(source)
+    }
+
+    pub(crate) fn object_has_image(&self) -> bool {
+        self.name.ns == ns!(html)
+            && self.name.local == local_name!("object")
+            && self
+                .image_data()
+                .is_some_and(|image| matches!(image, ImageData::Raster(_)))
+    }
+
+    pub(crate) fn is_replaced(&self) -> bool {
+        crate::layout::replaced::is_replaced_element(&self.name.local) || self.object_has_image()
+    }
+
+    pub(crate) fn is_inline_box(&self) -> bool {
+        crate::layout::replaced::is_inline_box_element(&self.name.local) || self.object_has_image()
+    }
+
     pub fn image_data(&self) -> Option<&ImageData> {
         match &self.special_data {
             SpecialElementData::Image(data) => Some(&**data),

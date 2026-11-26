@@ -35,9 +35,7 @@ pub(crate) mod text_transform;
 #[cfg(feature = "writing-mode")]
 pub(crate) mod writing_mode;
 
-use self::replaced::{
-    IntrinsicSizes, ReplacedContext, compute_replaced_layout, is_replaced_element,
-};
+use self::replaced::{IntrinsicSizes, ReplacedContext, compute_replaced_layout};
 use self::table::TableTreeWrapper;
 
 /// The default object size for replaced elements
@@ -419,7 +417,7 @@ impl LayoutPassState<'_> {
                     }
                 }
 
-                if is_replaced_element(&element_data.name.local) {
+                if element_data.is_replaced() {
                     // Width/height attributes are presentational hints mapped to the CSS
                     // width/height properties by
                     // `synthesize_presentational_hints_for_legacy_attributes`, so they

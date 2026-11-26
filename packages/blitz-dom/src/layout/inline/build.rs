@@ -15,7 +15,6 @@ use stylo_taffy::CopyStyleGetters;
 use crate::{
     NodeData,
     layout::list::BULLET_FONT_FAMILY,
-    layout::replaced::is_inline_box_element,
     layout::text_transform::{CaseTransform, TextTransformer},
     node::{ListItemLayout, ListItemLayoutPosition, Marker, TextBrush, TextLayout},
     stylo_to_parley,
@@ -211,7 +210,7 @@ pub(crate) fn build_inline_layout_into(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if is_inline_box_element(tag_name) {
+                        if element_data.is_inline_box() {
                             if box_kind == InlineBoxKind::InFlow {
                                 text_transformer.word_break(builder);
                             }
