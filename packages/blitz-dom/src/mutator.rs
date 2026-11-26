@@ -435,6 +435,7 @@ impl DocumentMutator<'_> {
         if (tag, attr) == tag_and_attr!("input", "checked") {
             set_input_checked_state(element, value.to_string());
         } else if (tag, attr) == tag_and_attr!("img", "src")
+            || element.is_embedded_image_attribute(&name)
             || (cfg!(feature = "svg")
                 && element.name.ns == ns!(svg)
                 && matches!(&**tag, "image" | "feImage")
@@ -550,6 +551,8 @@ impl DocumentMutator<'_> {
         if name.ns == ns!() && *attr == local_name!("style") {
             element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
             node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
+        } else if node_is_in_document && element.is_embedded_image_attribute(&name) {
+            self.load_image(node_id);
         } else if (tag, attr) == tag_and_attr!("input", "checked") {
             element.set_checkbox_input_checked(false);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
@@ -1223,6 +1226,9 @@ impl<'doc> DocumentMutator<'doc> {
                 _ if has_custom_widget => {}
                 "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
                 "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
+                "embed" if element.is_image_embed() => {
+                    self.eager_op_queue.push(SpecialOp::LoadImage(node_id))
+                }
                 "image" | "feImage" if cfg!(feature = "svg") && element.name.ns == ns!(svg) => {
                     self.eager_op_queue.push(SpecialOp::LoadImage(node_id))
                 }
@@ -1234,6 +1240,9 @@ impl<'doc> DocumentMutator<'doc> {
                     self.eager_op_queue
                         .push(SpecialOp::ProcessButtonInput(node_id));
                     self.form_nodes.insert(node_id);
+                    if tag == "object" && element.is_image_embed() {
+                        self.eager_op_queue.push(SpecialOp::LoadImage(node_id));
+                    }
                 }
                 _ => {}
             }
@@ -1427,13 +1436,22 @@ impl<'doc> DocumentMutator<'doc> {
         self.doc.stylesheet_generation += 1;
     }
 
-    /// Load the image of an `<img>`, or the href of an SVG `<image>` or `<feImage>`,
-    /// which usvg reads from the image cache when parsing the `<svg>`.
+    /// Load an HTML image or image embedding, or cache an SVG
+    /// `<image>` or `<feImage>` resource for usvg.
     fn load_image(&mut self, target_id: NodeId) {
-        let Some(element) = self.doc.nodes[target_id].element_data() else {
+        let node = &mut self.doc.nodes[target_id];
+        let Some(element) = node.element_data_mut() else {
             return;
         };
-        let raw_src = if element.name.ns == ns!(svg) {
+        if element.is_image_embed() && element.image_data().is_some() {
+            element.special_data = SpecialElementData::None;
+            node.clear_layout_cache();
+            node.insert_damage(ALL_DAMAGE);
+        }
+        let element = self.doc.nodes[target_id].element_data().unwrap();
+        let raw_src = if element.is_image_embed() {
+            element.embedded_image_source()
+        } else if element.name.ns == ns!(svg) {
             // usvg resolves `data:` URLs and `#fragment` references itself
             element
                 .svg_href()

@@ -33,8 +33,6 @@ use blitz_traits::node_id::NodeId;
 use url::Url;
 
 use crate::BaseDocument;
-use crate::layout::replaced::is_replaced_element;
-use crate::local_name;
 
 /// Serialize a used length (in CSS pixels) the way stylo serializes computed lengths
 fn format_px(px: f32) -> String {
@@ -371,13 +369,7 @@ impl BaseDocument {
         let is_non_atomic_inline = display.outside() == DisplayOutside::Inline
             && display.inside() == DisplayInside::Flow
             && !node.flags.is_inline_root()
-            && node.element_data().is_none_or(|data| {
-                let tag = &data.name.local;
-                !(is_replaced_element(tag)
-                    || *tag == local_name!("input")
-                    || *tag == local_name!("textarea")
-                    || *tag == local_name!("button"))
-            });
+            && node.element_data().is_none_or(|data| !data.is_inline_box());
         let generates_box =
             node.flags.is_in_document() && !display.is_none() && stored_styles.is_some();
         let has_layout_box = generates_box && !is_non_atomic_inline;

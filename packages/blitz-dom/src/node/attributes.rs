@@ -24,7 +24,7 @@ impl Attributes {
         }
     }
 
-    pub fn get(&mut self, name: &QualName) -> Option<&Attribute> {
+    pub fn get(&self, name: &QualName) -> Option<&Attribute> {
         self.inner.iter().find(|attr| attr.name == *name)
     }
 
