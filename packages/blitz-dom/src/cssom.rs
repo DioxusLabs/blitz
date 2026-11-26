@@ -12,6 +12,7 @@ use selectors::matching::QuirksMode;
 use selectors::parser::{ParseRelative, SelectorList};
 use style::font_face::FontFaceRule;
 use style::invalidation::stylesheets::RuleChangeKind;
+use style::media_queries::MediaList;
 use style::parser::ParserContext;
 use style::properties::font_face::DescriptorId as FontFaceDescriptorId;
 use style::properties::{
@@ -327,6 +328,93 @@ impl BaseDocument {
                 .force_stylesheet_origins_dirty(OriginSet::all());
         }
         true
+    }
+
+    /// The serialized media queries of an attached stylesheet.
+    pub fn stylesheet_media_queries(&self, node_id: NodeId) -> Option<Vec<String>> {
+        let sheet = self.nodes_to_stylesheet.get(&node_id)?;
+        let guard = self.guard.read();
+        Some(
+            sheet
+                .0
+                .media
+                .read_with(&guard)
+                .media_queries
+                .iter()
+                .map(ToCss::to_css_string)
+                .collect(),
+        )
+    }
+
+    pub fn set_stylesheet_media_text(
+        &mut self,
+        node_id: NodeId,
+        value: &str,
+    ) -> Result<(), CssomError> {
+        self.edit_stylesheet_media(node_id, |media, mut context| {
+            *media = MediaList::parse(&mut context, &mut Parser::new(value));
+            Ok(true)
+        })
+    }
+
+    pub fn append_stylesheet_medium(
+        &mut self,
+        node_id: NodeId,
+        value: &str,
+    ) -> Result<(), CssomError> {
+        self.edit_stylesheet_media(node_id, |media, context| {
+            Ok(media.append_medium(&context, value))
+        })
+    }
+
+    pub fn delete_stylesheet_medium(
+        &mut self,
+        node_id: NodeId,
+        value: &str,
+    ) -> Result<(), CssomError> {
+        self.edit_stylesheet_media(node_id, |media, context| {
+            media
+                .delete_medium(&context, value)
+                .then_some(true)
+                .ok_or(CssomError::NotFound)
+        })
+    }
+
+    fn edit_stylesheet_media(
+        &mut self,
+        node_id: NodeId,
+        edit: impl FnOnce(&mut MediaList, ParserContext<'_>) -> Result<bool, CssomError>,
+    ) -> Result<(), CssomError> {
+        let sheet = self
+            .nodes_to_stylesheet
+            .get(&node_id)
+            .ok_or(CssomError::NotFound)?;
+        let url_data = sheet
+            .0
+            .contents
+            .read_with(&self.guard.read())
+            .url_data
+            .clone();
+        let context = ParserContext::new(
+            Origin::Author,
+            &url_data,
+            None,
+            ParsingMode::DEFAULT,
+            QuirksMode::NoQuirks,
+            Default::default(),
+            None,
+            None,
+            Default::default(),
+        );
+        let changed = {
+            let mut guard = self.guard.write();
+            edit(sheet.0.media.write_with(&mut guard), context)?
+        };
+        if changed {
+            self.stylist
+                .force_stylesheet_origins_dirty(OriginSet::all());
+        }
+        Ok(())
     }
 
     fn stylesheet_loader(&self) -> StylesheetLoader {

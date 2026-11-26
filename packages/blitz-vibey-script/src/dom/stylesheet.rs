@@ -21,6 +21,8 @@ pub(crate) fn register(context: &mut Context) {
         ("__blitz_node_has_stylesheet", 1, node_has_stylesheet),
         ("__blitz_stylesheet_generation", 0, stylesheet_generation),
         ("__blitz_sheet_disabled", 1, sheet_disabled),
+        ("__blitz_sheet_media_queries", 1, sheet_media_queries),
+        ("__blitz_sheet_edit_media", 3, sheet_edit_media),
         ("__blitz_sheet_set_disabled", 2, sheet_set_disabled),
         ("__blitz_sheet_rule_count", 2, rule_count),
         ("__blitz_sheet_rule_info", 2, rule_info),
@@ -115,6 +117,35 @@ fn stylesheet_generation(_: &JsValue, _: &[JsValue], context: &mut Context) -> J
     let ctx = dom_ctx(context)?;
     let generation = ctx.doc.borrow().stylesheet_generation();
     Ok(JsValue::from(generation as f64))
+}
+
+fn sheet_media_queries(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = node_arg(args, 0)?;
+    let queries = ctx
+        .doc
+        .borrow()
+        .stylesheet_media_queries(node_id)
+        .unwrap_or_default();
+    Ok(JsArray::from_iter(queries.iter().map(|query| js_str(query)), context).into())
+}
+
+fn sheet_edit_media(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    let node_id = node_arg(args, 0)?;
+    let value = to_rust_string(&arg(args, 1), context)?;
+    let operation = to_rust_string(&arg(args, 2), context)?;
+    let result = {
+        let mut doc = ctx.doc.borrow_mut();
+        match operation.as_str() {
+            "set" => doc.set_stylesheet_media_text(node_id, &value),
+            "append" => doc.append_stylesheet_medium(node_id, &value),
+            "delete" => doc.delete_stylesheet_medium(node_id, &value),
+            _ => Err(CssomError::NotSupported),
+        }
+    };
+    result.map_err(|err| cssom_error(err, context, "Could not update the media list"))?;
+    Ok(JsValue::undefined())
 }
 
 fn sheet_disabled(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {

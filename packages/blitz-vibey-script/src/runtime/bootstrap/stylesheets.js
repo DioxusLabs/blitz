@@ -74,14 +74,29 @@
                 if (!constructing) illegal();
             }
             get mediaText() {
-                return data(this).text;
+                const { owner, text } = data(this);
+                return owner ? __blitz_sheet_media_queries(owner).join(", ") : text;
+            }
+            set mediaText(value) {
+                const { owner } = data(this);
+                if (owner) __blitz_sheet_edit_media(owner, String(value), "set");
             }
             get length() {
-                return this.mediaText === "" ? 0 : this.mediaText.split(",").length;
+                const { owner, text } = data(this);
+                return owner ? __blitz_sheet_media_queries(owner).length : (text === "" ? 0 : text.split(",").length);
             }
             item(index) {
-                if (this.mediaText === "") return null;
-                return this.mediaText.split(",").map((s) => s.trim())[index] ?? null;
+                const { owner, text } = data(this);
+                const queries = owner ? __blitz_sheet_media_queries(owner) : text.split(",").map((s) => s.trim());
+                return (!owner && text === "" ? null : queries[index]) ?? null;
+            }
+            appendMedium(value) {
+                const { owner } = data(this);
+                if (owner) __blitz_sheet_edit_media(owner, String(value), "append");
+            }
+            deleteMedium(value) {
+                const { owner } = data(this);
+                if (owner) __blitz_sheet_edit_media(owner, String(value), "delete");
             }
             toString() {
                 return this.mediaText;
@@ -109,7 +124,10 @@
                 return data(this).owner.getAttribute("title");
             }
             get media() {
-                return makeMediaList(data(this).owner.getAttribute("media") || "");
+                const sheet = data(this);
+                return sheet.media ??= indexedProxy(
+                    construct(MediaList, (m) => internals.set(m, { owner: sheet.owner }))
+                );
             }
             get parentStyleSheet() {
                 return null;
