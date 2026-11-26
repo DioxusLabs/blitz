@@ -65,8 +65,8 @@ pub(crate) mod stylo {
 
 use crate::CopyStyleGetters;
 use stylo::Atom;
-use taffy::CompactLength;
 use taffy::style_helpers::*;
+use taffy::{CalcHandle, CompactLength};
 
 #[inline]
 #[cfg(any(feature = "flexbox", feature = "grid"))]
@@ -86,8 +86,9 @@ pub(crate) fn saturating_u16<T: Ord + From<u16> + TryInto<i32>>(input: T) -> u16
 pub fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
     match val.unpack() {
         stylo::UnpackedLengthPercentage::Calc(calc_ptr) => {
-            let val =
-                CompactLength::calc(calc_ptr as *const stylo::CalcLengthPercentage as *const ());
+            let val = CompactLength::calc(CalcHandle::from_ptr(
+                calc_ptr as *const stylo::CalcLengthPercentage as *const (),
+            ));
             // SAFETY: calc is a valid value for LengthPercentage
             unsafe { taffy::LengthPercentage::from_raw(val) }
         }
@@ -113,7 +114,7 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
                 taffy::Dimension::fit_content_percent(percentage.0)
             }
             stylo::UnpackedLengthPercentage::Calc(calc_ptr) => taffy::Dimension::fit_content_calc(
-                calc_ptr as *const stylo::CalcLengthPercentage as *const (),
+                CalcHandle::from_ptr(calc_ptr as *const stylo::CalcLengthPercentage as *const ()),
             ),
         },
 
@@ -282,8 +283,8 @@ pub fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
 #[inline]
 /// Resolve a `calc()` length-percentage (as stored in a [`taffy::LengthPercentage`] created by
 /// [`length_percentage`]) against `parent_size`
-pub fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
-    let calc = unsafe { &*(calc_ptr as *const stylo::CalcLengthPercentage) };
+pub fn resolve_calc_value(calc: CalcHandle, parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc.ptr() as *const stylo::CalcLengthPercentage) };
     calc.resolve(stylo::CSSPixelLength::new(parent_size)).px()
 }
 

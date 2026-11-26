@@ -3,12 +3,15 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
 
 use crate::NodeId;
+
+mod datatransfer;
+pub use datatransfer::*;
 
 #[derive(Default)]
 pub struct EventState {
@@ -72,6 +75,12 @@ pub enum UiEvent {
     Ime(BlitzImeEvent),
     AppleStandardKeybinding(SmolStr),
     Paste(String),
+    /// A drag has entered the document or moved within it
+    DragOver(BlitzDragEvent),
+    /// A drag has left the document or been cancelled
+    DragLeave(BlitzDragEvent),
+    /// A drag has been dropped on the document
+    Drop(BlitzDragEvent),
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {
@@ -147,6 +156,8 @@ pub enum DomEventKind {
     PointerDown,
     PointerUp,
     PointerCancel,
+    GotPointerCapture,
+    LostPointerCapture,
     PointerEnter,
     PointerLeave,
     PointerOver,
@@ -183,6 +194,11 @@ pub enum DomEventKind {
     FocusIn,
     FocusOut,
 
+    DragEnter,
+    DragOver,
+    DragLeave,
+    Drop,
+
     AppleStandardKeybinding,
 }
 impl DomEventKind {
@@ -198,6 +214,8 @@ impl FromStr for DomEventKind {
             "pointerdown" => Ok(Self::PointerDown),
             "pointerup" => Ok(Self::PointerUp),
             "pointercancel" => Ok(Self::PointerCancel),
+            "gotpointercapture" => Ok(Self::GotPointerCapture),
+            "lostpointercapture" => Ok(Self::LostPointerCapture),
             "pointerenter" => Ok(Self::PointerEnter),
             "pointerleave" => Ok(Self::PointerLeave),
             "pointerover" => Ok(Self::PointerOver),
@@ -233,6 +251,10 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+            "dragenter" => Ok(Self::DragEnter),
+            "dragover" => Ok(Self::DragOver),
+            "dragleave" => Ok(Self::DragLeave),
+            "drop" => Ok(Self::Drop),
             _ => Err(()),
         }
     }
@@ -245,6 +267,10 @@ pub enum DomEventData {
     PointerDown(BlitzPointerEvent),
     PointerUp(BlitzPointerEvent),
     PointerCancel(BlitzPointerEvent),
+    /// The target has started capturing the event's pointer
+    GotPointerCapture(BlitzPointerEvent),
+    /// The target has stopped capturing the event's pointer
+    LostPointerCapture(BlitzPointerEvent),
     PointerEnter(BlitzPointerEvent),
     PointerLeave(BlitzPointerEvent),
     PointerOver(BlitzPointerEvent),
@@ -281,6 +307,11 @@ pub enum DomEventData {
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
 
+    DragEnter(BlitzDragEvent),
+    DragOver(BlitzDragEvent),
+    DragLeave(BlitzDragEvent),
+    Drop(BlitzDragEvent),
+
     AppleStandardKeybinding(SmolStr),
 }
 impl DomEventData {
@@ -300,6 +331,8 @@ impl DomEventData {
             Self::PointerDown { .. } => "pointerdown",
             Self::PointerUp { .. } => "pointerup",
             Self::PointerCancel { .. } => "pointercancel",
+            Self::GotPointerCapture { .. } => "gotpointercapture",
+            Self::LostPointerCapture { .. } => "lostpointercapture",
             Self::PointerEnter { .. } => "pointerenter",
             Self::PointerLeave { .. } => "pointerleave",
             Self::PointerOver { .. } => "pointerover",
@@ -336,6 +369,11 @@ impl DomEventData {
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
 
+            Self::DragEnter { .. } => "dragenter",
+            Self::DragOver { .. } => "dragover",
+            Self::DragLeave { .. } => "dragleave",
+            Self::Drop { .. } => "drop",
+
             Self::AppleStandardKeybinding { .. } => "applekeybinding",
         }
     }
@@ -346,6 +384,8 @@ impl DomEventData {
             Self::PointerDown { .. } => DomEventKind::PointerDown,
             Self::PointerUp { .. } => DomEventKind::PointerUp,
             Self::PointerCancel { .. } => DomEventKind::PointerCancel,
+            Self::GotPointerCapture { .. } => DomEventKind::GotPointerCapture,
+            Self::LostPointerCapture { .. } => DomEventKind::LostPointerCapture,
             Self::PointerEnter { .. } => DomEventKind::PointerEnter,
             Self::PointerLeave { .. } => DomEventKind::PointerLeave,
             Self::PointerOver { .. } => DomEventKind::PointerOver,
@@ -382,6 +422,11 @@ impl DomEventData {
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
 
+            Self::DragEnter { .. } => DomEventKind::DragEnter,
+            Self::DragOver { .. } => DomEventKind::DragOver,
+            Self::DragLeave { .. } => DomEventKind::DragLeave,
+            Self::Drop { .. } => DomEventKind::Drop,
+
             Self::AppleStandardKeybinding { .. } => DomEventKind::AppleStandardKeybinding,
         }
     }
@@ -392,6 +437,8 @@ impl DomEventData {
             Self::PointerDown { .. } => true,
             Self::PointerUp { .. } => true,
             Self::PointerCancel { .. } => false,
+            Self::GotPointerCapture { .. } => false,
+            Self::LostPointerCapture { .. } => false,
             Self::PointerEnter { .. } => false,
             Self::PointerLeave { .. } => false,
             Self::PointerOver { .. } => true,
@@ -428,6 +475,11 @@ impl DomEventData {
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
 
+            Self::DragEnter { .. } => true,
+            Self::DragOver { .. } => true,
+            Self::DragLeave { .. } => false,
+            Self::Drop { .. } => true,
+
             Self::AppleStandardKeybinding { .. } => true,
         }
     }
@@ -438,6 +490,8 @@ impl DomEventData {
             Self::PointerDown { .. } => true,
             Self::PointerUp { .. } => true,
             Self::PointerCancel { .. } => true,
+            Self::GotPointerCapture { .. } => true,
+            Self::LostPointerCapture { .. } => true,
             Self::PointerEnter { .. } => false,
             Self::PointerLeave { .. } => false,
             Self::PointerOver { .. } => true,
@@ -474,8 +528,81 @@ impl DomEventData {
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
 
+            Self::DragEnter { .. } => true,
+            Self::DragOver { .. } => true,
+            Self::DragLeave { .. } => true,
+            Self::Drop { .. } => true,
+
             Self::AppleStandardKeybinding { .. } => false,
         }
+    }
+}
+
+/// The data transfer of a drag, shared by every event of that drag
+pub type BlitzDataTransferArc = Arc<AtomicRefCell<BlitzDataTransfer>>;
+
+#[derive(Clone, Debug)]
+pub struct BlitzDragEvent {
+    pub coords: PointerCoords,
+    pub element: Point<f32>,
+    pub mods: Modifiers,
+    pub button: MouseEventButton,
+    pub buttons: MouseEventButtons,
+    pub data_transfer: BlitzDataTransferArc,
+}
+
+impl BlitzDragEvent {
+    /// A drag event at `coords`, with no modifiers or buttons pressed
+    pub fn new(coords: PointerCoords, data_transfer: BlitzDataTransfer) -> Self {
+        Self {
+            coords,
+            element: Point::default(),
+            mods: Modifiers::default(),
+            button: MouseEventButton::default(),
+            buttons: MouseEventButtons::default(),
+            data_transfer: Arc::new(AtomicRefCell::new(data_transfer)),
+        }
+    }
+
+    #[inline(always)]
+    pub fn page_x(&self) -> f32 {
+        self.coords.page_x
+    }
+    #[inline(always)]
+    pub fn page_y(&self) -> f32 {
+        self.coords.page_y
+    }
+    #[inline(always)]
+    pub fn client_x(&self) -> f32 {
+        self.coords.client_x
+    }
+    #[inline(always)]
+    pub fn client_y(&self) -> f32 {
+        self.coords.client_y
+    }
+    #[inline(always)]
+    pub fn screen_x(&self) -> f32 {
+        self.coords.screen_x
+    }
+    #[inline(always)]
+    pub fn screen_y(&self) -> f32 {
+        self.coords.screen_y
+    }
+    #[inline(always)]
+    pub fn element_x(&self) -> f32 {
+        self.element.x
+    }
+    #[inline(always)]
+    pub fn element_y(&self) -> f32 {
+        self.element.y
+    }
+    #[inline(always)]
+    pub fn data_transfer(&self) -> AtomicRef<'_, BlitzDataTransfer> {
+        self.data_transfer.borrow()
+    }
+    #[inline(always)]
+    pub fn data_transfer_mut(&self) -> AtomicRefMut<'_, BlitzDataTransfer> {
+        self.data_transfer.borrow_mut()
     }
 }
 
@@ -496,6 +623,38 @@ pub enum BlitzPointerId {
     Mouse,
     Pen,
     Finger(u64),
+}
+
+impl BlitzPointerId {
+    const FIRST_FINGER_ID: u64 = 2;
+
+    /// How many finger indexes [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
+    pub const FINGER_INDEX_COUNT: u64 = i32::MAX as u64 - Self::FIRST_FINGER_ID + 1;
+
+    /// The ID of the finger with the given index, placed after the mouse and pen IDs
+    pub const fn finger(index: u64) -> Self {
+        debug_assert!(index < Self::FINGER_INDEX_COUNT);
+        BlitzPointerId::Finger(index + Self::FIRST_FINGER_ID)
+    }
+
+    /// The DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
+    pub fn as_i32(&self) -> i32 {
+        match self {
+            BlitzPointerId::Mouse => 0,
+            BlitzPointerId::Pen => 1,
+            BlitzPointerId::Finger(id) => *id as i32,
+        }
+    }
+
+    /// The pointer with the given DOM `pointerId` (the inverse of [`Self::as_i32`])
+    pub fn from_i32(id: i32) -> Option<Self> {
+        match id {
+            0 => Some(BlitzPointerId::Mouse),
+            1 => Some(BlitzPointerId::Pen),
+            id if id >= Self::FIRST_FINGER_ID as i32 => Some(BlitzPointerId::Finger(id as u64)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
