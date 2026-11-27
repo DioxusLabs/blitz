@@ -1,7 +1,7 @@
 //! Versioned storage for the nodes of the DOM tree.
 
 use std::ops::{Index, IndexMut};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use blitz_traits::node_id::NodeId;
 use slotmap::{Key as _, KeyData, SlotMap};
@@ -38,6 +38,11 @@ pub struct NodeTree {
     /// paint child offsets) are memoised against it. Starts at 1 so that a
     /// stamp of 0 is never current.
     geometry_generation: AtomicU64,
+    /// Bumped at the start of each box-tree construction pass. Facts derived
+    /// from a node's subtree are memoised against it while `constructing` is
+    /// set, as the DOM and styles can't change during the pass.
+    construction_generation: AtomicU64,
+    constructing: AtomicBool,
     /// Scroll offset of the viewport (the root element scrolls the viewport,
     /// so its offset lives here rather than on the node).
     viewport_scroll: crate::Point<f64>,
@@ -48,6 +53,8 @@ impl NodeTree {
         Self {
             map: SlotMap::with_key(),
             geometry_generation: AtomicU64::new(1),
+            construction_generation: AtomicU64::new(0),
+            constructing: AtomicBool::new(false),
             viewport_scroll: crate::Point::ZERO,
         }
     }
@@ -70,6 +77,23 @@ impl NodeTree {
 
     pub(crate) fn bump_geometry_generation(&self) {
         self.geometry_generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The current construction generation, or `None` outside a construction
+    /// pass. See the `construction_generation` field.
+    pub fn construction_generation(&self) -> Option<u64> {
+        self.constructing
+            .load(Ordering::Relaxed)
+            .then(|| self.construction_generation.load(Ordering::Relaxed))
+    }
+
+    pub(crate) fn begin_construction(&self) {
+        self.construction_generation.fetch_add(1, Ordering::Relaxed);
+        self.constructing.store(true, Ordering::Relaxed);
+    }
+
+    pub(crate) fn end_construction(&self) {
+        self.constructing.store(false, Ordering::Relaxed);
     }
 
     /// The number of live nodes in the map.
