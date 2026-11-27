@@ -347,7 +347,7 @@ impl RenderedElementBacking for NodeHandle {
         &self,
         pointer_id: i32,
     ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-        let Some(pointer_id) = BlitzPointerId::from_id(pointer_id) else {
+        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
             return invalid_pointer_id_err(pointer_id);
         };
         if !NodeHandle::set_pointer_capture(self, pointer_id) {
@@ -360,7 +360,7 @@ impl RenderedElementBacking for NodeHandle {
         &self,
         pointer_id: i32,
     ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-        let Some(pointer_id) = BlitzPointerId::from_id(pointer_id) else {
+        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
             return invalid_pointer_id_err(pointer_id);
         };
         if self.doc().get_node(self.node_id).is_none() {
@@ -506,7 +506,7 @@ impl HasPointerData for NativePointerData {
     }
 
     fn pointer_id(&self) -> i32 {
-        self.0.id.id()
+        self.0.id.as_i32()
     }
 
     fn pointer_type(&self) -> String {
@@ -610,7 +610,7 @@ impl InteractionLocation for NativeTouchPointData {
 impl HasTouchPointData for NativeTouchPointData {
     fn identifier(&self) -> i32 {
         match self.0.id.kind() {
-            PointerKind::Finger => self.0.id.id(),
+            PointerKind::Finger => self.0.id.as_i32(),
             PointerKind::Mouse | PointerKind::Pen => 0,
         }
     }

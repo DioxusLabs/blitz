@@ -653,13 +653,13 @@ impl BlitzPointerId {
         Self(index as i32 + Self::FIRST_FINGER_ID)
     }
 
-    /// The pointer with the given DOM `pointerId` (the inverse of [`Self::id`])
-    pub const fn from_id(id: i32) -> Option<Self> {
+    /// The pointer with the given DOM `pointerId` (the inverse of [`Self::as_i32`])
+    pub const fn from_i32(id: i32) -> Option<Self> {
         if id >= 0 { Some(Self(id)) } else { None }
     }
 
     /// The DOM `pointerId`
-    pub const fn id(self) -> i32 {
+    pub const fn as_i32(self) -> i32 {
         self.0
     }
 
