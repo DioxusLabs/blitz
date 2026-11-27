@@ -64,6 +64,8 @@ fn map_dom_event_to_ui_event(
         // Enter/over/out events will be recreated by sub-document's event driver
         // based move events
         DomEventData::PointerEnter(_) => None,
+        DomEventData::GotPointerCapture(_) => None,
+        DomEventData::LostPointerCapture(_) => None,
         DomEventData::PointerOver(_) => None,
         DomEventData::PointerOut(_) => None,
 
@@ -299,6 +301,9 @@ pub(crate) fn handle_dom_event(
         }
         DomEventData::DoubleClick(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::GotPointerCapture(_) | DomEventData::LostPointerCapture(_) => {
+            // Do nothing
         }
         DomEventData::PointerEnter(_) => {
             // Do nothing (no default action)

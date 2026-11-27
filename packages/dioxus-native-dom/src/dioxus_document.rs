@@ -11,8 +11,8 @@ use blitz_dom::{
     EventDriver, EventHandler, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
-use dioxus_core::{ElementId, Event, Runtime, VirtualDom};
 use dioxus_html::{PlatformEventData, set_event_converter};
+use dioxus_vdom::{ElementId, Event, Runtime, VirtualDom};
 use futures_util::task::noop_waker;
 use std::cell::RefCell;
 use std::future::Future;
@@ -36,14 +36,14 @@ fn get_dioxus_id(node: &Node) -> Option<ElementId> {
         .map(ElementId::from_raw)
 }
 
-/// Integrates [`BaseDocument`] from  [`blitz-dom`](blitz_dom)  with [`VirtualDom`] from [`dioxus-core`](dioxus_core)
+/// Integrates [`BaseDocument`] from  [`blitz-dom`](blitz_dom)  with [`VirtualDom`] from [`dioxus-vdom`](dioxus_vdom)
 ///
 /// ### Example
 ///
 /// ```rust
 /// use blitz_traits::shell::{Viewport, ColorScheme};
 /// use dioxus_native_dom::{DioxusDocument, DocumentConfig};
-/// use dioxus::prelude::*;
+/// use dioxus_core::prelude::*;
 ///
 /// // Example Dioxus app
 /// fn app() -> Element {
@@ -324,6 +324,8 @@ impl EventHandler for DioxusEventHandler {
             | DomEventData::PointerDown(mevent)
             | DomEventData::PointerUp(mevent)
             | DomEventData::PointerCancel(mevent)
+            | DomEventData::GotPointerCapture(mevent)
+            | DomEventData::LostPointerCapture(mevent)
             | DomEventData::PointerLeave(mevent)
             | DomEventData::PointerEnter(mevent)
             | DomEventData::PointerOver(mevent)
@@ -410,8 +412,8 @@ impl EventHandler for DioxusEventHandler {
 mod tests {
     use super::*;
     use blitz_dom::DocumentConfig;
-    use dioxus::prelude::*;
-    use dioxus_core::ScopeId;
+    use dioxus_core::prelude::*;
+    use dioxus_vdom::ScopeId;
     use std::cell::{Cell, RefCell};
     use std::collections::HashMap;
 
@@ -804,12 +806,12 @@ mod tests {
         #[component]
         fn Child() -> Element {
             let state = consume_context::<Rc<State>>();
-            state.child.set(Some(dioxus_core::current_scope_id()));
+            state.child.set(Some(dioxus_vdom::current_scope_id()));
             if !state.show.get() {
                 return rsx!(span {});
             }
             state.hide_child.set(true);
-            dioxus_core::schedule_update_any()(ScopeId::APP);
+            dioxus_vdom::schedule_update_any()(ScopeId::APP);
             rsx!(div {
                 onmounted: move |_| state.mounted.set(state.mounted.get() + 1),
             })

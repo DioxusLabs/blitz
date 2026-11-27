@@ -5,9 +5,9 @@ use blitz_dom::{
 use blitz_traits::events::{
     BlitzDragEvent, BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent,
     BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource, MouseEventButton,
+    PointerKind,
 };
 use blitz_traits::net::Bytes;
-use dioxus_core::CapturedError;
 use dioxus_html::{
     AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DataTransfer,
     DragData, FileData, FocusData, FormData, FormValue, HasDataTransferData, HasDragData,
@@ -27,6 +27,7 @@ use dioxus_html::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
 };
+use dioxus_vdom::CapturedError;
 use futures_util::{Stream, stream};
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::{
@@ -150,7 +151,7 @@ impl HtmlEventConverter for NativeConverter {
 #[derive(Clone)]
 pub struct NodeHandle {
     pub(crate) doc: Rc<RefCell<BaseDocument>>,
-    pub(crate) runtime: Rc<dioxus_core::Runtime>,
+    pub(crate) runtime: Rc<dioxus_vdom::Runtime>,
     pub(crate) event_handler_counts: crate::mutation_writer::EventHandlerCounts,
     pub(crate) node_id: NodeId,
 }
@@ -188,6 +189,24 @@ impl NodeHandle {
         })
     }
 
+    /// Send the given pointer's events to this node instead of the node under the pointer,
+    /// until the pointer is released or cancelled. Returns `false` if the node is not in
+    /// the document.
+    pub fn set_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc_mut().set_pointer_capture(self.node_id, pointer_id)
+    }
+
+    /// Stop capturing the given pointer, returning whether this node had captured it
+    pub fn release_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc_mut()
+            .release_pointer_capture(pointer_id, Some(self.node_id))
+    }
+
+    /// Whether this node has captured the given pointer
+    pub fn has_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc().has_pointer_capture(self.node_id, pointer_id)
+    }
+
     fn node_not_exist_err<T>(&self) -> Pin<Box<dyn Future<Output = MountedResult<T>>>> {
         let node_id = self.node_id;
         let err = MountedError::OperationFailed(Box::new(NodeNotExistErr(node_id)));
@@ -203,6 +222,15 @@ impl Display for NodeNotExistErr {
     }
 }
 impl std::error::Error for NodeNotExistErr {}
+
+#[derive(Debug)]
+struct InvalidPointerIdErr(i32);
+impl Display for InvalidPointerIdErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} is not a valid pointer ID", self.0)
+    }
+}
+impl std::error::Error for InvalidPointerIdErr {}
 
 impl RenderedElementBacking for NodeHandle {
     fn as_any(&self) -> &dyn std::any::Any {
@@ -322,6 +350,39 @@ impl RenderedElementBacking for NodeHandle {
 
         Box::pin(async { Ok(()) })
     }
+
+    fn set_pointer_capture(
+        &self,
+        pointer_id: i32,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
+            return invalid_pointer_id_err(pointer_id);
+        };
+        if !NodeHandle::set_pointer_capture(self, pointer_id) {
+            return self.node_not_exist_err();
+        }
+        Box::pin(async { Ok(()) })
+    }
+
+    fn release_pointer_capture(
+        &self,
+        pointer_id: i32,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
+            return invalid_pointer_id_err(pointer_id);
+        };
+        if self.doc().get_node(self.node_id).is_none() {
+            return self.node_not_exist_err();
+        }
+        // Releasing a pointer that this node has not captured does nothing, as on the web
+        NodeHandle::release_pointer_capture(self, pointer_id);
+        Box::pin(async { Ok(()) })
+    }
+}
+
+fn invalid_pointer_id_err(pointer_id: i32) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+    let err = MountedError::OperationFailed(Box::new(InvalidPointerIdErr(pointer_id)));
+    Box::pin(async move { Err(err) })
 }
 
 #[derive(Clone, Debug)]
@@ -453,18 +514,14 @@ impl HasPointerData for NativePointerData {
     }
 
     fn pointer_id(&self) -> i32 {
-        match self.0.id {
-            BlitzPointerId::Mouse => 0,
-            BlitzPointerId::Pen => 0,
-            BlitzPointerId::Finger(id) => id as i32,
-        }
+        self.0.id.as_i32()
     }
 
     fn pointer_type(&self) -> String {
-        match self.0.id {
-            BlitzPointerId::Mouse => String::from("mouse"),
-            BlitzPointerId::Pen => String::from("pen"),
-            BlitzPointerId::Finger(_) => String::from("touch"),
+        match self.0.id.kind() {
+            PointerKind::Mouse => String::from("mouse"),
+            PointerKind::Pen => String::from("pen"),
+            PointerKind::Finger => String::from("touch"),
         }
     }
 
@@ -501,6 +558,12 @@ impl HasPointerData for NativePointerData {
 /// [`BlitzPointerEvent::active_pointers`] list and reported via `touches`.
 #[derive(Clone)]
 pub struct NativeTouchData(pub(crate) BlitzPointerEvent);
+
+impl NativeTouchData {
+    pub fn new(event: BlitzPointerEvent) -> Self {
+        Self(event)
+    }
+}
 
 impl ModifiersInteraction for NativeTouchData {
     fn modifiers(&self) -> Modifiers {
@@ -554,9 +617,9 @@ impl InteractionLocation for NativeTouchPointData {
 
 impl HasTouchPointData for NativeTouchPointData {
     fn identifier(&self) -> i32 {
-        match self.0.id {
-            BlitzPointerId::Finger(id) => id as i32,
-            BlitzPointerId::Mouse | BlitzPointerId::Pen => 0,
+        match self.0.id.kind() {
+            PointerKind::Finger => self.0.id.as_i32(),
+            PointerKind::Mouse | PointerKind::Pen => 0,
         }
     }
 
@@ -589,6 +652,12 @@ impl HasFocusData for NativeFocusData {
 
 #[derive(Clone)]
 pub struct NativeScrollData(pub(crate) BlitzScrollEvent);
+
+impl NativeScrollData {
+    pub fn new(event: BlitzScrollEvent) -> Self {
+        Self(event)
+    }
+}
 impl HasScrollData for NativeScrollData {
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any
@@ -626,6 +695,10 @@ impl HasScrollData for NativeScrollData {
 pub struct NativeWheelData(pub(crate) BlitzWheelEvent);
 
 impl NativeWheelData {
+    pub fn new(event: BlitzWheelEvent) -> Self {
+        Self(event)
+    }
+
     /// Where the event falls in its gesture, as when the fingers land on or lift from
     /// a trackpad. [`BlitzWheelPhase::Moved`] on a device that reports no gestures.
     pub fn phase(&self) -> BlitzWheelPhase {
@@ -901,7 +974,7 @@ mod tests {
 
     fn finger_event(id: u64, x: f32, y: f32) -> BlitzPointerEvent {
         BlitzPointerEvent {
-            id: BlitzPointerId::Finger(id),
+            id: BlitzPointerId::finger(id),
             is_primary: id == 0,
             coords: PointerCoords {
                 page_x: x,

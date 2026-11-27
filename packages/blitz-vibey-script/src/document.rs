@@ -101,7 +101,7 @@ impl ScriptDocument {
     ///
     /// Useful for embedders which drive timers manually by polling
     /// [`next_timer_deadline`](Self::next_timer_deadline) and calling
-    /// [`poll`](blitz_traits::Document::poll), and therefore don't need wakeups.
+    /// [`poll`](Document::poll), and therefore don't need wakeups.
     pub fn without_timer_thread(mut self) -> Self {
         self.timer_thread_enabled = false;
         self
@@ -113,7 +113,7 @@ impl ScriptDocument {
     ///
     /// Intended for embedders which drive timers manually by polling
     /// [`next_timer_deadline`](Self::next_timer_deadline) and calling
-    /// [`poll`](blitz_traits::Document::poll): instead of sleeping until the
+    /// [`poll`](Document::poll): instead of sleeping until the
     /// next deadline they can jump the clock straight to it, preserving timer
     /// ordering without wall-clock waiting. Should be combined with
     /// [`without_timer_thread`](Self::without_timer_thread) (the timer thread
@@ -255,7 +255,7 @@ impl ScriptDocument {
     /// drain them and decide how to surface them (log, record as test
     /// failures, ...). At most 256 errors are retained between drains. When the
     /// `tracing` feature is enabled errors are additionally logged via
-    /// [`tracing::error!`].
+    /// `tracing::error!`.
     pub fn take_js_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.runtime.ctx.state.borrow_mut().uncaught_errors)
     }

@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 
 fn mouse_event(x: f32, y: f32) -> blitz_traits::events::BlitzPointerEvent {
     pointer_event(
-        BlitzPointerId::Mouse,
+        BlitzPointerId::MOUSE,
         x,
         y,
         MouseEventButton::Main,
@@ -198,7 +198,7 @@ fn prevent_default_does_not_cancel_pointerleave() {
 
 fn finger_event(x: f32, y: f32) -> blitz_traits::events::BlitzPointerEvent {
     pointer_event(
-        BlitzPointerId::Finger(0),
+        BlitzPointerId::finger(0),
         x,
         y,
         MouseEventButton::Main,

@@ -5,8 +5,8 @@ use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::events::UiEvent;
 use blitz_traits::net::NetProvider;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use dioxus_core::{Element, VirtualDom};
 use dioxus_native_dom::DioxusDocument;
+use dioxus_vdom::{Element, VirtualDom};
 
 /// Options controlling document construction for a [`Harness`].
 pub struct HarnessOptions {

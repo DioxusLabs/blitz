@@ -44,7 +44,7 @@ fn mouse(doc: &mut HtmlDocument, handler: &CancelPointerUp, steps: &[(f32, bool,
             MouseEventButtons::None
         };
         let event = pointer_event(
-            BlitzPointerId::Mouse,
+            BlitzPointerId::MOUSE,
             97.0,
             y,
             MouseEventButton::Main,

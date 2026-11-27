@@ -451,8 +451,11 @@ impl LayoutPassState<'_> {
             overflow.x.is_scroll_container() || overflow.y.is_scroll_container();
         drop(style);
 
-        // Short circuit if inline context contains no text or inline boxes
+        // Empty content still contributes the box's preferred and minimum sizes.
         if !has_styles_preventing_being_collapsed_through
+            && node_size == Size::NONE
+            && node_min_size == Size::NONE
+            && aspect_ratio.is_none()
             && inline_layout.text.is_empty()
             && inline_layout.layout.inline_boxes().len() == 0
         {
