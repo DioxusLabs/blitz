@@ -2748,12 +2748,32 @@ impl BaseDocument {
         self.get_node(node_id)?;
         let (pos, layout) = self.physical_unrounded_geometry(node_id);
         let size = layout.size;
-
+        let mut transform = kurbo::Affine::IDENTITY;
+        let scale = self.viewport.scale() as f64;
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            let node = &self.nodes[id];
+            if let Some(local) = node.transform().as_deref() {
+                let (origin, _) = self.physical_unrounded_geometry(id);
+                let origin = kurbo::Vec2::new(origin.x as f64, origin.y as f64);
+                let css_transform =
+                    kurbo::Affine::scale(1.0 / scale) * *local * kurbo::Affine::scale(scale);
+                transform = kurbo::Affine::translate(origin)
+                    * css_transform
+                    * kurbo::Affine::translate(-origin)
+                    * transform;
+            }
+            current = node.containing_block();
+        }
+        let rect = transform.transform_rect_bbox(kurbo::Rect::from_origin_size(
+            (pos.x as f64, pos.y as f64),
+            (size.width as f64, size.height as f64),
+        ));
         Some(BoundingRect {
-            x: snap_to_layout_unit(pos.x as f64 - self.viewport_scroll().x),
-            y: snap_to_layout_unit(pos.y as f64 - self.viewport_scroll().y),
-            width: snap_to_layout_unit(size.width as f64),
-            height: snap_to_layout_unit(size.height as f64),
+            x: snap_to_layout_unit(rect.x0 - self.viewport_scroll().x),
+            y: snap_to_layout_unit(rect.y0 - self.viewport_scroll().y),
+            width: snap_to_layout_unit(rect.width()),
+            height: snap_to_layout_unit(rect.height()),
         })
     }
 
