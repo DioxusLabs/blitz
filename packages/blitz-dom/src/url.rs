@@ -17,14 +17,18 @@ impl DocumentUrl {
     }
 
     pub(crate) fn resolve_relative(&self, raw: &str) -> Option<url::Url> {
+        Self::resolve_relative_to(&self.base_url, raw)
+    }
+
+    pub(crate) fn resolve_relative_to(base: &Url, raw: &str) -> Option<Url> {
         // Dioxus `asset!()` paths are absolute filesystem paths when not bundled. On Windows
         // these start with a drive letter (`C:\...`), which URL parsing reads as a `c:` scheme.
         if cfg!(windows)
             && let Some(path) = windows_absolute_path_as_url_path(raw)
         {
-            return self.base_url.join(&path).ok();
+            return base.join(&path).ok();
         }
-        self.base_url.join(raw).ok()
+        base.join(raw).ok()
     }
 
     /// Returns `true` if `other` refers to the same document as this URL, i.e. it is

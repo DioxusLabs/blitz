@@ -652,8 +652,7 @@ impl BaseDocument {
             .document_base_element
             .and_then(|id| self.nodes[id].element_data())
             .and_then(ElementData::base_href)
-            .and_then(|href| self.url.resolve_relative(href))
-            .filter(|url| !matches!(url.scheme(), "data" | "javascript"))
+            .and_then(|href| self.resolve_base_href(href))
             .map(DocumentUrl::from);
 
         if &*previous != self.base_url() {
@@ -1274,6 +1273,18 @@ impl BaseDocument {
         }
 
         node
+    }
+
+    /// Resolve an HTML base href against the document's original URL.
+    pub fn resolve_base_href(&self, href: &str) -> Option<url::Url> {
+        self.url
+            .resolve_relative(href)
+            .filter(|url| !matches!(url.scheme(), "data" | "javascript"))
+    }
+
+    /// Resolve a URL against a previously selected document base.
+    pub fn resolve_url_with_base(base: &url::Url, raw: &str) -> Option<url::Url> {
+        DocumentUrl::resolve_relative_to(base, raw)
     }
 
     pub fn resolve_url(&self, raw: &str) -> Option<url::Url> {

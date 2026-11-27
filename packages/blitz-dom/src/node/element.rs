@@ -22,7 +22,7 @@ use style::{
     stylesheets::CssRuleType,
 };
 use style_dom::ElementState;
-use style_traits::{CssStringWriter, ParsingMode};
+use style_traits::ParsingMode;
 use taffy::{Cache, prelude::Layout};
 use thin_vec::ThinVec;
 use url::Url;
@@ -48,6 +48,12 @@ pub(crate) fn parse_classes(value: &str) -> ThinVec<Atom> {
     value.split_ascii_whitespace().map(Atom::from).collect()
 }
 
+#[derive(Clone)]
+struct InlineStyleSource {
+    base: UrlExtraData,
+    edits: Vec<(String, Option<String>)>,
+}
+
 pub struct ElementData {
     /// The elements tag name, namespace and prefix
     pub name: QualName,
@@ -69,6 +75,7 @@ pub struct ElementData {
 
     /// The element's parsed style attribute (used by stylo)
     pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
+    inline_style_source: Option<Box<InlineStyleSource>>,
 
     /// The declaration blocks of the element's presentational hints, built from its
     /// attributes when style matching first asks for them. Cleared when an attribute changes.
@@ -324,6 +331,7 @@ impl Clone for ElementData {
             attrs: self.attrs.clone(),
             is_focussable: self.is_focussable,
             style_attribute: self.style_attribute.clone(),
+            inline_style_source: self.inline_style_source.clone(),
             special_data: self.special_data.clone(),
             background_images: self.background_images.clone(),
             mask_images: self.mask_images.clone(),
@@ -440,6 +448,7 @@ impl ElementData {
             attrs: Attributes::new(attrs),
             is_focussable: false,
             style_attribute: Default::default(),
+            inline_style_source: None,
             presentational_hints: OnceLock::new(),
             inline_layout_data: None,
             list_item_data: None,
@@ -497,7 +506,8 @@ impl ElementData {
         &self.attrs
     }
 
-    pub(crate) fn base_href(&self) -> Option<&str> {
+    /// The href of an HTML base element, if present.
+    pub fn base_href(&self) -> Option<&str> {
         if self.name.ns != ns!(html) || self.name.local != local_name!("base") {
             return None;
         }
@@ -741,30 +751,61 @@ impl ElementData {
                 CssRuleType::Style,
             )))
         });
+        self.inline_style_source = style.map(|_| {
+            Box::new(InlineStyleSource {
+                base: url_extra_data.clone(),
+                edits: Vec::new(),
+            })
+        });
     }
 
-    /// Reparse the live declarations when the document base changes. The
-    /// attribute text may predate property updates made through a native mutator.
+    /// Reparse the authored CSS and replay native edits. CSS serialization can
+    /// lose precision and change how shorthands containing variables are parsed.
     pub(crate) fn rebase_inline_style(
         &mut self,
         guard: &SharedRwLock,
         url_data: &UrlExtraData,
     ) -> bool {
-        let Some(style) = &self.style_attribute else {
+        let Some(source) = &self.inline_style_source else {
             return false;
         };
-        let mut css = CssStringWriter::new();
-        if style.read_with(&guard.read()).to_css(&mut css).is_err() {
+        if *source.base.0 == *url_data.0 {
             return false;
         }
-        self.style_attribute = Some(ServoArc::new(guard.wrap(parse_style_attribute(
-            &css,
-            url_data,
-            None,
-            QuirksMode::NoQuirks,
-            CssRuleType::Style,
-        ))));
+
+        let source = self.inline_style_source.take().unwrap();
+        self.flush_style_attribute(guard, url_data);
+        for (name, value) in source.edits {
+            match value {
+                Some(value) => self.set_style_property(&name, &value, guard, url_data.clone()),
+                None => self.remove_style_property(&name, guard, url_data.clone()),
+            };
+        }
         true
+    }
+
+    fn record_inline_style_edit(&mut self, base: UrlExtraData, name: &str, value: Option<&str>) {
+        let source = self.inline_style_source.get_or_insert_with(|| {
+            Box::new(InlineStyleSource {
+                base,
+                edits: Vec::new(),
+            })
+        });
+        if value.is_some() {
+            // Repeated writes can replace an earlier write of the same property.
+            // Keep writes across removals, which can expose authored declarations.
+            let mut writes = source.edits.iter().enumerate().rev();
+            if let Some((index, _)) = writes
+                .by_ref()
+                .take_while(|(_, (_, value))| value.is_some())
+                .find(|(_, (previous_name, _))| previous_name == name)
+            {
+                source.edits.remove(index);
+            }
+        }
+        source
+            .edits
+            .push((name.to_owned(), value.map(str::to_owned)));
     }
 
     pub fn set_style_property(
@@ -804,9 +845,11 @@ impl ElementData {
             return false;
         };
 
+        self.rebase_inline_style(guard, &url_extra_data);
         self.mutable_style_attribute(guard)
             .write_with(&mut guard.write())
             .extend(source_property_declaration.drain(), Importance::Normal);
+        self.record_inline_style_edit(url_extra_data, name, Some(value));
 
         true
     }
@@ -858,18 +901,21 @@ impl ElementData {
             return false;
         };
 
+        self.rebase_inline_style(guard, &url_extra_data);
         if self.style_attribute.is_none() {
             return false;
         }
-        let style = self.mutable_style_attribute(guard);
-        let mut guard = guard.write();
-        let style = style.write_with(&mut guard);
-        if let Some(index) = style.first_declaration_to_remove(&property_id) {
+        {
+            let style = self.mutable_style_attribute(guard);
+            let mut lock = guard.write();
+            let style = style.write_with(&mut lock);
+            let Some(index) = style.first_declaration_to_remove(&property_id) else {
+                return false;
+            };
             style.remove_property(&property_id, index);
-            return true;
         }
-
-        false
+        self.record_inline_style_edit(url_extra_data, name, None);
+        true
     }
 
     pub fn set_sub_document(&mut self, sub_document: Box<dyn Document>) {
