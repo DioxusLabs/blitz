@@ -17,7 +17,7 @@ pub(super) const BULLET_FONT_FAMILY: &str = "Bullet, monospace, sans-serif";
 
 pub(super) fn collect_list_item_children(
     doc: &mut BaseDocument,
-    index: &mut usize,
+    index: &mut i64,
     reversed: bool,
     node_id: NodeId,
 ) {
@@ -45,7 +45,7 @@ pub(super) fn collect_list_item_children(
 fn node_list_item_child(
     doc: &mut BaseDocument,
     child_id: NodeId,
-    index: usize,
+    index: i64,
 ) -> Option<ListItemLayout> {
     let node = &doc.nodes[child_id];
 
@@ -122,18 +122,21 @@ fn node_list_item_child(
 }
 
 // Determine the marker to render for a given list style type
-fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Marker> {
+fn marker_for_style(list_style_type: &ListStyleType, index: i64) -> Option<Marker> {
     Some(match &list_style_type.0 {
         CounterStyle::None => return None,
         CounterStyle::Name(name) => match &*name.0 {
+            "lower-alpha" | "upper-alpha" if index < 0 => {
+                Marker::String(format!("{}. ", index + 1))
+            }
             "lower-alpha" => {
                 let mut marker = String::new();
-                build_alpha_marker(index, &mut marker);
+                build_alpha_marker(index as usize, &mut marker);
                 Marker::String(format!("{marker}. "))
             }
             "upper-alpha" => {
                 let mut marker = String::new();
-                build_alpha_marker(index, &mut marker);
+                build_alpha_marker(index as usize, &mut marker);
                 Marker::String(format!("{}. ", marker.to_ascii_uppercase()))
             }
             "decimal" => Marker::String(format!("{}. ", index + 1)),
@@ -154,7 +157,11 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
                 Marker::Char('•')
             } else {
                 // Cycle through symbols based on index: 1st, 2nd, 1st, 2nd, etc.
-                let idx = if len > 1 { index % len } else { 0 };
+                let idx = if len > 1 {
+                    index.rem_euclid(len as i64) as usize
+                } else {
+                    0
+                };
                 // Symbol is String or Ident variant, extract the string value
                 let sym = &syms[idx];
                 let marker_str = match sym {
@@ -167,15 +174,19 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
     })
 }
 
-fn cjk_decimal_marker(ordinal: usize) -> String {
+fn cjk_decimal_marker(ordinal: i64) -> String {
     const DIGITS: [char; 10] = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
 
-    let exponent = ordinal.checked_ilog10().unwrap_or(0);
+    let magnitude = ordinal.unsigned_abs();
+    let exponent = magnitude.checked_ilog10().unwrap_or(0);
     // The digits and suffix each occupy three UTF-8 bytes.
-    let mut marker = String::with_capacity(3 * (exponent as usize + 2));
-    let mut divisor = 10usize.pow(exponent);
+    let mut marker = String::with_capacity(3 * (exponent as usize + 2) + usize::from(ordinal < 0));
+    if ordinal < 0 {
+        marker.push('-');
+    }
+    let mut divisor = 10u64.pow(exponent);
     while divisor != 0 {
-        marker.push(DIGITS[(ordinal / divisor) % 10]);
+        marker.push(DIGITS[((magnitude / divisor) % 10) as usize]);
         divisor /= 10;
     }
     marker.push('、');
@@ -234,6 +245,20 @@ mod tests {
         let result_2 = marker_for_style(&list_style("decimal"), 1);
         assert_eq!(result_1, Some(Marker::String("1. ".to_string())));
         assert_eq!(result_2, Some(Marker::String("2. ".to_string())));
+    }
+
+    #[test]
+    fn test_nonpositive_list_markers() {
+        for style in ["decimal", "lower-alpha", "upper-alpha"] {
+            assert_eq!(
+                marker_for_style(&list_style(style), -1),
+                Some(Marker::String("0. ".into()))
+            );
+            assert_eq!(
+                marker_for_style(&list_style(style), -3),
+                Some(Marker::String("-2. ".into()))
+            );
+        }
     }
 
     #[test]

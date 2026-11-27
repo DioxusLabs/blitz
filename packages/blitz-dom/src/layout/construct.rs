@@ -496,7 +496,7 @@ fn collect_layout_children_with_wrap(
         let (mut index, reversed) = if tag_name == "ol" {
             (
                 el.attr_parsed(local_name!("start"))
-                    .map(|start: usize| start - 1)
+                    .map(|start: i32| i64::from(start) - 1)
                     .unwrap_or(0),
                 el.attr_parsed(local_name!("reversed")).unwrap_or(false),
             )
