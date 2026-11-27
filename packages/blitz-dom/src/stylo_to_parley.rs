@@ -312,7 +312,15 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
     let mut features = Vec::new();
 
     use style::computed_values::font_kerning::T as FontKerning;
+    let japanese = font_styles
+        ._x_lang
+        .0
+        .split('-')
+        .next()
+        .is_some_and(|language| language.eq_ignore_ascii_case("ja"));
     let kerning = match font_styles.font_kerning {
+        // Automatic kerning keeps full-width Japanese text on its grid.
+        FontKerning::Auto if japanese => Some(0),
         FontKerning::Auto => None,
         FontKerning::Normal => Some(1),
         FontKerning::None => Some(0),
@@ -320,6 +328,14 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
     if let Some(value) = kerning {
         features.push(feature(b"kern", value));
         features.push(feature(b"vkrn", value));
+    }
+
+    if japanese && font_styles.font_kerning == FontKerning::Normal {
+        // For Japanese, normal kerning first enables the proportional
+        // alternate metrics. Explicit font-feature-settings still win below.
+        for tag in [b"palt", b"apkn", b"vpal", b"vapk"] {
+            features.push(feature(tag, 1));
+        }
     }
 
     self::font_variant_ligatures(font_styles.font_variant_ligatures, &mut features);
