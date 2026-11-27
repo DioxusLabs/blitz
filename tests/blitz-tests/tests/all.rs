@@ -36,6 +36,7 @@ mod font_element_attributes;
 mod font_family_fallback;
 mod fragment_navigation;
 mod harness_smoke;
+mod hidden_box_in_anonymous_block;
 mod hidden_checkbox_input;
 mod hit_inline_embedded_box;
 mod hit_test_dropped_nodes;
