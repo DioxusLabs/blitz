@@ -5,6 +5,7 @@
 use blitz_dom::{Document, EventDriver, EventHandler, NodeId};
 use blitz_test_harness::Harness;
 use blitz_traits::events::{DomEvent, DomEventData, EventDispatchSource, EventState};
+use dioxus_core::prelude::*;
 use std::{cell::RefCell, rc::Rc};
 
 #[derive(Clone, Default)]
@@ -59,6 +60,24 @@ fn programmatic_focus_changes_dispatch_focus_events() {
     ]
     .map(|(id, name)| (id, name.to_string()));
     assert_eq!(*handler.0.borrow(), expected);
+}
+
+#[test]
+fn dioxus_poll_dispatches_queued_focus_events() {
+    fn app() -> Element {
+        let mut focused = use_signal(|| false);
+        rsx! {
+            input { id: "input", onfocus: move |_| focused.set(true) }
+            div { id: "seen", "{focused}" }
+        }
+    }
+
+    let mut harness = Harness::from_component(app);
+    let input = harness.base().query_selector("#input").unwrap().unwrap();
+    harness.base_mut().set_focus_to(input);
+    assert!(harness.base().has_pending_events());
+    assert!(harness.doc.poll(None));
+    assert_eq!(harness.text_content("#seen"), "true");
 }
 
 #[test]
