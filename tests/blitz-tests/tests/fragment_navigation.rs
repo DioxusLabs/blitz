@@ -44,7 +44,7 @@ fn drive_until_settled(doc: &mut HtmlDocument) {
 
 fn pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
     BlitzPointerEvent {
-        id: BlitzPointerId::Mouse,
+        id: BlitzPointerId::MOUSE,
         is_primary: true,
         coords: PointerCoords {
             page_x: x,

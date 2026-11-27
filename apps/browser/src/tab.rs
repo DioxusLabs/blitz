@@ -294,7 +294,7 @@ pub fn Favicon(url: Option<Url>, class: &'static str) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use dioxus_core::Properties;
+    use dioxus_vdom::Properties;
 
     use super::*;
 

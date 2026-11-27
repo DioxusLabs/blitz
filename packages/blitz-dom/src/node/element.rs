@@ -424,12 +424,12 @@ impl ElementData {
     pub fn new(name: QualName, attrs: Vec<Attribute>) -> Self {
         let id_attr_atom = attrs
             .iter()
-            .find(|attr| &attr.name.local == "id")
+            .find(|attr| attr.name.ns == markup5ever::ns!() && &attr.name.local == "id")
             .map(|attr| attr.value.as_ref())
             .map(|value: &str| Atom::from(value));
         let classes = attrs
             .iter()
-            .find(|attr| &attr.name.local == "class")
+            .find(|attr| attr.name.ns == markup5ever::ns!() && &attr.name.local == "class")
             .map(|attr| parse_classes(&attr.value))
             .unwrap_or_default();
 
@@ -719,9 +719,12 @@ impl ElementData {
     }
 
     pub fn flush_style_attribute(&mut self, guard: &SharedRwLock, url_extra_data: &UrlExtraData) {
-        self.style_attribute = self.attr(local_name!("style")).map(|style_str| {
+        let style = self.attrs.iter().find(|attr| {
+            attr.name.ns == markup5ever::ns!() && attr.name.local == local_name!("style")
+        });
+        self.style_attribute = style.map(|attr| {
             ServoArc::new(guard.wrap(parse_style_attribute(
-                style_str,
+                &attr.value,
                 url_extra_data,
                 None,
                 QuirksMode::NoQuirks,
@@ -864,6 +867,10 @@ impl ElementData {
 
     pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
         std::mem::take(&mut self.inline_layout_data)
+    }
+
+    pub(crate) fn is_button(&self) -> bool {
+        self.name.local == local_name!("button") || self.is_button_input()
     }
 
     pub(crate) fn is_button_input(&self) -> bool {

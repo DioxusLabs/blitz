@@ -344,6 +344,11 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
             }
         }
 
+        // Presentation attributes are unqualified. xml:lang is handled above.
+        if attr.name.ns != ns!() {
+            continue;
+        }
+
         // A `font` element's `face` sets `font-family` to the attribute's value, and
         // its `size` maps to a font size keyword.
         // https://html.spec.whatwg.org/multipage/rendering.html#phrasing-content-3
@@ -529,7 +534,6 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
         // mapped below, for the box: the serialized source drops it.
         #[cfg(feature = "svg")]
         if let Some(url_data) = &svg_url_data
-            && attr.name.ns == ns!()
             && !is_svg_root_size
             && !(is_outermost_svg
                 && matches!(
@@ -543,7 +547,6 @@ fn compute_presentational_hints(node: &Node, elem: &ElementData) -> Presentation
 
         #[cfg(feature = "svg")]
         if is_outermost_svg
-            && attr.name.ns == ns!()
             && *name == local_name!("transform")
             && let Some(transform) = parse_svg_transform_attr(value)
         {
