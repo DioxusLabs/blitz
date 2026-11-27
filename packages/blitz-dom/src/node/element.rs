@@ -869,6 +869,10 @@ impl ElementData {
         std::mem::take(&mut self.inline_layout_data)
     }
 
+    pub(crate) fn is_button(&self) -> bool {
+        self.name.local == local_name!("button") || self.is_button_input()
+    }
+
     pub(crate) fn is_button_input(&self) -> bool {
         self.name.local == local_name!("input")
             && matches!(
