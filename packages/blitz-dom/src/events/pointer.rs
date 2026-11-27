@@ -298,13 +298,47 @@ pub(crate) fn handle_pointermove(
         return has_changed;
     }
 
-    let Some(hit) = doc.hit(x, y) else {
-        return changed;
-    };
+    let hit = doc.hit(x, y);
 
-    if changed {
+    if changed && let Some(hit) = &hit {
         doc.queue_ua_event(hit.node_id, DomEventData::MouseEnter(event.clone()));
     }
+
+    // A selection drag that started in a focused text input keeps following the pointer
+    // after it leaves the field, as in browsers.
+    if buttons != MouseEventButtons::None
+        && !matches!(event.id, BlitzPointerId::Finger(_))
+        && let Some(input_id) = doc.mousedown_node_id
+        && doc.focus_node_id == Some(input_id)
+    {
+        let node = &doc.nodes[input_id];
+        if node
+            .element_data()
+            .is_some_and(|el| el.text_input_data().is_some())
+        {
+            // Over the input, the hit test gives transform-aware local coordinates. Outside
+            // it, map the page position through the input's position in the page.
+            let (local_x, local_y) = match &hit {
+                Some(hit) if hit.node_id == input_id => (hit.x, hit.y),
+                _ => {
+                    // `absolute_position` subtracts the node's own scroll offset, which
+                    // doesn't move its border box.
+                    let origin = node.absolute_position(0.0, 0.0);
+                    let own_scroll = node.scroll_offset();
+                    (
+                        x - origin.x - own_scroll.x as f32,
+                        y - origin.y - own_scroll.y as f32,
+                    )
+                }
+            };
+            extend_text_input_selection(doc, input_id, local_x, local_y);
+            return true;
+        }
+    }
+
+    let Some(hit) = hit else {
+        return changed;
+    };
 
     // `target` is the event's canonicalized target (never a layout-generated
     // node), while the hit may be an anonymous block (e.g. bare text wrapped
@@ -331,44 +365,12 @@ pub(crate) fn handle_pointermove(
         return changed;
     }
 
-    let final_layout = el.layout_data().final_layout;
-    if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
-        if buttons == MouseEventButtons::None {
-            return changed;
-        }
+    // Selection drags in text inputs are handled above.
+    if matches!(el.special_data, SpecialElementData::TextInput(_)) {
+        return changed;
+    }
 
-        let mut content_box_offset = taffy::Point {
-            x: final_layout.padding.left + final_layout.border.left,
-            y: final_layout.padding.top + final_layout.border.top,
-        };
-        if !text_input_data.is_multiline {
-            let layout = text_input_data.editor.try_layout().unwrap();
-            let content_box_height = final_layout.content_box_height();
-            let input_height = layout.height() / layout.scale();
-            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
-
-            content_box_offset.y += y_offset;
-        }
-
-        // Account for the input's scroll offset (stored in CSS pixels, scaled here to device
-        // pixels) when mapping the pointer location into the text content's coordinate space.
-        let scroll_offset = text_input_data.scroll_offset as f64 * doc.viewport.scale_f64();
-        let (scroll_x, scroll_y) = if text_input_data.is_multiline {
-            (0.0, scroll_offset)
-        } else {
-            (scroll_offset, 0.0)
-        };
-
-        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64() + scroll_x;
-        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64() + scroll_y;
-
-        text_input_data
-            .editor
-            .driver(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx)
-            .extend_selection_to_point(x as f32, y as f32);
-
-        changed = true;
-    } else if event.is_mouse()
+    if event.is_mouse()
         && buttons != MouseEventButtons::None
         && doc.drag_mode == DragMode::Selecting
         && doc.extend_text_selection_to_point(x, y)
@@ -377,6 +379,50 @@ pub(crate) fn handle_pointermove(
     }
 
     changed
+}
+
+/// Extend the selection of the text input `input_id` to the point (`x`, `y`), given relative
+/// to the input's border box in CSS pixels. The point may lie outside the input.
+fn extend_text_input_selection(doc: &mut BaseDocument, input_id: NodeId, x: f32, y: f32) {
+    let scale = doc.viewport.scale_f64();
+    let node = &mut doc.nodes[input_id];
+    let final_layout = *node.final_layout();
+    let Some(el) = node.data.downcast_element_mut() else {
+        return;
+    };
+    let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data else {
+        return;
+    };
+
+    let mut content_box_offset = taffy::Point {
+        x: final_layout.padding.left + final_layout.border.left,
+        y: final_layout.padding.top + final_layout.border.top,
+    };
+    if !text_input_data.is_multiline {
+        let layout = text_input_data.editor.try_layout().unwrap();
+        let content_box_height = final_layout.content_box_height();
+        let input_height = layout.height() / layout.scale();
+        let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+
+        content_box_offset.y += y_offset;
+    }
+
+    // Account for the input's scroll offset (stored in CSS pixels, scaled here to device
+    // pixels) when mapping the pointer location into the text content's coordinate space.
+    let scroll_offset = text_input_data.scroll_offset as f64 * scale;
+    let (scroll_x, scroll_y) = if text_input_data.is_multiline {
+        (0.0, scroll_offset)
+    } else {
+        (scroll_offset, 0.0)
+    };
+
+    let x = (x - content_box_offset.x) as f64 * scale + scroll_x;
+    let y = (y - content_box_offset.y) as f64 * scale + scroll_y;
+
+    text_input_data
+        .editor
+        .driver(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx)
+        .extend_selection_to_point(x as f32, y as f32);
 }
 
 /// Record that the pointer has pressed, for counting clicks and detecting drags, and stop
