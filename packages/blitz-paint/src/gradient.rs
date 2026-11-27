@@ -442,15 +442,17 @@ fn resolve_color_stops<T>(
 ) -> (f32, f32) {
     let mut hint: Option<f32> = None;
     let hue_direction = gradient.hue_direction;
-    let subdivide_long_hue = matches!(hue_direction, HueDirection::Longer)
-        && matches!(
-            gradient.interpolation_cs,
-            ColorSpaceTag::Hsl | ColorSpaceTag::Hwb | ColorSpaceTag::Lch | ColorSpaceTag::Oklch
-        );
-    if subdivide_long_hue {
+    let subdivide_directed_hue = matches!(
+        hue_direction,
+        HueDirection::Longer | HueDirection::Increasing | HueDirection::Decreasing
+    ) && matches!(
+        gradient.interpolation_cs,
+        ColorSpaceTag::Hsl | ColorSpaceTag::Hwb | ColorSpaceTag::Lch | ColorSpaceTag::Oklch
+    );
+    if subdivide_directed_hue {
         // Renderers may pad the gradient with copies of the endpoint colors.
         // Shorter interpolation keeps those spans solid. Subdivide the actual
-        // color transitions below so they still follow the original long arc.
+        // color transitions below so they still follow the authored arc.
         gradient.hue_direction = HueDirection::Shorter;
     }
 
@@ -561,9 +563,9 @@ fn resolve_color_stops<T>(
         let color = stop.color;
         match hint.take() {
             None => {
-                if idx != 0 && subdivide_long_hue {
+                if idx != 0 && subdivide_directed_hue {
                     if let Some(&previous) = gradient.stops.last() {
-                        append_long_hue_samples(gradient, previous, stop, 1.0);
+                        append_directed_hue_samples(gradient, previous, stop, 1.0, hue_direction);
                     }
                 }
                 gradient.stops.push(stop);
@@ -584,8 +586,8 @@ fn resolve_color_stops<T>(
                     });
                     gradient.stops.push(stop);
                 } else if hint == (last_stop.offset + offset) / 2.0 {
-                    if subdivide_long_hue {
-                        append_long_hue_samples(gradient, last_stop, stop, 1.0);
+                    if subdivide_directed_hue {
+                        append_directed_hue_samples(gradient, last_stop, stop, 1.0, hue_direction);
                     }
                     gradient.stops.push(stop);
                 } else {
@@ -622,8 +624,14 @@ fn resolve_color_stops<T>(
                             interpolate_stop(hint + (offset - hint) * (i as f32) / 13.0);
                         }
                     }
-                    if subdivide_long_hue {
-                        append_long_hue_samples(gradient, last_stop, stop, exponent);
+                    if subdivide_directed_hue {
+                        append_directed_hue_samples(
+                            gradient,
+                            last_stop,
+                            stop,
+                            exponent,
+                            hue_direction,
+                        );
                         gradient.stops[first_sample..]
                             .sort_by(|a, b| a.offset.total_cmp(&b.offset));
                     }
@@ -662,19 +670,19 @@ fn resolve_color_stops<T>(
 
 /// Ensure that every renderer segment follows less than half a hue turn,
 /// even when a color hint maps evenly spaced colors to uneven offsets.
-fn append_long_hue_samples(
+fn append_directed_hue_samples(
     gradient: &mut Gradient,
     start: ColorStop,
     end: ColorStop,
     exponent: f32,
+    direction: HueDirection,
 ) {
     if end.offset <= start.offset {
         return;
     }
-    let interpolator =
-        start
-            .color
-            .interpolate(end.color, gradient.interpolation_cs, HueDirection::Longer);
+    let interpolator = start
+        .color
+        .interpolate(end.color, gradient.interpolation_cs, direction);
     for fraction in [0.25_f32, 0.5, 0.75] {
         let offset = start.offset + (end.offset - start.offset) * fraction.powf(exponent.recip());
         if start.offset < offset && offset < end.offset {
