@@ -253,6 +253,9 @@ css/selectors/invalidation/fullscreen-pseudo-class-in-has.html testdriver
 css/selectors/invalidation/modal-pseudo-class-in-has.html testdriver
 css/selectors/old-tests/css3-modsel-21.xml unsupported-async-browser-behavior
 html/webappapis/scripting/processing-model-2/integration-with-the-javascript-agent-formalism/atomics-wait-async.https.any.js unbounded-job-execution
+svg/animations/beginelement-instance-time-1.html unsupported-async-browser-behavior
+svg/animations/scripted/animatetransform-type-missing-value-default.html unsupported-async-browser-behavior
+svg/animations/scripted/keypoints-attribute-trailing-semi.html unsupported-async-browser-behavior
 svg/embedded/image-referrerpolicy.html dynamic-load-events
 svg/interact/scripted/script-crossorigin.html dynamic-load-events
 svg/interact/scripted/script-referrerpolicy.html dynamic-load-events

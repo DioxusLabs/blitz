@@ -32,6 +32,7 @@ fn to_id(key: NodeKey) -> NodeId {
 /// referring to the dropped node no longer resolve ([`NodeTree::get`] returns
 /// `None`, and indexing panics) instead of aliasing the new occupant.
 pub struct NodeTree {
+    pub(crate) is_xml_document: bool,
     map: SlotMap<NodeKey, Node>,
     /// Bumped whenever box geometry may have moved (layout ran or a scroll
     /// offset changed). Values derived from `final_layout()` (e.g. hoisted
@@ -46,6 +47,7 @@ pub struct NodeTree {
 impl NodeTree {
     pub(crate) fn new() -> Self {
         Self {
+            is_xml_document: false,
             map: SlotMap::with_key(),
             geometry_generation: AtomicU64::new(1),
             viewport_scroll: crate::Point::ZERO,
