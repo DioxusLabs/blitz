@@ -2,6 +2,7 @@ mod driver;
 mod ime;
 mod keyboard;
 mod pointer;
+mod queue;
 mod wheel;
 
 use crate::util::Point;
@@ -13,6 +14,7 @@ pub(crate) use pointer::DragMode;
 use pointer::{
     handle_click, handle_pointerdown, handle_pointermove, handle_pointerup, record_pointerdown,
 };
+pub(crate) use queue::EventQueue;
 pub(crate) use wheel::WheelGesture;
 
 use wheel::handle_wheel;
