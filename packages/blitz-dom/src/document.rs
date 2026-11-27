@@ -144,10 +144,17 @@ pub trait Document: Any + 'static {
     }
 
     /// Poll any pending async operations, and flush changes to the underlying [`BaseDocument`]
+    ///
+    /// The default implementation dispatches the events queued on the document (running
+    /// their default actions) and returns whether there were any.
     fn poll(&mut self, task_context: Option<TaskContext>) -> bool {
-        // Default implementation does nothing
         let _ = task_context;
-        false
+        let mut doc = self.inner_mut();
+        if !doc.has_pending_events() {
+            return false;
+        }
+        EventDriver::new(&mut *doc, NoopEventHandler).flush_pending_events();
+        true
     }
 
     /// Get the [`Document`]'s id
