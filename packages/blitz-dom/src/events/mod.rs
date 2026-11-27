@@ -249,14 +249,7 @@ pub(crate) fn handle_dom_event(
         }
         DomEventData::PointerDown(event) => {
             record_pointerdown(doc, event.page_x(), event.page_y());
-            handle_pointerdown(
-                doc,
-                target_node_id,
-                event.page_x(),
-                event.page_y(),
-                event.button,
-                event.mods,
-            );
+            handle_pointerdown(doc, target_node_id, event);
         }
         DomEventData::MouseDown(_) => {
             // Do nothing (handled in PointerDown)

@@ -68,6 +68,7 @@ mod paint_tree_incremental;
 mod physical_cssom_size;
 mod pointer_capture;
 mod pointer_events;
+mod pointer_focus;
 mod pointer_leave;
 mod pointerdown_cancelled;
 mod pointerup_cancelled;
