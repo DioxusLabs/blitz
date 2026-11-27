@@ -89,6 +89,8 @@ pub struct View<Rend: WindowRenderer> {
     /// need to store them in order to have access to them when processing keypress events
     pub theme_override: Option<Theme>,
     pub keyboard_modifiers: Modifiers,
+    /// The mouse buttons that are currently pressed. Touch and pen contacts are tracked
+    /// separately, in [`Self::active_events`].
     pub buttons: MouseEventButtons,
     /// The drag from another application that is over the window (if any)
     incoming_drag: Option<IncomingDrag>,
@@ -524,6 +526,12 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
     }
 
+    /// The buttons held by pointer `id`: the pressed mouse buttons for the mouse, and the main
+    /// button for a touch or pen contact that is down.
+    fn pointer_buttons(&self, id: BlitzPointerId) -> MouseEventButtons {
+        pointer_buttons(self.buttons, id, &self.active_events.borrow())
+    }
+
     /// Remove an active pointer by id. Returns `true` if it was present.
     fn remove_active_pointer(&self, id: BlitzPointerId) -> bool {
         let mut active = self.active_events.borrow_mut();
@@ -766,15 +774,13 @@ impl<Rend: WindowRenderer> View<Rend> {
                     let position = position.unwrap_or(self.pointer_pos);
                     self.pointer_pos = position;
 
-                    // The pointer is no longer pressed.
-                    self.buttons ^= MouseEventButton::Main.into();
-
                     let event = BlitzPointerEvent {
                         id,
                         is_primary: primary,
                         coords: self.pointer_coords(position),
                         button: MouseEventButton::Main,
-                        buttons: self.buttons,
+                        // The pointer is no longer pressed.
+                        buttons: MouseEventButtons::None,
                         mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                         details: PointerDetails::default(),
                         element: Default::default(),
@@ -791,7 +797,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     is_primary: primary,
                     coords: self.pointer_coords(position),
                     button: Default::default(),
-                    buttons: self.buttons,
+                    buttons: self.pointer_buttons(id),
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                     details: PointerDetails::default(),
                     element: Default::default(),
@@ -812,7 +818,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     is_primary: primary,
                     coords: self.pointer_coords(position),
                     button: Default::default(),
-                    buttons: self.buttons,
+                    buttons: self.pointer_buttons(id),
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                     details: pointer_source_to_blitz_details(&source),
                     element: Default::default(),
@@ -839,17 +845,21 @@ impl<Rend: WindowRenderer> View<Rend> {
                     _ => MouseEventButton::Main,
                 };
 
-                match state {
-                    ElementState::Pressed => self.buttons |= button.into(),
-                    ElementState::Released => self.buttons ^= button.into(),
-                }
+                // A touch or pen contact holds only its own (main) button, whatever other
+                // pointers are doing.
+                let buttons = if id == BlitzPointerId::Mouse {
+                    self.buttons = apply_button_state(self.buttons, button, state);
+                    self.buttons
+                } else {
+                    apply_button_state(MouseEventButtons::None, button, state)
+                };
 
                 let pointer_event = BlitzPointerEvent {
                     id,
                     is_primary: primary,
                     coords,
                     button,
-                    buttons: self.buttons,
+                    buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
 
                     // TODO: details for pointer up/down events
@@ -876,7 +886,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                         is_primary: primary,
                         coords,
                         button: Default::default(),
-                        buttons: self.buttons,
+                        buttons,
                         mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                         details: PointerDetails::default(),
                         element: Default::default(),
@@ -976,6 +986,34 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 }
 
+/// `buttons` after `button` is pressed or released.
+fn apply_button_state(
+    buttons: MouseEventButtons,
+    button: MouseEventButton,
+    state: ElementState,
+) -> MouseEventButtons {
+    match state {
+        ElementState::Pressed => buttons | button.into(),
+        ElementState::Released => buttons - button.into(),
+    }
+}
+
+/// The buttons held by pointer `id`, given the pressed mouse buttons and the active (pressed)
+/// touch and pen pointers.
+fn pointer_buttons(
+    mouse_buttons: MouseEventButtons,
+    id: BlitzPointerId,
+    active_pointers: &[BlitzPointerEvent],
+) -> MouseEventButtons {
+    if id == BlitzPointerId::Mouse {
+        mouse_buttons
+    } else if active_pointers.iter().any(|event| event.id == id) {
+        MouseEventButton::Main.into()
+    } else {
+        MouseEventButtons::None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -993,5 +1031,91 @@ mod tests {
         let size = PhysicalSize::new(100, 50);
         let insets = PhysicalInsets::new(40, 80, 40, 80);
         assert_eq!(content_size(size, insets), (0, 0));
+    }
+
+    fn contact(finger: u64) -> BlitzPointerEvent {
+        BlitzPointerEvent {
+            id: BlitzPointerId::Finger(finger),
+            is_primary: finger == 0,
+            coords: PointerCoords {
+                page_x: 0.0,
+                page_y: 0.0,
+                screen_x: 0.0,
+                screen_y: 0.0,
+                client_x: 0.0,
+                client_y: 0.0,
+            },
+            button: MouseEventButton::Main,
+            buttons: MouseEventButton::Main.into(),
+            mods: Default::default(),
+            details: PointerDetails::default(),
+            element: Default::default(),
+            active_pointers: Default::default(),
+        }
+    }
+
+    #[test]
+    fn each_touch_contact_holds_its_own_button() {
+        let main = MouseEventButtons::from(MouseEventButton::Main);
+        let mouse = MouseEventButtons::None;
+
+        // Two fingers down.
+        let mut active = vec![contact(0), contact(1)];
+        assert_eq!(
+            pointer_buttons(mouse, BlitzPointerId::Finger(0), &active),
+            main
+        );
+        assert_eq!(
+            pointer_buttons(mouse, BlitzPointerId::Finger(1), &active),
+            main
+        );
+
+        // Lifting the first finger leaves the second one pressed.
+        active.retain(|event| event.id != BlitzPointerId::Finger(0));
+        assert_eq!(
+            pointer_buttons(mouse, BlitzPointerId::Finger(0), &active),
+            MouseEventButtons::None
+        );
+        assert_eq!(
+            pointer_buttons(mouse, BlitzPointerId::Finger(1), &active),
+            main
+        );
+
+        // Once both are lifted, nothing is pressed, and the mouse never was.
+        active.clear();
+        assert_eq!(
+            pointer_buttons(mouse, BlitzPointerId::Finger(1), &active),
+            MouseEventButtons::None
+        );
+        assert_eq!(
+            pointer_buttons(mouse, BlitzPointerId::Mouse, &active),
+            MouseEventButtons::None
+        );
+    }
+
+    #[test]
+    fn touches_do_not_change_the_mouse_buttons() {
+        let secondary = MouseEventButtons::from(MouseEventButton::Secondary);
+        let active = vec![contact(0)];
+        assert_eq!(
+            pointer_buttons(secondary, BlitzPointerId::Mouse, &active),
+            secondary
+        );
+    }
+
+    #[test]
+    fn releasing_a_button_that_is_not_pressed_leaves_it_released() {
+        let buttons = apply_button_state(
+            MouseEventButtons::None,
+            MouseEventButton::Main,
+            ElementState::Released,
+        );
+        assert_eq!(buttons, MouseEventButtons::None);
+
+        let buttons = apply_button_state(buttons, MouseEventButton::Main, ElementState::Pressed);
+        let buttons = apply_button_state(buttons, MouseEventButton::Main, ElementState::Pressed);
+        assert_eq!(buttons, MouseEventButtons::from(MouseEventButton::Main));
+        let buttons = apply_button_state(buttons, MouseEventButton::Main, ElementState::Released);
+        assert_eq!(buttons, MouseEventButtons::None);
     }
 }
