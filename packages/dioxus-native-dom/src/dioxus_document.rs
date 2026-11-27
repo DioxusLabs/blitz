@@ -2,7 +2,8 @@
 use crate::NodeId;
 use crate::events::{
     BlitzKeyboardData, NativeConverter, NativeDragData, NativeFocusData, NativeFormData,
-    NativePointerData, NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
+    NativePointerData, NativeResizeData, NativeScrollData, NativeTouchData, NativeWheelData,
+    NodeHandle,
 };
 use crate::mutation_writer::{DioxusState, EventHandlerCounts};
 use crate::qual_name;
@@ -352,6 +353,7 @@ impl EventHandler for DioxusEventHandler {
 
             DomEventData::Scroll(sevent) => Some(wrap_event_data(NativeScrollData(sevent.clone()))),
             DomEventData::Wheel(wevent) => Some(wrap_event_data(NativeWheelData(wevent.clone()))),
+            DomEventData::Resize(revent) => Some(wrap_event_data(NativeResizeData(*revent))),
 
             DomEventData::Focus(_) => Some(wrap_event_data(NativeFocusData)),
             DomEventData::Blur(_) => Some(wrap_event_data(NativeFocusData)),

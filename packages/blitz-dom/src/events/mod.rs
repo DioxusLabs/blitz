@@ -2,6 +2,7 @@ mod driver;
 mod ime;
 mod keyboard;
 mod pointer;
+mod queue;
 mod wheel;
 
 use crate::util::Point;
@@ -13,6 +14,7 @@ pub(crate) use pointer::DragMode;
 use pointer::{
     handle_click, handle_pointerdown, handle_pointermove, handle_pointerup, record_pointerdown,
 };
+pub(crate) use queue::EventQueue;
 pub(crate) use wheel::WheelGesture;
 
 use wheel::handle_wheel;
@@ -98,6 +100,7 @@ fn map_dom_event_to_ui_event(
         DomEventData::Input(_) => None,
         DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
         DomEventData::Scroll(_) => None,
+        DomEventData::Resize(_) => None,
         DomEventData::Focus(_) => None,
         DomEventData::Blur(_) => None,
         DomEventData::FocusIn(_) => None,
@@ -343,6 +346,9 @@ pub(crate) fn handle_dom_event(
         }
         DomEventData::Scroll(_) => {
             // Handled elsewhere
+        }
+        DomEventData::Resize(_) => {
+            // Do nothing (no default action)
         }
         DomEventData::Wheel(event) => {
             handle_wheel(doc, target_node_id, event.clone());

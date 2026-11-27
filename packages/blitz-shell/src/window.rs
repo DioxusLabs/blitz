@@ -350,9 +350,11 @@ impl<Rend: WindowRenderer> View<Rend> {
         // arrived while the renderer was Pending were no-ops on the renderer
         // (its `set_size` only matches Active), so the surface created during
         // resume could be at a stale size by the time we get here.
+        self.waker = Some(create_waker(&self.proxy, window_id));
         let animation_time = self.current_animation_time();
+        self.doc
+            .resolve_and_settle(animation_time, self.waker.as_ref());
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let insets = self.safe_area_insets;
@@ -378,7 +380,6 @@ impl<Rend: WindowRenderer> View<Rend> {
             )
         });
 
-        self.waker = Some(create_waker(&self.proxy, window_id));
         true
     }
 
@@ -427,8 +428,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         let animation_time = self.current_animation_time();
         let is_visible = self.is_visible;
 
+        self.doc
+            .resolve_and_settle(animation_time, self.waker.as_ref());
+
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
 
         // Unregister resources (e.g. textures) from dropped custom widget nodes
         #[cfg(feature = "custom-widget")]

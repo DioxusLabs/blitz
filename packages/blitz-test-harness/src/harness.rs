@@ -110,10 +110,11 @@ impl<D: Document> Harness<D> {
         self.time
     }
 
-    /// Poll pending async work (e.g. the Dioxus VirtualDom) and resolve style/layout
+    /// Poll pending async work (e.g. the Dioxus VirtualDom) and resolve style/layout,
+    /// dispatching any events queued by layout (e.g. resize observer events).
     pub fn pump(&mut self) {
         self.doc.poll(None);
-        self.doc.inner_mut().resolve(self.time);
+        self.doc.resolve_and_settle(self.time, None);
     }
 
     /// Advance the animation clock by `dt_seconds` and [`pump`](Self::pump)

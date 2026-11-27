@@ -424,12 +424,12 @@ impl ElementData {
     pub fn new(name: QualName, attrs: Vec<Attribute>) -> Self {
         let id_attr_atom = attrs
             .iter()
-            .find(|attr| &attr.name.local == "id")
+            .find(|attr| attr.name.ns == markup5ever::ns!() && &attr.name.local == "id")
             .map(|attr| attr.value.as_ref())
             .map(|value: &str| Atom::from(value));
         let classes = attrs
             .iter()
-            .find(|attr| &attr.name.local == "class")
+            .find(|attr| attr.name.ns == markup5ever::ns!() && &attr.name.local == "class")
             .map(|attr| parse_classes(&attr.value))
             .unwrap_or_default();
 

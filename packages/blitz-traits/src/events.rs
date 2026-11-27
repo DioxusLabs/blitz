@@ -178,6 +178,7 @@ pub enum DomEventKind {
 
     Scroll,
     Wheel,
+    Resize,
 
     Click,
     ContextMenu,
@@ -236,6 +237,7 @@ impl FromStr for DomEventKind {
 
             "scroll" => Ok(Self::Scroll),
             "wheel" => Ok(Self::Wheel),
+            "resize" => Ok(Self::Resize),
 
             "click" => Ok(Self::Click),
             "contextmenu" => Ok(Self::ContextMenu),
@@ -291,6 +293,7 @@ pub enum DomEventData {
 
     Scroll(BlitzScrollEvent),
     Wheel(BlitzWheelEvent),
+    Resize(BlitzResizeEvent),
 
     Click(BlitzPointerEvent),
     ContextMenu(BlitzPointerEvent),
@@ -353,6 +356,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => "scroll",
             Self::Wheel { .. } => "wheel",
+            Self::Resize { .. } => "resize",
 
             Self::Click { .. } => "click",
             Self::ContextMenu { .. } => "contextmenu",
@@ -406,6 +410,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => DomEventKind::Scroll,
             Self::Wheel { .. } => DomEventKind::Wheel,
+            Self::Resize { .. } => DomEventKind::Resize,
 
             Self::Click { .. } => DomEventKind::Click,
             Self::ContextMenu { .. } => DomEventKind::ContextMenu,
@@ -459,6 +464,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+            Self::Resize { .. } => false,
 
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
@@ -512,6 +518,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+            Self::Resize { .. } => false,
 
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
@@ -905,6 +912,18 @@ pub struct BlitzScrollEvent {
     pub scroll_height: i32,
     pub client_width: i32,
     pub client_height: i32,
+}
+
+/// Element size reported by a resize observer after layout.
+///
+/// Sizes are in CSS pixels along the element's inline (`*_width`) and block
+/// (`*_height`) axes, matching `ResizeObserverSize` (`inlineSize`, `blockSize`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlitzResizeEvent {
+    pub border_box_width: f32,
+    pub border_box_height: f32,
+    pub content_box_width: f32,
+    pub content_box_height: f32,
 }
 
 // struct PointerInputState {
