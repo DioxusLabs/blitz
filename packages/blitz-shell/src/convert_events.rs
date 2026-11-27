@@ -78,14 +78,18 @@ impl PointerIds {
         if let Some((_, id)) = self.active.iter().find(|(f, _)| *f == finger_id) {
             return *id;
         }
-        let id = BlitzPointerId::finger(self.next_index);
-        self.next_index = if self.next_index == BlitzPointerId::MAX_INDEX {
-            0
-        } else {
-            self.next_index + 1
-        };
-        self.active.push((finger_id, id));
-        id
+        loop {
+            let id = BlitzPointerId::finger(self.next_index);
+            self.next_index = if self.next_index == BlitzPointerId::MAX_INDEX {
+                0
+            } else {
+                self.next_index + 1
+            };
+            if !self.active.iter().any(|(_, active_id)| *active_id == id) {
+                self.active.push((finger_id, id));
+                return id;
+            }
+        }
     }
 
     pub(crate) fn remove(&mut self, finger_id: FingerId) {
@@ -228,5 +232,22 @@ mod tests {
         // A raw id the platform reuses after the finger left is a new finger
         ids.remove(a);
         assert_eq!(ids.get_or_assign(a), BlitzPointerId::finger(2));
+    }
+
+    #[test]
+    fn pointer_ids_do_not_reuse_an_active_id_when_wrapping() {
+        let mut ids = PointerIds::default();
+        let held = FingerId::from_raw(7);
+        let last = FingerId::from_raw(8);
+        let wrapped = FingerId::from_raw(9);
+
+        assert_eq!(ids.get_or_assign(held), BlitzPointerId::finger(0));
+        ids.next_index = BlitzPointerId::MAX_INDEX;
+        assert_eq!(
+            ids.get_or_assign(last),
+            BlitzPointerId::finger(BlitzPointerId::MAX_INDEX)
+        );
+        assert_eq!(ids.get_or_assign(wrapped), BlitzPointerId::finger(1));
+        assert_eq!(ids.get_or_assign(held), BlitzPointerId::finger(0));
     }
 }
