@@ -1,16 +1,16 @@
 //! Benchmark the paint phase (blitz-paint `paint_scene` -> renderer command encoding)
 //! and the rasterization phase (renderer-side work: GPU dispatch / CPU rendering).
 //!
-//! Supports the vello, vello_cpu and vello_hybrid anyrender backends.
+//! Supports the vello, vello_cpu and vello_gpu anyrender backends.
 //!
 //! Usage: paint_bench <url> [width] [height] [scale] [iters] [backend]
-//!   backend: vello (default) | cpu | hybrid
+//!   backend: vello (default) | cpu | gpu
 
 use anyrender::ImageRenderer as _;
 use anyrender::PaintScene as _;
 use anyrender_vello::VelloScenePainter;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use anyrender_vello_hybrid::{ExternalTextures, ImageCache, ImageManager, VelloHybridScenePainter};
+use anyrender_vello_gpu::{ExternalTextures, ImageCache, ImageManager, VelloGpuScenePainter};
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
@@ -205,7 +205,7 @@ async fn main() {
                 (encode, total - encode)
             });
         }
-        "hybrid" | "vello_hybrid" => {
+        "gpu" | "vello_gpu" => {
             let context = wgpu_context::WGPUContext::new();
             let device_handle = wgpu_context::DeviceHandle::new_from_compatible_surface(
                 context.instance.clone(),
@@ -266,7 +266,7 @@ async fn main() {
                     &mut texture_bindings,
                 );
                 let mut painter =
-                    VelloHybridScenePainter::new(&mut scene, image_manager, &device_handle);
+                    VelloGpuScenePainter::new(&mut scene, image_manager, &device_handle);
                 painter.reset();
                 paint_scene(
                     &mut painter,
@@ -312,7 +312,7 @@ async fn main() {
             });
         }
         other => {
-            eprintln!("Unknown backend {other:?}. Expected vello, cpu, or hybrid.");
+            eprintln!("Unknown backend {other:?}. Expected vello, cpu, or gpu.");
             std::process::exit(1);
         }
     }

@@ -517,8 +517,11 @@ impl BaseDocument {
                 }
             } else if let Some(input) = element.text_input_data_mut() {
                 input.editor.set_scale(scale);
-                let mut font_ctx = font_ctx.lock().unwrap();
-                input.editor.refresh_layout(&mut font_ctx, layout_ctx);
+                // A textarea's text is laid out again once layout knows its width.
+                if !input.is_multiline {
+                    let mut font_ctx = font_ctx.lock().unwrap();
+                    input.editor.refresh_layout(&mut font_ctx, layout_ctx);
+                }
                 node.insert_damage(ONLY_RELAYOUT);
             }
         }

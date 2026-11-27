@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Trackpad scroll axis lock</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    p, ol { margin: 16px; max-width: 600px; }
+    .row { width: 400px; height: 150px; margin: 16px; overflow-x: auto; overflow-y: hidden; border: 1px solid #888; }
+    .row > div { width: 3000px; height: 150px; background: linear-gradient(to right, red, yellow, green, blue); }
+    .page { height: 3000px; background: linear-gradient(white, #aaa); }
+  </style>
+</head>
+<body>
+  <p>Swipe on a trackpad with the pointer over the coloured row:</p>
+  <ol>
+    <li>A slightly crooked vertical swipe scrolls the page and leaves the row still, also while it coasts.</li>
+    <li>A horizontal swipe scrolls the row and not the page.</li>
+    <li>A diagonal swipe scrolls both.</li>
+    <li>A swipe that starts vertical and turns sideways starts scrolling the row.</li>
+  </ol>
+  <div class="row"><div></div></div>
+  <div class="page"></div>
+</body>
+</html>

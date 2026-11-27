@@ -6,6 +6,7 @@
 
 use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
+use blitz_traits::node_id::NodeId as DomNodeId;
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
 use std::ops::{Deref, DerefMut};
@@ -16,11 +17,11 @@ use style::values::computed::length_percentage::CalcLengthPercentage;
 use stylo_taffy::CopyStyleGetters;
 use stylo_taffy::TaffyStyloStyle;
 use taffy::{
-    AxisStaticEdge, AxisStaticPosition, BlockContext, CoreStyle as _, DetailedLayoutInfo,
-    FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _, NodeId, OofCandidate,
-    ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_oof_layout, prelude::*,
+    AxisStaticEdge, AxisStaticPosition, BlockContext, CalcHandle, CoreStyle as _,
+    DetailedLayoutInfo, FlexDirection, LayoutContainingBlock, LayoutPartialTree, MaybeMath as _,
+    NodeId, OofCandidate, ResolveOrZero, RoundTree, RunMode, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_leaf_layout, compute_oof_layout, prelude::*,
 };
 
 pub(crate) mod construct;
@@ -74,15 +75,19 @@ fn tag_intrinsic_sizes(
     (IntrinsicSizes::default(), DEFAULT_OBJECT_SIZE)
 }
 
-pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
-    let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
+pub(crate) fn resolve_calc_value(calc: CalcHandle, parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc.ptr() as *const CalcLengthPercentage) };
     let result = calc.resolve(CSSPixelLength::new(parent_size));
     result.px()
 }
 
 /// Per-pass layout state: wraps the document for the duration of a layout pass and carries
 /// the Taffy tree trait implementations. Derefs to [`BaseDocument`].
-pub(crate) struct LayoutPassState<'doc> {
+///
+/// Public so that embedders can drive Taffy over a Blitz document themselves (e.g. a
+/// custom `LayoutPartialTree` wrapper which intercepts some nodes — multi-column or
+/// paginated layout — and delegates everything else to Blitz).
+pub struct LayoutPassState<'doc> {
     doc: &'doc mut BaseDocument,
     /// The writing mode of the box whose layout algorithm is currently running (see
     /// `layout::writing_mode`). Child styles read during that algorithm are expressed in its axes.
@@ -121,7 +126,8 @@ impl<'doc> LayoutPassState<'doc> {
         }
     }
 
-    pub(crate) fn new(doc: &'doc mut BaseDocument) -> Self {
+    /// Start a layout pass over `doc`.
+    pub fn new(doc: &'doc mut BaseDocument) -> Self {
         #[cfg(feature = "writing-mode")]
         let root_id = doc.try_root_element().map(|root| root.id);
         Self {
@@ -155,6 +161,46 @@ impl DerefMut for LayoutPassState<'_> {
     }
 }
 
+impl BaseDocument {
+    /// Recursively clear hoisted child lists for this node and its subtree,
+    /// including anonymous blocks and pseudo-elements.
+    pub(crate) fn clear_subtree_hoisted_children(&self, node_id: DomNodeId) {
+        let Some(node) = self.nodes.get(node_id) else {
+            return;
+        };
+        self.clear_hoisted_children(node);
+        for &child in &node.anonymous_blocks {
+            self.clear_subtree_hoisted_children(child);
+        }
+        // Anonymous blocks borrow their children from the DOM tree.
+        if !node.is_anonymous() {
+            for child in node
+                .children
+                .iter()
+                .copied()
+                .chain(node.before())
+                .chain(node.after())
+            {
+                self.clear_subtree_hoisted_children(child);
+            }
+        }
+    }
+
+    fn clear_hoisted_children(&self, containing_block: &Node) {
+        let mut hoisted = containing_block.hoisted_children.borrow_mut();
+        for &hoisted_id in hoisted.iter() {
+            // A box which has since been claimed by another containing block
+            // must keep pointing at that one.
+            if let Some(node) = self.nodes.get(hoisted_id) {
+                if node.oof_containing_block.get() == Some(containing_block.id) {
+                    node.oof_containing_block.set(None);
+                }
+            }
+        }
+        hoisted.clear();
+    }
+}
+
 impl LayoutPassState<'_> {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
         &self.nodes[dom_node_id(node_id)]
@@ -162,9 +208,7 @@ impl LayoutPassState<'_> {
     fn node_from_id_mut(&mut self, node_id: taffy::prelude::NodeId) -> &mut Node {
         &mut self.nodes[dom_node_id(node_id)]
     }
-}
 
-impl LayoutPassState<'_> {
     /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
     /// boxes for which it is the containing block. Must be called inside the layout
     /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
@@ -670,8 +714,8 @@ impl LayoutPartialTree for LayoutPassState<'_> {
         *self.node_from_id_mut(node_id).unrounded_layout_mut() = *layout;
     }
 
-    fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
-        resolve_calc_value(calc_ptr, parent_size)
+    fn resolve_calc_value(&self, calc: CalcHandle, parent_size: f32) -> f32 {
+        resolve_calc_value(calc, parent_size)
     }
 
     #[inline(always)]
@@ -697,18 +741,7 @@ impl LayoutContainingBlock for LayoutPassState<'_> {
     }
 
     fn clear_hoisted_children(&mut self, node_id: NodeId) {
-        let containing_block = dom_node_id(node_id);
-        let mut hoisted = self.node_from_id(node_id).hoisted_children.borrow_mut();
-        for &hoisted_id in hoisted.iter() {
-            // A box which has since been claimed by another containing block
-            // must keep pointing at that one.
-            if let Some(node) = self.nodes.get(hoisted_id) {
-                if node.oof_containing_block.get() == Some(containing_block) {
-                    node.oof_containing_block.set(None);
-                }
-            }
-        }
-        hoisted.clear();
+        self.doc.clear_hoisted_children(self.node_from_id(node_id));
     }
 
     fn add_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {
@@ -735,12 +768,12 @@ impl LayoutContainingBlock for LayoutPassState<'_> {
 impl taffy::CacheTree for LayoutPassState<'_> {
     #[inline]
     fn cache_get(
-        &mut self,
+        &self,
         node_id: NodeId,
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
-        self.node_from_id_mut(node_id)
-            .try_layout_data_mut()?
+        self.node_from_id(node_id)
+            .try_layout_data()?
             .cache
             .get(inputs)
     }
@@ -853,6 +886,7 @@ impl RoundTree for LayoutPassState<'_> {
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
         *self.node_from_id_mut(node_id).final_layout_mut() = *layout;
+        self.clamp_node_scroll_offset(dom_node_id(node_id));
     }
 
     fn is_out_of_flow(&self, node_id: NodeId) -> bool {

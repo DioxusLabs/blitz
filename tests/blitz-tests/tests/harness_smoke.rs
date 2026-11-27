@@ -3,7 +3,7 @@
 //! `HtmlDocument` and `DioxusDocument` backed harnesses.
 
 use blitz_test_harness::Harness;
-use dioxus::prelude::*;
+use dioxus_core::prelude::*;
 
 #[test]
 fn html_inspection() {
