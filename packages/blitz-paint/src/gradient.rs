@@ -566,9 +566,10 @@ fn resolve_color_stops<T>(
                 hue_direction,
             )
         });
+        let sample_arc = subdivide_directed_hue && !matches!(direction, HueDirection::Shorter);
         match hint.take() {
             None => {
-                if idx != 0 && subdivide_directed_hue {
+                if idx != 0 && sample_arc {
                     if let Some(&previous) = gradient.stops.last() {
                         append_directed_hue_samples(gradient, previous, stop, 1.0, direction);
                     }
@@ -591,7 +592,7 @@ fn resolve_color_stops<T>(
                     });
                     gradient.stops.push(stop);
                 } else if hint == (last_stop.offset + offset) / 2.0 {
-                    if subdivide_directed_hue {
+                    if sample_arc {
                         append_directed_hue_samples(gradient, last_stop, stop, 1.0, direction);
                     }
                     gradient.stops.push(stop);
@@ -628,7 +629,7 @@ fn resolve_color_stops<T>(
                             interpolate_stop(hint + (offset - hint) * (i as f32) / 13.0);
                         }
                     }
-                    if subdivide_directed_hue {
+                    if sample_arc {
                         append_directed_hue_samples(gradient, last_stop, stop, exponent, direction);
                         gradient.stops[first_sample..]
                             .sort_by(|a, b| a.offset.total_cmp(&b.offset));
