@@ -467,8 +467,10 @@ fn collect_layout_children_with_wrap(
                 doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
             });
 
-            match crate::util::parse_svg(outer_html.as_bytes(), Some((&doc.url, &doc.image_cache)))
-            {
+            match crate::util::parse_svg(
+                outer_html.as_bytes(),
+                Some((doc.document_base(), &doc.image_cache)),
+            ) {
                 Ok(svg) => {
                     doc.get_node_mut(container_node_id)
                         .unwrap()

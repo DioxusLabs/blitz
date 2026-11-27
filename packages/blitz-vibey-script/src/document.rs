@@ -19,6 +19,7 @@ use crate::runtime::ScriptRuntime;
 /// A `<script>` element found in the document
 struct PendingScript {
     src: Option<String>,
+    base_url: Url,
     inline_text: String,
     is_module: bool,
 }
@@ -68,8 +69,7 @@ impl ScriptDocument {
     /// Wrap an already-parsed [`BaseDocument`] in a [`ScriptDocument`] without
     /// reparsing the HTML.
     ///
-    /// The base URL for resolving external script sources is taken from the
-    /// document ([`BaseDocument::base_url`]).
+    /// Script sources use the base URL in effect at their position in the document.
     ///
     /// Note: for `innerHTML` support the document must have been created with
     /// an HTML parser provider (e.g. `blitz_html::HtmlProvider`) set in its
@@ -77,7 +77,7 @@ impl ScriptDocument {
     pub fn from_base_document(doc: BaseDocument) -> Self {
         // The default base url (set when `DocumentConfig.base_url` is `None`) is a
         // meaningless data url. Treat it as "no base url".
-        let base_url = Some(doc.base_url().clone()).filter(|url| url.scheme() != "data");
+        let base_url = Some(doc.url().clone()).filter(|url| url.scheme() != "data");
 
         let inner = Rc::new(RefCell::new(doc));
         let fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>> =
@@ -156,7 +156,8 @@ impl ScriptDocument {
             self.runtime.sync_named_element_globals();
             let (code, url) = match script.src {
                 Some(src) => {
-                    let Some(url) = self.resolve_script_url(&src) else {
+                    let Some(url) = BaseDocument::resolve_url_with_base(&script.base_url, &src)
+                    else {
                         self.record_error(format!("could not resolve script URL {src:?}"));
                         continue;
                     };
@@ -182,7 +183,8 @@ impl ScriptDocument {
 
             if script.is_module {
                 // Inline modules resolve imports against the document base URL
-                let module_url = url.or_else(|| self.base_url.clone());
+                let module_url =
+                    url.or_else(|| (script.base_url.scheme() != "data").then_some(script.base_url));
                 self.runtime.eval_module(&code, module_url.as_ref());
             } else {
                 let description = url
@@ -217,18 +219,11 @@ impl ScriptDocument {
     pub fn external_script_urls(&self) -> Vec<Url> {
         self.collect_scripts()
             .iter()
-            .filter_map(|script| script.src.as_deref())
-            .filter_map(|src| self.resolve_script_url(src))
+            .filter_map(|script| {
+                BaseDocument::resolve_url_with_base(&script.base_url, script.src.as_deref()?)
+            })
             .filter(|url| document_may_load(self.base_url.as_ref(), url))
             .collect()
-    }
-
-    /// Resolve a script `src` attribute against the document's base URL
-    fn resolve_script_url(&self, src: &str) -> Option<Url> {
-        match &self.base_url {
-            Some(base) => base.join(src).ok(),
-            None => Url::parse(src).ok(),
-        }
     }
 
     /// Evaluate arbitrary JavaScript code in the document's script context
@@ -308,6 +303,8 @@ impl ScriptDocument {
     fn collect_scripts(&self) -> Vec<PendingScript> {
         let doc = self.inner.borrow();
         let mut scripts = Vec::new();
+        let mut base_url = doc.url().clone();
+        let mut seen_base = false;
         let mut stack = vec![doc.root_node().id];
 
         while let Some(node_id) = stack.pop() {
@@ -316,6 +313,14 @@ impl ScriptDocument {
             };
 
             if let Some(element) = node.element_data() {
+                // Scripts are collected after parsing, but a later base element
+                // must not affect the URLs of scripts encountered before it.
+                if !seen_base && let Some(href) = element.base_href() {
+                    seen_base = true;
+                    if let Some(url) = doc.resolve_base_href(href) {
+                        base_url = url;
+                    }
+                }
                 if element.name.local == blitz_dom::local_name!("script") {
                     // Skip non-JavaScript script types (e.g. JSON data blocks)
                     let script_type = element
@@ -332,6 +337,7 @@ impl ScriptDocument {
                             src: element
                                 .attr(blitz_dom::local_name!("src"))
                                 .map(str::to_string),
+                            base_url: base_url.clone(),
                             inline_text: node.text_content(),
                             is_module: script_type == "module",
                         });

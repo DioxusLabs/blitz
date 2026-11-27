@@ -731,7 +731,12 @@ impl BaseDocument {
         let (sheet, ancestors, rule, target) = self
             .rule_declaration_target_mut(node_id, path)
             .ok_or(CssomError::NotFound)?;
-        let url_data = self.url.url_extra_data();
+        let url_data = sheet
+            .0
+            .contents
+            .read_with(&self.guard.read())
+            .url_data
+            .clone();
         let lock = &self.guard;
 
         let change_kind = match target {
@@ -946,9 +951,15 @@ impl BaseDocument {
         let DeclarationTarget::Block { block, rule_type } = target else {
             return Err(CssomError::NotSupported);
         };
+        let url_data = sheet
+            .0
+            .contents
+            .read_with(&self.guard.read())
+            .url_data
+            .clone();
         let new_block = style::properties::declaration_block::parse_style_attribute(
             css,
-            &self.url.url_extra_data(),
+            &url_data,
             None,
             QuirksMode::NoQuirks,
             rule_type,

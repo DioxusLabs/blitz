@@ -168,7 +168,7 @@ impl DocumentMutator<'_> {
 
     pub fn create_element(&mut self, name: QualName, attrs: Vec<Attribute>) -> NodeId {
         let mut data = ElementData::new(name, attrs);
-        data.flush_style_attribute(self.doc.guard(), &self.doc.url.url_extra_data());
+        data.flush_style_attribute(self.doc.guard(), &self.doc.document_base().url_extra_data());
 
         // Stylo data is created by the style traversal (`ensure_data`): Stylo treats an
         // element having data as it having been styled.
@@ -333,6 +333,8 @@ impl DocumentMutator<'_> {
             }
         }
 
+        let inline_style_url = (name.ns == ns!() && name.local == local_name!("style"))
+            .then(|| self.doc.document_base().url_extra_data());
         let node = &mut self.doc.nodes[node_id];
 
         let NodeData::Element(ref mut element) = node.data else {
@@ -351,6 +353,7 @@ impl DocumentMutator<'_> {
 
         element.attrs.set(name.clone(), value);
         element.presentational_hints.take();
+
         if node_is_in_document {
             devtools!(
                 self,
@@ -359,6 +362,15 @@ impl DocumentMutator<'_> {
                     name: blitz_traits::SmolStr::new(&*name.local),
                 })
             );
+        }
+        if node_is_in_document
+            && name.ns == ns!()
+            && name.local == local_name!("href")
+            && element.name.ns == ns!(html)
+            && element.name.local == local_name!("base")
+        {
+            self.doc.refresh_document_base();
+            return;
         }
 
         // Focusability is cached on the element and comes from these
@@ -403,8 +415,8 @@ impl DocumentMutator<'_> {
             return;
         }
 
-        if name.ns == ns!() && *attr == local_name!("style") {
-            element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
+        if let Some(url_data) = inline_style_url {
+            element.flush_style_attribute(&self.doc.guard, &url_data);
             node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
             return;
         }
@@ -471,6 +483,8 @@ impl DocumentMutator<'_> {
             }
         }
 
+        let inline_style_url = (name.ns == ns!() && name.local == local_name!("style"))
+            .then(|| self.doc.document_base().url_extra_data());
         let node = &mut self.doc.nodes[node_id];
 
         let Some(element) = node.element_data_mut() else {
@@ -483,6 +497,7 @@ impl DocumentMutator<'_> {
             return;
         }
         element.presentational_hints.take();
+
         self.mutations_occurred |= node_is_in_document;
         if node_is_in_document {
             devtools!(
@@ -501,6 +516,15 @@ impl DocumentMutator<'_> {
             widget_data
                 .widget
                 .attribute_changed(&name.local, old_value, None);
+        }
+        if node_is_in_document
+            && name.ns == ns!()
+            && name.local == local_name!("href")
+            && element.name.ns == ns!(html)
+            && element.name.local == local_name!("base")
+        {
+            self.doc.refresh_document_base();
+            return;
         }
 
         if name.local == local_name!("id") {
@@ -547,8 +571,8 @@ impl DocumentMutator<'_> {
             return;
         }
 
-        if name.ns == ns!() && *attr == local_name!("style") {
-            element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
+        if let Some(url_data) = inline_style_url {
+            element.flush_style_attribute(&self.doc.guard, &url_data);
             node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
         } else if (tag, attr) == tag_and_attr!("input", "checked") {
             element.set_checkbox_input_checked(false);
@@ -918,6 +942,21 @@ impl DocumentMutator<'_> {
             self.restyle_for_child_list_change(parent_id, index..index + child_ids.len());
         }
 
+        // An in-document move can change which base element comes first.
+        if new_parent_is_in_document
+            && self.doc.has_base_element()
+            && child_ids.iter().copied().any(|child| {
+                self.doc.nodes[child].flags.is_in_document()
+                    && crate::traversal::TreeTraverser::new_with_root(self.doc, child).any(|id| {
+                        self.doc.nodes[id]
+                            .element_data()
+                            .and_then(ElementData::base_href)
+                            .is_some()
+                    })
+            })
+        {
+            self.doc.refresh_document_base();
+        }
         for child_id in child_ids.iter().copied() {
             let child = &mut self.doc.nodes[child_id];
             let child_was_in_doc = child.flags.is_in_document();
@@ -1192,6 +1231,8 @@ impl<'doc> DocumentMutator<'doc> {
     }
 
     fn process_added_subtree(&mut self, node_id: NodeId) {
+        let mut base_changed = false;
+        let url_data = self.doc.document_base().url_extra_data();
         self.doc.iter_subtree_mut(node_id, |node_id, doc| {
             let node = &mut doc.nodes[node_id];
             node.flags.set(NodeFlags::IS_IN_DOCUMENT, true);
@@ -1206,6 +1247,9 @@ impl<'doc> DocumentMutator<'doc> {
             let NodeData::Element(ref mut element) = node.data else {
                 return;
             };
+
+            base_changed |= element.base_href().is_some();
+            element.rebase_inline_style(&doc.guard, &url_data);
 
             // Custom widgets replace the element's built-in tag-specific behaviour
             #[cfg(feature = "custom-widget")]
@@ -1253,10 +1297,14 @@ impl<'doc> DocumentMutator<'doc> {
             }
         });
 
+        if base_changed {
+            self.doc.refresh_document_base();
+        }
         self.flush_eager_ops();
     }
 
     fn process_removed_subtree(&mut self, node_id: NodeId) {
+        let mut base_changed = false;
         self.doc.iter_subtree_mut(node_id, |node_id, doc| {
             doc.reset_node_scroll_state(node_id);
             doc.nodes[node_id]
@@ -1296,6 +1344,7 @@ impl<'doc> DocumentMutator<'doc> {
                 return;
             };
 
+            base_changed |= element.base_href().is_some();
             match &element.special_data {
                 SpecialElementData::SubDocument(_) => {
                     self.eager_op_queue
@@ -1322,6 +1371,9 @@ impl<'doc> DocumentMutator<'doc> {
             }
         });
 
+        if base_changed {
+            self.doc.refresh_document_base();
+        }
         self.flush_eager_ops();
     }
 
@@ -1373,7 +1425,7 @@ impl<'doc> DocumentMutator<'doc> {
             return;
         }
 
-        let Some(url) = self.doc.url.resolve_relative(href) else {
+        let Some(url) = self.doc.resolve_url(href) else {
             return;
         };
         let handler = ResourceHandler::new(
@@ -1491,7 +1543,7 @@ impl<'doc> DocumentMutator<'doc> {
         if raw_src.is_empty() {
             return;
         }
-        let Some(url) = self.doc.url.resolve_relative(raw_src) else {
+        let Some(url) = self.doc.resolve_url(raw_src) else {
             #[cfg(feature = "tracing")]
             tracing::warn!("Not loading iframe: could not resolve url {raw_src}");
             return;
