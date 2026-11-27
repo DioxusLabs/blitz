@@ -1,8 +1,11 @@
-use crate::color::{Color, ToColorColor};
-use color::DynamicColor;
+use crate::color::ToColorColor;
+use color::{ColorSpaceTag, DynamicColor, Flags, HueDirection, Missing};
 use kurbo::{self, Affine, Point, Rect, Vec2};
 use peniko::{self, ColorStop, Gradient, LinearGradientPosition, SweepGradientPosition};
-use style::color::AbsoluteColor;
+use style::color::{
+    AbsoluteColor, ColorFlags, ColorSpace,
+    mix::{ColorInterpolationMethod, HueInterpolationMethod},
+};
 use style::{
     OwnedSlice,
     values::{
@@ -58,10 +61,12 @@ pub(crate) fn to_peniko_gradient(
             direction,
             items,
             flags,
+            color_interpolation_method,
             // compat_mode,
             ..
         } => linear_gradient(
             (direction, items, *flags),
+            color_interpolation_method,
             origin_rect,
             bounding_box,
             scale,
@@ -72,21 +77,100 @@ pub(crate) fn to_peniko_gradient(
             position,
             items,
             flags,
+            color_interpolation_method,
             // compat_mode,
             ..
-        } => radial_gradient((shape, position, items, *flags), origin_rect, current_color),
+        } => radial_gradient(
+            (shape, position, items, *flags),
+            color_interpolation_method,
+            origin_rect,
+            current_color,
+        ),
         GenericGradient::Conic {
             angle,
             position,
             items,
             flags,
+            color_interpolation_method,
             ..
-        } => conic_gradient((angle, position, items, *flags), origin_rect, current_color),
+        } => conic_gradient(
+            (angle, position, items, *flags),
+            color_interpolation_method,
+            origin_rect,
+            current_color,
+        ),
+    }
+}
+
+/// Preserve Stylo's interpolation metadata before producing any color stops.
+fn set_color_interpolation(gradient: &mut Gradient, method: &ColorInterpolationMethod) {
+    gradient.interpolation_cs = gradient_color_space(method.space);
+    gradient.hue_direction = match method.hue {
+        HueInterpolationMethod::Shorter => HueDirection::Shorter,
+        HueInterpolationMethod::Longer => HueDirection::Longer,
+        HueInterpolationMethod::Increasing => HueDirection::Increasing,
+        HueInterpolationMethod::Decreasing => HueDirection::Decreasing,
+        // Stylo’s specified-hue extension has no counterpart in color 0.3.
+        HueInterpolationMethod::Specified => HueDirection::Shorter,
+    };
+}
+
+fn gradient_color_space(space: ColorSpace) -> ColorSpaceTag {
+    match space {
+        ColorSpace::Srgb => ColorSpaceTag::Srgb,
+        ColorSpace::SrgbLinear => ColorSpaceTag::LinearSrgb,
+        ColorSpace::Hsl => ColorSpaceTag::Hsl,
+        ColorSpace::Hwb => ColorSpaceTag::Hwb,
+        ColorSpace::Lab => ColorSpaceTag::Lab,
+        ColorSpace::Lch => ColorSpaceTag::Lch,
+        ColorSpace::Oklab => ColorSpaceTag::Oklab,
+        ColorSpace::Oklch => ColorSpaceTag::Oklch,
+        ColorSpace::DisplayP3 => ColorSpaceTag::DisplayP3,
+        // color 0.3 has no linear-P3 tag. Linear RGB bases are related by a
+        // linear transform, so interpolation is equivalent in linear sRGB.
+        ColorSpace::DisplayP3Linear => ColorSpaceTag::LinearSrgb,
+        ColorSpace::A98Rgb => ColorSpaceTag::A98Rgb,
+        ColorSpace::ProphotoRgb => ColorSpaceTag::ProphotoRgb,
+        ColorSpace::Rec2020 => ColorSpaceTag::Rec2020,
+        ColorSpace::XyzD50 => ColorSpaceTag::XyzD50,
+        ColorSpace::XyzD65 => ColorSpaceTag::XyzD65,
+    }
+}
+
+fn gradient_stop_color(color: AbsoluteColor, interpolation: ColorSpaceTag) -> DynamicColor {
+    let mut missing = Missing::default();
+    for (index, flag) in [
+        ColorFlags::C0_IS_NONE,
+        ColorFlags::C1_IS_NONE,
+        ColorFlags::C2_IS_NONE,
+        ColorFlags::ALPHA_IS_NONE,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if color.flags.contains(flag) {
+            missing.insert(index);
+        }
+    }
+    let space = gradient_color_space(color.color_space);
+    // Preserve authored LCH hues when interpolation uses the same space.
+    // An RGB round trip can change an equal-hue pair into a near-equal
+    // pair and reverse its longer arc.
+    let preserve_hue =
+        space == interpolation && matches!(space, ColorSpaceTag::Lch | ColorSpaceTag::Oklch);
+    if (missing.is_empty() && !preserve_hue) || color.color_space == ColorSpace::DisplayP3Linear {
+        return color.as_dynamic_color();
+    }
+    DynamicColor {
+        cs: space,
+        flags: Flags::from_missing(missing),
+        components: *color.raw_components(),
     }
 }
 
 fn linear_gradient(
     gradient: LinearGradient,
+    interpolation: &ColorInterpolationMethod,
     rect: Rect,
     bounding_box: Rect,
     scale: f64,
@@ -141,6 +225,8 @@ fn linear_gradient(
         peniko::Extend::Pad
     });
 
+    set_color_interpolation(&mut gradient, interpolation);
+
     let (first_offset, last_offset) = resolve_length_color_stops(
         current_color,
         items,
@@ -155,11 +241,30 @@ fn linear_gradient(
         });
     }
 
+    if !repeating && gradient.stops.len() > 1 {
+        let first = f64::from(gradient.stops[0].offset.min(0.0));
+        let last = f64::from(gradient.stops.last().unwrap().offset.max(1.0));
+        if first < 0.0 || last > 1.0 {
+            // Keep the CSS gradient line's mapping when the backend requires
+            // the color stop domain to be normalized.
+            let span = last - first;
+            for stop in &mut *gradient.stops {
+                stop.offset = ((f64::from(stop.offset) - first) / span) as f32;
+            }
+            let direction = end - start;
+            gradient.kind = peniko::GradientKind::Linear(LinearGradientPosition {
+                start: start + direction * first,
+                end: start + direction * last,
+            });
+        }
+    }
+
     (gradient, None)
 }
 
 fn radial_gradient(
     gradient: RadialGradient,
+    interpolation: &ColorInterpolationMethod,
     rect: Rect,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
@@ -171,6 +276,8 @@ fn radial_gradient(
     } else {
         peniko::Extend::Pad
     });
+
+    set_color_interpolation(&mut gradient, interpolation);
 
     let (width_px, height_px) = (
         resolve_gradient_length(&position.horizontal, rect.width()),
@@ -263,6 +370,7 @@ fn radial_gradient(
 
 fn conic_gradient(
     gradient: ConicGradient,
+    interpolation: &ColorInterpolationMethod,
     rect: Rect,
     current_color: &AbsoluteColor,
 ) -> (peniko::Gradient, Option<Affine>) {
@@ -275,6 +383,8 @@ fn conic_gradient(
         } else {
             peniko::Extend::Pad
         });
+
+    set_color_interpolation(&mut gradient, interpolation);
 
     let (first_offset, last_offset) = resolve_angle_color_stops(
         current_color,
@@ -331,90 +441,175 @@ fn resolve_color_stops<T>(
     item_resolver: impl Fn(CSSPixelLength, &T) -> Option<f32>,
 ) -> (f32, f32) {
     let mut hint: Option<f32> = None;
+    let hue_direction = gradient.hue_direction;
+    let subdivide_directed_hue = matches!(
+        gradient.interpolation_cs,
+        ColorSpaceTag::Hsl | ColorSpaceTag::Hwb | ColorSpaceTag::Lch | ColorSpaceTag::Oklch
+    );
+    if subdivide_directed_hue {
+        // Renderers may pad the gradient with copies of the endpoint colors.
+        // Shorter interpolation keeps those spans solid. Subdivide the actual
+        // color transitions below so they still follow the authored arc.
+        gradient.hue_direction = HueDirection::Shorter;
+    }
 
-    for (idx, item) in items.iter().enumerate() {
-        let (color, offset) = match item {
-            GenericGradientItem::SimpleColorStop(color) => {
-                let step = 1.0 / (items.len() as f32 - 1.0);
-                (
-                    color.resolve_to_absolute(current_color).as_dynamic_color(),
-                    step * idx as f32,
-                )
-            }
+    // Resolve CSS stop fixup before adding renderer padding or hint samples.
+    // Unpositioned stops are evenly spaced between their positioned neighbors.
+    let mut resolved: Vec<_> = items
+        .iter()
+        .filter_map(|item| match item {
+            GenericGradientItem::SimpleColorStop(color) => Some((
+                Some(gradient_stop_color(
+                    color.resolve_to_absolute(current_color),
+                    gradient.interpolation_cs,
+                )),
+                None,
+            )),
             GenericGradientItem::ComplexColorStop { color, position } => {
-                let offset = item_resolver(gradient_length, position);
-                if let Some(offset) = offset {
+                item_resolver(gradient_length, position).map(|offset| {
                     (
-                        color.resolve_to_absolute(current_color).as_dynamic_color(),
-                        offset,
+                        Some(gradient_stop_color(
+                            color.resolve_to_absolute(current_color),
+                            gradient.interpolation_cs,
+                        )),
+                        Some(offset),
                     )
-                } else {
-                    continue;
-                }
+                })
             }
             GenericGradientItem::InterpolationHint(position) => {
-                hint = item_resolver(gradient_length, position);
-                continue;
+                item_resolver(gradient_length, position).map(|offset| (None, Some(offset)))
             }
+        })
+        .collect();
+
+    if let Some((_, first)) = resolved.first_mut() {
+        first.get_or_insert(0.0);
+    }
+    if let Some((_, last)) = resolved.last_mut() {
+        last.get_or_insert(1.0);
+    }
+    let mut previous = None;
+    for index in 0..resolved.len() {
+        let Some(offset) = resolved[index].1 else {
+            continue;
+        };
+        if let Some((left, start)) = previous {
+            let offset = offset.max(start);
+            let span = f64::from(offset) - f64::from(start);
+            let distance = (index - left) as f64;
+            for (step, (_, unpositioned)) in resolved[left + 1..index].iter_mut().enumerate() {
+                *unpositioned =
+                    Some((f64::from(start) + span * (step + 1) as f64 / distance) as f32);
+            }
+            resolved[index].1 = Some(offset);
+        }
+        previous = Some((index, resolved[index].1.unwrap()));
+    }
+
+    let mut previous_color: Option<ColorStop> = None;
+    for (idx, (color, offset)) in resolved.into_iter().enumerate() {
+        let offset = offset.unwrap();
+        let Some(color) = color else {
+            hint = Some(offset);
+            continue;
         };
 
-        if idx == 0 && !repeating && offset != 0.0 {
-            gradient
-                .stops
-                .push(peniko::ColorStop { color, offset: 0.0 });
+        let authored = ColorStop { color, offset };
+        let mut stop = authored;
+        if let Some(previous) = previous_color.replace(authored) {
+            if !previous.color.flags.missing().is_empty() || !color.flags.missing().is_empty() {
+                // A shared stop can inherit different components on either side.
+                let mut start = ColorStop {
+                    color: previous.color.convert(gradient.interpolation_cs),
+                    ..previous
+                };
+                stop.color = color.convert(gradient.interpolation_cs);
+                let start_missing = start.color.flags.missing();
+                let end_missing = stop.color.flags.missing();
+                for index in 0..4 {
+                    match (start_missing.contains(index), end_missing.contains(index)) {
+                        (true, false) => {
+                            start.color.components[index] = stop.color.components[index]
+                        }
+                        (false, true) => {
+                            stop.color.components[index] = start.color.components[index]
+                        }
+                        (true, true) => {
+                            start.color.components[index] = 0.0;
+                            stop.color.components[index] = 0.0;
+                        }
+                        (false, false) => {}
+                    }
+                }
+                start.color.flags = Flags::default();
+                stop.color.flags = Flags::default();
+                if gradient.stops.len() == 1 {
+                    gradient.stops[0] = start;
+                } else if gradient.stops.last() != Some(&start) {
+                    gradient.stops.push(start);
+                }
+            }
+            if gradient.stops.len() == 1 && gradient.stops[0].offset > 0.0 && !repeating {
+                let first = ColorStop {
+                    offset: 0.0,
+                    ..gradient.stops[0]
+                };
+                gradient.stops.insert(0, first);
+            }
         }
-
-        match hint {
-            None => gradient.stops.push(peniko::ColorStop { color, offset }),
+        let color = stop.color;
+        let direction = gradient.stops.last().map_or(hue_direction, |previous| {
+            equivalent_hue_arc(
+                previous.color,
+                color,
+                gradient.interpolation_cs,
+                hue_direction,
+            )
+        });
+        let sample_arc = subdivide_directed_hue && !matches!(direction, HueDirection::Shorter);
+        match hint.take() {
+            None => {
+                if idx != 0 && sample_arc {
+                    if let Some(&previous) = gradient.stops.last() {
+                        append_directed_hue_samples(gradient, previous, stop, 1.0, direction);
+                    }
+                }
+                gradient.stops.push(stop);
+            }
             Some(hint) => {
                 let &last_stop = gradient.stops.last().unwrap();
 
                 if hint <= last_stop.offset {
-                    // Upstream code has a bug here, so we're going to do something different
-                    match gradient.stops.len() {
-                        0 => (),
-                        1 => {
-                            gradient.stops.pop();
-                        }
-                        _ => {
-                            let prev_stop = gradient.stops[gradient.stops.len() - 2];
-                            if prev_stop.offset == hint {
-                                gradient.stops.pop();
-                            }
-                        }
-                    }
-                    gradient.stops.push(peniko::ColorStop {
-                        color,
-                        offset: hint,
-                    });
-                } else if hint >= offset {
-                    gradient.stops.push(peniko::ColorStop {
-                        color: last_stop.color,
-                        offset: hint,
-                    });
-                    gradient.stops.push(peniko::ColorStop {
+                    gradient.stops.push(ColorStop {
                         color,
                         offset: last_stop.offset,
                     });
+                    gradient.stops.push(stop);
+                } else if hint >= offset {
+                    gradient.stops.push(ColorStop {
+                        color: last_stop.color,
+                        offset,
+                    });
+                    gradient.stops.push(stop);
                 } else if hint == (last_stop.offset + offset) / 2.0 {
-                    gradient.stops.push(peniko::ColorStop { color, offset });
+                    if sample_arc {
+                        append_directed_hue_samples(gradient, last_stop, stop, 1.0, direction);
+                    }
+                    gradient.stops.push(stop);
                 } else {
                     let mid_point = (hint - last_stop.offset) / (offset - last_stop.offset);
+                    let interpolator =
+                        last_stop
+                            .color
+                            .interpolate(color, gradient.interpolation_cs, direction);
+                    let first_sample = gradient.stops.len();
+                    let exponent = 0.5f32.log(mid_point);
                     let mut interpolate_stop = |cur_offset: f32| {
                         let relative_offset =
                             (cur_offset - last_stop.offset) / (offset - last_stop.offset);
-                        let multiplier = relative_offset.powf(0.5f32.log(mid_point));
-                        let [last_r, last_g, last_b, last_a] = last_stop.color.components;
-                        let [r, g, b, a] = color.components;
-
-                        let color = Color::new([
-                            (last_r + multiplier * (r - last_r)),
-                            (last_g + multiplier * (g - last_g)),
-                            (last_b + multiplier * (b - last_b)),
-                            (last_a + multiplier * (a - last_a)),
-                        ]);
+                        let multiplier = relative_offset.powf(exponent);
                         gradient.stops.push(peniko::ColorStop {
-                            color: DynamicColor::from_alpha_color(color),
+                            color: interpolator.eval(multiplier),
                             offset: cur_offset,
                         });
                     };
@@ -434,7 +629,12 @@ fn resolve_color_stops<T>(
                             interpolate_stop(hint + (offset - hint) * (i as f32) / 13.0);
                         }
                     }
-                    gradient.stops.push(peniko::ColorStop { color, offset });
+                    if sample_arc {
+                        append_directed_hue_samples(gradient, last_stop, stop, exponent, direction);
+                        gradient.stops[first_sample..]
+                            .sort_by(|a, b| a.offset.total_cmp(&b.offset));
+                    }
+                    gradient.stops.push(stop);
                 }
             }
         }
@@ -464,6 +664,63 @@ fn resolve_color_stops<T>(
             }
         }
         (0.0, 1.0)
+    }
+}
+
+/// Normalize equivalent directed arcs before sampling. This keeps the
+/// renderer's output identical when two CSS hue methods select the same arc.
+fn equivalent_hue_arc(
+    start: DynamicColor,
+    end: DynamicColor,
+    space: ColorSpaceTag,
+    direction: HueDirection,
+) -> HueDirection {
+    if !matches!(
+        direction,
+        HueDirection::Increasing | HueDirection::Decreasing
+    ) {
+        return direction;
+    }
+    let index = match space {
+        ColorSpaceTag::Hsl | ColorSpaceTag::Hwb => 0,
+        ColorSpaceTag::Lch | ColorSpaceTag::Oklch => 2,
+        _ => return direction,
+    };
+    let delta = (end.convert(space).components[index] - start.convert(space).components[index])
+        .rem_euclid(360.0);
+    if delta == 180.0 || !delta.is_finite() {
+        return direction;
+    }
+    if delta == 0.0 || (matches!(direction, HueDirection::Increasing) == (delta < 180.0)) {
+        HueDirection::Shorter
+    } else {
+        HueDirection::Longer
+    }
+}
+
+/// Ensure that every renderer segment follows less than half a hue turn,
+/// even when a color hint maps evenly spaced colors to uneven offsets.
+fn append_directed_hue_samples(
+    gradient: &mut Gradient,
+    start: ColorStop,
+    end: ColorStop,
+    exponent: f32,
+    direction: HueDirection,
+) {
+    if end.offset <= start.offset {
+        return;
+    }
+    let interpolator = start
+        .color
+        .interpolate(end.color, gradient.interpolation_cs, direction);
+    for fraction in [0.25_f32, 0.5, 0.75] {
+        let offset = start.offset + (end.offset - start.offset) * fraction.powf(exponent.recip());
+        if start.offset < offset && offset < end.offset {
+            gradient.stops.push(ColorStop {
+                color: interpolator.eval(fraction),
+                offset,
+            });
+        }
     }
 }
 
