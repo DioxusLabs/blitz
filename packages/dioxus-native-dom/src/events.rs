@@ -186,6 +186,24 @@ impl NodeHandle {
         })
     }
 
+    /// Send the given pointer's events to this node instead of the node under the pointer,
+    /// until the pointer is released or cancelled. Returns `false` if the node is not in
+    /// the document.
+    pub fn set_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc_mut().set_pointer_capture(self.node_id, pointer_id)
+    }
+
+    /// Stop capturing the given pointer, returning whether this node had captured it
+    pub fn release_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc_mut()
+            .release_pointer_capture(pointer_id, Some(self.node_id))
+    }
+
+    /// Whether this node has captured the given pointer
+    pub fn has_pointer_capture(&self, pointer_id: BlitzPointerId) -> bool {
+        self.doc().has_pointer_capture(self.node_id, pointer_id)
+    }
+
     fn node_not_exist_err<T>(&self) -> Pin<Box<dyn Future<Output = MountedResult<T>>>> {
         let node_id = self.node_id;
         let err = MountedError::OperationFailed(Box::new(NodeNotExistErr(node_id)));
@@ -445,11 +463,7 @@ impl HasPointerData for NativePointerData {
     }
 
     fn pointer_id(&self) -> i32 {
-        match self.0.id {
-            BlitzPointerId::Mouse => 0,
-            BlitzPointerId::Pen => 0,
-            BlitzPointerId::Finger(id) => id as i32,
-        }
+        self.0.id.as_i32()
     }
 
     fn pointer_type(&self) -> String {
@@ -493,6 +507,12 @@ impl HasPointerData for NativePointerData {
 /// [`BlitzPointerEvent::active_pointers`] list and reported via `touches`.
 #[derive(Clone)]
 pub struct NativeTouchData(pub(crate) BlitzPointerEvent);
+
+impl NativeTouchData {
+    pub fn new(event: BlitzPointerEvent) -> Self {
+        Self(event)
+    }
+}
 
 impl ModifiersInteraction for NativeTouchData {
     fn modifiers(&self) -> Modifiers {
@@ -581,6 +601,12 @@ impl HasFocusData for NativeFocusData {
 
 #[derive(Clone)]
 pub struct NativeScrollData(pub(crate) BlitzScrollEvent);
+
+impl NativeScrollData {
+    pub fn new(event: BlitzScrollEvent) -> Self {
+        Self(event)
+    }
+}
 impl HasScrollData for NativeScrollData {
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any
@@ -618,6 +644,10 @@ impl HasScrollData for NativeScrollData {
 pub struct NativeWheelData(pub(crate) BlitzWheelEvent);
 
 impl NativeWheelData {
+    pub fn new(event: BlitzWheelEvent) -> Self {
+        Self(event)
+    }
+
     /// Where the event falls in its gesture, as when the fingers land on or lift from
     /// a trackpad. [`BlitzWheelPhase::Moved`] on a device that reports no gestures.
     pub fn phase(&self) -> BlitzWheelPhase {

@@ -60,10 +60,10 @@ pub fn mouse_pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
     )
 }
 
-/// Construct a finger [`BlitzPointerEvent`] at page coordinates `(x, y)`
-pub fn touch_pointer_event(finger: u64, x: f32, y: f32) -> BlitzPointerEvent {
+/// Construct a [`BlitzPointerEvent`] for a zero-based finger index at page coordinates `(x, y)`
+pub fn touch_pointer_event(finger_index: u64, x: f32, y: f32) -> BlitzPointerEvent {
     pointer_event(
-        BlitzPointerId::Finger(finger),
+        BlitzPointerId::finger(finger_index),
         x,
         y,
         MouseEventButton::Main,

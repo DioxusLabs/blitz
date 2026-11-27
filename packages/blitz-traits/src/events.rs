@@ -156,6 +156,8 @@ pub enum DomEventKind {
     PointerDown,
     PointerUp,
     PointerCancel,
+    GotPointerCapture,
+    LostPointerCapture,
     PointerEnter,
     PointerLeave,
     PointerOver,
@@ -212,6 +214,8 @@ impl FromStr for DomEventKind {
             "pointerdown" => Ok(Self::PointerDown),
             "pointerup" => Ok(Self::PointerUp),
             "pointercancel" => Ok(Self::PointerCancel),
+            "gotpointercapture" => Ok(Self::GotPointerCapture),
+            "lostpointercapture" => Ok(Self::LostPointerCapture),
             "pointerenter" => Ok(Self::PointerEnter),
             "pointerleave" => Ok(Self::PointerLeave),
             "pointerover" => Ok(Self::PointerOver),
@@ -263,6 +267,10 @@ pub enum DomEventData {
     PointerDown(BlitzPointerEvent),
     PointerUp(BlitzPointerEvent),
     PointerCancel(BlitzPointerEvent),
+    /// The target has started capturing the event's pointer
+    GotPointerCapture(BlitzPointerEvent),
+    /// The target has stopped capturing the event's pointer
+    LostPointerCapture(BlitzPointerEvent),
     PointerEnter(BlitzPointerEvent),
     PointerLeave(BlitzPointerEvent),
     PointerOver(BlitzPointerEvent),
@@ -323,6 +331,8 @@ impl DomEventData {
             Self::PointerDown { .. } => "pointerdown",
             Self::PointerUp { .. } => "pointerup",
             Self::PointerCancel { .. } => "pointercancel",
+            Self::GotPointerCapture { .. } => "gotpointercapture",
+            Self::LostPointerCapture { .. } => "lostpointercapture",
             Self::PointerEnter { .. } => "pointerenter",
             Self::PointerLeave { .. } => "pointerleave",
             Self::PointerOver { .. } => "pointerover",
@@ -374,6 +384,8 @@ impl DomEventData {
             Self::PointerDown { .. } => DomEventKind::PointerDown,
             Self::PointerUp { .. } => DomEventKind::PointerUp,
             Self::PointerCancel { .. } => DomEventKind::PointerCancel,
+            Self::GotPointerCapture { .. } => DomEventKind::GotPointerCapture,
+            Self::LostPointerCapture { .. } => DomEventKind::LostPointerCapture,
             Self::PointerEnter { .. } => DomEventKind::PointerEnter,
             Self::PointerLeave { .. } => DomEventKind::PointerLeave,
             Self::PointerOver { .. } => DomEventKind::PointerOver,
@@ -425,6 +437,8 @@ impl DomEventData {
             Self::PointerDown { .. } => true,
             Self::PointerUp { .. } => true,
             Self::PointerCancel { .. } => false,
+            Self::GotPointerCapture { .. } => false,
+            Self::LostPointerCapture { .. } => false,
             Self::PointerEnter { .. } => false,
             Self::PointerLeave { .. } => false,
             Self::PointerOver { .. } => true,
@@ -476,6 +490,8 @@ impl DomEventData {
             Self::PointerDown { .. } => true,
             Self::PointerUp { .. } => true,
             Self::PointerCancel { .. } => true,
+            Self::GotPointerCapture { .. } => true,
+            Self::LostPointerCapture { .. } => true,
             Self::PointerEnter { .. } => false,
             Self::PointerLeave { .. } => false,
             Self::PointerOver { .. } => true,
@@ -607,6 +623,38 @@ pub enum BlitzPointerId {
     Mouse,
     Pen,
     Finger(u64),
+}
+
+impl BlitzPointerId {
+    const FIRST_FINGER_ID: u64 = 2;
+
+    /// How many finger indexes [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
+    pub const FINGER_INDEX_COUNT: u64 = i32::MAX as u64 - Self::FIRST_FINGER_ID + 1;
+
+    /// The ID of the finger with the given index, placed after the mouse and pen IDs
+    pub const fn finger(index: u64) -> Self {
+        debug_assert!(index < Self::FINGER_INDEX_COUNT);
+        BlitzPointerId::Finger(index + Self::FIRST_FINGER_ID)
+    }
+
+    /// The DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
+    pub fn as_i32(&self) -> i32 {
+        match self {
+            BlitzPointerId::Mouse => 0,
+            BlitzPointerId::Pen => 1,
+            BlitzPointerId::Finger(id) => *id as i32,
+        }
+    }
+
+    /// The pointer with the given DOM `pointerId` (the inverse of [`Self::as_i32`])
+    pub fn from_i32(id: i32) -> Option<Self> {
+        match id {
+            0 => Some(BlitzPointerId::Mouse),
+            1 => Some(BlitzPointerId::Pen),
+            id if id >= Self::FIRST_FINGER_ID as i32 => Some(BlitzPointerId::Finger(id as u64)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
