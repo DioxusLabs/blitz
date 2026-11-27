@@ -147,7 +147,126 @@ fn sample_points_along_path(path: &BezPath, spacing: f64, count: usize) -> Vec<P
 
 impl ElementCx<'_, '_> {
     /// Draw all borders for a node
+    /// Paint the nine slices of a gradient border image in stretch mode.
+    fn draw_gradient_border_image(&self, scene: &mut impl PaintScene) -> bool {
+        use style::values::{
+            computed::{
+                BorderImageSideWidth, CSSPixelLength, NonNegativeLengthOrNumber, NumberOrPercentage,
+            },
+            generics::image::GenericImage,
+            specified::border::BorderImageRepeatKeyword::Stretch,
+        };
+
+        let border = self.style.get_border();
+        let GenericImage::Gradient(gradient) = &border.border_image_source else {
+            return false;
+        };
+        if !matches!(
+            border.border_image_repeat,
+            style::values::specified::border::BorderImageRepeat(Stretch, Stretch)
+        ) {
+            return false;
+        }
+
+        let edges = self.frame.border_width;
+        let widths = [edges.y0, edges.x1, edges.y1, edges.x0];
+        let outset = &border.border_image_outset;
+        let outset = [&outset.0, &outset.1, &outset.2, &outset.3];
+        let outset = std::array::from_fn::<_, 4, _>(|i| match outset[i] {
+            NonNegativeLengthOrNumber::Number(n) => n.0 as f64 * widths[i],
+            NonNegativeLengthOrNumber::Length(l) => l.0.px() as f64 * self.scale,
+        });
+        let area = self.frame.border_box + Insets::new(outset[3], outset[0], outset[1], outset[2]);
+        if area.width() <= 0.0 || area.height() <= 0.0 {
+            return true;
+        }
+
+        let source = Rect::from_origin_size(Point::ORIGIN, area.size());
+        let axis = [
+            source.height(),
+            source.width(),
+            source.height(),
+            source.width(),
+        ];
+        let slice = &border.border_image_slice;
+        let offsets = [
+            &slice.offsets.0,
+            &slice.offsets.1,
+            &slice.offsets.2,
+            &slice.offsets.3,
+        ];
+        let slices = std::array::from_fn::<_, 4, _>(|i| {
+            let value = match offsets[i].0 {
+                NumberOrPercentage::Number(n) => n as f64 * self.scale,
+                NumberOrPercentage::Percentage(p) => p.0 as f64 * axis[i],
+            };
+            value.clamp(0.0, axis[i])
+        });
+
+        let width = &border.border_image_width;
+        let width = [&width.0, &width.1, &width.2, &width.3];
+        let mut dest = std::array::from_fn::<_, 4, _>(|i| match width[i] {
+            BorderImageSideWidth::Number(n) => n.0 as f64 * widths[i],
+            BorderImageSideWidth::LengthPercentage(l) => {
+                l.0.resolve(CSSPixelLength::new((axis[i] / self.scale) as f32))
+                    .px() as f64
+                    * self.scale
+            }
+            BorderImageSideWidth::Auto => slices[i],
+        });
+        let factor = 1.0f64
+            .min(axis[1] / (dest[1] + dest[3]))
+            .min(axis[0] / (dest[0] + dest[2]));
+        dest.iter_mut().for_each(|width| *width *= factor);
+
+        let sx = [0.0, slices[3], source.width() - slices[1], source.width()];
+        let sy = [0.0, slices[0], source.height() - slices[2], source.height()];
+        let dx = [area.x0, area.x0 + dest[3], area.x1 - dest[1], area.x1];
+        let dy = [area.y0, area.y0 + dest[0], area.y1 - dest[2], area.y1];
+        let (brush, brush_transform) = crate::gradient::to_peniko_gradient(
+            gradient,
+            source,
+            source,
+            self.scale,
+            &self.style.clone_color(),
+        );
+        for row in 0..3 {
+            for col in 0..3 {
+                if row == 1 && col == 1 && !slice.fill {
+                    continue;
+                }
+                let src = Rect::new(sx[col], sy[row], sx[col + 1], sy[row + 1]);
+                let dst = Rect::new(dx[col], dy[row], dx[col + 1], dy[row + 1]);
+                if src.width() <= 0.0
+                    || src.height() <= 0.0
+                    || dst.width() <= 0.0
+                    || dst.height() <= 0.0
+                {
+                    continue;
+                }
+                let mapping = kurbo::Affine::translate(dst.origin().to_vec2())
+                    * kurbo::Affine::scale_non_uniform(
+                        dst.width() / src.width(),
+                        dst.height() / src.height(),
+                    )
+                    * kurbo::Affine::translate(-src.origin().to_vec2());
+                scene.fill(
+                    Fill::NonZero,
+                    self.transform,
+                    anyrender::Paint::Gradient(&brush),
+                    Some(mapping * brush_transform.unwrap_or(kurbo::Affine::IDENTITY)),
+                    &dst,
+                    AntiAliasing::Enabled,
+                );
+            }
+        }
+        true
+    }
+
     pub(crate) fn draw_border(&self, scene: &mut impl PaintScene) {
+        if self.draw_gradient_border_image(scene) {
+            return;
+        }
         let style = &*self.style;
         let border = style.get_border();
         let current_color = style.clone_color();
