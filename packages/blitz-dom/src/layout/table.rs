@@ -22,8 +22,8 @@ use style::{
 };
 use style_traits::values::specified::AllowedNumericType;
 use taffy::{
-    CalcHandle, DetailedGridInfo, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction,
-    style_helpers,
+    CalcHandle, DetailedGridInfo, LayoutPartialTree as _, MaybeResolve, ResolveOrZero,
+    TrackSizingFunction, style_helpers,
 };
 
 use crate::BaseDocument;
@@ -35,6 +35,453 @@ use super::resolve_calc_value;
 pub struct TableTreeWrapper<'a, 'doc> {
     pub(crate) doc: &'a mut LayoutPassState<'doc>,
     pub(crate) ctx: Arc<TableContext>,
+    /// The table's style with column widths from the automatic table layout
+    /// algorithm, when they could be computed (see [`Self::auto_layout_style`]).
+    pub(crate) style_override: Option<taffy::Style<Atom>>,
+}
+
+impl TableTreeWrapper<'_, '_> {
+    /// The table's style with its columns set to the widths the automatic table
+    /// layout algorithm gives them, for a table laid out at a definite width.
+    ///
+    /// Taffy sizes `auto` grid tracks by handing free space out equally, so
+    /// narrow columns (a quantity, a unit) reach their max-content width while a
+    /// column of long text stays narrow and its rows grow tall. Browsers hand
+    /// space out in proportion to each column's max-content width instead, and
+    /// honour percentage widths on cells. This follows Blink's table layout
+    /// (see [`distribute_auto_table_width`]).
+    ///
+    /// A table whose specified width is less than its columns' min-content
+    /// widths is widened to them, as in browsers: also during intrinsic sizing,
+    /// so that a float or a cell holding the table makes room for it. During
+    /// intrinsic sizing an auto-width table is as wide as its columns' min- or
+    /// max-content widths. A cell's own `width` sets its column's width but
+    /// not its min-content width, so a nested table of fixed-width cells still
+    /// shrinks to fit its container.
+    ///
+    /// Returns `None` (keeping Taffy's sizing) for fixed-layout tables or for
+    /// `<col>` sizes other than auto and lengths.
+    pub(crate) fn auto_layout_style(
+        &mut self,
+        inputs: taffy::LayoutInput,
+    ) -> Option<taffy::Style<Atom>> {
+        if self.ctx.is_fixed || self.ctx.cells.is_empty() {
+            return None;
+        }
+        let style = &self.ctx.style;
+        // During intrinsic sizing (min- or max-content), a table without a
+        // specified length is as wide as its columns' min- or max-content
+        // widths in the table algorithm. Taffy's would differ: a column with a
+        // fixed width would not shrink below it.
+        let (available_width, intrinsic) =
+            match (inputs.available_space.width, inputs.known_dimensions.width) {
+                (_, Some(width)) | (taffy::AvailableSpace::Definite(width), None) => (width, None),
+                (space, None) => (0.0, Some(space)),
+            };
+        let has_length_width = style.size.width.tag() == taffy::CompactLength::LENGTH_TAG;
+        let n = style.grid_template_columns.len();
+        if n == 0 {
+            return None;
+        }
+        let mut columns: Vec<ColumnWidth> = Vec::with_capacity(n);
+        for track in style.grid_template_columns.iter() {
+            let taffy::GridTemplateComponent::Single(track) = track else {
+                return None;
+            };
+            let max = track.max.into_raw();
+            columns.push(match max.tag() {
+                taffy::CompactLength::LENGTH_TAG => ColumnWidth::Fixed(max.value()),
+                taffy::CompactLength::AUTO_TAG => ColumnWidth::Auto,
+                _ => return None,
+            });
+        }
+        let parent_width = inputs.parent_size.width;
+        let padding = style
+            .padding
+            .resolve_or_zero(parent_width, resolve_calc_value);
+        let border = style
+            .border
+            .resolve_or_zero(parent_width, resolve_calc_value);
+        let gap = style
+            .gap
+            .width
+            .resolve_or_zero(parent_width, resolve_calc_value);
+        let extras = padding.left + padding.right + border.left + border.right;
+        let gaps = gap * (n - 1) as f32;
+        // The table's border-box width if it is known or specified; otherwise
+        // (`width: auto`) it is clamped to the columns' content widths below.
+        let specified = inputs.known_dimensions.width.or_else(|| {
+            if intrinsic.is_some() && !has_length_width {
+                return None;
+            }
+            let width = style
+                .size
+                .width
+                .maybe_resolve(parent_width, resolve_calc_value)?;
+            Some(match style.box_sizing {
+                taffy::BoxSizing::ContentBox => width + extras,
+                taffy::BoxSizing::BorderBox => width,
+            })
+        });
+
+        // Min- and max-content widths of the columns, from the cells that span
+        // one column; then widened for the cells that span several.
+        let mut min = vec![0.0f32; n];
+        let mut max = vec![0.0f32; n];
+        let mut spanning = Vec::new();
+        for index in 0..self.ctx.cells.len() {
+            let cell = &self.ctx.cells[index];
+            let (column, colspan, width) =
+                (cell.column as usize, cell.colspan as usize, cell.width);
+            if column >= n {
+                continue;
+            }
+            let mut measure = |space: taffy::AvailableSpace| {
+                self.compute_child_layout(
+                    index.into(),
+                    taffy::LayoutInput {
+                        known_dimensions: taffy::Size::NONE,
+                        known_dimensions_are_definite: taffy::Size {
+                            width: true,
+                            height: true,
+                        },
+                        parent_size: taffy::Size::NONE,
+                        available_space: taffy::Size {
+                            width: space,
+                            height: taffy::AvailableSpace::MaxContent,
+                        },
+                        // A cell's `width` sets its column's width, not its
+                        // min-content width: measure the content alone.
+                        sizing_mode: taffy::SizingMode::ContentSize,
+                        axis: taffy::RequestedAxis::Horizontal,
+                        run_mode: taffy::RunMode::ComputeSize,
+                        vertical_margins_are_collapsible: taffy::Line::FALSE,
+                    },
+                )
+                .size
+                .width
+            };
+            let cell_min = measure(taffy::AvailableSpace::MinContent);
+            let cell_max = measure(taffy::AvailableSpace::MaxContent).max(cell_min);
+            let colspan = colspan.min(n - column);
+            if colspan == 1 {
+                min[column] = min[column].max(cell_min);
+                max[column] = max[column].max(cell_max);
+                columns[column] = columns[column].with_cell(width);
+            } else {
+                spanning.push((column, colspan, cell_min, cell_max));
+            }
+        }
+        // A spanning cell wider than its columns widens them in proportion to
+        // their widths (equally if they are empty).
+        let widen = |sizes: &mut [f32], wanted: f32, colspan: usize| {
+            let current: f32 = sizes.iter().sum::<f32>() + gap * (colspan - 1) as f32;
+            let extra = wanted - current;
+            if extra > 0.0 {
+                let total: f32 = sizes.iter().sum();
+                for size in sizes.iter_mut() {
+                    let share = if total > 0.0 {
+                        *size / total
+                    } else {
+                        1.0 / colspan as f32
+                    };
+                    *size += extra * share;
+                }
+            }
+        };
+        for (column, colspan, cell_min, cell_max) in spanning {
+            let range = column..column + colspan;
+            widen(&mut min[range.clone()], cell_min, colspan);
+            widen(&mut max[range], cell_max, colspan);
+        }
+        for ((max, &min), column) in max.iter_mut().zip(&min).zip(&columns) {
+            *max = match *column {
+                ColumnWidth::Fixed(f) => min.max(f),
+                _ => max.max(min),
+            };
+        }
+        let sum_min: f32 = min.iter().sum();
+        // Percentage columns widen a table without a specified width so that each gets its
+        // share with its max-content width in it.
+        let wanted = percent_max_width(&max, &columns);
+        let mut available = match (specified, intrinsic) {
+            (Some(width), _) => width - extras - gaps,
+            (None, Some(taffy::AvailableSpace::MinContent)) => sum_min,
+            (None, Some(_)) => {
+                if wanted.is_finite() {
+                    wanted
+                } else {
+                    max.iter().sum()
+                }
+            }
+            (None, None) => (available_width - extras - gaps).min(wanted).max(sum_min),
+        };
+        let mut style = self.ctx.style.clone();
+        if available + 0.01 < sum_min {
+            // Narrower than its columns' min-content widths: browsers widen
+            // the table, over its `width` and `max-width`. A width the parent
+            // has already fixed is kept (the content overflows).
+            if inputs.known_dimensions.width.is_some() {
+                return None;
+            }
+            available = sum_min;
+            let border_box = sum_min + gaps + extras;
+            let width = match style.box_sizing {
+                taffy::BoxSizing::ContentBox => border_box - extras,
+                taffy::BoxSizing::BorderBox => border_box,
+            };
+            style.size.width = style_helpers::length(width);
+            style.min_size.width = style_helpers::length(width);
+            style.max_size.width = style_helpers::auto();
+        }
+        let widths =
+            distribute_auto_table_width(available, &min, &max, &columns, specified.is_some());
+        style.grid_template_columns = widths.into_iter().map(style_helpers::length).collect();
+        Some(style)
+    }
+}
+
+/// The width a table without a specified width wants for its columns' content (the
+/// spacing between them left out), as Blink's automatic table layout
+/// (`TableLayoutAlgorithmAuto::CalcEffectiveLogicalWidth`) has it: the largest of the
+/// columns' summed max-content widths, each percentage column's max-content width over
+/// its percentage, and the other columns' summed max-content widths over the percentage
+/// left to them. Percentages are taken in column order and cut where they pass 100% in
+/// total. Infinite when a column with content gets no percentage left (the table then
+/// takes all the width it is offered).
+fn percent_max_width(max: &[f32], columns: &[ColumnWidth]) -> f32 {
+    let mut wanted: f32 = max.iter().sum();
+    let mut percent_left = 1.0f32;
+    let mut other_max = 0.0f32;
+    let mut has_percent = false;
+    for (&max, column) in max.iter().zip(columns) {
+        match *column {
+            ColumnWidth::Percent(p) => {
+                has_percent = true;
+                let p = p.min(percent_left).max(0.0);
+                percent_left -= p;
+                if max > 0.0 {
+                    wanted = wanted.max(if p > 0.0 { max / p } else { f32::INFINITY });
+                }
+            }
+            _ => other_max += max,
+        }
+    }
+    if has_percent && other_max > 0.0 {
+        wanted = wanted.max(if percent_left > 0.0 {
+            other_max / percent_left
+        } else {
+            f32::INFINITY
+        });
+    }
+    wanted
+}
+
+/// A column's width in the automatic table layout algorithm.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ColumnWidth {
+    Auto,
+    /// A border-box length
+    Fixed(f32),
+    /// A fraction (0 to 1) of the table's content width
+    Percent(f32),
+}
+
+impl ColumnWidth {
+    /// The column's width once a cell with `cell` width is in it: percentages
+    /// win over lengths, and the larger of two of a kind wins.
+    fn with_cell(self, cell: ColumnWidth) -> ColumnWidth {
+        use ColumnWidth::*;
+        match (self, cell) {
+            (Percent(a), Percent(b)) => Percent(a.max(b)),
+            (Percent(_), _) => self,
+            (_, Percent(_)) => cell,
+            (Fixed(a), Fixed(b)) => Fixed(a.max(b)),
+            (Fixed(_), Auto) => self,
+            (Auto, _) => cell,
+        }
+    }
+}
+
+/// The column widths Blink's table layout (`DistributeInlineSizeToComputedInlineSizeAuto`)
+/// gives a table `available` wide (its content width less the spacing between
+/// columns), following CSS Tables 3's width distribution: four guesses, each
+/// at least as wide as the one before:
+///
+/// 1. min: every column at its min-content width;
+/// 2. percentage: percentage columns at their share of the table;
+/// 3. specified: fixed columns at their width as well;
+/// 4. max: auto columns at their max-content width as well.
+///
+/// Between two guesses the columns that change grow from the narrower guess to
+/// the wider one, in proportion to how much they grow: an auto column of long
+/// text and a short one both get the same fraction of the way from their
+/// min-content to their max-content width. Above the max guess, auto columns
+/// share what is left in proportion to their max-content width; without auto
+/// columns, fixed columns in a table with a specified width do, in
+/// proportion to their width; otherwise percentage columns, in proportion to
+/// their percentage. `constrained` says whether the table has a specified
+/// width.
+fn distribute_auto_table_width(
+    available: f32,
+    min: &[f32],
+    max: &[f32],
+    columns: &[ColumnWidth],
+    constrained: bool,
+) -> Vec<f32> {
+    // Percentages beyond 100% in total are cut from the last columns.
+    let mut percent_left = 1.0f32;
+    let percent: Vec<Option<f32>> = columns
+        .iter()
+        .map(|column| match *column {
+            ColumnWidth::Percent(p) => {
+                let p = p.min(percent_left).max(0.0);
+                percent_left -= p;
+                Some(p)
+            }
+            _ => None,
+        })
+        .collect();
+    let is_fixed = |c: usize| matches!(columns[c], ColumnWidth::Fixed(_));
+    // A fixed column's max-content width is its width (at least its
+    // min-content width), whatever its content.
+    let max: Vec<f32> = (0..min.len())
+        .map(|c| match columns[c] {
+            ColumnWidth::Fixed(f) => min[c].max(f),
+            _ => max[c],
+        })
+        .collect();
+    let max = &max[..];
+    let target = available.max(min.iter().sum());
+    let percent_width = |c: usize, p: f32| min[c].max(p * target);
+
+    let n = min.len();
+    let (mut min_guess, mut percent_guess, mut specified_guess, mut max_guess) =
+        (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    let (mut percent_count, mut fixed_count, mut auto_count) = (0usize, 0usize, 0usize);
+    let (mut total_percent, mut fixed_sum, mut auto_sum) = (0.0f32, 0.0f32, 0.0f32);
+    for c in 0..n {
+        min_guess += min[c];
+        if let Some(p) = percent[c] {
+            let w = percent_width(c, p);
+            percent_guess += w;
+            specified_guess += w;
+            max_guess += w;
+            percent_count += 1;
+            total_percent += p;
+        } else if is_fixed(c) {
+            percent_guess += min[c];
+            specified_guess += max[c];
+            max_guess += max[c];
+            fixed_count += 1;
+            fixed_sum += max[c];
+        } else {
+            percent_guess += min[c];
+            specified_guess += min[c];
+            max_guess += max[c];
+            auto_count += 1;
+            auto_sum += max[c];
+        }
+    }
+
+    let is_percent = |c: usize| percent[c].is_some();
+    let is_auto = |c: usize| !is_percent(c) && !is_fixed(c);
+    let percent_of = |c: usize| percent[c].map_or(min[c], |p| percent_width(c, p));
+    // Each column's width in the guesses after the min guess.
+    let percent_widths: Vec<f32> = (0..n).map(percent_of).collect();
+    let specified_widths: Vec<f32> = (0..n)
+        .map(|c| {
+            if is_fixed(c) {
+                max[c]
+            } else {
+                percent_widths[c]
+            }
+        })
+        .collect();
+    let max_widths: Vec<f32> = (0..n)
+        .map(|c| {
+            if is_auto(c) {
+                max[c]
+            } else {
+                specified_widths[c]
+            }
+        })
+        .collect();
+    // Between guesses `from` and `to`, the `count` columns of `kind` share
+    // `space` in proportion to how much they grow.
+    let between =
+        |from: &[f32], to: &[f32], kind: &dyn Fn(usize) -> bool, count: usize, space: f32| {
+            let increase: f32 = (0..n).filter(|&c| kind(c)).map(|c| to[c] - from[c]).sum();
+            (0..n)
+                .map(|c| match () {
+                    _ if !kind(c) => to[c],
+                    _ if increase > 0.0 => from[c] + space * (to[c] - from[c]) / increase,
+                    _ => from[c] + space / count as f32,
+                })
+                .collect::<Vec<f32>>()
+        };
+
+    if target <= min_guess {
+        min.to_vec()
+    } else if target <= percent_guess {
+        between(
+            min,
+            &percent_widths,
+            &is_percent,
+            percent_count,
+            target - min_guess,
+        )
+    } else if target <= specified_guess {
+        between(
+            &percent_widths,
+            &specified_widths,
+            &is_fixed,
+            fixed_count,
+            target - percent_guess,
+        )
+    } else if target <= max_guess {
+        between(
+            &specified_widths,
+            &max_widths,
+            &is_auto,
+            auto_count,
+            target - specified_guess,
+        )
+    } else {
+        let space = target - max_guess;
+        let share = |weight: f32, sum: f32, count: usize| {
+            if sum > 0.0 {
+                space * weight / sum
+            } else {
+                space / count as f32
+            }
+        };
+        (0..n)
+            .map(|c| {
+                let base = if is_percent(c) { percent_of(c) } else { max[c] };
+                base + if auto_count > 0 {
+                    if is_auto(c) {
+                        share(max[c], auto_sum, auto_count)
+                    } else {
+                        0.0
+                    }
+                } else if fixed_count > 0 && constrained {
+                    if is_fixed(c) {
+                        share(max[c], fixed_sum, fixed_count)
+                    } else {
+                        0.0
+                    }
+                } else if percent_count > 0 {
+                    match percent[c] {
+                        Some(p) => share(p, total_percent, percent_count),
+                        None => 0.0,
+                    }
+                } else {
+                    0.0
+                }
+            })
+            .collect()
+    }
 }
 
 // Deliberately not `Clone`: `style` may hold raw pointers into `calc_values`.
@@ -50,6 +497,8 @@ pub struct TableContext {
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo<Atom>>>,
     pub border_style: Option<ServoArc<Border>>,
     pub border_collapse: BorderCollapse,
+    /// Whether the table uses the fixed table layout algorithm
+    pub is_fixed: bool,
     /// Backing storage for `calc()` track sizes synthesised by the table layout code.
     /// Taffy stores calc values as raw pointers, so these must outlive the `style`.
     #[allow(dead_code)]
@@ -70,6 +519,10 @@ pub struct TableCell {
     pub row: u16,
     /// Index of the column the cell originates in
     pub column: u16,
+    /// The number of columns the cell spans
+    pub colspan: u16,
+    /// The cell's specified width (border-box lengths and percentages)
+    pub width: ColumnWidth,
     style: taffy::Style<Atom>,
 }
 
@@ -432,6 +885,7 @@ pub(crate) fn build_table_context(
             computed_grid_info: AtomicRefCell::new(None),
             border_collapse,
             border_style: first_cell_border,
+            is_fixed,
             calc_values,
         },
         layout_children,
@@ -729,11 +1183,30 @@ fn collect_table_cells(
                 }
             }
 
+            let width = match style.size.width.tag() {
+                taffy::CompactLength::LENGTH_TAG => {
+                    let len = style.size.width.value();
+                    ColumnWidth::Fixed(match style.box_sizing {
+                        taffy::BoxSizing::ContentBox => {
+                            let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+                            let border = style.border.resolve_or_zero(None, resolve_calc_value);
+                            len + padding.left + padding.right + border.left + border.right
+                        }
+                        taffy::BoxSizing::BorderBox => len,
+                    })
+                }
+                taffy::CompactLength::PERCENT_TAG if style.size.width.value() > 0.0 => {
+                    ColumnWidth::Percent(style.size.width.value())
+                }
+                _ => ColumnWidth::Auto,
+            };
             style.size.width = style_helpers::auto();
             cells.push(TableCell {
                 node_id,
                 row: row.saturating_sub(1),
                 column: col,
+                colspan: colspan.max(1),
+                width,
                 style,
             });
 
@@ -804,7 +1277,7 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_, '_> {
     type CustomIdent = Atom;
 
     fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style<Atom> {
-        &self.ctx.style
+        self.style_override.as_ref().unwrap_or(&self.ctx.style)
     }
 
     fn resolve_calc_value(&self, calc: CalcHandle, parent_size: f32) -> f32 {
@@ -852,5 +1325,107 @@ impl taffy::LayoutGridContainer for TableTreeWrapper<'_, '_> {
         detailed_grid_info: DetailedGridInfo<Atom>,
     ) {
         *self.ctx.computed_grid_info.borrow_mut() = Some(detailed_grid_info);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ColumnWidth, distribute_auto_table_width};
+    use ColumnWidth::*;
+
+    #[test]
+    fn percentage_columns_widen_an_auto_table() {
+        use super::percent_max_width;
+        let w = |max: &[f32], columns: &[ColumnWidth]| {
+            (percent_max_width(max, columns) * 100.0).round() / 100.0
+        };
+        // Each percentage column holds its max-content width at its share.
+        assert_eq!(w(&[57.0, 56.0], &[Percent(0.3), Percent(0.3)]), 190.0);
+        // Past 100%, the last percentages are cut: 56 / 0.4.
+        assert_eq!(w(&[51.0, 56.0], &[Percent(0.6), Percent(0.6)]), 140.0);
+        // The other columns share what the percentages leave: 56 / 0.5.
+        assert_eq!(w(&[28.0, 56.0], &[Percent(0.5), Auto]), 112.0);
+        // Without percentages the columns' max-content widths.
+        assert_eq!(w(&[28.0, 56.0], &[Auto, Fixed(56.0)]), 84.0);
+        // No percentage left for a column with content.
+        assert!(percent_max_width(&[28.0, 56.0], &[Percent(1.0), Auto]).is_infinite());
+    }
+
+    fn round(widths: Vec<f32>) -> Vec<f32> {
+        widths
+            .into_iter()
+            .map(|w| (w * 10.0).round() / 10.0)
+            .collect()
+    }
+
+    #[test]
+    fn auto_columns_grow_from_min_to_max_content_by_the_same_fraction() {
+        // A quantity column (min 20, max 40) next to a description (min 60,
+        // max 400) in 300px: the 220px above the min-content widths go in
+        // proportion to how much each column can grow (20 : 340), as in
+        // Chromium. WebKit gave shares of the max-content widths (27.3, 272.7).
+        let widths =
+            distribute_auto_table_width(300.0, &[20.0, 60.0], &[40.0, 400.0], &[Auto; 2], true);
+        assert_eq!(round(widths), vec![32.2, 267.8]);
+    }
+
+    #[test]
+    fn narrow_columns_keep_their_min_content_width() {
+        // Proportional shares below a column's min-content width are raised to
+        // it, and the columns after it give the difference back.
+        let widths = distribute_auto_table_width(
+            200.0,
+            &[30.0, 30.0, 50.0],
+            &[30.0, 30.0, 500.0],
+            &[Auto; 3],
+            true,
+        );
+        assert_eq!(round(widths), vec![30.0, 30.0, 140.0]);
+    }
+
+    #[test]
+    fn wide_tables_grow_auto_columns_in_proportion() {
+        let widths =
+            distribute_auto_table_width(400.0, &[10.0, 10.0], &[50.0, 150.0], &[Auto; 2], true);
+        assert_eq!(round(widths), vec![100.0, 300.0]);
+    }
+
+    #[test]
+    fn percentage_and_fixed_columns_come_first() {
+        // 50% of 400 and a 100px column; the auto column gets the rest even
+        // though its max-content width is larger.
+        let widths = distribute_auto_table_width(
+            400.0,
+            &[10.0, 10.0, 10.0],
+            &[20.0, 20.0, 900.0],
+            &[Percent(0.5), Fixed(100.0), Auto],
+            true,
+        );
+        assert_eq!(round(widths), vec![200.0, 100.0, 100.0]);
+    }
+
+    #[test]
+    fn overallocated_percentages_are_cut_from_the_last_columns() {
+        let widths = distribute_auto_table_width(
+            100.0,
+            &[0.0, 0.0],
+            &[10.0, 10.0],
+            &[Percent(0.8), Percent(0.6)],
+            true,
+        );
+        assert_eq!(round(widths), vec![80.0, 20.0]);
+    }
+
+    #[test]
+    fn min_content_widths_are_kept_when_space_runs_out() {
+        // Fixed widths that do not fit shrink towards their min-content width.
+        let widths = distribute_auto_table_width(
+            100.0,
+            &[20.0, 20.0],
+            &[80.0, 80.0],
+            &[Fixed(80.0), Fixed(80.0)],
+            true,
+        );
+        assert_eq!(round(widths), vec![50.0, 50.0]);
     }
 }
