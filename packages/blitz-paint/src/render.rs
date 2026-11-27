@@ -1134,16 +1134,30 @@ impl ElementCx<'_, '_> {
                 };
             }
 
-            // Render text
+            // Render text, or the placeholder in the color of its `::placeholder` while there is none
+            let placeholder = input_data
+                .placeholder
+                .as_ref()
+                .filter(|_| input_data.editor.raw_text().is_empty());
+            let (layout, brush_override) = match placeholder {
+                Some(placeholder) => (
+                    placeholder.editor.try_layout(),
+                    Some(placeholder.style.get_inherited_text().color.as_srgb_color()),
+                ),
+                None => (input_data.editor.try_layout(), None),
+            };
+            let Some(layout) = layout else {
+                return;
+            };
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,
-                input_data.editor.try_layout().unwrap().lines(),
+                layout.lines(),
                 self.context.dom,
                 transform,
                 TextPaintOptions {
                     scale: self.scale,
-                    brush_override: None,
+                    brush_override,
                 },
                 self.node.id,
                 &mut draw_text_context,
