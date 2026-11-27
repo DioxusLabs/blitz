@@ -174,6 +174,31 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 }
 
+// RFC 4647 extended filtering skips unmatched subtags until a singleton.
+fn language_range_matches(range: &str, language: &str) -> bool {
+    if range.is_empty() || language.is_empty() {
+        return range.is_empty() && language.is_empty();
+    }
+    let mut range = range.split('-');
+    let mut language = language.split('-');
+    let first_range = range.next().unwrap();
+    let first_tag = language.next().unwrap();
+    if first_range != "*" && !first_range.eq_ignore_ascii_case(first_tag) {
+        return false;
+    }
+    range.filter(|part| *part != "*").all(|part| {
+        for tag in language.by_ref() {
+            if part.eq_ignore_ascii_case(tag) {
+                return true;
+            }
+            if tag.len() == 1 {
+                return false;
+            }
+        }
+        false
+    })
+}
+
 impl selectors::Element for BlitzNode<'_> {
     type Impl = SelectorImpl;
 
@@ -295,7 +320,7 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::Fullscreen => false,
             NonTSPseudoClass::Hover => self.element_state().contains(ElementState::HOVER),
             NonTSPseudoClass::Indeterminate => false,
-            NonTSPseudoClass::Lang(_) => false,
+            NonTSPseudoClass::Lang(ref range) => self.match_element_lang(None, range),
             NonTSPseudoClass::CustomState(_) => false,
             NonTSPseudoClass::Link => self.element_state().contains(ElementState::UNVISITED),
             NonTSPseudoClass::PlaceholderShown => false,
@@ -670,15 +695,32 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn lang_attr(&self) -> Option<style::selector_parser::AttrValue> {
-        None
+        self.element_data()?
+            .declared_language()
+            .map(AtomString::from)
     }
 
     fn match_element_lang(
         &self,
-        _override_lang: Option<Option<style::selector_parser::AttrValue>>,
-        _value: &style::selector_parser::Lang,
+        override_lang: Option<Option<style::selector_parser::AttrValue>>,
+        range: &style::selector_parser::Lang,
     ) -> bool {
-        false
+        if let Some(language) = override_lang {
+            return language_range_matches(range, language.as_ref().map_or("", |value| &value.0));
+        }
+
+        let mut current = Some(*self);
+        while let Some(node) = current {
+            if let Some(language) = node
+                .element_data()
+                .and_then(|element| element.declared_language())
+            {
+                return language_range_matches(range, language);
+            }
+            current = node.parent_node();
+        }
+
+        language_range_matches(range, "")
     }
 
     fn is_html_document_body_element(&self) -> bool {
