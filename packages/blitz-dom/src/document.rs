@@ -1647,7 +1647,10 @@ impl BaseDocument {
                 }
                 drop(global_font_ctx);
 
-                // TODO: see if we can only invalidate if resolved fonts may have changed
+                // Font-relative CSS units can have been computed with the fallback face.
+                if let Some(root_id) = self.try_root_element().map(|root| root.id) {
+                    self.nodes[root_id].set_restyle_hint(RestyleHint::recascade_subtree());
+                }
                 self.invalidate_inline_contexts();
             }
             Resource::None => {
