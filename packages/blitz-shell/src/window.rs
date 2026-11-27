@@ -350,9 +350,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         // arrived while the renderer was Pending were no-ops on the renderer
         // (its `set_size` only matches Active), so the surface created during
         // resume could be at a stale size by the time we get here.
+        self.waker = Some(create_waker(&self.proxy, window_id));
         let animation_time = self.current_animation_time();
+        self.resolve_and_settle(animation_time);
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let insets = self.safe_area_insets;
@@ -378,7 +379,6 @@ impl<Rend: WindowRenderer> View<Rend> {
             )
         });
 
-        self.waker = Some(create_waker(&self.proxy, window_id));
         true
     }
 
@@ -410,6 +410,45 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
     }
 
+    /// Resolve layout and flush any events generated during layout (such as
+    /// resize observer notifications) in a bounded same-frame settle loop so
+    /// layout-driven UI updates paint on the same frame without a 1-frame flash.
+    fn resolve_and_settle(&mut self, animation_time: f64) {
+        const MAX_SETTLE_PASSES: usize = 3;
+
+        let mut pass = 0;
+        loop {
+            let has_pending_events = {
+                let mut inner = self.doc.inner_mut();
+                inner.resolve(animation_time);
+                inner.has_pending_events()
+            };
+
+            if !has_pending_events {
+                break;
+            }
+
+            if pass >= MAX_SETTLE_PASSES {
+                if let Some(waker) = &self.waker {
+                    waker.wake_by_ref();
+                }
+                break;
+            }
+            pass += 1;
+
+            let polled = if let Some(waker) = &self.waker {
+                let cx = std::task::Context::from_waker(waker);
+                self.doc.poll(Some(cx))
+            } else {
+                self.doc.poll(None)
+            };
+
+            if !polled {
+                break;
+            }
+        }
+    }
+
     pub fn redraw(&mut self) {
         #[cfg(target_os = "ios")]
         self.ios_request_redraw.set(false);
@@ -427,8 +466,9 @@ impl<Rend: WindowRenderer> View<Rend> {
         let animation_time = self.current_animation_time();
         let is_visible = self.is_visible;
 
+        self.resolve_and_settle(animation_time);
+
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
 
         // Unregister resources (e.g. textures) from dropped custom widget nodes
         #[cfg(feature = "custom-widget")]
