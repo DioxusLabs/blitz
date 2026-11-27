@@ -811,7 +811,8 @@ impl LayoutPassState<'_> {
                 use parley::layout::Alignment;
                 let mut alignment = stylo_to_parley::text_align(s.clone_text_align());
                 let mut last_line = stylo_to_parley::text_align_last(s.clone_text_align_last());
-                if s.get_inherited_text().text_justify == style::values::computed::TextJustify::None {
+                if s.get_inherited_text().text_justify == style::values::computed::TextJustify::None
+                {
                     if alignment == Alignment::Justify {
                         alignment = Alignment::Start;
                     }
