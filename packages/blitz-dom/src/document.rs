@@ -1130,6 +1130,25 @@ impl BaseDocument {
     /// it so that stale NodeIds are never dereferenced after the slot is freed.
     pub(crate) fn remove_node_from_tree(&mut self, node_id: NodeId) -> Option<Node> {
         self.clear_interaction_state_for_removed_node(node_id);
+        // A node can be laid out by a node that does not own it, for example an
+        // anonymous block, and can outlive it. Clear each `layout_parent` that
+        // points here, so no surviving node walks into a freed slot.
+        let laid_out: Vec<NodeId> = self
+            .nodes
+            .get(node_id)
+            .map(|node| {
+                let mut ids = node.children.to_vec();
+                ids.extend(node.layout_children.borrow().iter().flatten().copied());
+                ids
+            })
+            .unwrap_or_default();
+        for child_id in laid_out {
+            if let Some(child) = self.nodes.get(child_id) {
+                if child.layout_parent.get() == Some(node_id) {
+                    child.layout_parent.set(None);
+                }
+            }
+        }
         self.nodes.remove(node_id)
     }
 

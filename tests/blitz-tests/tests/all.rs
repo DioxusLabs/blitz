@@ -20,6 +20,7 @@ mod clipboard;
 mod comment_layout;
 mod custom_widget_layout;
 mod detached_attribute;
+mod detached_layout_parent;
 mod details_element;
 mod device_coalescing;
 mod dir_attribute;
