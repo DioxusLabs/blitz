@@ -1,6 +1,6 @@
 use super::{ElementCx, insets_from_taffy_rect};
 use crate::kurbo_css::{CssBox, NonUniformRoundedRectRadii};
-use kurbo::{Affine, BezPath, Insets, Circle, Ellipse, Point, Rect, Shape, SvgArc, Vec2};
+use kurbo::{Affine, BezPath, Circle, Ellipse, Insets, Point, Rect, Shape, SvgArc, Vec2};
 use style::values::computed::basic_shape::{BasicShape, ClipPath};
 use style::values::computed::{Angle, CSSPixelLength, LengthPercentage};
 use style::values::generics::basic_shape::{
@@ -58,7 +58,9 @@ impl ElementCx<'_, '_> {
                 Some(path)
             }
             ClipPath::Box(geometry_box) => Some(match geometry_box {
-                ShapeGeometryBox::ShapeBox(ShapeBox::MarginBox) => self.margin_box().border_box_path(),
+                ShapeGeometryBox::ShapeBox(ShapeBox::MarginBox) => {
+                    self.margin_box().border_box_path()
+                }
                 ShapeGeometryBox::ShapeBox(ShapeBox::PaddingBox) => self.frame.padding_box_path(),
                 ShapeGeometryBox::ShapeBox(ShapeBox::ContentBox) | ShapeGeometryBox::FillBox => {
                     self.frame.content_box_path()
@@ -70,7 +72,10 @@ impl ElementCx<'_, '_> {
 
     fn margin_box(&self) -> CssBox {
         let margin = insets_from_taffy_rect(
-            self.node.final_layout().margin.map(|v| f64::from(v) * self.scale),
+            self.node
+                .final_layout()
+                .margin
+                .map(|v| f64::from(v) * self.scale),
         );
         let rect = self.frame.border_box + margin;
         let rect = Rect::new(rect.x0, rect.y0, rect.x1.max(rect.x0), rect.y1.max(rect.y0));
@@ -132,9 +137,11 @@ impl ElementCx<'_, '_> {
                     x: -f64::from(margin.left),
                     y: -f64::from(margin.top),
                     width: (self.frame.border_box.width() / self.scale
-                        + f64::from(margin.left + margin.right)).max(0.0),
+                        + f64::from(margin.left + margin.right))
+                    .max(0.0),
                     height: (self.frame.border_box.height() / self.scale
-                        + f64::from(margin.top + margin.bottom)).max(0.0),
+                        + f64::from(margin.top + margin.bottom))
+                    .max(0.0),
                 }
             }
         }
