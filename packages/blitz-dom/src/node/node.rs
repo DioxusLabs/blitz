@@ -125,6 +125,9 @@ pub struct Node {
     /// stacking context on its last (non-skipped) paint-tree build. Replayed
     /// when the subtree is skipped as clean. Empty for stacking-context roots.
     pub sc_contribution_cache: RefCell<ThinVec<HoistedPaintChild>>,
+    /// [`Self::is_or_contains_block`], stamped with the construction generation
+    /// it was computed in (generation 0 is never current).
+    is_or_contains_block_cache: Cell<(u64, bool)>,
 
     // Flags
     pub flags: NodeFlags,
@@ -437,6 +440,7 @@ impl Node {
             paint_children: RefCell::new(None),
             stacking_context: None,
             sc_contribution_cache: RefCell::new(ThinVec::new()),
+            is_or_contains_block_cache: Cell::new((0, false)),
 
             flags: NodeFlags::empty(),
             out_of_flow: AtomicBool::new(false),
@@ -502,7 +506,23 @@ impl Node {
         )
     }
 
+    /// Whether this node is block-level, or an inline flow box with block-level
+    /// in-flow content. Memoised during box construction, which asks this of
+    /// inline children at every level and would otherwise re-walk their subtrees.
     pub fn is_or_contains_block(&self) -> bool {
+        let Some(generation) = self.tree().construction_generation() else {
+            return self.compute_is_or_contains_block();
+        };
+        let (stamp, cached) = self.is_or_contains_block_cache.get();
+        if stamp == generation {
+            return cached;
+        }
+        let result = self.compute_is_or_contains_block();
+        self.is_or_contains_block_cache.set((generation, result));
+        result
+    }
+
+    fn compute_is_or_contains_block(&self) -> bool {
         let display = self.display_style().unwrap_or(StyloDisplay::inline());
 
         // display: contents generates no box (so its own position and float don't apply):

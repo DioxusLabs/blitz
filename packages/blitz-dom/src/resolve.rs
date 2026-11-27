@@ -254,7 +254,9 @@ impl BaseDocument {
 
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
+        self.nodes.begin_construction();
         resolve_layout_children_recursive(self, self.root_node().id);
+        self.nodes.end_construction();
 
         fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: NodeId) {
             // Anonymous blocks and pseudo-elements can be removed from the slab
