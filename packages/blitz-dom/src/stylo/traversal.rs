@@ -57,17 +57,20 @@ impl crate::document::BaseDocument {
         for (key, set) in sets.iter_mut() {
             let node_id = NodeId::from_u64(key.node.id() as u64);
 
-            // Drop animations belonging to nodes that are no longer in the
-            // document. A removed element is never restyled, so it would never
-            // get a chance to cancel its own animations; an infinite animation
-            // would then keep `has_active_animations` set forever and force a
-            // redraw every frame. Emptying the set here lets the `retain` below
-            // discard it so the flag can clear on this same pass.
-            let in_document = self
-                .nodes
-                .get(node_id)
-                .is_some_and(|node| node.flags.is_in_document());
-            if !in_document {
+            // Drop animations belonging to nodes that are no longer rendered:
+            // removed from the document, `display: none`, or inside a
+            // `display: none` subtree (whose styles Stylo clears). Stylo never
+            // cancels these itself; an infinite animation would then keep
+            // `has_active_animations` set forever and force a redraw every
+            // frame. Emptying the set here lets the `retain` below discard it so
+            // the flag can clear on this same pass.
+            let rendered = self.nodes.get(node_id).is_some_and(|node| {
+                node.flags.is_in_document()
+                    && node
+                        .primary_styles()
+                        .is_some_and(|style| !style.get_box().display.is_none())
+            });
+            if !rendered {
                 set.animations.clear();
                 set.transitions.clear();
                 continue;
