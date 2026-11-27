@@ -886,7 +886,7 @@ fn collect_complex_layout_children(
         }
         // An originally inline absolute box uses the inline run for its static
         // position even though its used display has been blockified.
-        else if child_flow == ChildFlow::Block
+        else if (child_flow == ChildFlow::Block
             && doc.nodes[child_id].primary_styles().is_some_and(|style| {
                 let style = style.get_box();
                 style.position.is_absolutely_positioned()
@@ -897,17 +897,13 @@ fn collect_complex_layout_children(
                     .children
                     .iter()
                     .any(|child| !doc.nodes[*child].is_collapsible_whitespace_node())
-            })
+            }))
+            || needs_wrap(
+                &doc.nodes[child_id],
+                display_outside,
+                out.anonymous_block_id.is_some(),
+            )
         {
-            out.push_wrapped(container_node_id, child_id, doc);
-        }
-        // Push nodes that need wrapping into the current "anonymous block container".
-        // If there is not an open one then we create one.
-        else if needs_wrap(
-            &doc.nodes[child_id],
-            display_outside,
-            out.anonymous_block_id.is_some(),
-        ) {
             out.push_wrapped(container_node_id, child_id, doc);
         }
         // Else push the child directly (and close any open "anonymous block container")
