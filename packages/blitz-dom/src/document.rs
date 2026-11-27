@@ -172,6 +172,7 @@ pub trait Document: Any + 'static {
                 inner.resolve(animation_time);
                 inner.has_pending_events()
             };
+            // Settled: resolving queued no events
             if !has_pending_events {
                 break;
             }
@@ -181,11 +182,16 @@ pub trait Document: Any + 'static {
                 }
                 break;
             }
-            // Resolve again if the events were dispatched, even when `poll` reports no
-            // changes: handlers and default actions can modify the document directly.
-            // Stop if they are still queued (this document's `poll` doesn't dispatch them).
+
+            // Dispatch the queued events, then loop to resolve again: their handlers and
+            // default actions may have changed the document, even if `poll` returns false.
             let changed = self.poll(waker.map(TaskContext::from_waker));
-            if !changed && self.inner().has_pending_events() {
+
+            // The exception is a `poll` that left the events in the queue and changed
+            // nothing (an implementation that doesn't dispatch queued events). Resolving
+            // again would give the same result, so stop rather than spin until the cap.
+            let events_not_dispatched = !changed && self.inner().has_pending_events();
+            if events_not_dispatched {
                 break;
             }
         }
