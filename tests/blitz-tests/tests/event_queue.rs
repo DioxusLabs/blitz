@@ -81,6 +81,17 @@ fn dioxus_poll_dispatches_queued_focus_events() {
 }
 
 #[test]
+fn default_poll_dispatches_queued_events() {
+    let mut harness = Harness::from_html(HTML);
+    let a = node_id(&harness, "#a");
+    harness.base_mut().set_focus_to(a);
+    assert!(harness.base().has_pending_events());
+    assert!(harness.doc.poll(None));
+    assert!(!harness.base().has_pending_events());
+    assert!(!harness.doc.poll(None));
+}
+
+#[test]
 fn queued_events_for_dropped_nodes_are_discarded() {
     let mut harness = Harness::from_html(HTML);
     let a = node_id(&harness, "#a");
