@@ -1257,10 +1257,13 @@ impl ElementCx<'_, '_> {
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             let tree = self.node.tree();
-            let block_flow = matches!(
-                self.style.clone_display().inside(),
-                DisplayInside::Flow | DisplayInside::FlowRoot
-            );
+            // Vertical block placement can leave inline ink outside its
+            // resolved block bounds. Keep the existing paint order there.
+            let block_flow = !self.style.writing_mode.is_vertical()
+                && matches!(
+                    self.style.clone_display().inside(),
+                    DisplayInside::Flow | DisplayInside::FlowRoot
+                );
             let ordinary_block = |id: &NodeId| {
                 let child = &tree[*id];
                 block_flow
