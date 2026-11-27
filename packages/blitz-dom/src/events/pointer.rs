@@ -413,6 +413,7 @@ pub(crate) fn handle_pointerdown(
     y: f32,
     button: MouseEventButton,
     mods: Modifiers,
+    is_mouse: bool,
 ) {
     let Some(hit) = doc.hit(x, y) else {
         // Clear text selection when clicking outside any element
@@ -543,6 +544,15 @@ pub(crate) fn handle_pointerdown(
                 }
 
                 drop(font_ctx);
+            }
+
+            // A soft keyboard can be dismissed while its input keeps focus. Tapping that
+            // input again should bring it back, but focus doesn't change, and the shell
+            // ignores an enable while IME is already enabled, so restart IME.
+            if !is_mouse && doc.focus_node_id == Some(actual_target) {
+                let shell_provider = doc.shell_provider.clone();
+                shell_provider.set_ime_enabled(false);
+                doc.nodes[actual_target].enable_ime(&*shell_provider);
             }
 
             doc.set_focus_to(hit.node_id);

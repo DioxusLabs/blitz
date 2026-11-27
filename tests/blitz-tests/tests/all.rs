@@ -41,6 +41,7 @@ mod hit_test_dropped_nodes;
 mod hoisted_child_removal;
 mod hover_dom_ancestors;
 mod ime_preedit_underline;
+mod ime_reshow_on_tap;
 mod incremental_oracle;
 mod inline_bfc_padding;
 mod inline_box_baseline;
