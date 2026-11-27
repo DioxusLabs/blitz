@@ -8,7 +8,7 @@
 //!      (`WindowAttributes::with_transparent(true)`).
 //!   2. The renderer must composite the surface using an alpha-aware mode and
 //!      clear each frame to a transparent base color (via the dioxus-native
-//!      [`Config`]).
+//!      [`Config`](dioxus_native::Config)).
 //!   3. The page's CSS must not paint an opaque background, otherwise the HTML
 //!      content would cover up the transparent window.
 

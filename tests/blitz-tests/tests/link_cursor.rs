@@ -41,3 +41,9 @@ fn text_outside_link_has_text_cursor() {
     let cursor = cursor_at_line_start(r#"It powers <a href="x">dioxus-native</a>"#);
     assert_eq!(cursor, Some(CursorIcon::Text));
 }
+
+#[test]
+fn anchor_without_href_has_text_cursor() {
+    let cursor = cursor_at_line_start(r#"<a>dioxus-native</a> framework"#);
+    assert_eq!(cursor, Some(CursorIcon::Text));
+}
