@@ -639,30 +639,36 @@ impl BlitzPointerId {
     /// The largest finger index [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
     pub const MAX_INDEX: u64 = (i32::MAX - Self::FIRST_FINGER_ID) as u64;
 
+    #[inline(always)]
     pub const fn mouse() -> Self {
         Self::MOUSE
     }
 
+    #[inline(always)]
     pub const fn pen() -> Self {
         Self::PEN
     }
 
     /// The ID of the finger with the given index, placed after the mouse and pen IDs
+    #[inline(always)]
     pub const fn finger(index: u64) -> Self {
         debug_assert!(index <= Self::MAX_INDEX);
         Self(index as i32 + Self::FIRST_FINGER_ID)
     }
 
     /// The pointer with the given DOM `pointerId` (the inverse of [`Self::as_i32`])
+    #[inline(always)]
     pub const fn from_i32(id: i32) -> Option<Self> {
         if id >= 0 { Some(Self(id)) } else { None }
     }
 
     /// The DOM `pointerId`
+    #[inline(always)]
     pub const fn as_i32(self) -> i32 {
         self.0
     }
 
+    #[inline(always)]
     pub const fn kind(self) -> PointerKind {
         match self.0 {
             0 => PointerKind::Mouse,
@@ -671,9 +677,25 @@ impl BlitzPointerId {
         }
     }
 
+    #[inline(always)]
+    pub const fn is_mouse(self) -> bool {
+        self.0 == Self::MOUSE.0
+    }
+
+    #[inline(always)]
+    pub const fn is_pen(self) -> bool {
+        self.0 == Self::PEN.0
+    }
+
+    #[inline(always)]
+    pub const fn is_finger(self) -> bool {
+        self.0 >= Self::FIRST_FINGER_ID
+    }
+
     /// The index passed to [`Self::finger`], or `None` for the mouse and pen
+    #[inline(always)]
     pub const fn finger_index(self) -> Option<u64> {
-        if self.0 >= Self::FIRST_FINGER_ID {
+        if self.is_finger() {
             Some((self.0 - Self::FIRST_FINGER_ID) as u64)
         } else {
             None
@@ -734,15 +756,15 @@ pub struct BlitzPointerEvent {
 impl BlitzPointerEvent {
     #[inline(always)]
     pub fn is_mouse(&self) -> bool {
-        self.id.kind() == PointerKind::Mouse
+        self.id.is_mouse()
     }
     #[inline(always)]
     pub fn is_pen(&self) -> bool {
-        self.id.kind() == PointerKind::Pen
+        self.id.is_pen()
     }
     #[inline(always)]
     pub fn is_finger(&self) -> bool {
-        self.id.kind() == PointerKind::Finger
+        self.id.is_finger()
     }
 
     #[inline(always)]
