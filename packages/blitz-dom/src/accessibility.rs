@@ -14,7 +14,7 @@ impl BaseDocument {
         let mut described_by_nodes = Vec::new();
 
         self.visit(|node_id, node| {
-            if node.is_hidden_from_accessibility_tree()
+            if node.is_display_none()
                 || node
                     .parent
                     .map(|p| hidden_nodes.contains(&p))
@@ -23,8 +23,26 @@ impl BaseDocument {
                 hidden_nodes.insert(node_id);
                 return;
             }
-            let parent = node
-                .parent
+            // `visibility: hidden` only hides the node itself: a descendant can
+            // set `visibility: visible` again and is then still exposed.
+            if node.is_visibility_hidden() {
+                // Keep aria-hidden applying to the whole subtree, as it would if
+                // the node were in the tree with its hidden flag set.
+                if node.attr(local_name!("aria-hidden")) == Some("true") {
+                    hidden_nodes.insert(node_id);
+                }
+                return;
+            }
+            // Attach the node to its nearest ancestor that is in the tree, which
+            // skips ancestors that are hidden by `visibility`.
+            let mut parent_id = node.parent;
+            while let Some(id) = parent_id {
+                if nodes.contains_key(&id) {
+                    break;
+                }
+                parent_id = self.nodes[id].parent;
+            }
+            let parent = parent_id
                 .and_then(|parent_id| nodes.get_mut(&parent_id))
                 .map(|(_, parent)| parent)
                 .unwrap_or(&mut window);
@@ -183,18 +201,24 @@ impl BaseDocument {
 
 impl BlitzDomNode {
     // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
-    fn is_hidden_from_accessibility_tree(&self) -> bool {
-        self.try_stylo_element_data()
-            .as_ref()
-            .and_then(|s| s.get())
-            .and_then(|s| {
-                let style = s.styles.get_primary()?;
-                Some(
-                    style.get_box().get_display().is_none()
-                        || style.clone_visibility() != visibility::computed_value::T::Visible,
-                )
-            })
-            .unwrap_or(false)
+    fn is_display_none(&self) -> bool {
+        self.primary_styles()
+            .is_some_and(|style| style.get_box().get_display().is_none())
+    }
+
+    /// Whether the node is hidden by `visibility: hidden` or `collapse`. Text nodes have no style of
+    /// their own and inherit it from the nearest styled ancestor.
+    fn is_visibility_hidden(&self) -> bool {
+        let mut node = self;
+        loop {
+            if let Some(style) = node.primary_styles() {
+                return style.clone_visibility() != visibility::computed_value::T::Visible;
+            }
+            let Some(parent_id) = node.parent else {
+                return false;
+            };
+            node = node.with(parent_id);
+        }
     }
 
     fn write_text_alternative(&self, out: &mut FlatText) {

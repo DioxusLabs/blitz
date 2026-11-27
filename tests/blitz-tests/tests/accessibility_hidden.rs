@@ -150,6 +150,55 @@ fn excludes_child_element_of_hidden_element() -> TestResult<()> {
     )
 }
 
+#[test]
+fn includes_visible_child_of_visibility_hidden_element() {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><body>
+          <div id="hidden" style="visibility: hidden;">
+            Hidden text
+            <button id="target" style="visibility: visible;">Shown</button>
+          </div>
+        </body></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+    let id = |dom_id| NodeId(document.get_element_by_id(dom_id).unwrap().as_u64());
+    let node = |id| tree_update.nodes.iter().find(|(n, _)| *n == id);
+    let body = NodeId(document.query_selector("body").unwrap().unwrap().as_u64());
+
+    assert!(node(id("hidden")).is_none());
+    assert!(node(id("target")).is_some());
+    // The visible child is attached to its nearest ancestor in the tree.
+    assert!(node(body).unwrap().1.children().contains(&id("target")));
+    // Text of the hidden element stays hidden.
+    assert!(
+        !tree_update
+            .nodes
+            .iter()
+            .any(|(_, n)| n.value().is_some_and(|v| v.contains("Hidden text")))
+    );
+}
+
+#[test]
+fn excludes_visible_child_of_aria_hidden_visibility_hidden_element() {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><body>
+          <div aria-hidden="true" style="visibility: hidden;">
+            <button id="target" style="visibility: visible;">Shown</button>
+          </div>
+        </body></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+    let target = NodeId(document.get_element_by_id("target").unwrap().as_u64());
+
+    assert!(!tree_update.nodes.iter().any(|(id, _)| *id == target));
+}
+
 fn default_document_config() -> DocumentConfig {
     DocumentConfig {
         viewport: Some(Viewport::new(800, 600, 1.0, ColorScheme::Light)),
