@@ -63,6 +63,7 @@ pub(crate) fn build_inline_layout_into(
     if let Some(ListItemLayout {
         marker,
         position: ListItemLayoutPosition::Inside,
+        ..
     }) = root_node
         .element_data()
         .and_then(|el| el.list_item_data.as_deref())
@@ -177,6 +178,15 @@ pub(crate) fn build_inline_layout_into(
                                 .as_ref()
                                 .map_or(&[][..], |styles| styles.as_slice()),
                         );
+                        if let Some(before_id) = node.before() {
+                            build_inline_layout_recursive(
+                                builder,
+                                text_transformer,
+                                nodes,
+                                before_id,
+                                &text_transform,
+                            );
+                        }
                         for child_id in node.children.iter().copied() {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             build_inline_layout_recursive(
@@ -184,6 +194,15 @@ pub(crate) fn build_inline_layout_into(
                                 text_transformer,
                                 nodes,
                                 child_id,
+                                &text_transform,
+                            );
+                        }
+                        if let Some(after_id) = node.after() {
+                            build_inline_layout_recursive(
+                                builder,
+                                text_transformer,
+                                nodes,
+                                after_id,
                                 &text_transform,
                             );
                         }

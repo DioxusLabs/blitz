@@ -50,6 +50,7 @@ cargo-deny 0.20.2 identified 426 packages in the `blitz` graph and 675 in the
 | BSL-1.0 (Boost), Zlib | Permitted; no source-disclosure requirement | Follow their notice and altered-source requirements. `BSL-1.0` means the **Boost Software License**, not the Business Source License. |
 | Unicode-3.0 | Permitted, including sale of software/data | Preserve copyright and permission notices in copies or associated documentation; respect restrictions on promotional use of names. |
 | CC0-1.0 | Public-domain dedication with fallback license | No copyleft obligation; it does not grant patent or trademark rights. |
+| CDLA-Permissive-2.0 | Permitted; no source-disclosure requirement | Make the agreement text available when sharing the data. Used by `webpki-root-certs` (Mozilla root certificate data), which `rustls-platform-verifier` only depends on for Wasm targets. |
 | MPL-2.0 | Permitted, including proprietary larger works | Make the corresponding covered source, including modifications, available under MPL; inform recipients how to obtain it and preserve notices. |
 
 Expressions using `OR` offer a choice; expressions using `AND` require all listed

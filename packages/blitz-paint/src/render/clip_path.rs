@@ -76,18 +76,22 @@ impl ElementCx<'_, '_> {
                 width: self.frame.border_box.width() / self.scale,
                 height: self.frame.border_box.height() / self.scale,
             },
-            ShapeGeometryBox::ShapeBox(ShapeBox::PaddingBox) => ReferenceBox {
-                x: self.frame.border_width.x0 / self.scale,
-                y: self.frame.border_width.y0 / self.scale,
-                width: self.frame.padding_box.width() / self.scale,
-                height: self.frame.padding_box.height() / self.scale,
-            },
+            ShapeGeometryBox::ShapeBox(ShapeBox::PaddingBox) => {
+                let padding_box = self.frame.padding_box();
+                ReferenceBox {
+                    x: self.frame.border_width.x0 / self.scale,
+                    y: self.frame.border_width.y0 / self.scale,
+                    width: padding_box.width() / self.scale,
+                    height: padding_box.height() / self.scale,
+                }
+            }
             ShapeGeometryBox::FillBox | ShapeGeometryBox::ShapeBox(ShapeBox::ContentBox) => {
+                let content_box = self.frame.content_box();
                 ReferenceBox {
                     x: (self.frame.border_width.x0 + self.frame.padding_width.x0) / self.scale,
                     y: (self.frame.border_width.y0 + self.frame.padding_width.y0) / self.scale,
-                    width: self.frame.content_box.width() / self.scale,
-                    height: self.frame.content_box.height() / self.scale,
+                    width: content_box.width() / self.scale,
+                    height: content_box.height() / self.scale,
                 }
             }
             ShapeGeometryBox::ShapeBox(ShapeBox::MarginBox) => {
@@ -156,12 +160,10 @@ impl ElementCx<'_, '_> {
 
                 let x0 = ox + left;
                 let y0 = oy + top;
-                let x1 = ox + w - right;
-                let y1 = oy + h - bottom;
-
-                if x1 <= x0 || y1 <= y0 {
-                    return None;
-                }
+                // Insets that meet or cross leave an empty region, which hides the
+                // element. The clamp keeps the rect empty instead of inverted.
+                let x1 = (ox + w - right).max(x0);
+                let y1 = (oy + h - bottom).max(y0);
 
                 // TODO: Support border-radius on inset()
                 Some(kurbo::Rect::new(x0, y0, x1, y1).into_path(0.1))

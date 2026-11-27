@@ -4,7 +4,7 @@ Servo doesn't have:
 - gap
 */
 
-use dioxus::prelude::*;
+use dioxus_native::prelude::*;
 
 fn main() {
     dioxus_native::launch(app);

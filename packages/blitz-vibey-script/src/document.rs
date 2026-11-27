@@ -101,7 +101,7 @@ impl ScriptDocument {
     ///
     /// Useful for embedders which drive timers manually by polling
     /// [`next_timer_deadline`](Self::next_timer_deadline) and calling
-    /// [`poll`](blitz_traits::Document::poll), and therefore don't need wakeups.
+    /// [`poll`](Document::poll), and therefore don't need wakeups.
     pub fn without_timer_thread(mut self) -> Self {
         self.timer_thread_enabled = false;
         self
@@ -113,7 +113,7 @@ impl ScriptDocument {
     ///
     /// Intended for embedders which drive timers manually by polling
     /// [`next_timer_deadline`](Self::next_timer_deadline) and calling
-    /// [`poll`](blitz_traits::Document::poll): instead of sleeping until the
+    /// [`poll`](Document::poll): instead of sleeping until the
     /// next deadline they can jump the clock straight to it, preserving timer
     /// ordering without wall-clock waiting. Should be combined with
     /// [`without_timer_thread`](Self::without_timer_thread) (the timer thread
@@ -255,7 +255,7 @@ impl ScriptDocument {
     /// drain them and decide how to surface them (log, record as test
     /// failures, ...). At most 256 errors are retained between drains. When the
     /// `tracing` feature is enabled errors are additionally logged via
-    /// [`tracing::error!`].
+    /// `tracing::error!`.
     pub fn take_js_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.runtime.ctx.state.borrow_mut().uncaught_errors)
     }
@@ -265,6 +265,19 @@ impl ScriptDocument {
         #[cfg(feature = "tracing")]
         tracing::error!("blitz-vibey-script: {message}");
         self.runtime.ctx.state.borrow_mut().record_error(message);
+    }
+
+    /// Boa's runtime limits for this document's JavaScript: loop iterations,
+    /// recursion depth and VM stack size.
+    ///
+    /// Embedders that run untrusted pages can bound a synchronous infinite
+    /// loop such as `while (true) {}` with
+    /// [`set_loop_iteration_limit`](boa_engine::vm::RuntimeLimits::set_loop_iteration_limit).
+    /// Exceeding a limit throws an error that JavaScript cannot catch. The
+    /// script stops, and the error is reported through
+    /// [`take_js_errors`](Self::take_js_errors).
+    pub fn runtime_limits_mut(&mut self) -> &mut boa_engine::vm::RuntimeLimits {
+        self.runtime.context.runtime_limits_mut()
     }
 
     /// The deadline of the soonest pending JS timer (if any).
@@ -441,6 +454,17 @@ impl Document for ScriptDocument {
         }
 
         ran |= self.runtime.run_due_timers();
+
+        // Dispatch events queued on the document by scripts (e.g. focus events from
+        // `element.focus()`) or by the embedder since it was last driven
+        if self.inner.borrow().has_pending_events() {
+            let handler = ScriptEventHandler {
+                runtime: &mut self.runtime,
+            };
+            EventDriver::new(&mut self.inner, handler).flush_pending_events();
+            ran = true;
+        }
+
         self.arm_timer_thread();
         ran
     }

@@ -80,6 +80,10 @@ fn node_list_item_child(
         ListStylePosition::Inside => ListItemLayoutPosition::Inside,
         ListStylePosition::Outside => {
             let mut parley_style = stylo_to_parley::style(child_id, &styles);
+            // The UA stylesheet gives `::marker` `white-space: pre` (CSS Lists 3
+            // §3.1). Without it the tree builder collapses the trailing space of
+            // "1. " away and an outside marker ends flush against the item text.
+            parley_style.white_space_collapse = parley::WhiteSpaceCollapse::Preserve;
 
             if let Some(font_family) = font_for_bullet_style(list_style_type) {
                 parley_style.font_family = font_family;
@@ -110,7 +114,11 @@ fn node_list_item_child(
         }
     };
 
-    Some(ListItemLayout { marker, position })
+    Some(ListItemLayout {
+        marker,
+        position,
+        content_box_subpixel_offset: taffy::Point::ZERO,
+    })
 }
 
 // Determine the marker to render for a given list style type
@@ -129,6 +137,7 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
                 Marker::String(format!("{}. ", marker.to_ascii_uppercase()))
             }
             "decimal" => Marker::String(format!("{}. ", index + 1)),
+            "cjk-decimal" => Marker::String(cjk_decimal_marker(index + 1)),
             "disc" => Marker::Char('•'),
             "circle" => Marker::Char('◦'),
             "square" => Marker::Char('▪'),
@@ -156,6 +165,21 @@ fn marker_for_style(list_style_type: &ListStyleType, index: usize) -> Option<Mar
             }
         }
     })
+}
+
+fn cjk_decimal_marker(ordinal: usize) -> String {
+    const DIGITS: [char; 10] = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+
+    let exponent = ordinal.checked_ilog10().unwrap_or(0);
+    // The digits and suffix each occupy three UTF-8 bytes.
+    let mut marker = String::with_capacity(3 * (exponent as usize + 2));
+    let mut divisor = 10usize.pow(exponent);
+    while divisor != 0 {
+        marker.push(DIGITS[(ordinal / divisor) % 10]);
+        divisor /= 10;
+    }
+    marker.push('、');
+    marker
 }
 
 // Override the font to our specific bullet font when rendering bullets

@@ -39,8 +39,8 @@ use anyrender_skia::raster::SkiaRasterWindowRenderer as WindowRenderer;
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 #[cfg(feature = "cpu-base")]
 use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
-#[cfg(feature = "hybrid")]
-use anyrender_vello_hybrid::VelloHybridWindowRenderer as WindowRenderer;
+#[cfg(feature = "vello-gpu")]
+use anyrender_vello_gpu::VelloGpuWindowRenderer as WindowRenderer;
 
 use blitz_dom::DocumentConfig;
 use blitz_dom::UserAgentStylesheet;
@@ -209,7 +209,7 @@ async fn fetch_url(
     let is_md = response_url.ends_with(".md");
 
     // Get the file content
-    let file_content = std::str::from_utf8(&bytes).unwrap().to_string();
+    let file_content = String::from_utf8_lossy(&bytes).into_owned();
 
     (response_url, file_content, is_md, None)
 }
@@ -246,7 +246,7 @@ fn fetch_file_path(raw_path: &str) -> (String, String, bool, Option<PathBuf>) {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
 
     // Read file
-    let file_content = std::fs::read_to_string(&path).unwrap();
+    let file_content = String::from_utf8_lossy(&std::fs::read(&path).unwrap()).into_owned();
 
     (base_url, file_content, is_md, Some(path))
 }

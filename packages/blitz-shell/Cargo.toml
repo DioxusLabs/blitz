@@ -4,7 +4,6 @@ description = "Blitz application shell"
 documentation = "https://docs.rs/blitz-shell"
 version.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -21,6 +20,14 @@ tracing = ["dep:tracing", "blitz-dom/tracing"]
 file-dialog = ["dep:rfd"]
 # Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
 data-uri = ["dep:data-url"]
+# Enables the Chrome DevTools Protocol server (started via the BLITZ_CDP_PORT env var
+# or on demand by `ShellProvider::open_devtools`)
+devtools = ["dep:blitz-vibey-cdp-server", "dep:webbrowser"]
+# Embeds a DevTools frontend (about 2 MB) in the CDP server, which `open_devtools`
+# opens in the browser. Without it, `open_devtools` opens Chrome's own frontend
+# where Chrome can be launched directly (e.g. macOS), and otherwise prints a
+# `devtools://` URL to paste into Chrome.
+embedded-devtools-frontend = ["devtools", "blitz-vibey-cdp-server/embedded-frontend"]
 custom-widget = ["blitz-dom/custom-widget"]
 
 [dependencies]
@@ -28,6 +35,7 @@ custom-widget = ["blitz-dom/custom-widget"]
 blitz-traits = { workspace = true }
 blitz-dom = { workspace = true }
 blitz-paint = { workspace = true }
+blitz-vibey-cdp-server = { workspace = true, optional = true }
 anyrender = { workspace = true }
 
 # Windowing & Input
@@ -40,7 +48,9 @@ accesskit_xplat = { workspace = true, optional = true }
 atomic_refcell = { workspace = true }
 tracing = { workspace = true, optional = true }
 futures-util = { workspace = true }
+url = { workspace = true }
 data-url = { workspace = true, optional = true }
+webbrowser = { workspace = true, optional = true }
 
 # WASM
 web-time = { workspace = true }

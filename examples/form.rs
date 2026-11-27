@@ -1,6 +1,6 @@
 //! Drive the renderer from Dioxus
 
-use dioxus::prelude::*;
+use dioxus_native::prelude::*;
 
 fn main() {
     dioxus_native::launch(app);

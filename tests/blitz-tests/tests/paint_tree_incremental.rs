@@ -259,7 +259,7 @@ fn scroll_moves_hoisted_box_without_resolve() {
         assert_eq!(hoisted_entry(&doc, root, b), Some((1, (0.0, 100.0))));
 
         let generation = doc.tree().geometry_generation();
-        doc.scroll_node_by(s, 0.0, -90.0, |_| {});
+        doc.scroll_node_by(s, 0.0, -90.0);
         assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 90.0);
         assert_ne!(doc.tree().geometry_generation(), generation);
 
@@ -309,7 +309,7 @@ fn hoisted_position_is_memoised_per_generation() {
     assert!(entry(&doc));
 
     // Scrolled: likewise.
-    doc.scroll_node_by(s, 0.0, -90.0, |_| {});
+    doc.scroll_node_by(s, 0.0, -90.0);
     assert!(!entry(&doc));
     assert_eq!(hit(&doc, 50.0, 20.0), b);
     assert!(entry(&doc));
@@ -451,7 +451,7 @@ fn hoisted_children_of_scrolled_sc_root_are_hit() {
         assert_eq!(hoisted_entry(&doc, s, b), Some((1, (0.0, 100.0))));
         assert_ne!(hit(&doc, 50.0, 20.0), b);
 
-        doc.scroll_node_by(s, 0.0, -90.0, |_| {});
+        doc.scroll_node_by(s, 0.0, -90.0);
         assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 90.0);
         // B now spans y=10..30 within the 50px scroller.
         assert_eq!(hit(&doc, 50.0, 20.0), b, "incremental={incremental}");
@@ -628,7 +628,7 @@ fn fixed_boxes_scroll_only_with_a_non_viewport_containing_block() {
         assert_eq!(hit(&doc, 20.0, 60.0), g0);
         assert_eq!(hit(&doc, 60.0, 60.0), g1);
 
-        doc.scroll_node_by(s, 0.0, -20.0, |_| {});
+        doc.scroll_node_by(s, 0.0, -20.0);
         assert_eq!(doc.get_node(s).unwrap().scroll_offset().y, 20.0);
         let tall = id(&doc, "#tall");
         assert_eq!(
@@ -663,5 +663,39 @@ fn fixed_boxes_scroll_only_with_a_non_viewport_containing_block() {
             g1,
             "z-index fixed under viewport scroll ({incremental})"
         );
+    }
+}
+
+const LIFTED_POSITIONED: &str = r#"<html><head><style>
+    body { margin: 0; }
+    #item { position: relative; display: flex; margin: 20px; padding: 10px 0; }
+    #item::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; }
+    #body { flex: auto; padding-left: 5px; }
+    #comment { position: relative; margin-left: -10px; height: 40px; }
+</style></head><body>
+    <div id="item"><div id="body"><div id="comment"></div></div></div>
+</body></html>"#;
+
+/// A positioned box inside a static box is painted (and hit-tested) by its
+/// nearest positioned ancestor, after that ancestor's earlier positioned
+/// children in tree order (CSS 2.1 Appendix E step 8), not by its static
+/// parent before them.
+#[test]
+fn positioned_descendant_of_static_box_paints_above_earlier_positioned_sibling() {
+    for incremental in [false, true] {
+        let doc = make_doc(LIFTED_POSITIONED, incremental);
+        let item = id(&doc, "#item");
+        let body = id(&doc, "#body");
+        let comment = id(&doc, "#comment");
+        let before = doc.get_node(item).unwrap().before().unwrap();
+
+        assert!(!paint_children(&doc, body).contains(&comment));
+        let item_paint = paint_children(&doc, item);
+        let pos = |n| item_paint.iter().position(|&c| c == n);
+        assert!(pos(body) < pos(before), "{item_paint:?}");
+        assert!(pos(before) < pos(comment), "{item_paint:?}");
+
+        assert_eq!(hit(&doc, 22.0, 50.0), comment, "{incremental}");
+        assert_eq!(hit(&doc, 22.0, 25.0), before, "{incremental}");
     }
 }

@@ -1,11 +1,6 @@
-use anyrender::{ImageRenderer as _, PaintScene as _};
-use blitz_dom::util::Color;
 use blitz_dom::{BaseDocument, Document as _};
-use blitz_paint::paint_scene;
 use image::{ImageBuffer, ImageFormat};
 use log::warn;
-use peniko::Fill;
-use peniko::kurbo::Rect;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -13,15 +8,16 @@ use std::path::Path;
 use std::time::Duration;
 use url::Url;
 
-use super::fuzzy::{FuzzySpec, fuzzy_buffer_diff, parse_fuzzy_metas, tolerance_for_reference};
+use super::fuzzy::{fuzzy_buffer_diff, within_fuzzy_tolerance};
 use blitz_vibey_script::ScriptDocument;
+use wpt_manifest::{FuzzySpec, tolerance_for_reference};
 
 use super::{
     document_has_scripts, parse_and_resolve_document, pump_net_provider, pump_timers,
     run_document_scripts,
 };
-use crate::test_variants::{artifact_name, split_test_url};
-use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
+use crate::manifest::artifact_name;
+use crate::{BufferKind, HEIGHT, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 pub fn process_ref_test(
     ctx: &mut ThreadCtx,
@@ -29,6 +25,7 @@ pub fn process_ref_test(
     test_html: &str,
     match_references: &[String],
     mismatch_references: &[String],
+    fuzzy_specs: &[FuzzySpec],
     flags: &mut TestFlags,
 ) -> SubtestCounts {
     let test_out_path = ctx
@@ -47,8 +44,6 @@ pub fn process_ref_test(
         return SubtestCounts::ZERO_OF_ONE;
     }
 
-    let fuzzy_specs = parse_fuzzy_metas(test_html);
-
     // A test passes if its rendering matches ANY of its `rel=match` references
     // and differs from ALL of its `rel=mismatch` references.
     let mut ref_index = 0;
@@ -61,7 +56,7 @@ pub fn process_ref_test(
             test_relative_path,
             ref_file,
             ref_index,
-            &fuzzy_specs,
+            fuzzy_specs,
             flags,
         ) {
             Some(true) => {
@@ -82,7 +77,7 @@ pub fn process_ref_test(
             test_relative_path,
             ref_file,
             ref_index,
-            &fuzzy_specs,
+            fuzzy_specs,
             flags,
         ) {
             Some(true) => {
@@ -142,17 +137,8 @@ fn render_reference_and_compare(
         return None;
     };
 
-    if ctx.float_re.is_match(&ref_html) {
-        *flags |= TestFlags::USES_FLOAT;
-    }
     if ctx.intrinsic_re.is_match(&ref_html) {
         *flags |= TestFlags::USES_INTRINSIC_SIZE;
-    }
-    if ctx.calc_re.is_match(&ref_html) {
-        *flags |= TestFlags::USES_CALC;
-    }
-    if ctx.direction_re.is_match(&ref_html) {
-        *flags |= TestFlags::USES_DIRECTION;
     }
     if ctx.writing_mode_re.is_match(&ref_html) {
         *flags |= TestFlags::USES_WRITING_MODE;
@@ -181,19 +167,19 @@ fn render_reference_and_compare(
         &ref_html,
     );
 
-    if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
-        return Some(true);
-    }
-
     // If the test declares a `<meta name=fuzzy>` tolerance applicable to this reference,
     // use it to decide whether the renderings match. Otherwise fall back to the fixed
     // dify threshold.
     let fuzzy_tolerance = tolerance_for_reference(fuzzy_specs, ref_file);
+    if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
+        return Some(
+            fuzzy_tolerance.is_none_or(|tolerance| within_fuzzy_tolerance(0, 0, tolerance)),
+        );
+    }
     let is_match = if let Some(tolerance) = fuzzy_tolerance {
         let (max_difference, differing_pixels) =
             fuzzy_buffer_diff(&ctx.buffers.test_buffer, &ctx.buffers.ref_buffer);
-        max_difference <= tolerance.max_difference.max
-            && differing_pixels <= tolerance.total_pixels.max
+        within_fuzzy_tolerance(max_difference, differing_pixels, tolerance)
     } else {
         true
     };
@@ -217,9 +203,9 @@ fn render_reference_and_compare(
     }
 }
 
+/// Manifest references already carry the test's variant (`ref.html?a=1` for `test.html?a=1`).
 fn resolve_reference_url(test_url: &Url, ref_file: &str) -> Result<Url, url::ParseError> {
-    let variant = split_test_url(test_url.as_str()).1;
-    test_url.join(&format!("{ref_file}{variant}"))
+    test_url.join(ref_file)
 }
 
 fn render_html_to_buffer(
@@ -309,23 +295,7 @@ fn render_document_to_buffer(
 
     // Render document to RGBA buffer
     let buf = ctx.buffers.get_mut(buffer_kind);
-    ctx.renderer.render_to_vec(
-        |scene| {
-            scene.reset();
-
-            // Render white background
-            scene.fill(
-                Fill::NonZero,
-                Default::default(),
-                Color::WHITE,
-                Default::default(),
-                &Rect::new(0.0, 0.0, WIDTH as f64, HEIGHT as f64),
-            );
-
-            paint_scene(scene, document, SCALE, WIDTH, HEIGHT, 0, 0);
-        },
-        buf,
-    );
+    ctx.renderer.render_to_vec(document, buf);
 
     fs::create_dir_all(out_path.parent().unwrap()).unwrap();
     let mut file = File::create(out_path).unwrap();
@@ -358,21 +328,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn references_receive_query_and_fragment_variants() {
+    fn references_resolve_against_test_url() {
         let url = Url::parse("http://dummy.local/css/test.html?a=1#part").unwrap();
         assert_eq!(
-            resolve_reference_url(&url, "ref.html").unwrap().as_str(),
+            resolve_reference_url(&url, "/css/ref.html?a=1#part")
+                .unwrap()
+                .as_str(),
             "http://dummy.local/css/ref.html?a=1#part"
         );
         assert_eq!(
-            resolve_reference_url(&url, "/shared/ref.xhtml")
-                .unwrap()
-                .as_str(),
-            "http://dummy.local/shared/ref.xhtml?a=1#part"
-        );
-        assert_eq!(
             resolve_reference_url(&url, "about:blank").unwrap().as_str(),
-            "about:blank?a=1#part"
+            "about:blank"
         );
     }
 

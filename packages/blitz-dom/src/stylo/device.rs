@@ -1,6 +1,6 @@
 //! Management of the Stylo [`Device`]: constructing it from shell state and
 //! coalescing changes to it (viewport resizes, zoom, color-scheme and media
-//! type changes) so that the stylist device is rebuilt at most once per
+//! type changes) so that the stylist device is updated at most once per
 //! [`resolve`](crate::BaseDocument::resolve), no matter how many changes
 //! occurred since the last resolve.
 
@@ -33,7 +33,8 @@ bitflags! {
         const VIEWPORT_SIZE = 0b0000_0001;
         /// The total scale factor (hidpi scale * zoom) changed. Requires
         /// invalidating cached inline layouts (text is shaped at a specific
-        /// scale) and a redraw.
+        /// scale), recomputing every node's transform and scrollable overflow
+        /// (kept in device pixels) and a redraw.
         const SCALE = 0b0000_0010;
         /// The preferred color scheme changed.
         const COLOR_SCHEME = 0b0000_0100;
@@ -65,26 +66,31 @@ pub(crate) fn make_device(
     media_type: MediaType,
     font_ctx: Arc<Mutex<FontContext>>,
 ) -> Device {
-    let (width, height) = viewport.logical_size();
-    let viewport_size = euclid::Size2D::new(width, height);
-    let device_size = euclid::Size2D::new(width, height) * viewport.scale();
-    let device_pixel_ratio = euclid::Scale::new(viewport.scale());
-
     Device::new(
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
         Box::new(BlitzFontMetricsProvider { font_ctx }),
-        MediaData {
-            media_type,
-            viewport_size,
-            device_size,
-            device_pixel_ratio,
-            quirks_mode: QuirksMode::NoQuirks,
-            prefers_color_scheme: match viewport.color_scheme {
-                ColorScheme::Light => PrefersColorScheme::Light,
-                ColorScheme::Dark => PrefersColorScheme::Dark,
-            },
-            primary_pointer_capabilities: PointerCapabilities::default(),
-            all_pointer_capabilities: PointerCapabilities::default(),
-        },
+        "Submit Query".into(),
+        make_media_data(viewport, media_type),
     )
+}
+
+/// The [`MediaData`] (the media-query-visible state of the [`Device`]) for the given viewport
+/// and media type.
+pub(crate) fn make_media_data(viewport: &Viewport, media_type: MediaType) -> MediaData {
+    let (width, height) = viewport.logical_size();
+    let viewport_size = euclid::Size2D::new(width, height);
+    let device_pixel_ratio = euclid::Scale::new(viewport.scale());
+    MediaData {
+        media_type,
+        viewport_size,
+        device_size: viewport_size * device_pixel_ratio,
+        device_pixel_ratio,
+        quirks_mode: QuirksMode::NoQuirks,
+        prefers_color_scheme: match viewport.color_scheme {
+            ColorScheme::Light => PrefersColorScheme::Light,
+            ColorScheme::Dark => PrefersColorScheme::Dark,
+        },
+        primary_pointer_capabilities: PointerCapabilities::default(),
+        all_pointer_capabilities: PointerCapabilities::default(),
+    }
 }

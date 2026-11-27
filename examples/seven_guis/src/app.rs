@@ -68,7 +68,7 @@ const TASKS: &[TaskMeta] = &[
 pub fn app() -> Element {
     let mut active: Signal<Option<Task>> = use_signal(|| None);
 
-    match active() {
+    let page = match active() {
         None => rsx! {
             style { {HOME_CSS} }
             Home { on_select: move |t| active.set(Some(t)) }
@@ -108,6 +108,11 @@ pub fn app() -> Element {
                 cells::Cells {}
             }
         },
+    };
+
+    rsx! {
+        document::Title { "7GUIs" }
+        {page}
     }
 }
 

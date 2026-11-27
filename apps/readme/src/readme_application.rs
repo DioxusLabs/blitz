@@ -82,7 +82,7 @@ impl ReadmeApplication {
             options.into_request(),
             Box::new(move |result| {
                 let (url, bytes) = result.unwrap();
-                let contents = std::str::from_utf8(&bytes).unwrap().to_string();
+                let contents = String::from_utf8_lossy(&bytes).into_owned();
                 proxy.send_event(BlitzShellEvent::NavigationLoad {
                     url,
                     contents,

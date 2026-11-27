@@ -1,4 +1,6 @@
 use crate::{HtmlParserProvider, UserAgentStylesheet};
+#[cfg(feature = "devtools")]
+use blitz_traits::devtools::DevtoolsProvider;
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
@@ -66,6 +68,9 @@ pub struct DocumentConfig {
     /// How deeply this document is nested within other documents
     /// (0 for a root document). Used to limit `<iframe>` nesting depth.
     pub subdocument_depth: usize,
+    /// Devtools provider notified of DOM mutations (e.g. by a remote inspector)
+    #[cfg(feature = "devtools")]
+    pub devtools_provider: Option<Arc<dyn DevtoolsProvider>>,
 }
 
 impl Default for DocumentConfig {
@@ -84,6 +89,8 @@ impl Default for DocumentConfig {
             incremental: None,
             abort_signal: None,
             subdocument_depth: 0,
+            #[cfg(feature = "devtools")]
+            devtools_provider: None,
         }
     }
 }

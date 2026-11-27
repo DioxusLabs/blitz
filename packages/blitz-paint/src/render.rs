@@ -20,17 +20,17 @@ use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
 use crate::text::{DrawTextContext, TextPaintOptions};
 use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
-use anyrender::{PaintScene, Scene};
+use anyrender::{AntiAliasing, PaintScene, Scene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
 };
 use blitz_dom::{BaseDocument, ElementData, Node, NodeId, local_name};
 use blitz_traits::devtools::DevtoolSettings;
+use blitz_traits::events::Point as BlitzPoint;
 
 use style::values::computed::{BorderCornerRadius, ColorOrAuto};
 use style::{
-    dom::TElement,
     properties::{
         ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::Font,
@@ -51,8 +51,8 @@ use taffy::Layout;
 /// An opacity just below 1.0, used to force the renderer to allocate an isolated
 /// buffer for mask and text-clip isolation layers. Renderers (e.g. vello_cpu) may optimize
 /// layers with `Mix::Normal`/`Compose::SrcOver` and an opacity of exactly 1.0 into
-/// plain non-isolated clip layers, in which case the `Compose::DestIn` mask
-/// compositing would erase the backdrop behind the element rather than just the
+/// plain non-isolated clip layers, in which case the mask layer (or `Compose::DestIn`
+/// text-clip layer) would erase the backdrop behind the element rather than just the
 /// element's own content.
 pub(super) const ALMOST_OPAQUE: f32 = 1.0 - f32::EPSILON;
 
@@ -124,6 +124,7 @@ pub struct BlitzDomPainter<'dom, 'a> {
     pub(crate) initial_y: f64,
     /// The id of the document's root element (cached to avoid re-resolving it for every element)
     pub(crate) root_element_id: Option<NodeId>,
+    pub(crate) canvas_background_node_id: Option<NodeId>,
     /// Scrollbar hover/drag state, resolved once per scene like the root element
     #[cfg(feature = "scrollbars")]
     pub(crate) hovered_scrollbar: Option<blitz_dom::node::ScrollbarRef>,
@@ -158,6 +159,23 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let layer_manager = LayerManager::default();
         let root_element_id = dom.try_root_element().map(|el| el.id);
+        let canvas_background_node_id = dom.try_root_element().and_then(|root| {
+            let styles = root.primary_styles();
+            let color = styles
+                .as_ref()
+                .map_or(&GenericColor::TRANSPARENT_BLACK, |s| {
+                    s.get_background_color()
+                });
+            if *color == GenericColor::TRANSPARENT_BLACK {
+                root.children.iter().find_map(|id| {
+                    dom.get_node(*id)
+                        .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
+                        .map(|body| body.id)
+                })
+            } else {
+                Some(root.id)
+            }
+        });
 
         Self {
             dom,
@@ -167,6 +185,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             initial_x,
             initial_y,
             root_element_id,
+            canvas_background_node_id,
             #[cfg(feature = "scrollbars")]
             hovered_scrollbar: dom.hovered_scrollbar(),
             #[cfg(feature = "scrollbars")]
@@ -201,35 +220,16 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let bg_width = (self.width as f32).max(root_element.final_layout().size.width);
         let bg_height = (self.height as f32).max(root_element.final_layout().size.height);
 
-        let background_color = {
-            let html_styles = root_element.primary_styles();
-            let html_color = html_styles
-                .as_ref()
-                .map_or(&GenericColor::TRANSPARENT_BLACK, |s| {
-                    s.get_background_color()
-                });
-            if *html_color == GenericColor::TRANSPARENT_BLACK {
-                root_element
-                    .children
-                    .iter()
-                    .find_map(|id| {
-                        self.dom
-                            .as_ref()
-                            .get_node(*id)
-                            .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
-                    })
-                    .and_then(|body| body.primary_styles())
-                    .map(|style| {
-                        let current_color = style.clone_color();
-                        style
-                            .get_background_color()
-                            .resolve_to_absolute(&current_color)
-                    })
-            } else {
-                let current_color = html_styles.as_ref().unwrap().clone_color();
-                Some(html_color.resolve_to_absolute(&current_color))
-            }
-        };
+        let background_color = self
+            .canvas_background_node_id
+            .and_then(|id| self.dom.get_node(id))
+            .and_then(|node| node.primary_styles())
+            .map(|style| {
+                let current_color = style.clone_color();
+                style
+                    .get_background_color()
+                    .resolve_to_absolute(&current_color)
+            });
 
         if let Some(bg_color) = background_color {
             let bg_color = bg_color.as_srgb_color();
@@ -237,7 +237,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 (self.initial_x, self.initial_y),
                 (bg_width as f64, bg_height as f64),
             );
-            scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+            scene.fill(
+                Fill::NonZero,
+                Affine::IDENTITY,
+                bg_color,
+                None,
+                &rect,
+                AntiAliasing::Enabled,
+            );
         }
 
         // The root clip rectangle is the viewport (in screen coordinates, with the
@@ -302,7 +309,39 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         })
     }
 
-    fn should_clip_node(&self, node: &Node, styles: &ComputedValues) -> bool {
+    /// Paint an SVG image as its own isolated group, so blend modes inside the image
+    /// composite with the image's own content rather than the page behind it.
+    #[cfg(feature = "svg")]
+    pub(crate) fn draw_svg_image(
+        &self,
+        scene: &mut impl PaintScene,
+        tree: &anyrender_svg::usvg::Tree,
+        transform: Affine,
+    ) {
+        // `1.0 - EPSILON` stops the layer from being demoted to a non-isolating clip layer.
+        self.layer_manager.maybe_with_layer(
+            scene,
+            true,
+            BlendMode::default(),
+            1.0 - f32::EPSILON,
+            Affine::IDENTITY,
+            &Rect::new(
+                self.initial_x,
+                self.initial_y,
+                self.initial_x + self.width as f64,
+                self.initial_y + self.height as f64,
+            ),
+            None,
+            None,
+            |scene| anyrender_svg::render_svg_tree(scene, tree, transform),
+        );
+    }
+
+    /// The axes in which a node clips its overflow.
+    fn clipped_axes(&self, node: &Node, styles: &ComputedValues) -> BlitzPoint<bool> {
+        if self.root_element_id == Some(node.id) {
+            return BlitzPoint { x: false, y: false };
+        }
         let box_style = styles.get_box();
         let contain_paint = box_style.slow_clone_contain().contains(Contain::PAINT) && {
             let display = styles.clone_display();
@@ -312,13 +351,21 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             !display.is_inline_flow() && !is_internal_table_box_other_than_cell
         };
         let element = node.element_data();
-        self.root_element_id != Some(node.id)
-            && (element.and_then(|e| e.raster_image_data()).is_some()
-                || element.and_then(|e| e.sub_doc_data()).is_some()
-                || element.and_then(|e| e.text_input_data()).is_some()
-                || contain_paint
-                || !matches!(box_style.overflow_x, Overflow::Visible)
-                || !matches!(box_style.overflow_y, Overflow::Visible))
+        let clips_both_axes = element.and_then(|e| e.raster_image_data()).is_some()
+            || element.and_then(|e| e.sub_doc_data()).is_some()
+            || element.and_then(|e| e.text_input_data()).is_some()
+            || contain_paint;
+        if clips_both_axes {
+            return BlitzPoint { x: true, y: true };
+        }
+        // Any axis whose overflow is not `visible` clips, which covers scroll containers
+        // (hidden, scroll, auto) as well as `clip`. Scroll containers always clip both axes,
+        // because those values force a `visible` partner axis to compute to `auto`. So only
+        // `overflow: clip` can leave one axis clipped and the other visible.
+        BlitzPoint {
+            x: !matches!(box_style.overflow_x, Overflow::Visible),
+            y: !matches!(box_style.overflow_y, Overflow::Visible),
+        }
     }
 
     fn draw_text_mask(
@@ -342,14 +389,15 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         }
         let cx = self.element_cx(node, *node.final_layout(), transform, None);
+        let clipped_axes = self.clipped_axes(node, &styles);
         let clip = if cx.text_input.is_some() {
-            cx.frame.content_box_path()
+            cx.frame.text_input_clip_shape()
         } else {
-            cx.frame.padding_box_path()
+            overflow_clip_shape(&cx.frame, clipped_axes)
         };
         let pushed = self.layer_manager.maybe_push_layer(
             scene,
-            self.should_clip_node(node, &styles),
+            clipped_axes.x || clipped_axes.y,
             BlendMode::default(),
             1.0,
             transform,
@@ -426,7 +474,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
-        if node.local_name() == "input" && node.attr(local_name!("type")) == Some("hidden") {
+        if node.data.is_element_with_tag_name(&local_name!("input"))
+            && node.attr(local_name!("type")) == Some("hidden")
+        {
             return;
         }
 
@@ -442,7 +492,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         }
         let has_opacity = opacity < 1.0;
 
-        let should_clip = self.should_clip_node(node, &styles);
+        let clipped_axes = self.clipped_axes(node, &styles);
+        let should_clip = clipped_axes.x || clipped_axes.y;
         let is_text_input = node
             .element_data()
             .and_then(|el| el.text_input_data())
@@ -453,12 +504,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             size,
             border,
             padding,
-            location,
             ..
         } = *node.final_layout();
-        let box_position = Vec2::new(location.x as f64, location.y as f64) * self.scale;
-        let box_size = Size::new(size.width as f64, size.height as f64);
-        let border_box = Rect::from_origin_size(box_position.to_point(), box_size);
+        let box_size = Size::new(
+            size.width as f64 * self.scale,
+            size.height as f64 * self.scale,
+        );
+        let border_box = Rect::from_origin_size(Point::ORIGIN, box_size);
         let scaled_pb = (padding + border).map(f64::from);
         let content_position = kurbo::Point {
             x: scaled_pb.left,
@@ -529,9 +581,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // here matches the clip applied to the content below.
         let child_clip_rect = if should_clip {
             let clip_box = if is_text_input {
-                cx.frame.content_box_path()
+                cx.frame.text_input_clip_shape()
             } else {
-                cx.frame.padding_box_path()
+                overflow_clip_shape(&cx.frame, clipped_axes)
             };
             clip_rect.intersect(screen_transform.transform_rect_bbox(clip_box.bounding_box()))
         } else {
@@ -607,8 +659,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 // Save it so that the mask can be drawn untransformed by scroll offsets.
                 let unscrolled_transform = cx.transform;
 
-                let filter = convert_filters(&effects.filter.0).map(Arc::new);
-                let backdrop_filter = convert_filters(&effects.backdrop_filter.0).map(Arc::new);
+                let border_box = cx.frame.border_box_path().bounding_box();
+                let filter = convert_filters(&effects.filter.0, border_box).map(Arc::new);
+                let backdrop_filter =
+                    convert_filters(&effects.backdrop_filter.0, border_box).map(Arc::new);
 
                 // Adjust effect layer clip by filter expansion area
                 //
@@ -623,7 +677,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .map(|f| f.expansion_rect())
                     .unwrap_or(Rect::ZERO);
 
-                let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+                let mut effect_layer_clip = border_box;
                 effect_layer_clip.x0 += filter_expansion_area.x0;
                 effect_layer_clip.y0 += filter_expansion_area.y0;
                 effect_layer_clip.x1 += filter_expansion_area.x1;
@@ -654,9 +708,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
                         // TODO: allow layers with opacity to be unclipped (overflow: visible)
                         let clip = if is_text_input {
-                            &cx.frame.content_box_path()
+                            &cx.frame.text_input_clip_shape()
                         } else {
-                            &cx.frame.padding_box_path()
+                            &overflow_clip_shape(&cx.frame, clipped_axes)
                         };
 
                         // Clip layer if box requires clipping. Opacity set to 1.0
@@ -910,7 +964,7 @@ impl ElementCx<'_, '_> {
 
             // Track (only when the author specified a track color)
             if let Some(track_color) = custom_track {
-                let padding_box = self.frame.padding_box;
+                let padding_box = self.frame.padding_box();
                 let track_rect = match axis {
                     AbsoluteAxis::Horizontal => {
                         Rect::new(padding_box.x0, rect.y0, padding_box.x1, rect.y1)
@@ -925,6 +979,7 @@ impl ElementCx<'_, '_> {
                     track_color.multiply_alpha(opacity),
                     None,
                     &track_rect,
+                    AntiAliasing::Enabled,
                 );
             }
 
@@ -949,6 +1004,7 @@ impl ElementCx<'_, '_> {
                 color.multiply_alpha(opacity),
                 None,
                 &rect.to_rounded_rect(radius),
+                AntiAliasing::Enabled,
             );
             // Contrast stroke, default thumbs only: an author-specified
             // scrollbar-color is rendered exactly as given.
@@ -961,6 +1017,7 @@ impl ElementCx<'_, '_> {
                     stroke_color.multiply_alpha(opacity),
                     None,
                     &stroke_rect.to_rounded_rect(radius - stroke_width / 2.0),
+                    AntiAliasing::Enabled,
                 );
             }
         }
@@ -975,9 +1032,11 @@ impl ElementCx<'_, '_> {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
                 });
 
+            // Text keeps its unrounded position; only box edges are snapped to whole pixels.
+            let subpixel_offset = text_layout.content_box_subpixel_offset;
             let pos = Point {
-                x: pos.x,
-                y: pos.y + text_layout.block_offset as f64,
+                x: pos.x + subpixel_offset.x as f64,
+                y: pos.y + subpixel_offset.y as f64 + text_layout.block_offset as f64,
             };
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
@@ -1026,9 +1085,10 @@ impl ElementCx<'_, '_> {
             // For single-line inputs, add an offset to vertically center the text input layout
             // within the content box of it's node.
             let y_offset = self.node.text_input_v_centering_offset(self.scale);
+            let subpixel_offset = input_data.content_box_subpixel_offset;
             let pos = Point {
-                x: pos.x,
-                y: pos.y + y_offset,
+                x: pos.x + subpixel_offset.x as f64,
+                y: pos.y + subpixel_offset.y as f64 + y_offset,
             };
 
             // Apply the scroll offset (stored in CSS pixels, scaled here to device pixels) so
@@ -1053,6 +1113,7 @@ impl ElementCx<'_, '_> {
                         SELECTION_COLOR,
                         None,
                         &convert_rect(rect),
+                        AntiAliasing::Enabled,
                     );
                 }
                 if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
@@ -1068,6 +1129,7 @@ impl ElementCx<'_, '_> {
                         caret_color.as_srgb_color(),
                         None,
                         &convert_rect(&cursor),
+                        AntiAliasing::Enabled,
                     );
                 };
             }
@@ -1093,6 +1155,7 @@ impl ElementCx<'_, '_> {
         if let Some(ListItemLayout {
             marker,
             position: ListItemLayoutPosition::Outside(layout),
+            content_box_subpixel_offset,
         }) = self.list_item
         {
             // Right align and pad the bullet when rendering outside
@@ -1124,8 +1187,8 @@ impl ElementCx<'_, '_> {
             };
 
             let pos = Point {
-                x: pos.x + x_offset as f64,
-                y: pos.y + y_offset as f64,
+                x: pos.x + (content_box_subpixel_offset.x + x_offset) as f64,
+                y: pos.y + (content_box_subpixel_offset.y + y_offset) as f64,
             };
 
             let transform =
@@ -1187,6 +1250,11 @@ impl ElementCx<'_, '_> {
                         x: scroll.x * self.scale,
                         y: scroll.y * self.scale,
                     })
+                } else if let Some(offset) = child.lifted_paint_offset(self.node.id) {
+                    parent_style_transform.pre_translate(kurbo::Vec2 {
+                        x: offset.x as f64 * self.scale,
+                        y: offset.y as f64 * self.scale,
+                    })
                 } else {
                     parent_style_transform
                 };
@@ -1220,12 +1288,13 @@ impl ElementCx<'_, '_> {
             return;
         };
 
-        let width = self.frame.content_box.width() as f32;
-        let height = self.frame.content_box.height() as f32;
+        let content_box = self.frame.content_box();
+        let width = content_box.width() as f32;
+        let height = content_box.height() as f32;
         let svg_size = svg.tree.size();
 
-        let x = self.frame.content_box.origin().x;
-        let y = self.frame.content_box.origin().y;
+        let x = content_box.origin().x;
+        let y = content_box.origin().y;
 
         // An SVG with an aspect ratio but no natural size is sized by the default sizing
         // algorithm, which for `none` and `scale-down` contains it within the content box.
@@ -1262,14 +1331,43 @@ impl ElementCx<'_, '_> {
         let viewport = svg_viewport_affine(svg, paint_size.width, paint_size.height);
         let transform = (self.transform * viewport).then_translate(Vec2 { x, y });
 
-        self.with_replaced_content_clip(
+        // An inline `<svg>`'s `transform` attribute is applied inside the tree, so its
+        // viewport clip is left to `overflow`.
+        if self.node.data.is_element_with_tag_name(&local_name!("svg")) {
+            self.with_replaced_content_clip(
+                scene,
+                container_size,
+                paint_size,
+                x_offset.px(),
+                y_offset.px(),
+                |scene| {
+                    self.draw_svg_image(scene, &svg.tree, transform);
+                },
+            );
+            return;
+        }
+
+        // An SVG image's root viewport clips its content, as does the content box when
+        // the object-fit rect overflows it. The viewport is rounded out to whole pixels
+        // so its clip doesn't anti-alias the content's own edges a second time.
+        let viewport_rect = Rect::new(
+            x,
+            y,
+            x + paint_size.width as f64,
+            y + paint_size.height as f64,
+        )
+        .expand();
+        self.context.layer_manager.maybe_with_layer(
             scene,
-            container_size,
-            paint_size,
-            x_offset.px(),
-            y_offset.px(),
+            true,
+            BlendMode::default(),
+            1.0,
+            self.transform,
+            &viewport_rect.intersect(content_box),
+            None,
+            None,
             |scene| {
-                anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
+                self.draw_svg_image(scene, &svg.tree, transform);
             },
         );
     }
@@ -1304,10 +1402,11 @@ impl ElementCx<'_, '_> {
 
     fn draw_image(&self, scene: &mut impl PaintScene) {
         if let Some(image) = self.element.raster_image_data() {
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
-            let x = self.frame.content_box.origin().x;
-            let y = self.frame.content_box.origin().y;
+            let content_box = self.frame.content_box();
+            let width = content_box.width() as u32;
+            let height = content_box.height() as u32;
+            let x = content_box.origin().x;
+            let y = content_box.origin().y;
 
             let object_fit = self.style.clone_object_fit();
             let object_position = self.style.get_object_position();
@@ -1358,8 +1457,7 @@ impl ElementCx<'_, '_> {
     #[cfg(feature = "custom-widget")]
     fn draw_custom_widget(&self, scene: &mut impl PaintScene) {
         if let Some(widget_scene) = self.custom_widget_scene {
-            let x = self.frame.content_box.origin().x;
-            let y = self.frame.content_box.origin().y;
+            let Point { x, y } = self.frame.content_box().origin();
             let transform = self.transform.then_translate(Vec2 { x, y });
 
             // TODO: eliminate clone
@@ -1370,13 +1468,14 @@ impl ElementCx<'_, '_> {
     fn draw_sub_document(&self, scene: &mut impl PaintScene) {
         if let Some(sub_doc) = self.element.sub_doc_data().map(|doc| doc.inner()) {
             let scale = self.scale;
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
+            let content_box = self.frame.content_box();
+            let width = content_box.width() as u32;
+            let height = content_box.height() as u32;
 
             // TODO: Support arbitrary transforms of subdocuments
             let translation = self.transform.translation();
-            let initial_x = translation.x + self.frame.content_box.origin().x;
-            let initial_y = translation.y + self.frame.content_box.origin().y;
+            let initial_x = translation.x + content_box.origin().x;
+            let initial_y = translation.y + content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
             let painter = BlitzDomPainter::new(
@@ -1406,7 +1505,14 @@ impl ElementCx<'_, '_> {
                 taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 
-            scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
+            scene.stroke(
+                &stroke,
+                self.transform,
+                stroke_color,
+                None,
+                &shape,
+                AntiAliasing::Enabled,
+            );
         }
     }
 }
@@ -1455,4 +1561,39 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBo
     };
 
     CssBox::new(border_box, border, padding, outline_width, border_radii)
+}
+
+/// Far enough past any viewport that an unclipped axis never clips, and small enough
+/// that f32 path coordinates keep the clipped edges exact.
+const UNCLIPPED_REACH: f64 = 1.0e6;
+
+/// The overflow clip shape of a frame: its padding box, opened out along any axis
+/// that does not clip.
+fn overflow_clip_shape(
+    frame: &CssBox,
+    clipped_axes: BlitzPoint<bool>,
+) -> anyrender::NonUniformRoundedRect {
+    match clipped_axes {
+        BlitzPoint { x: true, y: false } => {
+            let rect = frame.padding_box();
+            Rect::new(
+                rect.x0,
+                rect.y0 - UNCLIPPED_REACH,
+                rect.x1,
+                rect.y1 + UNCLIPPED_REACH,
+            )
+            .into()
+        }
+        BlitzPoint { x: false, y: true } => {
+            let rect = frame.padding_box();
+            Rect::new(
+                rect.x0 - UNCLIPPED_REACH,
+                rect.y0,
+                rect.x1 + UNCLIPPED_REACH,
+                rect.y1,
+            )
+            .into()
+        }
+        _ => frame.padding_box_shape(),
+    }
 }

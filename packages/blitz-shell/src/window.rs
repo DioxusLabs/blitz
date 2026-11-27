@@ -1,19 +1,20 @@
 use crate::BlitzShellProvider;
 use crate::convert_events::{
-    button_source_to_blitz, color_scheme_to_theme, pointer_kind_to_blitz, pointer_source_to_blitz,
-    pointer_source_to_blitz_details, theme_to_color_scheme, winit_ime_to_blitz,
-    winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
+    PointerIds, button_source_to_blitz, color_scheme_to_theme, pointer_kind_to_blitz,
+    pointer_source_to_blitz, pointer_source_to_blitz_details, theme_to_color_scheme,
+    winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
+use crate::dnd::IncomingDrag;
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
-    MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
+    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase,
+    BlitzWheelSource, MouseEventButton, MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
-use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
+use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition, PhysicalSize};
 use winit::keyboard::PhysicalKey;
 
 use atomic_refcell::AtomicRefCell;
@@ -21,8 +22,8 @@ use std::any::Any;
 use std::sync::Arc;
 use std::task::Waker;
 use web_time::Instant;
-use winit::event::{ButtonSource, ElementState, MouseButton};
-use winit::event_loop::ActiveEventLoop;
+use winit::event::{ButtonSource, ElementState, MouseButton, PointerKind};
+use winit::event_loop::{ActiveEventLoop, DndAction};
 use winit::window::{Theme, WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
@@ -38,6 +39,17 @@ fn get_safe_area_insets(_window: &dyn Window) -> PhysicalInsets<u32> {
 #[cfg(not(target_os = "macos"))]
 fn get_safe_area_insets(window: &dyn Window) -> PhysicalInsets<u32> {
     window.safe_area()
+}
+
+fn content_size(size: PhysicalSize<u32>, insets: PhysicalInsets<u32>) -> (u32, u32) {
+    (
+        size.width
+            .saturating_sub(insets.left)
+            .saturating_sub(insets.right),
+        size.height
+            .saturating_sub(insets.top)
+            .saturating_sub(insets.bottom),
+    )
 }
 
 pub struct WindowConfig<Rend: WindowRenderer> {
@@ -78,6 +90,8 @@ pub struct View<Rend: WindowRenderer> {
     pub theme_override: Option<Theme>,
     pub keyboard_modifiers: Modifiers,
     pub buttons: MouseEventButtons,
+    /// The drag from another application that is over the window (if any)
+    incoming_drag: Option<IncomingDrag>,
     pub pointer_pos: PhysicalPosition<f64>,
     /// The non-mouse pointers (touch/pen) that are currently pressed, in the
     /// order they were pressed.
@@ -94,6 +108,7 @@ pub struct View<Rend: WindowRenderer> {
     /// The events stored here always have an empty `active_pointers` list to
     /// avoid a reference cycle.
     pub active_events: Arc<AtomicRefCell<Vec<BlitzPointerEvent>>>,
+    pointer_ids: PointerIds,
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
@@ -180,13 +195,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         let safe_area_insets = get_safe_area_insets(&*winit_window);
         let theme = winit_window.theme().unwrap_or(Theme::Light);
         let color_scheme = theme_to_color_scheme(theme);
-        // The viewport is the window surface minus the safe area insets
-        let viewport_width = size
-            .width
-            .saturating_sub(safe_area_insets.left + safe_area_insets.right);
-        let viewport_height = size
-            .height
-            .saturating_sub(safe_area_insets.top + safe_area_insets.bottom);
+        let (viewport_width, viewport_height) = content_size(size, safe_area_insets);
         let viewport = Viewport::new(viewport_width, viewport_height, scale, color_scheme);
 
         // Create shell provider
@@ -213,12 +222,14 @@ impl<Rend: WindowRenderer> View<Rend> {
             waker: None,
             animation_timer: None,
             keyboard_modifiers: Default::default(),
+            incoming_drag: None,
             proxy: proxy.clone(),
             window: winit_window.clone(),
             doc,
             theme_override: None,
             buttons: MouseEventButtons::None,
             active_events: Arc::new(AtomicRefCell::new(Vec::new())),
+            pointer_ids: PointerIds::default(),
             safe_area_insets,
             #[cfg(target_arch = "wasm32")]
             pending_resize: None,
@@ -293,7 +304,8 @@ impl<Rend: WindowRenderer> View<Rend> {
     /// Start resuming the renderer. Dispatches [`BlitzShellEvent::ResumeReady`]
     /// when initialization completes — synchronously on native, asynchronously
     /// on wasm32. The embedder must call [`complete_resume`](Self::complete_resume)
-    /// in response.
+    /// in response. Renderers that are polled instead (see
+    /// [`WindowRenderer::is_pending`]) are completed from [`redraw`](Self::redraw).
     pub fn resume(&mut self) {
         let window_id = self.window_id();
         let animation_time = self.current_animation_time();
@@ -314,6 +326,11 @@ impl<Rend: WindowRenderer> View<Rend> {
             .resume(Arc::new(self.window.clone()), width, height, move || {
                 proxy.send_event(BlitzShellEvent::ResumeReady { window_id });
             });
+
+        // Polled renderers finish their setup in `complete_resume`, which `redraw` calls.
+        if self.renderer.is_pending() {
+            self.window.request_redraw();
+        }
     }
 
     /// Finalize a previously-started resume. Should be called in response to a
@@ -324,15 +341,20 @@ impl<Rend: WindowRenderer> View<Rend> {
             return false;
         }
 
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        self.refresh_safe_area();
+
         let window_id = self.window_id();
 
         // Resync the renderer to the current viewport. Resize/scale events that
         // arrived while the renderer was Pending were no-ops on the renderer
         // (its `set_size` only matches Active), so the surface created during
         // resume could be at a stale size by the time we get here.
+        self.waker = Some(create_waker(&self.proxy, window_id));
         let animation_time = self.current_animation_time();
+        self.doc
+            .resolve_and_settle(animation_time, self.waker.as_ref());
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let insets = self.safe_area_insets;
@@ -358,7 +380,6 @@ impl<Rend: WindowRenderer> View<Rend> {
             )
         });
 
-        self.waker = Some(create_waker(&self.proxy, window_id));
         true
     }
 
@@ -374,14 +395,6 @@ impl<Rend: WindowRenderer> View<Rend> {
         if let Some(waker) = &self.waker {
             let cx = std::task::Context::from_waker(waker);
             if self.doc.poll(Some(cx)) {
-                #[cfg(feature = "accessibility")]
-                {
-                    let inner = self.doc.inner();
-                    if inner.has_changes() {
-                        self.accessibility.update_tree(&inner);
-                    }
-                }
-
                 self.request_redraw();
                 return true;
             }
@@ -401,11 +414,24 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn redraw(&mut self) {
         #[cfg(target_os = "ios")]
         self.ios_request_redraw.set(false);
+
+        if self.renderer.is_pending() {
+            if !self.complete_resume() {
+                self.window.request_redraw();
+            }
+            return;
+        }
+
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        self.refresh_safe_area();
+
         let animation_time = self.current_animation_time();
         let is_visible = self.is_visible;
 
+        self.doc
+            .resolve_and_settle(animation_time, self.waker.as_ref());
+
         let mut inner = self.doc.inner_mut();
-        inner.resolve(animation_time);
 
         // Unregister resources (e.g. textures) from dropped custom widget nodes
         #[cfg(feature = "custom-widget")]
@@ -418,6 +444,14 @@ impl<Rend: WindowRenderer> View<Rend> {
         let is_animating = inner.is_animating();
         let is_blocked = inner.has_pending_critical_resources();
         let insets = self.safe_area_insets;
+
+        // Push the accessibility tree after resolve so that it reflects the current
+        // DOM, styles, layout and focus.
+        if !is_blocked && inner.has_changes() {
+            #[cfg(feature = "accessibility")]
+            self.accessibility.update_tree(&inner);
+            inner.clear_changes();
+        }
 
         if !is_blocked && is_visible {
             self.renderer.render(|scene| {
@@ -519,6 +553,17 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
     }
 
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    fn refresh_safe_area(&mut self) {
+        // Winit can request a redraw for a safe-area change without resizing the surface.
+        let insets = get_safe_area_insets(&*self.window);
+        if insets != self.safe_area_insets {
+            self.safe_area_insets = insets;
+            let size = self.window.surface_size();
+            self.doc.inner_mut().viewport_mut().window_size = content_size(size, insets);
+        }
+    }
+
     #[cfg(feature = "accessibility")]
     pub fn build_accessibility_tree(&mut self) {
         let inner = self.doc.inner();
@@ -570,9 +615,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.last_resize_at = None;
 
         let insets = self.safe_area_insets;
-        let width = size.width.saturating_sub(insets.left + insets.right);
-        let height = size.height.saturating_sub(insets.top + insets.bottom);
-        self.with_viewport(|v| v.window_size = (width, height));
+        self.with_viewport(|v| v.window_size = content_size(size, insets));
         self.request_redraw();
     }
 
@@ -583,7 +626,21 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.doc.handle_ui_event(event);
     }
 
-    pub fn handle_winit_event(&mut self, event: WindowEvent) {
+    /// Tell the drag that is over the window that it has moved
+    fn handle_drag_position(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        position: PhysicalPosition<f64>,
+        proposed_action: Option<DndAction>,
+    ) {
+        let coords = self.pointer_coords(position);
+        let mods = winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state());
+        if let Some(drag) = &mut self.incoming_drag {
+            drag.moved(event_loop, &mut *self.doc, coords, mods, proposed_action);
+        }
+    }
+
+    pub fn handle_winit_event(&mut self, event_loop: &dyn ActiveEventLoop, event: WindowEvent) {
         // Update accessibility focus and window size state in response to a Winit WindowEvent
         #[cfg(feature = "accessibility")]
         self.accessibility
@@ -621,9 +678,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     let insets = self.safe_area_insets;
-                    let width = physical_size.width - insets.left - insets.right;
-                    let height = physical_size.height - insets.top - insets.bottom;
-                    self.with_viewport(|v| v.window_size = (width, height));
+                    self.with_viewport(|v| v.window_size = content_size(physical_size, insets));
                     self.request_redraw();
                 }
             }
@@ -700,7 +755,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::PointerEntered { /*device_id*/.. } => {}
             WindowEvent::PointerLeft { position, primary, kind, .. } => {
-                let id = pointer_kind_to_blitz(&kind);
+                let id = pointer_kind_to_blitz(&kind, &mut self.pointer_ids);
 
                 // A `PointerLeft` for a non-mouse pointer that is still pressed
                 // (i.e. we never saw a `PointerButton` with `Released` for it)
@@ -710,7 +765,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // Remove from the active list first so the cancelled pointer is
                 // excluded from this event's `touches`. `remove_active_pointer`
                 // reports whether the pointer was actually active.
-                if id != BlitzPointerId::Mouse && self.remove_active_pointer(id) {
+                if !id.is_mouse() && self.remove_active_pointer(id) {
                     let position = position.unwrap_or(self.pointer_pos);
                     self.pointer_pos = position;
 
@@ -747,11 +802,14 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
 
                 self.doc.handle_ui_event(UiEvent::PointerLeave(event));
+                if let PointerKind::Touch(finger_id) = kind {
+                    self.pointer_ids.remove(finger_id);
+                }
                 self.request_redraw();
             }
             WindowEvent::PointerMoved { position, source, primary, .. } => {
                 self.pointer_pos = position;
-                let id = pointer_source_to_blitz(&source);
+                let id = pointer_source_to_blitz(&source, &mut self.pointer_ids);
                 let event = BlitzPointerEvent {
                     id,
                     is_primary: primary,
@@ -764,13 +822,13 @@ impl<Rend: WindowRenderer> View<Rend> {
                     active_pointers: Arc::clone(&self.active_events),
                 };
                 // Keep multi-touch positions current (no-op for non-active pointers).
-                if id != BlitzPointerId::Mouse {
+                if !id.is_mouse() {
                     self.update_active_pointer(&event);
                 }
                 self.doc.handle_ui_event(UiEvent::PointerMove(event));
             }
             WindowEvent::PointerButton { button, state, primary, position, .. } => {
-                let id = button_source_to_blitz(&button);
+                let id = button_source_to_blitz(&button, &mut self.pointer_ids);
                 let coords = self.pointer_coords(position);
                 self.pointer_pos = position;
                 let button = match &button {
@@ -808,14 +866,14 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // `touches` includes it). A release is handled after the
                 // synthetic move below so the move still sees it, but before the
                 // pointerup so touchend's `touches` excludes it.
-                if id != BlitzPointerId::Mouse && state == ElementState::Pressed {
+                if !id.is_mouse() && state == ElementState::Pressed {
                     self.set_active_pointer(&pointer_event);
                 }
 
                 // Touch input doesn't emit a `PointerMoved` before the button
                 // event the way a mouse does, so synthesise a move to update the
                 // hover/hit position to the touch location.
-                if id != BlitzPointerId::Mouse {
+                if !id.is_mouse() {
                     let event = BlitzPointerEvent {
                         id,
                         is_primary: primary,
@@ -830,7 +888,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     self.doc.handle_ui_event(UiEvent::PointerMove(event));
                 }
 
-                if id != BlitzPointerId::Mouse && state == ElementState::Released {
+                if !id.is_mouse() && state == ElementState::Released {
                     self.remove_active_pointer(id);
                 }
 
@@ -844,7 +902,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.doc.handle_ui_event(event);
                 self.request_redraw();
             }
-            WindowEvent::MouseWheel { delta, .. } => {
+            WindowEvent::MouseWheel { delta, phase, source, .. } => {
                 let blitz_delta = match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => BlitzWheelDelta::Lines(x as f64, y as f64),
                     winit::event::MouseScrollDelta::PixelDelta(pos) => BlitzWheelDelta::Pixels(pos.x, pos.y),
@@ -857,6 +915,18 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 let event = BlitzWheelEvent {
                     delta: blitz_delta,
+                    phase: match phase {
+                        winit::event::TouchPhase::Started => BlitzWheelPhase::Started,
+                        winit::event::TouchPhase::Moved => BlitzWheelPhase::Moved,
+                        winit::event::TouchPhase::Ended => BlitzWheelPhase::Ended,
+                        winit::event::TouchPhase::Cancelled => BlitzWheelPhase::Cancelled,
+                    },
+                    source: match source {
+                        winit::event::ScrollSource::Wheel => BlitzWheelSource::Wheel,
+                        winit::event::ScrollSource::Finger => BlitzWheelSource::Finger,
+                        winit::event::ScrollSource::Momentum => BlitzWheelSource::Momentum,
+                        _ => BlitzWheelSource::Unknown,
+                    },
                     coords: self.pointer_coords(self.pointer_pos),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
@@ -871,10 +941,60 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::PanGesture { .. } => {},
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
-            WindowEvent::DragEntered { .. } => {},
-            WindowEvent::DragDropped { .. } => {},
-            WindowEvent::DragLeft { .. } => {},
+            WindowEvent::DragEntered { id, position } => {
+                self.incoming_drag = Some(IncomingDrag::new(
+                    event_loop,
+                    id,
+                    self.pointer_coords(position.unwrap_or(self.pointer_pos)),
+                    winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    self.buttons,
+                ));
+                if let Some(position) = position {
+                    self.handle_drag_position(event_loop, position, None);
+                }
+            },
+            WindowEvent::DragPosition { id, position, proposed_action } => {
+                if self.incoming_drag.as_ref().is_some_and(|drag| drag.id() == id) {
+                    self.handle_drag_position(event_loop, position, proposed_action);
+                }
+            },
+            WindowEvent::DragDropped { id, .. } => {
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag = drag.dropped(event_loop, &mut *self.doc);
+                }
+            },
+            WindowEvent::DataTransferReceived { id, serial, value } => {
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag =
+                        drag.data_received(event_loop, &mut *self.doc, serial, &*value);
+                }
+            },
+            WindowEvent::DragLeft { id } => {
+                if let Some(drag) = self.incoming_drag.take_if(|drag| drag.id() == id) {
+                    self.incoming_drag = drag.left(&mut *self.doc);
+                }
+            },
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_size_subtracts_safe_area() {
+        let size = PhysicalSize::new(1080, 2400);
+        let insets = PhysicalInsets::new(136, 0, 63, 0);
+        assert_eq!(content_size(size, insets), (1080, 2201));
+    }
+
+    #[test]
+    fn content_size_saturates_when_insets_exceed_surface() {
+        // A surface can briefly be smaller than stale insets (e.g. mid-rotation).
+        let size = PhysicalSize::new(100, 50);
+        let insets = PhysicalInsets::new(40, 80, 40, 80);
+        assert_eq!(content_size(size, insets), (0, 0));
     }
 }

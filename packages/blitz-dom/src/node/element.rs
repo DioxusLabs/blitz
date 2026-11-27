@@ -2,12 +2,14 @@ use blitz_traits::node_id::NodeId;
 use cssparser::Parser;
 use kurbo::{Affine, Rect as KurboRect};
 use linebender_resource_handle::Blob;
-use markup5ever::{LocalName, QualName, local_name};
+use markup5ever::{LocalName, QualName, local_name, ns};
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use std::cell::Cell;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, OnceLock};
+
+use crate::stylo::PresentationalHints;
 use style::Atom;
 use style::parser::ParserContext;
 use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
@@ -67,6 +69,10 @@ pub struct ElementData {
 
     /// The element's parsed style attribute (used by stylo)
     pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
+
+    /// The declaration blocks of the element's presentational hints, built from its
+    /// attributes when style matching first asks for them. Cleared when an attribute changes.
+    pub(crate) presentational_hints: OnceLock<PresentationalHints>,
 
     /// Heterogeneous data that depends on the element's type.
     /// For example:
@@ -326,6 +332,7 @@ impl Clone for ElementData {
             template_contents: self.template_contents,
 
             // Runtime state: reset to defaults.
+            presentational_hints: OnceLock::new(),
             stylo_element_data: Default::default(),
             selector_flags: Cell::new(ElementSelectorFlags::empty()),
             guard: self.guard.clone(),
@@ -417,12 +424,12 @@ impl ElementData {
     pub fn new(name: QualName, attrs: Vec<Attribute>) -> Self {
         let id_attr_atom = attrs
             .iter()
-            .find(|attr| &attr.name.local == "id")
+            .find(|attr| attr.name.ns == markup5ever::ns!() && &attr.name.local == "id")
             .map(|attr| attr.value.as_ref())
             .map(|value: &str| Atom::from(value));
         let classes = attrs
             .iter()
-            .find(|attr| &attr.name.local == "class")
+            .find(|attr| attr.name.ns == markup5ever::ns!() && &attr.name.local == "class")
             .map(|attr| parse_classes(&attr.value))
             .unwrap_or_default();
 
@@ -433,6 +440,7 @@ impl ElementData {
             attrs: Attributes::new(attrs),
             is_focussable: false,
             style_attribute: Default::default(),
+            presentational_hints: OnceLock::new(),
             inline_layout_data: None,
             list_item_data: None,
             special_data: SpecialElementData::None,
@@ -502,6 +510,18 @@ impl ElementData {
     /// Detects the presence of the attribute, treating *any* value as truthy.
     pub fn has_attr(&self, name: impl PartialEq<LocalName>) -> bool {
         self.attrs.iter().any(|attr| name == attr.name.local)
+    }
+
+    /// The `href` of an SVG element such as `<image>` or `<use>`. As in SVG 2,
+    /// an unprefixed `href` takes precedence over `xlink:href`.
+    pub fn svg_href(&self) -> Option<&str> {
+        let href = |namespace| {
+            self.attrs
+                .iter()
+                .find(|attr| attr.name.local == local_name!("href") && attr.name.ns == namespace)
+                .map(|attr| &*attr.value)
+        };
+        href(ns!()).or_else(|| href(ns!(xlink)))
     }
 
     pub fn can_be_disabled(&self) -> bool {
@@ -699,9 +719,12 @@ impl ElementData {
     }
 
     pub fn flush_style_attribute(&mut self, guard: &SharedRwLock, url_extra_data: &UrlExtraData) {
-        self.style_attribute = self.attr(local_name!("style")).map(|style_str| {
+        let style = self.attrs.iter().find(|attr| {
+            attr.name.ns == markup5ever::ns!() && attr.name.local == local_name!("style")
+        });
+        self.style_attribute = style.map(|attr| {
             ServoArc::new(guard.wrap(parse_style_attribute(
-                style_str,
+                &attr.value,
                 url_extra_data,
                 None,
                 QuirksMode::NoQuirks,
@@ -846,6 +869,10 @@ impl ElementData {
         std::mem::take(&mut self.inline_layout_data)
     }
 
+    pub(crate) fn is_button(&self) -> bool {
+        self.name.local == local_name!("button") || self.is_button_input()
+    }
+
     pub(crate) fn is_button_input(&self) -> bool {
         self.name.local == local_name!("input")
             && matches!(
@@ -954,6 +981,10 @@ impl std::fmt::Debug for SpecialElementData {
 pub struct ListItemLayout {
     pub marker: Marker,
     pub position: ListItemLayoutPosition,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 //We seperate chars from strings in order to optimise rendering - ie not needing to

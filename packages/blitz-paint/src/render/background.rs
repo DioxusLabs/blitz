@@ -1,11 +1,11 @@
 use super::{ALMOST_OPAQUE, ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
-use anyrender::PaintScene;
+use anyrender::{AntiAliasing, NonUniformRoundedRect, PaintScene};
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::NodeId;
 use blitz_dom::node::{ImageData, ImageResourceData, SpecialElementData};
-use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
+use kurbo::{self, Affine, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, BlendMode, Compose, Fill, Mix};
 use style::{
     computed_values::border_collapse::T as BorderCollapse,
@@ -143,7 +143,10 @@ impl ElementCx<'_, '_> {
         if text_run {
             self.begin_text_clip_group(scene);
         }
-        self.draw_solid_bg(scene, &background_clip_path);
+        // The canvas already paints this element's background color.
+        if self.context.canvas_background_node_id != Some(self.node.id) {
+            self.draw_solid_bg(scene, &background_clip_path);
+        }
 
         for idx in (0..layer_count).rev() {
             let layer = ImageLayerStyles::from_background(bg_styles, image_data, idx);
@@ -187,7 +190,7 @@ impl ElementCx<'_, '_> {
             Mix::Normal,
             ALMOST_OPAQUE,
             self.transform,
-            &self.frame.border_box_path(),
+            &self.frame.border_box_shape(),
             None,
             None,
         );
@@ -201,7 +204,7 @@ impl ElementCx<'_, '_> {
             BlendMode::new(Mix::Normal, Compose::DestIn),
             1.0,
             self.transform,
-            &self.frame.border_box_path(),
+            &self.frame.border_box_shape(),
             None,
             None,
         );
@@ -212,11 +215,11 @@ impl ElementCx<'_, '_> {
     }
 
     /// The path of the given CSS box model box for this element
-    pub(super) fn box_path(&self, css_box: BoxModelBox) -> BezPath {
+    pub(super) fn box_path(&self, css_box: BoxModelBox) -> NonUniformRoundedRect {
         match css_box {
-            BoxModelBox::BorderBox => self.frame.border_box_path(),
-            BoxModelBox::PaddingBox => self.frame.padding_box_path(),
-            BoxModelBox::ContentBox => self.frame.content_box_path(),
+            BoxModelBox::BorderBox => self.frame.border_box_shape(),
+            BoxModelBox::PaddingBox => self.frame.padding_box_shape(),
+            BoxModelBox::ContentBox => self.frame.content_box_shape(),
         }
     }
 
@@ -224,8 +227,8 @@ impl ElementCx<'_, '_> {
     fn box_rect(&self, css_box: BoxModelBox) -> Rect {
         match css_box {
             BoxModelBox::BorderBox => self.frame.border_box,
-            BoxModelBox::PaddingBox => self.frame.padding_box,
-            BoxModelBox::ContentBox => self.frame.content_box,
+            BoxModelBox::PaddingBox => self.frame.padding_box(),
+            BoxModelBox::ContentBox => self.frame.content_box(),
         }
     }
 
@@ -368,12 +371,19 @@ impl ElementCx<'_, '_> {
 
             let shape = rect.scale_from_origin(self.scale);
             for color in colors {
-                scene.fill(Fill::NonZero, self.transform, *color, None, &shape);
+                scene.fill(
+                    Fill::NonZero,
+                    self.transform,
+                    *color,
+                    None,
+                    &shape,
+                    AntiAliasing::Enabled,
+                );
             }
         }
     }
 
-    fn draw_solid_bg(&self, scene: &mut impl PaintScene, shape: &BezPath) {
+    fn draw_solid_bg(&self, scene: &mut impl PaintScene, shape: &impl Shape) {
         let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color
@@ -382,7 +392,14 @@ impl ElementCx<'_, '_> {
 
         if bg_color != Color::TRANSPARENT {
             // Fill the color
-            scene.fill(Fill::NonZero, self.transform, bg_color, None, shape);
+            scene.fill(
+                Fill::NonZero,
+                self.transform,
+                bg_color,
+                None,
+                shape,
+                AntiAliasing::Enabled,
+            );
         }
     }
 
@@ -495,7 +512,7 @@ impl ElementCx<'_, '_> {
             ))
             * viewport;
 
-        anyrender_svg::render_svg_tree(scene, &svg.tree, transform);
+        self.context.draw_svg_image(scene, &svg.tree, transform);
     }
 
     fn draw_raster_image_layer(&self, scene: &mut impl PaintScene, layer: &ImageLayerStyles) {
@@ -573,6 +590,7 @@ impl ElementCx<'_, '_> {
                     to_peniko_image(image_data, quality).as_ref(),
                     None,
                     &tile_rect,
+                    AntiAliasing::Enabled,
                 );
             }
         }
@@ -665,6 +683,7 @@ impl ElementCx<'_, '_> {
                     brush.clone(),
                     gradient_transform,
                     &tile_rect,
+                    AntiAliasing::Enabled,
                 );
             }
         }

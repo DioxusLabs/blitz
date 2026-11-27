@@ -15,16 +15,19 @@ env:
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
   WPT_DIR: "./wpt/tests"
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 
 jobs:
   wpt:
     name: "Run WPT Tests"
     runs-on: warp-ubuntu-latest-arm64-16x
     timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      PAGES_ARTIFACT_NAME: github-pages-${{ github.run_attempt }}
+    outputs:
+      pages-artifact-name: ${{ env.PAGES_ARTIFACT_NAME }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -58,8 +61,11 @@ jobs:
           mkdir -p ./sites/gh-pages
           cp ./wpt/output/wptreport.json ./sites/gh-pages/wptreport.json
           cp ./wpt/output/wptreport.json.zst ./sites/gh-pages/wptreport.json.zst
+      - uses: cargo-bins/cargo-binstall@v1.27.0
       - name: Install wpt cli
-        run: cargo install wpt@0.0.14
+        run: cargo binstall --no-confirm --disable-strategies compile wpt@0.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Generate scores.json
         run: |
           wpt calc-scores --in ./sites/gh-pages/wptreport.json --out ./sites/gh-pages/wptscores.json
@@ -71,6 +77,22 @@ jobs:
           wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json | tee ./wpt/output/wptdiff.txt
           wpt diff --verbose --format json ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptdiff.json
           python3 ./.github/scripts/wpt_area_changes.py ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json > ./wpt/output/wptareas.json
+      - name: Check WPT revision mismatch
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 - <<'PY'
+          import json
+
+          with open('./wpt/output/wptreport.json') as file:
+              pr_revision = json.load(file)['run_info']['revision']
+          with open('./wpt/output/main-wptreport.json') as file:
+              main_revision = json.load(file)['run_info']['revision']
+          if pr_revision != main_revision:
+              with open('./wpt/output/wptdiff.json') as file:
+                  diff = json.load(file)
+              with open('./wpt/output/wptdiff.json', 'w') as file:
+                  json.dump({'revision_mismatch': {'pr': pr_revision, 'main': main_revision}, 'diff': diff}, file)
+          PY
       - name: Render results in step summary
         if: github.event_name == 'pull_request'
         env:
@@ -85,23 +107,37 @@ jobs:
             ./wpt/output/wptdiff.txt
             ./wpt/output/wptdiff.json
             ./wpt/output/wptareas.json
-      - name: Setup Github Pages
-        if: github.ref == 'refs/heads/main'
-        uses: actions/configure-pages@v6
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v5
         with:
+          name: ${{ env.PAGES_ARTIFACT_NAME }}
           path: 'sites/gh-pages'
+  deploy:
+    name: "Deploy WPT Results"
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: wpt
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Setup Github Pages
+        uses: actions/configure-pages@v6
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main'
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: ${{ needs.wpt.outputs.pages-artifact-name }}
   trigger-archive:
     name: "Trigger Archive Job"
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: wpt
+    needs: deploy
     environment: WPT
     steps:
       - name: Trigger archive job

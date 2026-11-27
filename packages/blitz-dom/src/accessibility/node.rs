@@ -341,7 +341,7 @@ impl Node {
     }
 
     /// Whether the style of this node excludes it from the accessibility tree, with
-    /// `display: none` or `visibility: hidden`. This does not look at the ancestors.
+    /// `display: none` or a `visibility` other than `visible`. This does not look at the ancestors.
     /// [TreeBuilder](super::tree_builder::TreeBuilder) excludes the descendants of such nodes.
     ///
     /// Nodes with `aria-hidden="true"` stay in the tree, flagged as hidden. See
@@ -352,11 +352,14 @@ impl Node {
         self.try_stylo_element_data()
             .as_ref()
             .and_then(|s| s.get())
-            .is_some_and(|s| {
-                s.styles.is_display_none()
-                    || s.styles.primary().clone_visibility()
-                        == visibility::computed_value::T::Hidden
+            .and_then(|s| {
+                let style = s.styles.get_primary()?;
+                Some(
+                    style.get_box().get_display().is_none()
+                        || style.clone_visibility() != visibility::computed_value::T::Visible,
+                )
             })
+            .unwrap_or(false)
     }
 
     /// Whether a `<label>` can be associated with this element.
@@ -769,7 +772,12 @@ fn role_from_element_data(element_data: &ElementData) -> Option<Role> {
         "strong" => Some(Role::Strong),
         "mark" => Some(Role::Mark),
         "time" => Some(Role::Time),
-        "img" => Some(Role::Image),
+        // An empty `alt` marks an image as decorative: it's presentational,
+        // as `role="none"` is (https://www.w3.org/TR/html-aam-1.0/#el-img-empty-alt).
+        "img" => match element_data.attr(local_name!("alt")) {
+            Some("") => Some(Role::GenericContainer),
+            _ => Some(Role::Image),
+        },
         "iframe" => Some(Role::Iframe),
 
         "input" => {

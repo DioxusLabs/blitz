@@ -7,9 +7,11 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["cpu"]
+default = ["cpu", "tiny-skia", "skia"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
+tiny-skia = ["dep:anyrender_tiny_skia"]
+skia = ["dep:anyrender_skia"]
 
 [dependencies]
 mimalloc = "0.1.48"
@@ -21,13 +23,13 @@ blitz-paint = { workspace = true, features = ["default"] }
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
+anyrender_tiny_skia = { workspace = true, optional = true }
+anyrender_skia = { workspace = true, optional = true }
 
 taffy = { workspace = true }
 style = { workspace = true }
 style_traits = { workspace = true }
 markup5ever = { workspace = true }
-html5ever = { workspace = true }
-roxmltree = "0.21"
 parley = { workspace = true }
 peniko = { workspace = true }
 image = { workspace = true, features = ["png"] }
@@ -49,6 +51,7 @@ atomic_float = "1"
 supports-hyperlinks = "3.1.0"
 terminal-link = "0.1.0"
 wptreport = { version = "0.0.5", default-features = false }
+wpt_manifest = "0.2.1"
 os_info = "3.10.0"
 serde_json = "1.0.140"
 

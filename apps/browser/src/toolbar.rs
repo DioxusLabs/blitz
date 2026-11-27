@@ -3,7 +3,15 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use blitz_dom::{BaseDocument, DocumentConfig, StyleThreading};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::net::{Request, Url};
+#[cfg(feature = "devtools")]
+use blitz_traits::shell::ShellProvider;
+#[cfg(feature = "devtools")]
+use dioxus_native::use_window_event;
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
+#[cfg(feature = "devtools")]
+use winit::event::WindowEvent;
+#[cfg(feature = "devtools")]
+use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
 use crate::about_pages::AboutPage;
 use crate::history::HistoryNav;
@@ -257,13 +265,58 @@ pub fn Toolbar(
         }
     });
 
-    let devtools_action = use_callback(move |_| {
-        menu_open.set(false);
-        let tab = active_tab(tabs, active_tab_id());
-        with_sub_doc(tab, |sub_doc| {
-            sub_doc.devtools_mut().toggle_highlight_hover()
+    #[cfg(feature = "devtools")]
+    let open_devtools_action = {
+        let shell_provider = use_context::<Arc<dyn ShellProvider>>();
+        use_callback(move |_| {
+            menu_open.set(false);
+            let tab = active_tab(tabs, active_tab_id());
+            // About pages are rendered into the browser UI's own document
+            // rather than a sub-document
+            let mut doc_id = url_input_handle.peek().as_ref().map(|h| h.doc().id());
+            with_sub_doc(tab, |sub_doc| doc_id = Some(sub_doc.id()));
+            if let Some(doc_id) = doc_id {
+                shell_provider.open_devtools(doc_id);
+            }
+        })
+    };
+
+    // Chrome's devtools shortcuts: F12, and Cmd+Option+I (macOS) /
+    // Ctrl+Shift+I (other platforms)
+    #[cfg(feature = "devtools")]
+    {
+        let mut modifiers = ModifiersState::empty();
+        use_window_event(move |event, _target| match event {
+            WindowEvent::ModifiersChanged(new_modifiers) => {
+                modifiers = new_modifiers.state();
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state.is_pressed() && !event.repeat =>
+            {
+                let is_shortcut = match event.physical_key {
+                    PhysicalKey::Code(KeyCode::F12) => true,
+                    PhysicalKey::Code(KeyCode::KeyI) if cfg!(target_os = "macos") => {
+                        modifiers.meta_key() && modifiers.alt_key()
+                    }
+                    PhysicalKey::Code(KeyCode::KeyI) => {
+                        modifiers.control_key() && modifiers.shift_key()
+                    }
+                    _ => false,
+                };
+                if is_shortcut {
+                    open_devtools_action(());
+                }
+            }
+            _ => {}
         });
-    });
+    }
+
+    #[cfg(feature = "devtools")]
+    let open_devtools_item = rsx!(
+        div { class: "menu-item", onclick: move |_| open_devtools_action(()), "Open DevTools" }
+    );
+    #[cfg(not(feature = "devtools"))]
+    let open_devtools_item = rsx!();
 
     let incremental_action = use_callback(move |_| {
         menu_open.set(false);
@@ -430,7 +483,7 @@ pub fn Toolbar(
                         }
                         {screenshot_item}
                         {capture_item}
-                        div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
+                        {open_devtools_item}
                         div { class: "menu-item", onclick: move |_| incremental_action(()),
                             if incremental_layout() { "Disable Incremental Layout" } else { "Enable Incremental Layout" }
                         }

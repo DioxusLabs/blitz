@@ -4,7 +4,7 @@ use blitz_traits::{
     shell::ShellProvider,
 };
 use keyboard_types::{Key, Modifiers, NamedKey};
-use parley::{ContentWidths, FontContext, LayoutContext};
+use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
 
 use crate::util::ACTION_MOD;
 
@@ -33,6 +33,10 @@ pub struct TextLayout {
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
     pub span_cb_flags: stylo_taffy::StyleFlags,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 impl TextLayout {
@@ -45,7 +49,31 @@ impl TextLayout {
             .content_widths
             .get_or_insert_with(|| self.layout.calculate_content_widths())
     }
+
+    /// Whether `byte_index` of `text` is the U+FFFC character that stands in for an in-flow
+    /// inline box.
+    pub fn is_inline_box_char(&self, byte_index: usize) -> bool {
+        self.text
+            .get(byte_index..)
+            .is_some_and(|rest| rest.starts_with(INLINE_BOX_CHAR))
+            && self
+                .layout
+                .inline_boxes()
+                .any(|ibox| ibox.kind == InlineBoxKind::InFlow && ibox.index == byte_index)
+    }
+
+    /// The byte index in `text` of the U+FFFC character that stands in for `node_id`, if it is
+    /// an in-flow inline box of this layout.
+    pub fn inline_box_char_index(&self, node_id: NodeId) -> Option<usize> {
+        self.layout
+            .inline_boxes()
+            .find(|ibox| ibox.id == node_id.as_u64() && ibox.kind == InlineBoxKind::InFlow)
+            .map(|ibox| ibox.index)
+    }
 }
+
+/// The character Parley places in the text for each in-flow inline box.
+pub const INLINE_BOX_CHAR: char = '\u{FFFC}';
 
 impl std::fmt::Debug for TextLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -72,6 +100,10 @@ pub struct TextInputData {
     /// vertical offset. It is kept up to date so that the caret remains visible within the
     /// input's content box.
     pub scroll_offset: f32,
+    /// Offset (in physical CSS px) of the unrounded content box origin from the rounded one in
+    /// `final_layout`. Paint draws text from the unrounded origin so that it keeps its sub-pixel
+    /// position while box edges stay snapped. Set by the `writing-mode` layout pass; zero otherwise.
+    pub content_box_subpixel_offset: taffy::Point<f32>,
 }
 
 // FIXME: Implement Clone for PlainEditor
@@ -88,6 +120,7 @@ impl TextInputData {
             editor,
             is_multiline,
             scroll_offset: 0.0,
+            content_box_subpixel_offset: taffy::Point::ZERO,
         }
     }
 
@@ -221,16 +254,18 @@ impl TextInputData {
         match event.key {
             Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
                 match c.to_lowercase().as_str() {
+                    // Copying leaves the value as it was: no `input` event.
                     "c" => {
                         if let Some(text) = driver.editor.selected_text() {
                             let _ = shell_provider.set_clipboard_text(text.to_owned());
                         }
+                        return None;
                     }
+                    // A cut is an edit only when it removed something.
                     "x" => {
-                        if let Some(text) = driver.editor.selected_text() {
-                            let _ = shell_provider.set_clipboard_text(text.to_owned());
-                            driver.delete_selection()
-                        }
+                        let text = driver.editor.selected_text()?;
+                        let _ = shell_provider.set_clipboard_text(text.to_owned());
+                        driver.delete_selection()
                     }
                     "v" => {
                         let _ = shell_provider.request_clipboard_text();
