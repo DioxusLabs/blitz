@@ -33,6 +33,9 @@ pub struct SvgText {
     pub decorations: Vec<SvgTextDecoration>,
     /// The union of the glyph cells (advance by ascent and descent).
     pub bbox: Option<Rect>,
+    /// A conservative bound of the painted glyphs and decorations, strokes
+    /// included.
+    pub ink: Option<Rect>,
     /// The cell of each typographic character, in paint order.
     pub cells: Vec<SvgTextCell>,
 }
@@ -61,6 +64,9 @@ pub struct SvgGlyphRun {
     /// The stroke style for `node`, when it has a visible stroke width.
     pub stroke: Option<Stroke>,
     pub glyphs: Vec<SvgGlyph>,
+    /// A conservative bound of the glyphs, stroke included: the font's
+    /// bounding box around each glyph.
+    pub ink: Option<Rect>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -436,6 +442,7 @@ impl BaseDocument {
                     skew: run.synthesis().skew(),
                     stroke: geometry::stroke_style(&style, viewport),
                     glyphs: Vec::new(),
+                    ink: None,
                 });
                 // A shaping run is split into glyph runs by style, emitted in
                 // visual order: take this glyph run's clusters from where the
@@ -603,10 +610,23 @@ impl BaseDocument {
             }
         }
         runs.retain(|run| !run.glyphs.is_empty());
+        for run in &mut runs {
+            run.ink = glyph_run_ink(run);
+        }
+        let decoration_ink = decorations.iter().map(|deco| {
+            let outset = deco.stroke.as_ref().map_or(0.0, geometry::stroke_outset);
+            deco.rect.inflate(outset, outset)
+        });
+        let ink = runs
+            .iter()
+            .filter_map(|run| run.ink)
+            .chain(decoration_ink)
+            .reduce(|a, b| a.union(b));
         SvgText {
             runs,
             decorations,
             bbox,
+            ink,
             cells,
         }
     }
@@ -684,6 +704,65 @@ impl BaseDocument {
         }
         out
     }
+}
+
+/// A conservative bound of `run`'s glyphs, transformed like their outlines and
+/// outset by the stroke: each glyph's outline bounds, or for color and bitmap
+/// fonts (whose glyphs aren't their outlines) the font's bounding box.
+fn glyph_run_ink(run: &SvgGlyphRun) -> Option<Rect> {
+    use skrifa::instance::{LocationRef, Size};
+    use skrifa::metrics::{BoundingBox, GlyphMetrics, Metrics};
+    use skrifa::raw::TableProvider;
+    use skrifa::raw::types::F2Dot14;
+
+    let size = run.font_size as f64;
+    let font = skrifa::FontRef::from_index(run.font.data.as_ref(), run.font.index).ok();
+    let coords: Vec<F2Dot14> = run
+        .normalized_coords
+        .iter()
+        .map(|&c| F2Dot14::from_bits(c))
+        .collect();
+    let location = LocationRef::new(&coords);
+    let font_size = Size::new(run.font_size);
+    // Font units are y-up, glyph outlines are drawn y-down.
+    let to_rect = |b: BoundingBox| {
+        Rect::new(
+            b.x_min as f64,
+            -b.y_max as f64,
+            b.x_max as f64,
+            -b.y_min as f64,
+        )
+    };
+    // Without a font bounding box, allow an em on each side.
+    let font_bounds = font
+        .as_ref()
+        .and_then(|font| Metrics::new(font, font_size, location).bounds)
+        .map_or(Rect::new(-size, -2.0 * size, 2.0 * size, size), to_rect);
+    let glyph_metrics = font
+        .as_ref()
+        .filter(|font| font.colr().is_err() && font.cbdt().is_err() && font.sbix().is_err())
+        .map(|font| GlyphMetrics::new(font, font_size, location));
+    let outset = run.stroke.as_ref().map_or(0.0, geometry::stroke_outset);
+    let skew = run
+        .skew
+        .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
+    run.glyphs
+        .iter()
+        .map(|glyph| {
+            let bounds = glyph_metrics
+                .as_ref()
+                .and_then(|metrics| metrics.bounds(glyph.id.into()))
+                .map_or(font_bounds, to_rect);
+            let outline = match (glyph.transform(), skew) {
+                (Some(t), Some(s)) => t * s,
+                (t, s) => t.or(s).unwrap_or_default(),
+            };
+            let transform = Affine::translate((glyph.x as f64, glyph.y as f64)) * outline;
+            transform
+                .transform_rect_bbox(bounds)
+                .inflate(outset, outset)
+        })
+        .reduce(|a, b| a.union(b))
 }
 
 /// Stretch or shrink the characters in `chars` to `text_length`.
