@@ -3,7 +3,7 @@
 
 use blitz_test_harness::Harness;
 use blitz_traits::events::{BlitzWheelPhase, BlitzWheelSource};
-use dioxus::prelude::*;
+use dioxus_core::prelude::*;
 use dioxus_native_dom::NativeWheelData;
 
 fn app() -> Element {

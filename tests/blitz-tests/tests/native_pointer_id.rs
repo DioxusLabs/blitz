@@ -2,7 +2,7 @@
 
 use blitz_test_harness::{Harness, pointer_event};
 use blitz_traits::events::{BlitzPointerId, MouseEventButton, MouseEventButtons, UiEvent};
-use dioxus::prelude::*;
+use dioxus_core::prelude::*;
 
 fn app() -> Element {
     let mut seen = use_signal(Vec::<String>::new);
