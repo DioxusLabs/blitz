@@ -6,6 +6,7 @@
 
 use crate::node::{ComputedStyleRef, ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, dom_node_id, node::Node, taffy_node_id};
+use blitz_traits::node_id::NodeId as DomNodeId;
 use markup5ever::{LocalName, local_name};
 use std::cell::Ref;
 use std::ops::{Deref, DerefMut};
@@ -160,6 +161,46 @@ impl DerefMut for LayoutPassState<'_> {
     }
 }
 
+impl BaseDocument {
+    /// Recursively clear hoisted child lists for this node and its subtree,
+    /// including anonymous blocks and pseudo-elements.
+    pub(crate) fn clear_subtree_hoisted_children(&self, node_id: DomNodeId) {
+        let Some(node) = self.nodes.get(node_id) else {
+            return;
+        };
+        self.clear_hoisted_children(node);
+        for &child in &node.anonymous_blocks {
+            self.clear_subtree_hoisted_children(child);
+        }
+        // Anonymous blocks borrow their children from the DOM tree.
+        if !node.is_anonymous() {
+            for child in node
+                .children
+                .iter()
+                .copied()
+                .chain(node.before())
+                .chain(node.after())
+            {
+                self.clear_subtree_hoisted_children(child);
+            }
+        }
+    }
+
+    fn clear_hoisted_children(&self, containing_block: &Node) {
+        let mut hoisted = containing_block.hoisted_children.borrow_mut();
+        for &hoisted_id in hoisted.iter() {
+            // A box which has since been claimed by another containing block
+            // must keep pointing at that one.
+            if let Some(node) = self.nodes.get(hoisted_id) {
+                if node.oof_containing_block.get() == Some(containing_block.id) {
+                    node.oof_containing_block.set(None);
+                }
+            }
+        }
+        hoisted.clear();
+    }
+}
+
 impl LayoutPassState<'_> {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
         &self.nodes[dom_node_id(node_id)]
@@ -167,9 +208,7 @@ impl LayoutPassState<'_> {
     fn node_from_id_mut(&mut self, node_id: taffy::prelude::NodeId) -> &mut Node {
         &mut self.nodes[dom_node_id(node_id)]
     }
-}
 
-impl LayoutPassState<'_> {
     /// Run the node's layout algorithm, then lay out the out-of-flow (absolute/fixed)
     /// boxes for which it is the containing block. Must be called inside the layout
     /// cache wrapper so that cache hits do not re-run the out-of-flow pass.
@@ -702,18 +741,7 @@ impl LayoutContainingBlock for LayoutPassState<'_> {
     }
 
     fn clear_hoisted_children(&mut self, node_id: NodeId) {
-        let containing_block = dom_node_id(node_id);
-        let mut hoisted = self.node_from_id(node_id).hoisted_children.borrow_mut();
-        for &hoisted_id in hoisted.iter() {
-            // A box which has since been claimed by another containing block
-            // must keep pointing at that one.
-            if let Some(node) = self.nodes.get(hoisted_id) {
-                if node.oof_containing_block.get() == Some(containing_block) {
-                    node.oof_containing_block.set(None);
-                }
-            }
-        }
-        hoisted.clear();
+        self.doc.clear_hoisted_children(self.node_from_id(node_id));
     }
 
     fn add_hoisted_children(&mut self, node_id: NodeId, hoisted: &[NodeId]) {

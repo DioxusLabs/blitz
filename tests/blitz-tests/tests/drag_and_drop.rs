@@ -7,11 +7,13 @@ use blitz_dom::{
     NodeId, UserAgentStylesheet, Widget,
 };
 use blitz_html::HtmlDocument;
+use blitz_test_harness::Harness;
 use blitz_traits::events::{
     BlitzDataTransfer, BlitzDataTransferArc, BlitzDragDataStoreMode, BlitzDragEvent,
     BlitzDragOperation, DataTransferItemKind, DomEvent, DomEventData, EventState, PointerCoords,
     UiEvent,
 };
+use dioxus_core::prelude::*;
 use std::{cell::RefCell, path::Path, rc::Rc};
 
 /// What a handler saw of an event: its name, its target and the dragged text
@@ -394,4 +396,34 @@ fn sub_document_accepts_and_leaves_a_drag_over_its_host() {
         child_handler.take(),
         [("drop", inner, Some("hello".to_string()))]
     );
+}
+
+#[test]
+fn dioxus_drop_handler_reads_dragged_data() {
+    fn app() -> Element {
+        let mut seen = use_signal(String::new);
+        rsx! {
+            div {
+                id: "zone",
+                style: "width: 100px; height: 100px",
+                ondragover: move |event| event.prevent_default(),
+                ondrop: move |event| {
+                    let transfer = event.data().data_transfer();
+                    let text = transfer.get_data("text/plain").unwrap();
+                    let files = transfer.files();
+                    seen.set(format!("{text} {}", files[0].name()));
+                },
+            }
+            div { id: "seen", "{seen}" }
+        }
+    }
+
+    let mut harness = Harness::from_component(app);
+    let drag = text_drag();
+    drag.borrow_mut().add_file("/tmp/example.txt".into());
+    harness.dispatch(UiEvent::DragOver(drag_event(&drag, 50.0, 50.0)));
+    harness.dispatch(UiEvent::Drop(drag_event(&drag, 50.0, 50.0)));
+    harness.pump();
+
+    assert_eq!(harness.text_content("#seen"), "hello example.txt");
 }

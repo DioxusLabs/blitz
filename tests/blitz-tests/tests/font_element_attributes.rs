@@ -77,3 +77,16 @@ fn face_that_is_not_a_family_list_is_ignored() {
         assert_eq!(font.font_family, reference.font_family, "face={face:?}");
     }
 }
+
+#[test]
+fn namespaced_size_does_not_set_font_size() {
+    let mut doc = blitz_html::HtmlDocument::from_xml(
+        r#"<html xmlns="http://www.w3.org/1999/xhtml" xmlns:custom="urn:custom">
+        <body style="font-size:30px"><font id="font" custom:size="7">x</font></body>
+        </html>"#,
+        blitz_dom::DocumentConfig::default(),
+    );
+    doc.resolve(0.0);
+    let font = doc.query_selector("#font").unwrap().unwrap();
+    assert_eq!(doc.resolved_style_value(font, "font-size"), "30px");
+}

@@ -4,7 +4,7 @@ use crate::{
 };
 use blitz_dom::{BaseDocument, Document, DocumentMutator, Widget};
 use blitz_traits::events::DomEventKind;
-use dioxus_core::{BorrowedAttributeValue, ElementId, WriteMutations};
+use dioxus_vdom::{BorrowedAttributeValue, ElementId, WriteMutations};
 use std::str::FromStr as _;
 
 pub(crate) trait RealDom {
@@ -387,13 +387,19 @@ impl RealDom for BlitzBackend<'_> {
         self.set_attribute_impl(node, "data-dioxus-id", None, value);
 
         if let Ok(kind) = DomEventKind::from_str(name) {
+            if kind == DomEventKind::Resize {
+                self.docm.doc.observe_resize(node);
+            }
             let idx = kind.discriminant() as usize;
             self.event_handler_counts[idx] += 1;
         }
     }
 
-    fn remove_event_listener(&mut self, _node: NodeId, _element_id: ElementId, name: &str) {
+    fn remove_event_listener(&mut self, node: NodeId, _element_id: ElementId, name: &str) {
         if let Ok(kind) = DomEventKind::from_str(name) {
+            if kind == DomEventKind::Resize {
+                self.docm.doc.unobserve_resize(node);
+            }
             let idx = kind.discriminant() as usize;
             self.event_handler_counts[idx] -= 1;
         }
@@ -564,8 +570,8 @@ mod tests {
     use crate::{DioxusDocument, DocumentConfig};
     use blitz_dom::Document as _;
     use blitz_dom::LocalName;
-    use dioxus::prelude::*;
-    use dioxus_core::ScopeId;
+    use dioxus_core::prelude::*;
+    use dioxus_vdom::ScopeId;
     use std::{cell::Cell, rc::Rc};
 
     fn build(app: fn() -> Element) -> DioxusDocument {

@@ -5,6 +5,7 @@
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use markup5ever::{QualName, local_name, ns};
 use std::sync::Arc;
 
 const HTML: &str = r#"<!DOCTYPE html>
@@ -91,4 +92,30 @@ fn resize_does_not_restyle_viewport_independent_elements() {
     assert_ne!(style_ptr(&doc, "#vw"), vw_style);
     // ...but the viewport-independent element kept its computed style.
     assert_eq!(style_ptr(&doc, "#static"), static_style);
+}
+
+#[test]
+fn resize_after_appending_unstyled_child() {
+    let mut doc = make_doc(800, 600);
+    doc.resolve(0.0);
+
+    // The new child has (empty) style data but no computed styles until the
+    // next resolve, when the resize is also flushed.
+    let vw_id = doc.query_selector("#vw").unwrap().unwrap();
+    let mut mutator = doc.mutate();
+    let child_id = mutator.create_element(
+        QualName::new(None, ns!(html), local_name!("div")),
+        Vec::new(),
+    );
+    mutator.append_children(vw_id, &[child_id]);
+    drop(mutator);
+
+    doc.viewport_mut().window_size = (600, 600);
+    doc.resolve(0.0);
+
+    assert_eq!(used_width(&doc, "#vw"), 300.0);
+    assert_eq!(
+        doc.get_node(child_id).unwrap().final_layout().size.width,
+        300.0
+    );
 }
