@@ -417,6 +417,11 @@ table[align="right"] {
     text-align: start;
 }
 
+table[align="center" i] {
+    margin-inline-start: auto;
+    margin-inline-end: auto;
+}
+
 td[nowrap],
 th[nowrap] {
     white-space: nowrap;
