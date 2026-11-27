@@ -205,8 +205,13 @@ struct WrapContext {
 
 /// The wrap rules take the child, its outer display, and whether an anonymous
 /// block is open (the previous child was wrapped).
-fn block_item_needs_wrap(child: &Node, display_outside: DisplayOutside, _open: bool) -> bool {
-    child.data.kind() == NodeKind::Text || display_outside == DisplayOutside::Inline
+fn block_item_needs_wrap(child: &Node, display_outside: DisplayOutside, open: bool) -> bool {
+    child.data.kind() == NodeKind::Text
+        || display_outside == DisplayOutside::Inline
+        // A box that isn't rendered (`display: none`) between two runs of
+        // inline content must not close their anonymous block, or it splits
+        // them onto separate lines
+        || (open && display_outside == DisplayOutside::None)
 }
 
 /// Used for flex/grid containers, and for flow containers whose in-flow
