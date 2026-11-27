@@ -37,13 +37,16 @@ pub(crate) fn build_inline_layout_into(
             .and_then(|parent_id| nodes[parent_id].primary_styles())
     });
 
-    let parley_style = root_node_style
+    let mut parley_style = root_node_style
         .as_ref()
         .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_else(|| parley::TextStyle {
             white_space_collapse: WhiteSpaceCollapse::Collapse,
             ..Default::default()
         });
+    // `vertical-align` places a box within its parent's line; the root's own
+    // value (a table cell's `middle`, say) does not apply to its contents.
+    parley_style.vertical_align = parley::VerticalAlign::default();
 
     // Create a parley tree builder
     let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
