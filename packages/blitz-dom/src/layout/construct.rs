@@ -416,10 +416,15 @@ fn collect_layout_children_with_wrap(
 ) {
     // Record the `display` the box is being constructed with
     if let Some(display) = doc.nodes[container_node_id].display_style() {
+        let was_none = doc.nodes[container_node_id]
+            .display_constructed_as()
+            .is_none();
         if display.is_none() {
-            doc.iter_subtree_mut(container_node_id, |id, doc| doc.reset_node_scroll_state(id));
+            if !was_none {
+                doc.clear_subtree_box_tree(container_node_id);
+            }
         } else if matches!(display.inside(), DisplayInside::Contents) {
-            doc.reset_node_scroll_state(container_node_id);
+            doc.clear_node_box_tree(container_node_id, false);
         }
         *doc.nodes[container_node_id].display_constructed_as_mut() = display;
     }
@@ -737,6 +742,14 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
             if let Some(text) = pe_content_text(pe_style) {
                 let text_node_id = doc.create_text_node(&text);
                 doc.nodes[text_node_id].parent = Some(new_node_id);
+                if doc.nodes[new_node_id]
+                    .flags
+                    .contains(NodeFlags::IS_IN_DOCUMENT)
+                {
+                    doc.nodes[text_node_id]
+                        .flags
+                        .insert(NodeFlags::IS_IN_DOCUMENT);
+                }
                 doc.nodes[new_node_id].children.push(text_node_id);
             }
 
@@ -782,6 +795,14 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                 (None, Some(new_text)) => {
                     let text_node_id = doc.create_text_node(&new_text);
                     doc.nodes[text_node_id].parent = Some(pe_node_id);
+                    if doc.nodes[pe_node_id]
+                        .flags
+                        .contains(NodeFlags::IS_IN_DOCUMENT)
+                    {
+                        doc.nodes[text_node_id]
+                            .flags
+                            .insert(NodeFlags::IS_IN_DOCUMENT);
+                    }
                     doc.nodes[pe_node_id].children.push(text_node_id);
                     doc.nodes[node_id].insert_damage(ALL_DAMAGE);
                 }
@@ -995,7 +1016,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 
     iter_children_and_pseudos!(doc.nodes[inline_context_root_node_id], |child_id| {
         find_inline_layout_embedded_boxes_recursive(
-            &mut doc.nodes,
+            doc,
             inline_context_root_node_id,
             child_id,
             layout_children,
@@ -1020,71 +1041,126 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     }
 
     fn find_inline_layout_embedded_boxes_recursive(
-        nodes: &mut crate::NodeTree,
+        doc: &mut BaseDocument,
         parent_id: NodeId,
         node_id: NodeId,
         layout_children: &mut ThinVec<NodeId>,
     ) {
-        let node = &mut nodes[node_id];
+        enum Kind {
+            HiddenInput,
+            Element {
+                display: Display,
+                is_inline_box: bool,
+                is_br: bool,
+            },
+            Leaf,
+            Document,
+        }
 
-        // Set layout_parent for node.
-        node.layout_parent.set(Some(parent_id));
-
-        match &node.data {
+        let kind = match &doc.nodes[node_id].data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
-                // if the input type is hidden, hide it
-                if *element_data.name.local == *"input" {
-                    if let Some("hidden") = element_data.attr(local_name!("type")) {
-                        return;
+                if *element_data.name.local == *"input"
+                    && matches!(element_data.attr(local_name!("type")), Some("hidden"))
+                {
+                    Kind::HiddenInput
+                } else {
+                    let display = doc.nodes[node_id]
+                        .display_style()
+                        .unwrap_or(Display::inline());
+                    Kind::Element {
+                        display,
+                        is_inline_box: is_inline_box_element(&element_data.name.local),
+                        is_br: element_data.name.local == local_name!("br"),
                     }
                 }
+            }
+            NodeData::Comment { .. } | NodeData::Text(_) => Kind::Leaf,
+            NodeData::Document(_) => Kind::Document,
+        };
 
-                let display = node.display_style().unwrap_or(Display::inline());
-
-                match (display.outside(), display.inside()) {
-                    (DisplayOutside::None, DisplayInside::None) => {
-                        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+        match kind {
+            Kind::HiddenInput => {
+                if !doc.nodes[node_id].display_constructed_as().is_none() {
+                    doc.clear_subtree_box_tree(node_id);
+                    *doc.nodes[node_id].display_constructed_as_mut() = Display::None;
+                } else {
+                    doc.nodes[node_id].layout_parent.set(None);
+                }
+            }
+            Kind::Element {
+                display,
+                is_inline_box,
+                is_br,
+            } => match (display.outside(), display.inside()) {
+                (DisplayOutside::None, DisplayInside::None) => {
+                    if !doc.nodes[node_id].display_constructed_as().is_none() {
+                        doc.clear_subtree_box_tree(node_id);
+                    } else {
+                        doc.nodes[node_id].layout_parent.set(None);
                     }
-                    (DisplayOutside::None, DisplayInside::Contents) => {
-                        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                        iter_children_and_pseudos!(nodes[node_id], |child_id| {
+                    *doc.nodes[node_id].display_constructed_as_mut() = display;
+                    doc.nodes[node_id]
+                        .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                }
+                (DisplayOutside::None, DisplayInside::Contents) => {
+                    doc.clear_node_box_tree(node_id, false);
+                    *doc.nodes[node_id].display_constructed_as_mut() = display;
+                    doc.nodes[node_id]
+                        .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    iter_children_and_pseudos!(doc.nodes[node_id], |child_id| {
+                        find_inline_layout_embedded_boxes_recursive(
+                            doc,
+                            parent_id,
+                            child_id,
+                            layout_children,
+                        );
+                    });
+                }
+                (DisplayOutside::Inline, DisplayInside::Flow) => {
+                    doc.nodes[node_id].layout_parent.set(Some(parent_id));
+                    if is_inline_box {
+                        layout_children.push(node_id);
+                    } else if is_br {
+                        *doc.nodes[node_id].display_constructed_as_mut() = display;
+                        doc.nodes[node_id]
+                            .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    } else {
+                        let has_stale_box_state = {
+                            let node = &doc.nodes[node_id];
+                            node.layout_children.borrow().is_some()
+                                || !node.anonymous_blocks.is_empty()
+                                || node.oof_containing_block.get().is_some()
+                                || !node.hoisted_children.borrow().is_empty()
+                        };
+                        if has_stale_box_state {
+                            doc.clear_node_box_tree(node_id, false);
+                            doc.nodes[node_id].layout_parent.set(Some(parent_id));
+                        }
+                        *doc.nodes[node_id].display_constructed_as_mut() = display;
+                        doc.nodes[node_id]
+                            .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        iter_children_and_pseudos!(doc.nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
-                                nodes,
-                                parent_id,
+                                doc,
+                                node_id,
                                 child_id,
                                 layout_children,
                             );
                         });
                     }
-                    (DisplayOutside::Inline, DisplayInside::Flow) => {
-                        let tag_name = &element_data.name.local;
-
-                        if is_inline_box_element(tag_name) {
-                            layout_children.push(node_id);
-                        } else if *tag_name == local_name!("br") {
-                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                        } else {
-                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                            iter_children_and_pseudos!(nodes[node_id], |child_id| {
-                                find_inline_layout_embedded_boxes_recursive(
-                                    nodes,
-                                    node_id,
-                                    child_id,
-                                    layout_children,
-                                );
-                            });
-                        }
-                    }
-                    // Inline box
-                    (_, _) => {
-                        layout_children.push(node_id);
-                    }
-                };
+                }
+                // Inline box
+                (_, _) => {
+                    doc.nodes[node_id].layout_parent.set(Some(parent_id));
+                    layout_children.push(node_id);
+                }
+            },
+            Kind::Leaf => {
+                doc.nodes[node_id].layout_parent.set(Some(parent_id));
+                doc.nodes[node_id]
+                    .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
-            NodeData::Comment { .. } | NodeData::Text(_) => {
-                node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-            }
-            NodeData::Document(_) => unreachable!(),
+            Kind::Document => unreachable!(),
         }
     }
 }
