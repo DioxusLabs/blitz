@@ -584,7 +584,7 @@ impl BaseDocument {
         elem_images.resize(len, None);
 
         for idx in 0..len {
-            let style_image = &style_images[idx];
+            let (style_image, _) = crate::resolve_style_image(&style_images[idx]);
             let new_image = match style_image {
                 StyloImage::Url(ComputedUrl::Valid(new_url)) => {
                     let old_image = elem_images[idx].as_ref();

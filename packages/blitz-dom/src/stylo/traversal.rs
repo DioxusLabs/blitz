@@ -436,11 +436,11 @@ fn needs_style_image_flush(node: &Node, style: &ComputedValues) -> bool {
             // (a style list of `none` layers and empty storage are in sync).
             return style_images
                 .iter()
-                .any(|image| matches!(image, Image::Url(_)))
+                .any(|image| matches!(crate::resolve_style_image(image).0, Image::Url(_)))
                 || stored.iter().any(Option::is_some);
         }
         std::iter::zip(style_images, stored).any(|(style_image, stored)| {
-            match (style_image, stored) {
+            match (crate::resolve_style_image(style_image).0, stored) {
                 (Image::Url(ComputedUrl::Valid(url)), Some(data)) => **url != *data.url,
                 (Image::Url(ComputedUrl::Valid(_)), None) => true,
                 (_, Some(_)) => true,
