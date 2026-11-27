@@ -91,10 +91,12 @@
                 return (!owner && text === "" ? null : queries[index]) ?? null;
             }
             appendMedium(value) {
+                if (arguments.length === 0) throw new TypeError("appendMedium requires a medium");
                 const { owner } = data(this);
                 if (owner) __blitz_sheet_edit_media(owner, String(value), "append");
             }
             deleteMedium(value) {
+                if (arguments.length === 0) throw new TypeError("deleteMedium requires a medium");
                 const { owner } = data(this);
                 if (owner) __blitz_sheet_edit_media(owner, String(value), "delete");
             }
