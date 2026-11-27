@@ -1,5 +1,6 @@
-use super::ElementCx;
-use kurbo::{BezPath, Circle, Ellipse, Point, Rect, Shape, SvgArc, Vec2};
+use super::{ElementCx, insets_from_taffy_rect};
+use crate::kurbo_css::{CssBox, NonUniformRoundedRectRadii};
+use kurbo::{Affine, BezPath, Circle, Ellipse, Insets, Point, Rect, Shape, SvgArc, Vec2};
 use style::values::computed::basic_shape::{BasicShape, ClipPath};
 use style::values::computed::{Angle, CSSPixelLength, LengthPercentage};
 use style::values::generics::basic_shape::{
@@ -52,13 +53,49 @@ impl ElementCx<'_, '_> {
             }
             ClipPath::Shape(basic_shape, geometry_box) => {
                 let reference_box = self.resolve_geometry_box(geometry_box);
-                self.basic_shape_to_path(basic_shape, reference_box)
+                let mut path = self.basic_shape_to_path(basic_shape, reference_box)?;
+                path.apply_affine(Affine::scale(self.scale));
+                Some(path)
             }
-            ClipPath::Box(geometry_box) => {
-                let reference_box = self.resolve_geometry_box(geometry_box);
-                Some(Rect::from(reference_box).into_path(0.1))
-            }
+            ClipPath::Box(geometry_box) => Some(match geometry_box {
+                ShapeGeometryBox::ShapeBox(ShapeBox::MarginBox) => {
+                    self.margin_box().border_box_path()
+                }
+                ShapeGeometryBox::ShapeBox(ShapeBox::PaddingBox) => self.frame.padding_box_path(),
+                ShapeGeometryBox::ShapeBox(ShapeBox::ContentBox) | ShapeGeometryBox::FillBox => {
+                    self.frame.content_box_path()
+                }
+                _ => self.frame.border_box_path(),
+            }),
         }
+    }
+
+    fn margin_box(&self) -> CssBox {
+        let margin = insets_from_taffy_rect(
+            self.node
+                .final_layout()
+                .margin
+                .map(|v| f64::from(v) * self.scale),
+        );
+        let rect = self.frame.border_box + margin;
+        let rect = Rect::new(rect.x0, rect.y0, rect.x1.max(rect.x0), rect.y1.max(rect.y0));
+        let adjust = |radius: f64, offset: f64| {
+            let offset = if offset > radius {
+                offset * (1.0 + (radius / offset - 1.0).powi(3))
+            } else {
+                offset
+            };
+            (radius + offset).max(0.0)
+        };
+        let corner = |radius: Vec2, x, y| Vec2::new(adjust(radius.x, x), adjust(radius.y, y));
+        let radii = self.frame.border_radii;
+        let radii = NonUniformRoundedRectRadii {
+            top_left: corner(radii.top_left, margin.x0, margin.y0),
+            top_right: corner(radii.top_right, margin.x1, margin.y0),
+            bottom_right: corner(radii.bottom_right, margin.x1, margin.y1),
+            bottom_left: corner(radii.bottom_left, margin.x0, margin.y1),
+        };
+        CssBox::new(rect, Insets::ZERO, Insets::ZERO, 0.0, radii)
     }
 
     /// Resolve a ShapeGeometryBox to a concrete rectangle (x, y, width, height) in scaled pixels
@@ -95,12 +132,16 @@ impl ElementCx<'_, '_> {
                 }
             }
             ShapeGeometryBox::ShapeBox(ShapeBox::MarginBox) => {
-                // Margin box is not tracked in CssBox, fall back to border box
+                let margin = self.node.final_layout().margin;
                 ReferenceBox {
-                    x: 0.0,
-                    y: 0.0,
-                    width: self.frame.border_box.width() / self.scale,
-                    height: self.frame.border_box.height() / self.scale,
+                    x: -f64::from(margin.left),
+                    y: -f64::from(margin.top),
+                    width: (self.frame.border_box.width() / self.scale
+                        + f64::from(margin.left + margin.right))
+                    .max(0.0),
+                    height: (self.frame.border_box.height() / self.scale
+                        + f64::from(margin.top + margin.bottom))
+                    .max(0.0),
                 }
             }
         }
