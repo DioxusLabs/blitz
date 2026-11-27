@@ -51,6 +51,43 @@ pub fn paint_scene(
     x_offset: u32,
     y_offset: u32,
 ) {
+    paint_document(
+        scene,
+        doc,
+        scale,
+        [width, height],
+        [x_offset, y_offset],
+        None,
+    );
+}
+
+/// Like [`paint_scene`], but for a document whose viewport sits inside a larger
+/// surface, such as a mobile window with safe-area insets. `viewport` is the
+/// document's (width, height) and `origin` is its offset within the surface.
+///
+/// `canvas` is the area of the surface, as `[x0, y0, x1, y1]`, that the canvas
+/// background is painted over in addition to the viewport. Inset areas inside it
+/// match the page rather than showing the renderer's clear color. Content is
+/// still positioned and clipped to the viewport.
+pub fn paint_scene_with_safe_area(
+    scene: &mut impl PaintScene,
+    doc: &mut BaseDocument,
+    scale: f64,
+    viewport: [u32; 2],
+    origin: [u32; 2],
+    canvas: [u32; 4],
+) {
+    paint_document(scene, doc, scale, viewport, origin, Some(canvas));
+}
+
+fn paint_document(
+    scene: &mut impl PaintScene,
+    doc: &mut BaseDocument,
+    scale: f64,
+    [width, height]: [u32; 2],
+    [x_offset, y_offset]: [u32; 2],
+    canvas: Option<[u32; 4]>,
+) {
     // Run `.paint()` on every custom widget in the document (and all subdocuments) ahead of time.
     // This helps us avoid borrow-checker issues as we recurse down the tree (`.paint()` require `&mut self`).
     //
@@ -69,7 +106,7 @@ pub fn paint_scene(
         y_offset as f64,
         &custom_widget_scenes,
     );
-    generator.paint_scene(scene);
+    generator.paint_scene_with_canvas(scene, canvas);
 
     // println!(
     //     "Rendered using {} clips (depth: {}) (wanted: {})",
