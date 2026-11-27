@@ -176,7 +176,10 @@ impl ElementCx<'_, '_> {
                     |v| *v as f64,
                 )
                 .map(|mut p| {
-                    p.apply_affine(kurbo::Affine::translate((ox, oy)));
+                    // path() uses raw CSS pixel numbers. Unlike computed lengths
+                    // in shape(), these numbers have not been adjusted for CSS zoom.
+                    let zoom = f64::from(self.style.effective_zoom.value());
+                    p.apply_affine(kurbo::Affine::translate((ox, oy)) * kurbo::Affine::scale(zoom));
                     p
                 }),
                 GenericPathOrShapeFunction::Shape(shape) => svg_path_to_bezpath(
