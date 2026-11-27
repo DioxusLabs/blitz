@@ -77,7 +77,7 @@ impl ScriptDocument {
     pub fn from_base_document(doc: BaseDocument) -> Self {
         // The default base url (set when `DocumentConfig.base_url` is `None`) is a
         // meaningless data url. Treat it as "no base url".
-        let base_url = Some(doc.base_url().clone()).filter(|url| url.scheme() != "data");
+        let base_url = Some(doc.url().clone()).filter(|url| url.scheme() != "data");
 
         let inner = Rc::new(RefCell::new(doc));
         let fetcher: Rc<RefCell<Box<dyn ScriptFetcher>>> =
@@ -182,7 +182,10 @@ impl ScriptDocument {
 
             if script.is_module {
                 // Inline modules resolve imports against the document base URL
-                let module_url = url.or_else(|| self.base_url.clone());
+                let module_url = url.or_else(|| {
+                    Some(self.inner.borrow().base_url().clone())
+                        .filter(|url| url.scheme() != "data")
+                });
                 self.runtime.eval_module(&code, module_url.as_ref());
             } else {
                 let description = url
@@ -225,10 +228,7 @@ impl ScriptDocument {
 
     /// Resolve a script `src` attribute against the document's base URL
     fn resolve_script_url(&self, src: &str) -> Option<Url> {
-        match &self.base_url {
-            Some(base) => base.join(src).ok(),
-            None => Url::parse(src).ok(),
-        }
+        self.inner.borrow().resolve_url(src)
     }
 
     /// Evaluate arbitrary JavaScript code in the document's script context

@@ -202,6 +202,8 @@ pub struct BaseDocument {
     // Config
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub(crate) url: DocumentUrl,
+    document_base_element: Option<NodeId>,
+    base_href_url: Option<DocumentUrl>,
     // Devtool settings. Currently used to render debug overlays
     pub(crate) devtool_settings: DevtoolSettings,
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
@@ -490,6 +492,8 @@ impl BaseDocument {
             subdocument_depth: config.subdocument_depth,
             devtool_settings: DevtoolSettings::default(),
             url: base_url,
+            document_base_element: None,
+            base_href_url: None,
             nodes_to_stylesheet: BTreeMap::new(),
             stylesheet_generation: 0,
             font_ctx,
@@ -618,11 +622,51 @@ impl BaseDocument {
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub fn set_base_url(&mut self, url: &str) {
         self.url = DocumentUrl::from(Url::parse(url).unwrap());
+        self.refresh_document_base();
     }
 
-    /// The base url used for resolving linked resources (stylesheets, images, fonts, etc)
+    /// The effective base URL for resolving relative references in this document.
     pub fn base_url(&self) -> &Url {
-        &self.url
+        self.document_base()
+    }
+
+    pub(crate) fn document_base(&self) -> &DocumentUrl {
+        self.base_href_url.as_ref().unwrap_or(&self.url)
+    }
+
+    pub(crate) fn has_base_element(&self) -> bool {
+        self.document_base_element.is_some()
+    }
+
+    pub(crate) fn refresh_document_base(&mut self) {
+        let previous = self.document_base().clone();
+        self.document_base_element = TreeTraverser::new(self).find(|id| {
+            let node = &self.nodes[*id];
+            node.flags.is_in_document()
+                && node
+                    .element_data()
+                    .and_then(ElementData::base_href)
+                    .is_some()
+        });
+        self.base_href_url = self
+            .document_base_element
+            .and_then(|id| self.nodes[id].element_data())
+            .and_then(ElementData::base_href)
+            .and_then(|href| self.url.resolve_relative(href))
+            .filter(|url| !matches!(url.scheme(), "data" | "javascript"))
+            .map(DocumentUrl::from);
+
+        if &*previous != self.base_url() {
+            let url_data = self.document_base().url_extra_data();
+            for (_, node) in self.nodes.iter_mut() {
+                if node.flags.is_in_document()
+                    && let Some(element) = node.element_data_mut()
+                    && element.rebase_inline_style(&self.guard, &url_data)
+                {
+                    node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
+                }
+            }
+        }
     }
 
     pub fn guard(&self) -> &SharedRwLock {
@@ -873,25 +917,24 @@ impl BaseDocument {
     }
 
     pub fn set_style_property(&mut self, node_id: NodeId, name: &str, value: &str) {
+        let url_data = self.document_base().url_extra_data();
         let node = &mut self.nodes[node_id];
-        let did_change = node.element_data_mut().unwrap().set_style_property(
-            name,
-            value,
-            &self.guard,
-            self.url.url_extra_data(),
-        );
+        let did_change =
+            node.element_data_mut()
+                .unwrap()
+                .set_style_property(name, value, &self.guard, url_data);
         if did_change {
             node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
         }
     }
 
     pub fn remove_style_property(&mut self, node_id: NodeId, name: &str) {
+        let url_data = self.document_base().url_extra_data();
         let node = &mut self.nodes[node_id];
-        let did_change = node.element_data_mut().unwrap().remove_style_property(
-            name,
-            &self.guard,
-            self.url.url_extra_data(),
-        );
+        let did_change =
+            node.element_data_mut()
+                .unwrap()
+                .remove_style_property(name, &self.guard, url_data);
         if did_change {
             node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
         }
@@ -1233,8 +1276,8 @@ impl BaseDocument {
         node
     }
 
-    pub(crate) fn resolve_url(&self, raw: &str) -> Option<url::Url> {
-        self.url.resolve_relative(raw)
+    pub fn resolve_url(&self, raw: &str) -> Option<url::Url> {
+        self.document_base().resolve_relative(raw)
     }
 
     pub fn print_tree(&self) {
@@ -1295,7 +1338,7 @@ impl BaseDocument {
         }
     }
 
-    /// The document's base URL
+    /// The document's own URL, used for location and origin.
     pub fn url(&self) -> &url::Url {
         &self.url
     }
@@ -1321,33 +1364,14 @@ impl BaseDocument {
     }
 
     pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
-        fn base_href(node: &Node) -> Option<&str> {
-            let element = node.element_data()?;
-            if element.name.ns != markup5ever::ns!(html)
-                || element.name.local != local_name!("base")
-            {
-                return None;
-            }
-            element
-                .attrs
-                .iter()
-                .find(|attr| {
-                    attr.name.ns == markup5ever::ns!() && attr.name.local == local_name!("href")
-                })
-                .map(|attr| attr.value.as_str())
-        }
-
-        let base = (origin == Origin::Author)
-            .then(|| self.next_node(self.root_node(), |node| base_href(node).is_some()))
-            .flatten()
-            .and_then(|id| self.get_node(id))
-            .and_then(base_href)
-            .and_then(|href| self.url.resolve_relative(href))
-            .filter(|url| !matches!(url.scheme(), "data" | "javascript"))
-            .map(DocumentUrl::from);
+        let base = if origin == Origin::Author {
+            self.document_base()
+        } else {
+            &self.url
+        };
         let data = Stylesheet::from_str(
             css.as_ref(),
-            base.as_ref().unwrap_or(&self.url).url_extra_data(),
+            base.url_extra_data(),
             origin,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),

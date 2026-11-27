@@ -16,6 +16,7 @@ use crate::state::Listener;
 
 pub(crate) fn init_node_proto(proto: &JsObject, context: &mut Context) {
     define_accessor(proto, "nodeType", Some(node_type), None, context);
+    define_accessor(proto, "baseURI", Some(base_uri), None, context);
     define_accessor(proto, "nodeName", Some(node_name), None, context);
     define_accessor(proto, "parentNode", Some(parent_node), None, context);
     define_accessor(proto, "parentElement", Some(parent_node), None, context);
@@ -80,6 +81,11 @@ pub(crate) fn init_character_data_proto(proto: &JsObject, context: &mut Context)
 }
 
 // === Read-only tree structure ===
+
+fn base_uri(_: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let ctx = dom_ctx(context)?;
+    Ok(js_str(ctx.doc.borrow().base_url().as_str()))
+}
 
 fn node_type(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let ctx = dom_ctx(context)?;

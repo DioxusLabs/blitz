@@ -73,10 +73,11 @@ fn reflects_href(ctx: &DomCtx, node_id: NodeId) -> bool {
 /// `None` if the attribute is missing or does not parse
 fn resolved_url(ctx: &DomCtx, node_id: NodeId) -> Option<Url> {
     let href = read_attr(ctx, node_id, "href")?;
-    let base_url = ctx.state.borrow().base_url.clone();
-    match base_url {
-        Some(base) => base.join(&href).ok(),
-        None => Url::parse(&href).ok(),
+    let doc = ctx.doc.borrow();
+    if local_name(ctx, node_id).as_deref() == Some("base") {
+        doc.url().join(&href).ok()
+    } else {
+        doc.resolve_url(&href)
     }
 }
 

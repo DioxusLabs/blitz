@@ -706,7 +706,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: NodeId, event: &Blitz
                 }
                 local_name!("a") => {
                     if let Some(href) = el.attr(local_name!("href")).map(str::to_string) {
-                        if let Some(url) = doc.url.resolve_relative(&href) {
+                        if let Some(url) = doc.resolve_url(&href) {
                             // If the link only differs from the current document URL by its
                             // fragment (this includes links whose href is just `#fragment`),
                             // perform in-page fragment navigation (scrolling) instead of a

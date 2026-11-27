@@ -173,7 +173,7 @@ impl BaseDocument {
             property_id,
             value,
             Origin::Author,
-            &self.url.url_extra_data(),
+            &self.document_base().url_extra_data(),
             None,
             ParsingMode::DEFAULT,
             QuirksMode::NoQuirks,
@@ -187,7 +187,7 @@ impl BaseDocument {
     fn parse_style_attr_block(&self, style_attr: &str) -> PropertyDeclarationBlock {
         parse_style_attribute(
             style_attr,
-            &self.url.url_extra_data(),
+            &self.document_base().url_extra_data(),
             None,
             QuirksMode::NoQuirks,
             CssRuleType::Style,
@@ -243,7 +243,7 @@ impl BaseDocument {
                 property_id,
                 value,
                 Origin::Author,
-                &self.url.url_extra_data(),
+                &self.document_base().url_extra_data(),
                 None,
                 ParsingMode::DEFAULT,
                 QuirksMode::NoQuirks,
@@ -298,7 +298,7 @@ impl BaseDocument {
             return false;
         };
 
-        let url_data = self.url.url_extra_data();
+        let url_data = self.document_base().url_extra_data();
         let mut context = ParserContext::new(
             Origin::Author,
             &url_data,
@@ -323,7 +323,7 @@ impl BaseDocument {
         inherits: bool,
         initial_value: Option<&str>,
     ) -> RegisterCustomPropertyResult {
-        let url_data = self.url.url_extra_data();
+        let url_data = self.document_base().url_extra_data();
         let result =
             self.stylist
                 .register_custom_property(&url_data, name, syntax, inherits, initial_value);

@@ -120,7 +120,7 @@ impl BaseDocument {
     /// document's base URL.
     pub(crate) fn load_iframe_srcdoc(&mut self, node_id: NodeId, srcdoc: &str) {
         let signal = self.new_iframe_generation(node_id, None);
-        let base_url = Some(self.url.to_string());
+        let base_url = Some(self.base_url().to_string());
         self.attach_iframe_document(node_id, srcdoc, base_url, signal);
     }
 

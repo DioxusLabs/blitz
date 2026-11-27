@@ -1,7 +1,6 @@
 //! The native resource bridge used by the JavaScript fetch implementation.
 
 use boa_engine::{Context, JsNativeError, JsResult, JsString, JsValue};
-use url::Url;
 
 use crate::dom::dom_ctx;
 use crate::fetch::{FetchError, document_may_load};
@@ -29,11 +28,9 @@ pub(super) fn fetch_sync(
         let state = ctx.state.borrow();
         (state.base_url.clone(), state.fetcher.clone())
     };
-    let url = match &base_url {
-        Some(base) => base.join(&input),
-        None => Url::parse(&input),
-    }
-    .map_err(|_| JsNativeError::typ().with_message(format!("Failed to parse URL from {input}")))?;
+    let url = ctx.doc.borrow().resolve_url(&input).ok_or_else(|| {
+        JsNativeError::typ().with_message(format!("Failed to parse URL from {input}"))
+    })?;
     let fetcher =
         fetcher.ok_or_else(|| JsNativeError::typ().with_message("fetch is unavailable"))?;
 

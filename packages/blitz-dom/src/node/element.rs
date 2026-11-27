@@ -22,7 +22,7 @@ use style::{
     stylesheets::CssRuleType,
 };
 use style_dom::ElementState;
-use style_traits::ParsingMode;
+use style_traits::{CssStringWriter, ParsingMode};
 use taffy::{Cache, prelude::Layout};
 use thin_vec::ThinVec;
 use url::Url;
@@ -497,6 +497,16 @@ impl ElementData {
         &self.attrs
     }
 
+    pub(crate) fn base_href(&self) -> Option<&str> {
+        if self.name.ns != ns!(html) || self.name.local != local_name!("base") {
+            return None;
+        }
+        self.attrs
+            .iter()
+            .find(|attr| attr.name.ns == ns!() && attr.name.local == local_name!("href"))
+            .map(|attr| attr.value.as_str())
+    }
+
     pub fn attr(&self, name: impl PartialEq<LocalName>) -> Option<&str> {
         let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
         Some(&attr.value)
@@ -731,6 +741,30 @@ impl ElementData {
                 CssRuleType::Style,
             )))
         });
+    }
+
+    /// Reparse the live declarations when the document base changes. The
+    /// attribute text may predate property updates made through a native mutator.
+    pub(crate) fn rebase_inline_style(
+        &mut self,
+        guard: &SharedRwLock,
+        url_data: &UrlExtraData,
+    ) -> bool {
+        let Some(style) = &self.style_attribute else {
+            return false;
+        };
+        let mut css = CssStringWriter::new();
+        if style.read_with(&guard.read()).to_css(&mut css).is_err() {
+            return false;
+        }
+        self.style_attribute = Some(ServoArc::new(guard.wrap(parse_style_attribute(
+            &css,
+            url_data,
+            None,
+            QuirksMode::NoQuirks,
+            CssRuleType::Style,
+        ))));
+        true
     }
 
     pub fn set_style_property(
