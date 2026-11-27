@@ -4,10 +4,10 @@ description = "Chrome DevTools Protocol server implementation"
 documentation = "https://docs.rs/blitz-vibey-cdp-server"
 version.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [features]
 default = ["embedded-frontend"]

@@ -27,6 +27,7 @@ use blitz_dom::node::{
 };
 use blitz_dom::{BaseDocument, ElementData, Node, NodeId, local_name};
 use blitz_traits::devtools::DevtoolSettings;
+use blitz_traits::events::Point as BlitzPoint;
 
 use style::values::computed::{BorderCornerRadius, ColorOrAuto};
 use style::{
@@ -336,7 +337,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         );
     }
 
-    fn should_clip_node(&self, node: &Node, styles: &ComputedValues) -> bool {
+    /// The axes in which a node clips its overflow.
+    fn clipped_axes(&self, node: &Node, styles: &ComputedValues) -> BlitzPoint<bool> {
+        if self.root_element_id == Some(node.id) {
+            return BlitzPoint { x: false, y: false };
+        }
         let box_style = styles.get_box();
         let contain_paint = box_style.slow_clone_contain().contains(Contain::PAINT) && {
             let display = styles.clone_display();
@@ -346,13 +351,21 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             !display.is_inline_flow() && !is_internal_table_box_other_than_cell
         };
         let element = node.element_data();
-        self.root_element_id != Some(node.id)
-            && (element.and_then(|e| e.raster_image_data()).is_some()
-                || element.and_then(|e| e.sub_doc_data()).is_some()
-                || element.and_then(|e| e.text_input_data()).is_some()
-                || contain_paint
-                || !matches!(box_style.overflow_x, Overflow::Visible)
-                || !matches!(box_style.overflow_y, Overflow::Visible))
+        let clips_both_axes = element.and_then(|e| e.raster_image_data()).is_some()
+            || element.and_then(|e| e.sub_doc_data()).is_some()
+            || element.and_then(|e| e.text_input_data()).is_some()
+            || contain_paint;
+        if clips_both_axes {
+            return BlitzPoint { x: true, y: true };
+        }
+        // Any axis whose overflow is not `visible` clips, which covers scroll containers
+        // (hidden, scroll, auto) as well as `clip`. Scroll containers always clip both axes,
+        // because those values force a `visible` partner axis to compute to `auto`. So only
+        // `overflow: clip` can leave one axis clipped and the other visible.
+        BlitzPoint {
+            x: !matches!(box_style.overflow_x, Overflow::Visible),
+            y: !matches!(box_style.overflow_y, Overflow::Visible),
+        }
     }
 
     fn draw_text_mask(
@@ -376,14 +389,15 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         }
         let cx = self.element_cx(node, *node.final_layout(), transform, None);
+        let clipped_axes = self.clipped_axes(node, &styles);
         let clip = if cx.text_input.is_some() {
             cx.frame.text_input_clip_shape()
         } else {
-            cx.frame.padding_box_shape()
+            overflow_clip_shape(&cx.frame, clipped_axes)
         };
         let pushed = self.layer_manager.maybe_push_layer(
             scene,
-            self.should_clip_node(node, &styles),
+            clipped_axes.x || clipped_axes.y,
             BlendMode::default(),
             1.0,
             transform,
@@ -478,7 +492,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         }
         let has_opacity = opacity < 1.0;
 
-        let should_clip = self.should_clip_node(node, &styles);
+        let clipped_axes = self.clipped_axes(node, &styles);
+        let should_clip = clipped_axes.x || clipped_axes.y;
         let is_text_input = node
             .element_data()
             .and_then(|el| el.text_input_data())
@@ -568,7 +583,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             let clip_box = if is_text_input {
                 cx.frame.text_input_clip_shape()
             } else {
-                cx.frame.padding_box_shape()
+                overflow_clip_shape(&cx.frame, clipped_axes)
             };
             clip_rect.intersect(screen_transform.transform_rect_bbox(clip_box.bounding_box()))
         } else {
@@ -695,7 +710,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         let clip = if is_text_input {
                             &cx.frame.text_input_clip_shape()
                         } else {
-                            &cx.frame.padding_box_shape()
+                            &overflow_clip_shape(&cx.frame, clipped_axes)
                         };
 
                         // Clip layer if box requires clipping. Opacity set to 1.0
@@ -1546,4 +1561,39 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBo
     };
 
     CssBox::new(border_box, border, padding, outline_width, border_radii)
+}
+
+/// Far enough past any viewport that an unclipped axis never clips, and small enough
+/// that f32 path coordinates keep the clipped edges exact.
+const UNCLIPPED_REACH: f64 = 1.0e6;
+
+/// The overflow clip shape of a frame: its padding box, opened out along any axis
+/// that does not clip.
+fn overflow_clip_shape(
+    frame: &CssBox,
+    clipped_axes: BlitzPoint<bool>,
+) -> anyrender::NonUniformRoundedRect {
+    match clipped_axes {
+        BlitzPoint { x: true, y: false } => {
+            let rect = frame.padding_box();
+            Rect::new(
+                rect.x0,
+                rect.y0 - UNCLIPPED_REACH,
+                rect.x1,
+                rect.y1 + UNCLIPPED_REACH,
+            )
+            .into()
+        }
+        BlitzPoint { x: false, y: true } => {
+            let rect = frame.padding_box();
+            Rect::new(
+                rect.x0 - UNCLIPPED_REACH,
+                rect.y0,
+                rect.x1 + UNCLIPPED_REACH,
+                rect.y1,
+            )
+            .into()
+        }
+        _ => frame.padding_box_shape(),
+    }
 }

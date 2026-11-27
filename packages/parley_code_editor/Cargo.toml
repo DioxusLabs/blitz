@@ -3,7 +3,6 @@ name = "parley_code_editor"
 description = "A code editing control built on floem-editor-core, Parley and AnyRender"
 version = "0.1.0"
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true
