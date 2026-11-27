@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 use url::Url;
 
-use super::fuzzy::fuzzy_buffer_diff;
+use super::fuzzy::{fuzzy_buffer_diff, within_fuzzy_tolerance};
 use blitz_vibey_script::ScriptDocument;
 use wpt_manifest::{FuzzySpec, tolerance_for_reference};
 
@@ -167,19 +167,19 @@ fn render_reference_and_compare(
         &ref_html,
     );
 
-    if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
-        return Some(true);
-    }
-
     // If the test declares a `<meta name=fuzzy>` tolerance applicable to this reference,
     // use it to decide whether the renderings match. Otherwise fall back to the fixed
     // dify threshold.
     let fuzzy_tolerance = tolerance_for_reference(fuzzy_specs, ref_file);
+    if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
+        return Some(
+            fuzzy_tolerance.is_none_or(|tolerance| within_fuzzy_tolerance(0, 0, tolerance)),
+        );
+    }
     let is_match = if let Some(tolerance) = fuzzy_tolerance {
         let (max_difference, differing_pixels) =
             fuzzy_buffer_diff(&ctx.buffers.test_buffer, &ctx.buffers.ref_buffer);
-        max_difference <= tolerance.max_difference.max
-            && differing_pixels <= tolerance.total_pixels.max
+        within_fuzzy_tolerance(max_difference, differing_pixels, tolerance)
     } else {
         true
     };

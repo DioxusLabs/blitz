@@ -3,20 +3,21 @@ use blitz_dom::{
     ScrollLogicalPosition as BlitzScrollLogicalPosition,
 };
 use blitz_traits::events::{
-    BlitzDragEvent, BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent,
-    BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource, MouseEventButton,
+    BlitzDragEvent, BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzResizeEvent,
+    BlitzScrollEvent, BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource,
+    MouseEventButton, PointerKind,
 };
 use blitz_traits::net::Bytes;
-use dioxus_core::CapturedError;
 use dioxus_html::{
     AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DataTransfer,
     DragData, FileData, FocusData, FormData, FormValue, HasDataTransferData, HasDragData,
     HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData, HasPointerData,
-    HasScrollData, HasTouchData, HasTouchPointData, HasWheelData, HtmlEventConverter, ImageData,
-    KeyboardData, MediaData, MountedData, MountedError, MountedResult, MouseData,
-    NativeDataTransfer, NativeFileData, PlatformEventData, PointerData, RenderedElementBacking,
-    ResizeData, ScrollBehavior, ScrollData, ScrollLogicalPosition, ScrollToOptions, SelectionData,
-    ToggleData, TouchData, TouchPoint, TransitionData, VisibleData, WheelData,
+    HasResizeData, HasScrollData, HasTouchData, HasTouchPointData, HasWheelData,
+    HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MountedError,
+    MountedResult, MouseData, NativeDataTransfer, NativeFileData, PlatformEventData, PointerData,
+    RenderedElementBacking, ResizeData, ResizeResult, ScrollBehavior, ScrollData,
+    ScrollLogicalPosition, ScrollToOptions, SelectionData, ToggleData, TouchData, TouchPoint,
+    TransitionData, VisibleData, WheelData,
     geometry::{
         ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
         WheelDelta,
@@ -27,6 +28,7 @@ use dioxus_html::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
 };
+use dioxus_vdom::CapturedError;
 use futures_util::{Stream, stream};
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::{
@@ -138,8 +140,8 @@ impl HtmlEventConverter for NativeConverter {
         event.downcast::<NativeWheelData>().unwrap().clone().into()
     }
 
-    fn convert_resize_data(&self, _event: &PlatformEventData) -> ResizeData {
-        unimplemented!("todo: convert_resize_data in dioxus-native. requires support in blitz")
+    fn convert_resize_data(&self, event: &PlatformEventData) -> ResizeData {
+        (*event.downcast::<NativeResizeData>().unwrap()).into()
     }
 
     fn convert_visible_data(&self, _event: &PlatformEventData) -> VisibleData {
@@ -209,6 +211,21 @@ impl NodeHandle {
         let err = MountedError::OperationFailed(Box::new(NodeNotExistErr(node_id)));
         Box::pin(async move { Err(err) })
     }
+
+    fn pointer_capture_op(
+        &self,
+        pointer_id: i32,
+        op: impl FnOnce(BlitzPointerId) -> bool,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
+            let err = MountedError::OperationFailed(Box::new(InvalidPointerIdErr(pointer_id)));
+            return Box::pin(async move { Err(err) });
+        };
+        if !op(pointer_id) {
+            return self.node_not_exist_err();
+        }
+        Box::pin(async { Ok(()) })
+    }
 }
 
 #[derive(Debug)]
@@ -219,6 +236,15 @@ impl Display for NodeNotExistErr {
     }
 }
 impl std::error::Error for NodeNotExistErr {}
+
+#[derive(Debug)]
+struct InvalidPointerIdErr(i32);
+impl Display for InvalidPointerIdErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} is not a valid pointer ID", self.0)
+    }
+}
+impl std::error::Error for InvalidPointerIdErr {}
 
 impl RenderedElementBacking for NodeHandle {
     fn as_any(&self) -> &dyn std::any::Any {
@@ -331,6 +357,27 @@ impl RenderedElementBacking for NodeHandle {
         }
 
         Box::pin(async { Ok(()) })
+    }
+
+    fn set_pointer_capture(
+        &self,
+        pointer_id: i32,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        self.pointer_capture_op(pointer_id, |id| NodeHandle::set_pointer_capture(self, id))
+    }
+
+    fn release_pointer_capture(
+        &self,
+        pointer_id: i32,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        self.pointer_capture_op(pointer_id, |id| {
+            if self.doc().get_node(self.node_id).is_none() {
+                return false;
+            }
+            // Releasing a pointer that this node has not captured does nothing, as on the web
+            NodeHandle::release_pointer_capture(self, id);
+            true
+        })
     }
 }
 
@@ -467,10 +514,10 @@ impl HasPointerData for NativePointerData {
     }
 
     fn pointer_type(&self) -> String {
-        match self.0.id {
-            BlitzPointerId::Mouse => String::from("mouse"),
-            BlitzPointerId::Pen => String::from("pen"),
-            BlitzPointerId::Finger(_) => String::from("touch"),
+        match self.0.id.kind() {
+            PointerKind::Mouse => String::from("mouse"),
+            PointerKind::Pen => String::from("pen"),
+            PointerKind::Finger => String::from("touch"),
         }
     }
 
@@ -566,9 +613,9 @@ impl InteractionLocation for NativeTouchPointData {
 
 impl HasTouchPointData for NativeTouchPointData {
     fn identifier(&self) -> i32 {
-        match self.0.id {
-            BlitzPointerId::Finger(id) => id as i32,
-            BlitzPointerId::Mouse | BlitzPointerId::Pen => 0,
+        match self.0.id.kind() {
+            PointerKind::Finger => self.0.id.as_i32(),
+            PointerKind::Mouse | PointerKind::Pen => 0,
         }
     }
 
@@ -634,6 +681,29 @@ impl HasScrollData for NativeScrollData {
 
     fn client_height(&self) -> i32 {
         self.0.client_height
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeResizeData(pub(crate) BlitzResizeEvent);
+
+impl HasResizeData for NativeResizeData {
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    fn get_border_box_size(&self) -> ResizeResult<PixelsSize> {
+        Ok(PixelsSize::new(
+            self.0.border_box_width as f64,
+            self.0.border_box_height as f64,
+        ))
+    }
+
+    fn get_content_box_size(&self) -> ResizeResult<PixelsSize> {
+        Ok(PixelsSize::new(
+            self.0.content_box_width as f64,
+            self.0.content_box_height as f64,
+        ))
     }
 }
 
@@ -923,7 +993,7 @@ mod tests {
 
     fn finger_event(id: u64, x: f32, y: f32) -> BlitzPointerEvent {
         BlitzPointerEvent {
-            id: BlitzPointerId::Finger(id),
+            id: BlitzPointerId::finger(id),
             is_primary: id == 0,
             coords: PointerCoords {
                 page_x: x,
@@ -939,6 +1009,21 @@ mod tests {
             details: PointerDetails::default(),
             element: Point::default(),
             active_pointers: Default::default(),
+        }
+    }
+
+    #[test]
+    fn pointer_data_uses_blitz_ids_and_kinds() {
+        let mut event = finger_event(7, 1.0, 2.0);
+        for (id, kind) in [
+            (BlitzPointerId::mouse(), "mouse"),
+            (BlitzPointerId::pen(), "pen"),
+            (event.id, "touch"),
+        ] {
+            event.id = id;
+            let data = NativePointerData(event.clone());
+            assert_eq!(data.pointer_id(), id.as_i32());
+            assert_eq!(data.pointer_type(), kind);
         }
     }
 
@@ -974,6 +1059,8 @@ mod tests {
         // ... while `changed_touches` reports only the triggering touch.
         assert_eq!(data.touches_changed().len(), 1);
         let changed = data.touches_changed();
+        let changed_touch = changed[0].downcast::<NativeTouchPointData>().unwrap();
+        assert_eq!(changed_touch.identifier(), f1.id.as_i32());
         let changed_coords = changed[0].client_coordinates();
         assert_eq!((changed_coords.x, changed_coords.y), (30.0, 40.0));
     }

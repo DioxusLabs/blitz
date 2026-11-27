@@ -2,7 +2,7 @@
 
 use blitz_test_harness::{Harness, pointer_event};
 use blitz_traits::events::{BlitzPointerId, MouseEventButton, MouseEventButtons, UiEvent};
-use dioxus::prelude::*;
+use dioxus_core::prelude::*;
 
 fn app() -> Element {
     let mut seen = use_signal(Vec::<String>::new);
@@ -22,8 +22,8 @@ fn app() -> Element {
 fn mouse_pen_and_fingers_get_distinct_pointer_ids() {
     let mut harness = Harness::from_component(app);
     for id in [
-        BlitzPointerId::Mouse,
-        BlitzPointerId::Pen,
+        BlitzPointerId::MOUSE,
+        BlitzPointerId::PEN,
         BlitzPointerId::finger(0),
         BlitzPointerId::finger(1),
     ] {

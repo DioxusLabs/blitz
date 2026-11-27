@@ -2150,7 +2150,7 @@ impl Node {
         let y = absolute_position.y + (self.final_layout().size.height / 2.0);
 
         BlitzPointerEvent {
-            id: BlitzPointerId::Mouse,
+            id: BlitzPointerId::MOUSE,
             is_primary: true,
             coords: PointerCoords {
                 page_x: x,

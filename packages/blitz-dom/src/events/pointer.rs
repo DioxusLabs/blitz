@@ -6,8 +6,8 @@ use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, DomEventData, MouseEventButton,
-        MouseEventButtons,
+        BlitzInputEvent, BlitzPointerEvent, DomEventData, MouseEventButton, MouseEventButtons,
+        PointerKind,
     },
     navigation::NavigationOptions,
 };
@@ -222,8 +222,8 @@ pub(crate) fn handle_pointermove(
         let dx = x - doc.mousedown_position.x;
         let dy = y - doc.mousedown_position.y;
         if dx.abs() > 2.0 || dy.abs() > 2.0 {
-            match event.id {
-                BlitzPointerId::Mouse | BlitzPointerId::Pen => {
+            match event.id.kind() {
+                PointerKind::Mouse | PointerKind::Pen => {
                     if let Some(mousedown_node_id) = doc.mousedown_node_id {
                         let node = &doc.nodes[mousedown_node_id];
                         if let Some(style) = node.primary_styles() {
@@ -246,7 +246,7 @@ pub(crate) fn handle_pointermove(
                         }
                     }
                 }
-                BlitzPointerId::Finger(_) => {
+                PointerKind::Finger => {
                     let (allow_x, allow_y) = touch_action_pan_axes(doc, target);
                     // If `touch-action` forbids panning on both axes (e.g. `touch-action: none`)
                     // there is nothing to scroll, so don't enter the panning drag mode.
