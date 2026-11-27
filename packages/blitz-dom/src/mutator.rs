@@ -170,16 +170,9 @@ impl DocumentMutator<'_> {
         let mut data = ElementData::new(name, attrs);
         data.flush_style_attribute(self.doc.guard(), &self.doc.url.url_extra_data());
 
-        let id = self.doc.create_node(NodeData::Element(Box::new(data)));
-        let node = self.doc.get_node_mut(id).unwrap();
-
-        // Initialise style data
-        *node.stylo_element_data_mut().ensure_init_mut() = style::data::ElementData {
-            damage: ALL_DAMAGE,
-            ..Default::default()
-        };
-
-        id
+        // Stylo data is created by the style traversal (`ensure_data`): Stylo treats an
+        // element having data as it having been styled.
+        self.doc.create_node(NodeData::Element(Box::new(data)))
     }
 
     pub fn deep_clone_node(&mut self, node_id: NodeId) -> NodeId {
@@ -328,7 +321,7 @@ impl DocumentMutator<'_> {
             self.restyle_for_attribute_change(node_id, &name.local);
         }
 
-        if name.local == local_name!("id") && node_is_in_document {
+        if name.ns == ns!() && name.local == local_name!("id") && node_is_in_document {
             if let Some(old_id) = self.doc.nodes[node_id]
                 .element_data()
                 .map(|element| element.id.clone())
@@ -390,11 +383,11 @@ impl DocumentMutator<'_> {
         let tag = &element.name.local;
         let attr = &name.local;
 
-        if *attr == local_name!("id") {
+        if name.ns == ns!() && *attr == local_name!("id") {
             element.id = Some(Atom::from(value))
         }
 
-        if *attr == local_name!("class") {
+        if name.ns == ns!() && *attr == local_name!("class") {
             element.classes = crate::node::parse_classes(value);
         }
 
@@ -410,7 +403,7 @@ impl DocumentMutator<'_> {
             return;
         }
 
-        if *attr == local_name!("style") {
+        if name.ns == ns!() && *attr == local_name!("style") {
             element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
             node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
             return;
@@ -469,7 +462,7 @@ impl DocumentMutator<'_> {
             self.restyle_for_attribute_change(node_id, &name.local);
         }
 
-        if name.local == local_name!("id") && node_is_in_document {
+        if name.ns == ns!() && name.local == local_name!("id") && node_is_in_document {
             if let Some(old_id) = self.doc.nodes[node_id]
                 .element_data()
                 .and_then(|element| element.id.clone())
@@ -510,11 +503,11 @@ impl DocumentMutator<'_> {
                 .attribute_changed(&name.local, old_value, None);
         }
 
-        if name.local == local_name!("id") {
+        if name.ns == ns!() && name.local == local_name!("id") {
             element.id = None;
         }
 
-        if name.local == local_name!("class") {
+        if name.ns == ns!() && name.local == local_name!("class") {
             element.classes.clear();
         }
 
@@ -554,7 +547,7 @@ impl DocumentMutator<'_> {
             return;
         }
 
-        if *attr == local_name!("style") {
+        if name.ns == ns!() && *attr == local_name!("style") {
             element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
             node.set_restyle_hint(RestyleHint::RESTYLE_STYLE_ATTRIBUTE);
         } else if (tag, attr) == tag_and_attr!("input", "checked") {
