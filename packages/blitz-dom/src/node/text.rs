@@ -5,6 +5,8 @@ use blitz_traits::{
 };
 use keyboard_types::{Key, Modifiers, NamedKey};
 use parley::{ContentWidths, FontContext, InlineBoxKind, LayoutContext};
+use style::properties::ComputedValues;
+use style::servo_arc::Arc as ServoArc;
 
 use crate::util::ACTION_MOD;
 
@@ -89,9 +91,20 @@ pub enum GeneratedTextInputEvent {
     Submit,
 }
 
+/// What an empty text input shows in place of its text: its `placeholder`, laid out in the style
+/// of its `::placeholder`.
+pub struct TextInputPlaceholder {
+    /// The placeholder's text, laid out as the input lays its own out.
+    pub editor: Box<parley::PlainEditor<TextBrush>>,
+    /// The style of the input's `::placeholder`, which paint draws the text in.
+    pub style: ServoArc<ComputedValues>,
+}
+
 pub struct TextInputData {
     /// A parley TextEditor instance
     pub editor: Box<parley::PlainEditor<TextBrush>>,
+    /// What the input shows while it holds no text, when it has a `placeholder`.
+    pub placeholder: Option<TextInputPlaceholder>,
     /// Whether the input is a singleline or multiline input
     pub is_multiline: bool,
     /// The scroll offset of the text content within the input, in CSS (unscaled) pixels.
@@ -118,6 +131,7 @@ impl TextInputData {
         let editor = Box::new(parley::PlainEditor::new(16.0));
         Self {
             editor,
+            placeholder: None,
             is_multiline,
             scroll_offset: 0.0,
             content_box_subpixel_offset: taffy::Point::ZERO,

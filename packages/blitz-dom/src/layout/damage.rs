@@ -517,10 +517,16 @@ impl BaseDocument {
                 }
             } else if let Some(input) = element.text_input_data_mut() {
                 input.editor.set_scale(scale);
+                if let Some(placeholder) = &mut input.placeholder {
+                    placeholder.editor.set_scale(scale);
+                }
                 // A textarea's text is laid out again once layout knows its width.
                 if !input.is_multiline {
                     let mut font_ctx = font_ctx.lock().unwrap();
                     input.editor.refresh_layout(&mut font_ctx, layout_ctx);
+                    if let Some(placeholder) = &mut input.placeholder {
+                        placeholder.editor.refresh_layout(&mut font_ctx, layout_ctx);
+                    }
                 }
                 node.insert_damage(ONLY_RELAYOUT);
             }

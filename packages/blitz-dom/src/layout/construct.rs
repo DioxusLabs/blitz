@@ -8,6 +8,7 @@ use parley::StyleProperty;
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
+    selector_parser::PseudoElement,
     shared_lock::StylesheetGuards,
     values::{
         computed::{Content, ContentItem, Display, Float},
@@ -23,7 +24,10 @@ use crate::{
     layout::damage::{
         CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC, sort_layout_children_by_order,
     },
-    node::{NodeFlags, NodeKind, SpecialElementData, TextInputData, TextLayout},
+    node::{
+        NodeFlags, NodeKind, SpecialElementData, TextBrush, TextInputData, TextInputPlaceholder,
+        TextLayout,
+    },
     qual_name, stylo_to_parley,
     traversal::iter_children_and_pseudos,
 };
@@ -900,6 +904,17 @@ fn collect_complex_layout_children(
 }
 
 fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multiline: bool) {
+    // An input with a `placeholder` shows it, styled by the rules that target its `::placeholder`,
+    // while it holds no text.
+    let placeholder = doc.nodes[input_element_id]
+        .attr(local_name!("placeholder"))
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+        .and_then(|text| {
+            let style = doc.lazy_pseudo_style(input_element_id, &PseudoElement::Placeholder)?;
+            Some((text, style))
+        });
+    let scale = doc.viewport.scale_f64() as f32;
     let node = &mut doc.nodes[input_element_id];
     let parley_style = node
         .primary_styles()
@@ -921,6 +936,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
         node.attr(local_name!("value")).unwrap_or("").to_string()
     };
     let is_focussed = node.is_focussed();
+    let node_id = node.id;
     let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
@@ -940,36 +956,62 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: NodeId, is_multi
     };
 
     let editor = &mut text_input_data.editor;
-    editor.set_scale(doc.viewport.scale_f64() as f32);
-    editor.set_width(None);
-
-    let styles = editor.edit_styles();
-    styles.retain(|_| false);
-    styles.insert(StyleProperty::FontFamily(parley_style.font_family));
-    styles.insert(StyleProperty::FontSize(parley_style.font_size));
-    styles.insert(StyleProperty::FontWidth(parley_style.font_width));
-    styles.insert(StyleProperty::FontStyle(parley_style.font_style));
-    styles.insert(StyleProperty::FontWeight(parley_style.font_weight));
-    styles.insert(StyleProperty::FontVariations(parley_style.font_variations));
-    styles.insert(StyleProperty::FontFeatures(parley_style.font_features));
-    styles.insert(StyleProperty::LineHeight(parley_style.line_height));
-    styles.insert(StyleProperty::WordSpacing(parley_style.word_spacing));
-    styles.insert(StyleProperty::LetterSpacing(parley_style.letter_spacing));
-    styles.insert(StyleProperty::WordBreak(parley_style.word_break));
-    styles.insert(StyleProperty::OverflowWrap(parley_style.overflow_wrap));
-    styles.insert(StyleProperty::TextWrapMode(parley_style.text_wrap_mode));
-    styles.insert(StyleProperty::WhiteSpaceCollapse(
-        parley_style.white_space_collapse,
-    ));
-    styles.insert(StyleProperty::Brush(parley_style.brush));
-    editor.set_alignment(alignment);
-    editor.set_base_direction(base_direction);
+    style_text_editor(editor, parley_style, alignment, base_direction, scale);
+    text_input_data.placeholder = placeholder.map(|(text, style)| {
+        let mut editor = Box::new(parley::PlainEditor::new(16.0));
+        let parley_style = stylo_to_parley::style(node_id, &style);
+        style_text_editor(&mut editor, parley_style, alignment, base_direction, scale);
+        editor.set_text(&text);
+        TextInputPlaceholder { editor, style }
+    });
 
     // A single-line input never wraps, so its text is laid out now. A textarea's is laid out once
     // layout knows its width.
     if !is_multiline {
-        editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
+        let font_ctx = &mut doc.font_ctx.lock().unwrap();
+        text_input_data
+            .editor
+            .refresh_layout(font_ctx, &mut doc.layout_ctx);
+        if let Some(placeholder) = &mut text_input_data.placeholder {
+            placeholder
+                .editor
+                .refresh_layout(font_ctx, &mut doc.layout_ctx);
+        }
     }
+}
+
+/// Gives a text input's editor, or its placeholder's, the font, line, and wrapping of `style`.
+fn style_text_editor(
+    editor: &mut parley::PlainEditor<TextBrush>,
+    style: parley::TextStyle<'static, 'static, TextBrush>,
+    alignment: parley::layout::Alignment,
+    base_direction: parley::BaseDirection,
+    scale: f32,
+) {
+    editor.set_scale(scale);
+    editor.set_width(None);
+
+    let styles = editor.edit_styles();
+    styles.retain(|_| false);
+    styles.insert(StyleProperty::FontFamily(style.font_family));
+    styles.insert(StyleProperty::FontSize(style.font_size));
+    styles.insert(StyleProperty::FontWidth(style.font_width));
+    styles.insert(StyleProperty::FontStyle(style.font_style));
+    styles.insert(StyleProperty::FontWeight(style.font_weight));
+    styles.insert(StyleProperty::FontVariations(style.font_variations));
+    styles.insert(StyleProperty::FontFeatures(style.font_features));
+    styles.insert(StyleProperty::LineHeight(style.line_height));
+    styles.insert(StyleProperty::WordSpacing(style.word_spacing));
+    styles.insert(StyleProperty::LetterSpacing(style.letter_spacing));
+    styles.insert(StyleProperty::WordBreak(style.word_break));
+    styles.insert(StyleProperty::OverflowWrap(style.overflow_wrap));
+    styles.insert(StyleProperty::TextWrapMode(style.text_wrap_mode));
+    styles.insert(StyleProperty::WhiteSpaceCollapse(
+        style.white_space_collapse,
+    ));
+    styles.insert(StyleProperty::Brush(style.brush));
+    editor.set_alignment(alignment);
+    editor.set_base_direction(base_direction);
 }
 
 fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {

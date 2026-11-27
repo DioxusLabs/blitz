@@ -1648,6 +1648,101 @@ mod test {
     use super::{DocumentMutator, NodeId};
     use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
 
+    /// A document of the elements `children`, with their attributes, styled by `css`, resolved.
+    fn styled_document(
+        css: &str,
+        children: &[(&str, &[(&str, &str)])],
+    ) -> (BaseDocument, Vec<NodeId>) {
+        use crate::{LocalName, QualName, ns};
+
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let root_id = document.root_node().id;
+        let mut mutator = document.mutate();
+        let html = mutator.create_element(qual_name!("html"), vec![]);
+        let style = mutator.create_element(qual_name!("style"), vec![]);
+        let text = mutator.create_text_node(css);
+        mutator.append_children(style, &[text]);
+        let ids: Vec<NodeId> = children
+            .iter()
+            .map(|(tag, attrs)| {
+                let attrs = attrs
+                    .iter()
+                    .map(|(name, value)| Attribute {
+                        name: QualName::new(None, ns!(), LocalName::from(*name)),
+                        value: value.to_string(),
+                    })
+                    .collect();
+                mutator.create_element(QualName::new(None, ns!(html), LocalName::from(*tag)), attrs)
+            })
+            .collect();
+        mutator.append_children(html, &[style]);
+        mutator.append_children(html, &ids);
+        mutator.append_children(root_id, &[html]);
+        drop(mutator);
+        document.resolve(0.0);
+        (document, ids)
+    }
+
+    #[test]
+    fn lazy_pseudo_style_applies_the_rules_that_target_it_over_what_it_inherits() {
+        use style::selector_parser::PseudoElement;
+
+        let (document, ids) = styled_document(
+            "input::placeholder { color: rgb(255, 0, 0) }",
+            &[("input", &[]), ("div", &[])],
+        );
+        let (input, div) = (ids[0], ids[1]);
+        let placeholder = document
+            .lazy_pseudo_style(input, &PseudoElement::Placeholder)
+            .expect("the input's placeholder has a rule");
+        let color = placeholder.get_inherited_text().color;
+        let (red, green, blue) = (color.components.0, color.components.1, color.components.2);
+        assert_eq!((red, green, blue), (1.0, 0.0, 0.0));
+        // No rule targets the div's placeholder, which only inherits from the div.
+        // `::before` is no lazy pseudo-element.
+        let inherited = document
+            .lazy_pseudo_style(div, &PseudoElement::Placeholder)
+            .expect("the div has a style");
+        let div_style = document.get_node(div).unwrap().primary_styles().unwrap();
+        assert_eq!(
+            inherited.get_inherited_text().color,
+            div_style.get_inherited_text().color
+        );
+        assert!(
+            document
+                .lazy_pseudo_style(input, &PseudoElement::Before)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn text_inputs_lay_their_placeholder_out_in_its_style() {
+        let (document, ids) = styled_document(
+            "input::placeholder, textarea::placeholder { color: rgb(255, 0, 0) }",
+            &[
+                ("input", &[("placeholder", "Email")]),
+                ("textarea", &[("placeholder", "Message")]),
+                ("input", &[]),
+            ],
+        );
+        let input_data = |id| {
+            document
+                .get_node(id)
+                .and_then(|node| node.element_data())
+                .and_then(|element| element.text_input_data())
+                .expect("a text input")
+        };
+        for (id, text) in [(ids[0], "Email"), (ids[1], "Message")] {
+            let placeholder = input_data(id).placeholder.as_ref().expect("a placeholder");
+            assert_eq!(placeholder.editor.raw_text(), text);
+            assert!(placeholder.editor.try_layout().is_some());
+            let color = placeholder.style.get_inherited_text().color;
+            assert_eq!(color.components.0, 1.0);
+        }
+        // An input without a placeholder shows nothing in its place.
+        assert!(input_data(ids[2]).placeholder.is_none());
+    }
+
     #[test]
     fn unresolvable_relative_urls_are_skipped() {
         // Without a base url, relative urls cannot be resolved against the default
