@@ -558,11 +558,19 @@ fn resolve_color_stops<T>(
             }
         }
         let color = stop.color;
+        let direction = gradient.stops.last().map_or(hue_direction, |previous| {
+            equivalent_hue_arc(
+                previous.color,
+                color,
+                gradient.interpolation_cs,
+                hue_direction,
+            )
+        });
         match hint.take() {
             None => {
                 if idx != 0 && subdivide_directed_hue {
                     if let Some(&previous) = gradient.stops.last() {
-                        append_directed_hue_samples(gradient, previous, stop, 1.0, hue_direction);
+                        append_directed_hue_samples(gradient, previous, stop, 1.0, direction);
                     }
                 }
                 gradient.stops.push(stop);
@@ -584,16 +592,15 @@ fn resolve_color_stops<T>(
                     gradient.stops.push(stop);
                 } else if hint == (last_stop.offset + offset) / 2.0 {
                     if subdivide_directed_hue {
-                        append_directed_hue_samples(gradient, last_stop, stop, 1.0, hue_direction);
+                        append_directed_hue_samples(gradient, last_stop, stop, 1.0, direction);
                     }
                     gradient.stops.push(stop);
                 } else {
                     let mid_point = (hint - last_stop.offset) / (offset - last_stop.offset);
-                    let interpolator = last_stop.color.interpolate(
-                        color,
-                        gradient.interpolation_cs,
-                        hue_direction,
-                    );
+                    let interpolator =
+                        last_stop
+                            .color
+                            .interpolate(color, gradient.interpolation_cs, direction);
                     let first_sample = gradient.stops.len();
                     let exponent = 0.5f32.log(mid_point);
                     let mut interpolate_stop = |cur_offset: f32| {
@@ -622,13 +629,7 @@ fn resolve_color_stops<T>(
                         }
                     }
                     if subdivide_directed_hue {
-                        append_directed_hue_samples(
-                            gradient,
-                            last_stop,
-                            stop,
-                            exponent,
-                            hue_direction,
-                        );
+                        append_directed_hue_samples(gradient, last_stop, stop, exponent, direction);
                         gradient.stops[first_sample..]
                             .sort_by(|a, b| a.offset.total_cmp(&b.offset));
                     }
@@ -662,6 +663,37 @@ fn resolve_color_stops<T>(
             }
         }
         (0.0, 1.0)
+    }
+}
+
+/// Normalize equivalent directed arcs before sampling. This keeps the
+/// renderer's output identical when two CSS hue methods select the same arc.
+fn equivalent_hue_arc(
+    start: DynamicColor,
+    end: DynamicColor,
+    space: ColorSpaceTag,
+    direction: HueDirection,
+) -> HueDirection {
+    if !matches!(
+        direction,
+        HueDirection::Increasing | HueDirection::Decreasing
+    ) {
+        return direction;
+    }
+    let index = match space {
+        ColorSpaceTag::Hsl | ColorSpaceTag::Hwb => 0,
+        ColorSpaceTag::Lch | ColorSpaceTag::Oklch => 2,
+        _ => return direction,
+    };
+    let delta = (end.convert(space).components[index] - start.convert(space).components[index])
+        .rem_euclid(360.0);
+    if delta == 180.0 || !delta.is_finite() {
+        return direction;
+    }
+    if delta == 0.0 || (matches!(direction, HueDirection::Increasing) == (delta < 180.0)) {
+        HueDirection::Shorter
+    } else {
+        HueDirection::Longer
     }
 }
 
