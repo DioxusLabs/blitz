@@ -28,7 +28,7 @@ use blitz_traits::events::{
     HitResult, MouseEventButtons, PointerCoords, UiEvent,
 };
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
-use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
+use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request, http};
 use blitz_traits::node_id::NodeId;
 use blitz_traits::shell::{DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
@@ -716,9 +716,14 @@ impl BaseDocument {
         tracing::info!("Fetching image {url}");
         self.pending_images
             .insert(url.as_str().to_string(), vec![waiting]);
+        let mut request = self.build_request(url);
+        request.headers.insert(
+            http::header::ACCEPT,
+            http::HeaderValue::from_static("image/*, */*;q=0.8"),
+        );
         self.net_provider.fetch(
             self.id(),
-            self.build_request(url),
+            request,
             ResourceHandler::boxed(
                 self.tx.clone(),
                 self.id(),
