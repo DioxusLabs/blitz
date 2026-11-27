@@ -1,9 +1,8 @@
 //! White space collapsing, `text-transform` and the offset map, driven through Parley's
-//! `TreeBuilder` the way a document engine would.
+//! `StyleRunBuilder` the way a document engine would.
 
 use parley::{
-    CollapsedSpace, FontContext, InlineBox, InlineBoxKind, Layout, LayoutContext, StyleProperty,
-    TextStyle, TextWrapMode, TreeBuilder, WhiteSpaceCollapse,
+    FontContext, InlineBox, Layout, LayoutContext, TextStyle, TextWrapMode, WhiteSpaceCollapse,
 };
 use parley_css_text::{
     Affinity, CaseTransform, LineEndWhitespace, TextCase, TextOffsetMap, TextTransform,
@@ -56,7 +55,8 @@ const FULL_WIDTH: TextTransform = TextTransform {
 /// An inline formatting context's content, in tree order. Node ids are `u32`s.
 enum Item {
     Text(u32, &'static str, Style),
-    InlineBox(u32, InlineBoxKind),
+    InlineBox(u32),
+    OutOfFlowBox(u32),
     LineBreak(u32),
 }
 
@@ -64,6 +64,7 @@ struct Laid {
     text: String,
     layout: Layout<()>,
     map: TextOffsetMap<u32>,
+    out_of_flow_anchors: Vec<(u32, usize)>,
 }
 
 impl Laid {
@@ -80,36 +81,39 @@ impl Laid {
     }
 }
 
-fn push_styles(builder: &mut TreeBuilder<'_, ()>, style: Style) {
-    let collapsed_space = if style.transform.full_width {
-        CollapsedSpace::IdeographicSpace
-    } else {
-        CollapsedSpace::Space
-    };
-    builder.push_style_modification_span(&[
-        StyleProperty::WhiteSpaceCollapse(style.collapse),
-        StyleProperty::TextWrapMode(style.wrap),
-        StyleProperty::CollapsedSpace(collapsed_space),
-    ]);
-}
-
 /// Builds `items` and breaks its lines at `width`.
 fn lay_out(items: &[Item], width: Option<f32>) -> Laid {
     let mut font_cx = FontContext::new();
     let mut layout_cx = LayoutContext::new();
-    let root = TextStyle {
-        white_space_collapse: WhiteSpaceCollapse::Collapse,
-        ..TextStyle::default()
-    };
-    let mut builder = layout_cx.tree_builder(&mut font_cx, 1.0, true, &root);
+    let mut builder = layout_cx.style_run_builder(&mut font_cx, 1.0, true);
+    let root_style = builder.push_style(
+        TextStyle {
+            white_space_collapse: WhiteSpaceCollapse::Collapse,
+            ..TextStyle::default()
+        },
+        None,
+    );
     let mut collapser = WhiteSpaceCollapser::default();
     let mut transformer = TextTransformer::default();
+    let mut out_of_flow_anchors = Vec::new();
     for item in items {
         match *item {
             Item::Text(node, source, style) => {
-                push_styles(&mut builder, style);
+                let style_index = builder.push_style(
+                    TextStyle {
+                        white_space_collapse: style.collapse,
+                        text_wrap_mode: style.wrap,
+                        ..TextStyle::default()
+                    },
+                    Some(root_style),
+                );
                 let transform = CaseTransform::new(style.transform, style.collapse, style.lang);
-                let (text, changes) = transformer.transform(source, &transform, &builder);
+                let (text, changes) = transformer.transform(
+                    source,
+                    &transform,
+                    collapser.text(),
+                    collapser.has_pending_whitespace(),
+                );
                 let white_space = WhiteSpace {
                     collapse: style.collapse,
                     collapsed_space: if style.transform.full_width {
@@ -117,42 +121,56 @@ fn lay_out(items: &[Item], width: Option<f32>) -> Laid {
                     } else {
                         " "
                     },
+                    wrap: style.wrap == TextWrapMode::Wrap,
                 };
-                collapser.push_text(&mut builder, node, source, text, changes, white_space);
-                builder.pop_style_span();
+                collapser.push_text(
+                    &mut builder,
+                    style_index,
+                    Some(root_style),
+                    node,
+                    source,
+                    text,
+                    changes,
+                    white_space,
+                );
             }
-            Item::InlineBox(node, kind) => {
-                let in_flow = kind == InlineBoxKind::InFlow;
-                if in_flow {
-                    transformer.word_break(&builder);
-                }
-                collapser.push_inline_box(node, in_flow);
-                builder.push_inline_box(InlineBox {
-                    id: node.into(),
-                    kind,
-                    index: 0,
-                    width: 1.0,
-                    height: 1.0,
-                    baseline: None,
-                    vertical_align: Default::default(),
-                });
+            Item::InlineBox(node) => {
+                collapser.push_inline_box(
+                    &mut builder,
+                    root_style,
+                    node,
+                    InlineBox {
+                        id: node.into(),
+                        index: 0,
+                        width: 1.0,
+                        height: 1.0,
+                        baseline: None,
+                        vertical_align: Default::default(),
+                    },
+                );
+                transformer.word_break(collapser.text().len());
+            }
+            Item::OutOfFlowBox(node) => {
+                out_of_flow_anchors.push((node, collapser.push_out_of_flow_box(node)));
             }
             Item::LineBreak(node) => {
-                collapser.push_line_break(&mut builder, node);
-                transformer.word_break(&builder);
+                collapser.push_line_break(&mut builder, root_style, node);
+                transformer.word_break(collapser.text().len());
             }
         }
     }
-    let (mut layout, text) = builder.build();
+    let (text, map) = collapser.finish();
+    let mut layout = builder.build(&text);
     layout.break_all_lines(width);
     Laid {
         text,
         layout,
-        map: collapser.finish(),
+        map,
+        out_of_flow_anchors,
     }
 }
 
-use Item::{InlineBox as Box, LineBreak, Text};
+use Item::{InlineBox as Box, LineBreak, OutOfFlowBox, Text};
 
 #[test]
 fn collapsed_white_space_across_nodes() {
@@ -236,9 +254,9 @@ fn breaks_and_inline_boxes() {
     let laid = lay_out(
         &[
             Text(1, "a \n b", pre_line),
-            Box(2, InlineBoxKind::InFlow),
+            Box(2),
             Text(3, " ", pre_line),
-            Box(4, InlineBoxKind::CustomOutOfFlow),
+            OutOfFlowBox(4),
             Text(5, " c", pre_line),
             LineBreak(6),
             Text(7, "d", pre_line),
@@ -255,24 +273,20 @@ fn breaks_and_inline_boxes() {
 
 #[test]
 fn out_of_flow_boxes_follow_pending_space() {
-    // The map keeps document order, so the float comes after the space before it. Parley
-    // anchors it before that space.
+    // The map keeps document order, so the float comes after the space before it. Its Parley
+    // anchor offset is before that space.
     let laid = lay_out(
-        &[
-            Text(1, "a ", NORMAL),
-            Box(2, InlineBoxKind::CustomOutOfFlow),
-            Text(3, "b", NORMAL),
-        ],
+        &[Text(1, "a ", NORMAL), OutOfFlowBox(2), Text(3, "b", NORMAL)],
         None,
     );
     assert_eq!(laid.text, "a b");
     assert_eq!(laid.map.layout_range(2), Some(2..2));
     let anchor = laid
-        .layout
-        .inline_boxes()
-        .find(|inline_box| inline_box.id == 2)
+        .out_of_flow_anchors
+        .iter()
+        .find(|&&(id, _)| id == 2)
         .unwrap()
-        .index;
+        .1;
     assert_eq!(anchor, 1);
 }
 

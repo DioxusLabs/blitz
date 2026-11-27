@@ -63,9 +63,19 @@ fn out_of_flow_placeholder_retains_its_text_offset() {
     let doc = harness.base();
     let text = inline(&doc, "#test");
     assert_eq!(text.text, "unbroken");
-    assert_eq!(text.layout.inline_boxes().len(), 1);
-    assert_eq!(text.layout.inline_boxes().next().unwrap().index, 2);
+    assert_eq!(text.layout.inline_boxes().len(), 0);
+    assert_eq!(text.out_of_flow_boxes.len(), 1);
+    assert_eq!(text.out_of_flow_boxes[0].index, 2);
     assert_eq!(text.layout.len(), 1);
+
+    let harness = Harness::from_html(
+        "<div id='test'>un <span style='position:absolute'>box</span> broken</div>",
+    );
+    let doc = harness.base();
+    let text = inline(&doc, "#test");
+    assert_eq!(text.text, "un broken");
+    // The box precedes the collapsed space
+    assert_eq!(text.out_of_flow_boxes[0].index, 2);
 }
 
 #[test]

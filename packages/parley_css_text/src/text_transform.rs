@@ -11,7 +11,7 @@ use icu_locale_core::LanguageIdentifier;
 use icu_properties::props::{GeneralCategory, GeneralCategoryGroup};
 use icu_properties::{CodePointMapData, CodePointMapDataBorrowed};
 use icu_segmenter::{WordSegmenter, WordSegmenterBorrowed, options::WordBreakInvariantOptions};
-use parley::{Brush, TreeBuilder, WhiteSpaceCollapse};
+use parley::WhiteSpaceCollapse;
 use std::fmt;
 #[cfg(feature = "text-transform-icu")]
 use writeable::Writeable;
@@ -144,13 +144,12 @@ fn casing_language(lang: LanguageIdentifier) -> LanguageIdentifier {
 
 /// Applies text transforms to the sequence of text nodes in an inline formatting context.
 ///
-/// `capitalize` operates on words, which may span multiple text nodes, so the text already
-/// pushed to the [`TreeBuilder`] is used as context for word segmentation. Only look-behind
-/// is needed: whether a word boundary precedes a letter never depends on the text that
-/// follows it.
+/// `capitalize` operates on words, which may span multiple text nodes, so the collapsed text
+/// already committed is used as context for word segmentation. Only look-behind is needed:
+/// whether a word boundary precedes a letter never depends on the text that follows it.
 #[derive(Default)]
 pub struct TextTransformer {
-    /// The offset in the builder's text of the last forced word boundary.
+    /// The offset in the preceding text of the last forced word boundary.
     context_start: usize,
     /// Reused buffer for the context followed by the text to be capitalized.
     segmentation_buffer: String,
@@ -163,31 +162,34 @@ pub struct TextTransformer {
 }
 
 impl TextTransformer {
-    /// Forces a word boundary (e.g. at an atomic inline or a forced line break).
-    pub fn word_break<B: Brush>(&mut self, builder: &TreeBuilder<'_, B>) {
-        self.context_start = builder.text().len();
+    /// Forces a word boundary at the given offset in the preceding text (e.g. at an atomic
+    /// inline or a forced line break).
+    pub fn word_break(&mut self, text_len: usize) {
+        self.context_start = text_len;
     }
 
-    /// Transforms the content of a text node that is about to be pushed to `builder`, returning
-    /// the transformed text and where its length differs from `text`, in order.
+    /// Transforms the content of a text node that follows `preceding_text`, returning the
+    /// transformed text and where its length differs from `text`, in order.
     #[inline]
-    pub fn transform<'a, B: Brush>(
+    pub fn transform<'a>(
         &'a mut self,
         text: &'a str,
         transform: &CaseTransform,
-        builder: &TreeBuilder<'_, B>,
+        preceding_text: &str,
+        has_pending_whitespace: bool,
     ) -> (&'a str, &'a [TextChange]) {
         if transform.text_transform.is_none() {
             return (text, &[]);
         }
-        self.transform_nonempty(text, transform, builder)
+        self.transform_nonempty(text, transform, preceding_text, has_pending_whitespace)
     }
 
-    fn transform_nonempty<'a, B: Brush>(
+    fn transform_nonempty<'a>(
         &'a mut self,
         text: &'a str,
         transform: &CaseTransform,
-        builder: &TreeBuilder<'_, B>,
+        preceding_text: &str,
+        has_pending_whitespace: bool,
     ) -> (&'a str, &'a [TextChange]) {
         let case = transform.text_transform.case;
         // ASCII case mapping never changes lengths.
@@ -231,10 +233,10 @@ impl TextTransformer {
             TextCase::Capitalize => {
                 // Pending (collapsed) whitespace always ends the preceding word, so no
                 // context is needed.
-                let context = if builder.has_pending_whitespace() {
+                let context = if has_pending_whitespace {
                     ""
                 } else {
-                    let preceding = &builder.text()[self.context_start..];
+                    let preceding = &preceding_text[self.context_start..];
                     let start = ceil_char_boundary(
                         preceding,
                         preceding.len().saturating_sub(MAX_CONTEXT_LEN),
@@ -766,7 +768,9 @@ mod tests {
         })
     }
 
-    fn with_builder<R>(f: impl FnOnce(&mut TreeBuilder<'_, ()>, &mut TextTransformer) -> R) -> R {
+    fn with_builder<R>(
+        f: impl FnOnce(&mut parley::TreeBuilder<'_, ()>, &mut TextTransformer) -> R,
+    ) -> R {
         let mut font_ctx = FontContext::new();
         let mut layout_ctx = LayoutContext::new();
         let mut builder = layout_ctx.tree_builder(&mut font_ctx, 1.0, true, &TextStyle::default());
@@ -774,12 +778,20 @@ mod tests {
     }
 
     fn push(
-        builder: &mut TreeBuilder<'_, ()>,
+        builder: &mut parley::TreeBuilder<'_, ()>,
         transformer: &mut TextTransformer,
         text: &str,
         transform: &CaseTransform,
     ) -> String {
-        let output = transformer.transform(text, transform, builder).0.to_owned();
+        let output = transformer
+            .transform(
+                text,
+                transform,
+                builder.text(),
+                builder.has_pending_whitespace(),
+            )
+            .0
+            .to_owned();
         builder.push_text(&output);
         output
     }
@@ -855,7 +867,7 @@ mod tests {
         };
         with_builder(|builder, transformer| {
             assert_eq!(push(builder, transformer, "abc", &capitalize), "Abc");
-            transformer.word_break(builder);
+            transformer.word_break(builder.text().len());
             assert_eq!(push(builder, transformer, "def", &capitalize), "Def");
         });
     }
@@ -901,8 +913,13 @@ mod tests {
                     lang: LanguageIdentifier::UNKNOWN,
                     ..CaseTransform::NONE
                 };
-                transformer.word_break(builder);
-                let (output, _) = transformer.transform(text, &transform, builder);
+                transformer.word_break(builder.text().len());
+                let (output, _) = transformer.transform(
+                    text,
+                    &transform,
+                    builder.text(),
+                    builder.has_pending_whitespace(),
+                );
                 assert_eq!(output.as_ptr() == text.as_ptr(), borrowed, "{text:?}");
                 builder.push_text(" ");
             }
@@ -978,7 +995,12 @@ mod tests {
             for text in [
                 "", "ab", "a ", " a", "a\u{301}", "∂∇", "1", "+", "é", "\u{3A2}", "ℎ", "𝑎", "😀",
             ] {
-                let (output, _) = transformer.transform(text, &transform, builder);
+                let (output, _) = transformer.transform(
+                    text,
+                    &transform,
+                    builder.text(),
+                    builder.has_pending_whitespace(),
+                );
                 assert_eq!(output, text);
                 assert_eq!(output.as_ptr(), text.as_ptr());
             }
@@ -1115,7 +1137,12 @@ mod tests {
                     text_transform,
                     ..CaseTransform::NONE
                 };
-                let (output, _) = transformer.transform(text, &transform, builder);
+                let (output, _) = transformer.transform(
+                    text,
+                    &transform,
+                    builder.text(),
+                    builder.has_pending_whitespace(),
+                );
                 assert_eq!(output, text);
                 assert_eq!(output.as_ptr(), text.as_ptr(), "{text:?}");
             }
