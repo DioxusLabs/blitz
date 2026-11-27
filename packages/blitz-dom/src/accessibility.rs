@@ -81,6 +81,15 @@ impl BaseDocument {
             nodes.insert(node_id, (id, builder));
         }
 
+        // The focused element can be hidden from the tree (for example by
+        // `display: none`) while it still has DOM focus. AccessKit needs the
+        // focus to be a node in the tree, so fall back to the window.
+        let focus = self
+            .focus_node_id
+            .filter(|id| nodes.contains_key(id))
+            .map(|id| NodeId(id.as_u64()))
+            .unwrap_or(NodeId(u64::MAX));
+
         let mut nodes: Vec<_> = nodes
             .into_iter()
             .map(|(_, (id, node))| (id, node))
@@ -92,7 +101,7 @@ impl BaseDocument {
             tree_id: TreeId::ROOT,
             nodes,
             tree: Some(tree),
-            focus: NodeId(self.focus_node_id.map(|id| id.as_u64()).unwrap_or(u64::MAX)),
+            focus,
         }
     }
 
