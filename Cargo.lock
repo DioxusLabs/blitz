@@ -969,10 +969,6 @@ dependencies = [
  "debug_timer 0.1.3",
  "euclid",
  "html-escape",
- "icu_casemap",
- "icu_locale_core",
- "icu_properties",
- "icu_segmenter",
  "image",
  "keyboard-types",
  "kurbo",
@@ -980,6 +976,7 @@ dependencies = [
  "markup5ever",
  "objc2 0.6.5",
  "parley",
+ "parley_css_text",
  "percent-encoding",
  "png 0.18.1",
  "rayon",
@@ -1000,7 +997,6 @@ dependencies = [
  "url",
  "usvg",
  "web-time",
- "writeable",
  "wuff",
 ]
 
@@ -1191,7 +1187,6 @@ dependencies = [
  "boa_gc",
  "boa_runtime",
  "data-url",
- "icu_properties",
  "keyboard-types",
  "log",
  "markup5ever",
@@ -6264,6 +6259,18 @@ dependencies = [
  "png 0.18.1",
  "syntaxmate",
  "winit",
+]
+
+[[package]]
+name = "parley_css_text"
+version = "0.3.0-beta.6"
+dependencies = [
+ "icu_casemap",
+ "icu_locale_core",
+ "icu_properties",
+ "icu_segmenter",
+ "parley",
+ "writeable",
 ]
 
 [[package]]

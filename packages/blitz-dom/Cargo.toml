@@ -30,7 +30,7 @@ system-fonts = ["parley/system"]
 complex-scripts = ["parley/complex-scripts"]
 # text-transform-icu: language-aware, Unicode-complete case mapping for `text-transform`
 # (otherwise falls back to the standard library's case mapping)
-text-transform-icu = ["dep:icu_casemap", "dep:writeable"]
+text-transform-icu = ["parley_css_text/text-transform-icu"]
 autofocus = []
 floats = ["taffy/float_layout", "stylo_taffy/floats"]
 # CSS vertical `writing-mode` support (layout runs in each box's writing-mode frame; see layout/writing_mode.rs)
@@ -71,17 +71,11 @@ anyrender = { workspace = true, optional = true }
 # Linebender/Fontations dependencies
 accesskit = { workspace = true, optional = true }
 parley = { workspace = true }
+parley_css_text = { workspace = true }
 skrifa = { workspace = true }
 linebender_resource_handle = { workspace = true }
 color = { workspace = true }
 kurbo = { workspace = true }
-
-# Unicode
-icu_casemap = { workspace = true, optional = true }
-icu_locale_core = { workspace = true }
-icu_properties = { workspace = true }
-icu_segmenter = { workspace = true }
-writeable = { workspace = true, optional = true }
 
 # Other dependencies
 slotmap = { workspace = true }

@@ -1,19 +1,12 @@
 //! Selection API bindings and DOM-to-rendered text offset mapping.
 
-use blitz_dom::CopyStyleGetters;
 use std::cell::Cell;
 
-use blitz_dom::node::{INLINE_BOX_CHAR, NodeData, TextLayout};
+use blitz_dom::node::NodeData;
 use blitz_dom::{BaseDocument, Node, NodeId};
 use boa_engine::{
     Context, Finalize, JsData, JsNativeError, JsResult, JsValue, Trace, object::JsObject,
 };
-use icu_properties::{
-    CodePointMapData,
-    props::{GeneralCategory, GeneralCategoryGroup},
-};
-use style::properties::longhands::white_space_collapse::computed_value::T as WhiteSpaceCollapse;
-use style::values::computed::TextTransform;
 
 use super::{define_method, dom_ctx, dom_exception, js_str, node_id_of_value};
 
@@ -185,9 +178,26 @@ fn apply_points(doc: &mut BaseDocument, points: [Point; 2]) {
 }
 
 fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
+    own_point(doc, point).or_else(|| {
+        // An element that renders nothing in an inline layout (e.g. an empty `<span>`) is
+        // positioned by the content next to it.
+        let node = doc.get_node(point.0)?;
+        let root = inline_root(doc, node.id).filter(|&root| root != node.id)?;
+        adjacent_point(doc, node.id, root)
+    })
+}
+
+/// The rendered position of `point` from its own node and descendants.
+fn own_point(doc: &BaseDocument, point: Point) -> Option<Point> {
     let node = doc.get_node(point.0)?;
     if !node.flags.is_in_document() {
         return None;
+    }
+    // A point in a comment renders where the comment sits in its parent.
+    if matches!(node.data, NodeData::Comment { .. }) {
+        let parent = doc.get_node(node.parent?)?;
+        let index = parent.children.iter().position(|&id| id == node.id)?;
+        return rendered_point(doc, (parent.id, index));
     }
     if let Some(root) = inline_root(doc, node.id) {
         let layout = doc
@@ -195,18 +205,15 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
             .element_data()?
             .inline_layout_data
             .as_ref()?;
-        let mut mapper = OffsetMapper {
-            doc,
-            root,
-            layout,
-            text: &layout.text,
-            cursor: 0,
-            collapsed_space: false,
-            point,
-            result: None,
+        let source = match &node.data {
+            NodeData::Text(data) => Some(utf16_to_byte_offset(&data.content, point.1)),
+            // Inline boxes and `<br>` map as one unit: before and after the element.
+            NodeData::Element(_) if node.id != root => Some(usize::from(point.1 > 0)),
+            _ => None,
         };
-        mapper.visit(root);
-        if let Some(offset) = mapper.result {
+        if let Some(offset) =
+            source.and_then(|source| layout.offset_map.layout_offset(node.id, source))
+        {
             return Some((root, offset));
         }
     }
@@ -224,6 +231,29 @@ fn rendered_point(doc: &BaseDocument, point: Point) -> Option<Point> {
         })
 }
 
+/// The rendered position of the nearest content after `id` (or else before it) inside the
+/// inline formatting context of `root`, or the start of `root` if it has none.
+fn adjacent_point(doc: &BaseDocument, mut id: NodeId, root: NodeId) -> Option<Point> {
+    while id != root {
+        let parent = doc.get_node(doc.get_node(id)?.parent?)?;
+        let index = parent.children.iter().position(|&child| child == id)?;
+        let point = parent.children[index + 1..]
+            .iter()
+            .find_map(|&id| subtree_point(doc, id, false))
+            .or_else(|| {
+                parent.children[..index]
+                    .iter()
+                    .rev()
+                    .find_map(|&id| subtree_point(doc, id, true))
+            });
+        if point.is_some() {
+            return point;
+        }
+        id = parent.id;
+    }
+    Some((root, 0))
+}
+
 fn inline_root(doc: &BaseDocument, mut id: NodeId) -> Option<NodeId> {
     loop {
         let node = doc.get_node(id)?;
@@ -239,13 +269,19 @@ fn inline_root(doc: &BaseDocument, mut id: NodeId) -> Option<NodeId> {
 
 fn subtree_point(doc: &BaseDocument, id: NodeId, end: bool) -> Option<Point> {
     let node = doc.get_node(id)?;
+    if matches!(node.data, NodeData::Comment { .. }) {
+        return None;
+    }
     if let NodeData::Text(data) = &node.data {
         let offset = if end {
             data.content.encode_utf16().count()
         } else {
             0
         };
-        return rendered_point(doc, (id, offset));
+        return own_point(doc, (id, offset));
+    }
+    if node.children.is_empty() {
+        return own_point(doc, (id, usize::from(end)));
     }
     if end {
         node.children
@@ -259,174 +295,13 @@ fn subtree_point(doc: &BaseDocument, id: NodeId, end: bool) -> Option<Point> {
     }
 }
 
-struct OffsetMapper<'a> {
-    doc: &'a BaseDocument,
-    root: NodeId,
-    layout: &'a TextLayout,
-    text: &'a str,
-    cursor: usize,
-    collapsed_space: bool,
-    point: Point,
-    result: Option<usize>,
-}
-
-impl OffsetMapper<'_> {
-    fn visit(&mut self, id: NodeId) {
-        let Some(node) = self.doc.get_node(id) else {
-            return;
-        };
-        if node
-            .primary_styles()
-            .is_some_and(|style| style.clone_display() == style::values::computed::Display::None)
-        {
-            return;
+fn utf16_to_byte_offset(text: &str, utf16_offset: usize) -> usize {
+    let mut units = 0;
+    for (index, c) in text.char_indices() {
+        if units >= utf16_offset {
+            return index;
         }
-        if id != self.root
-            && let Some(index) = self.layout.inline_box_char_index(id)
-        {
-            let after = index + INLINE_BOX_CHAR.len_utf8();
-            if id == self.point.0 {
-                self.result = Some(if self.point.1 == 0 { index } else { after });
-            }
-            self.cursor = self.cursor.max(after);
-            self.collapsed_space = false;
-            return;
-        }
-        if id != self.root
-            && node
-                .element_data()
-                .is_some_and(|element| element.inline_layout_data.is_some())
-        {
-            return;
-        }
-        if let NodeData::Text(data) = &node.data {
-            let style = node
-                .parent
-                .and_then(|id| self.doc.get_node(id))
-                .and_then(Node::primary_styles);
-            let transform = style
-                .as_ref()
-                .map_or(TextTransform::NONE, |style| style.clone_text_transform());
-            let whitespace = style
-                .as_ref()
-                .map_or(WhiteSpaceCollapse::Collapse, |style| {
-                    style.clone_white_space_collapse()
-                });
-            let mut units = 0;
-            for c in data.content.chars() {
-                if id == self.point.0 && units >= self.point.1 {
-                    self.result = Some(self.cursor);
-                    return;
-                }
-                self.advance(c, transform, whitespace);
-                units += c.len_utf16();
-            }
-            if id == self.point.0 {
-                self.result = Some(self.cursor);
-            }
-            return;
-        }
-        if node
-            .element_data()
-            .is_some_and(|element| element.name.local == blitz_dom::local_name!("br"))
-        {
-            self.advance('\n', TextTransform::NONE, WhiteSpaceCollapse::Preserve);
-            return;
-        }
-        if let Some(before) = node.before() {
-            self.visit(before);
-        }
-        for (index, &child) in node.children.iter().enumerate() {
-            if id == self.point.0 && index == self.point.1 {
-                self.result = Some(self.cursor);
-                return;
-            }
-            self.visit(child);
-            if self.result.is_some() {
-                return;
-            }
-        }
-        if id == self.point.0 {
-            self.result = Some(self.cursor);
-            return;
-        }
-        if let Some(after) = node.after() {
-            self.visit(after);
-        }
+        units += c.len_utf16();
     }
-
-    fn advance(&mut self, c: char, transform: TextTransform, whitespace: WhiteSpaceCollapse) {
-        let remaining = &self.text[self.cursor..];
-        let collapsible = match whitespace {
-            WhiteSpaceCollapse::Collapse => c.is_ascii_whitespace(),
-            WhiteSpaceCollapse::PreserveBreaks => matches!(c, ' ' | '\t'),
-            _ => false,
-        };
-        if collapsible {
-            if !self.collapsed_space {
-                if remaining.starts_with(' ') {
-                    self.cursor += 1;
-                } else if transform.contains(TextTransform::FULL_WIDTH)
-                    && remaining.starts_with('\u{3000}')
-                {
-                    self.cursor += '\u{3000}'.len_utf8();
-                }
-            }
-            self.collapsed_space = true;
-            return;
-        }
-        self.collapsed_space = false;
-        let mut bytes = [0; 4];
-        let original = c.encode_utf8(&mut bytes);
-        if remaining.starts_with(&*original) {
-            self.cursor += original.len();
-            return;
-        }
-        // Consume case expansions only when they occur in the actual layout text.
-        let map_width = |c| {
-            let c = if transform.contains(TextTransform::FULL_WIDTH) {
-                blitz_dom::full_width(c)
-            } else {
-                c
-            };
-            if transform.contains(TextTransform::FULL_SIZE_KANA) {
-                blitz_dom::full_size_kana(c)
-            } else {
-                c
-            }
-        };
-        let mapped = if transform.contains(TextTransform::UPPERCASE)
-            || transform.contains(TextTransform::CAPITALIZE)
-        {
-            matching_prefix(remaining, c.to_uppercase().map(map_width))
-        } else if transform.contains(TextTransform::LOWERCASE) {
-            matching_prefix(remaining, c.to_lowercase().map(map_width))
-        } else {
-            None
-        };
-        if let Some(bytes) = mapped {
-            self.cursor += bytes;
-        } else if !transform.is_empty()
-            && GeneralCategoryGroup::Mark
-                .contains(CodePointMapData::<GeneralCategory>::new().get(c))
-        {
-            // Tailored casing can remove combining marks (e.g. Greek uppercase acute).
-        } else if let Some(rendered) = remaining.chars().next() {
-            // math-auto, full-width, full-size-kana and one-to-one tailored case mappings preserve
-            // character count.
-            self.cursor += rendered.len_utf8();
-        }
-    }
-}
-
-fn matching_prefix(text: &str, mapped: impl Iterator<Item = char>) -> Option<usize> {
-    let mut text = text.chars();
-    let mut bytes = 0;
-    for c in mapped {
-        if text.next() != Some(c) {
-            return None;
-        }
-        bytes += c.len_utf8();
-    }
-    Some(bytes)
+    text.len()
 }

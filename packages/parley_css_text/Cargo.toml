@@ -1,0 +1,26 @@
+[package]
+name = "parley_css_text"
+description = "CSS text-transform and white space collapsing for Parley, with a map between source and layout text offsets"
+documentation = "https://docs.rs/parley_css_text"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["text-transform-icu"]
+# text-transform-icu: language-aware, Unicode-complete case mapping for `text-transform`
+text-transform-icu = ["dep:icu_casemap", "dep:writeable"]
+
+[dependencies]
+parley = { workspace = true }
+icu_casemap = { workspace = true, optional = true }
+icu_locale_core = { workspace = true }
+icu_properties = { workspace = true }
+icu_segmenter = { workspace = true }
+writeable = { workspace = true, optional = true }
+
+[dev-dependencies]
+parley = { workspace = true, features = ["system"] }
