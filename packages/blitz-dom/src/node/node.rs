@@ -1198,6 +1198,12 @@ impl Node {
             .and_then(|stylo| stylo.primary_styles())
     }
 
+    /// Whether CSS establishes a transform space at this node.
+    pub fn establishes_transform_space(&self) -> bool {
+        self.primary_styles()
+            .is_some_and(|style| stylo_taffy::convert::establishes_transform_space(&style))
+    }
+
     /// A lazy Taffy style backed by this node's primary stylo style.
     ///
     /// Panics if the node has no computed styles: layout always runs after
