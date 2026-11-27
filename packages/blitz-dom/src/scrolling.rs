@@ -4,6 +4,7 @@
 use blitz_traits::events::{BlitzScrollEvent, DomEventData};
 use blitz_traits::node_id::NodeId;
 use style::values::computed::Overflow;
+use style::values::specified::box_::DisplayInside;
 use stylo_taffy::CopyStyleGetters;
 use web_time::{SystemTime, UNIX_EPOCH};
 
@@ -16,26 +17,36 @@ fn node_scroll_range(node: &Node, include_hidden: bool) -> (Point<f64>, Point<f6
         Overflow::Hidden => include_hidden,
         _ => false,
     };
-    let (can_x_scroll, can_y_scroll) = node
+    let (overflow_x, overflow_y) = node
         .primary_styles()
-        .map(|styles| {
-            (
-                scrollable(styles.clone_overflow_x()),
-                scrollable(styles.clone_overflow_y()),
-            )
-        })
-        .unwrap_or((false, false));
+        .map(|styles| (styles.clone_overflow_x(), styles.clone_overflow_y()))
+        .unwrap_or((Overflow::Visible, Overflow::Visible));
+    let can_x_scroll = scrollable(overflow_x);
+    let can_y_scroll = scrollable(overflow_y);
+    let current = *node.scroll_offset();
     let (min, max) = node.scroll_range();
-    (
-        Point {
-            x: if can_x_scroll { min.x } else { 0.0 },
-            y: if can_y_scroll { min.y } else { 0.0 },
-        },
-        Point {
-            x: if can_x_scroll { max.x } else { 0.0 },
-            y: if can_y_scroll { max.y } else { 0.0 },
-        },
-    )
+    let (min_x, max_x) = if can_x_scroll {
+        (min.x, max.x)
+    } else if !include_hidden && overflow_x == Overflow::Hidden {
+        (current.x, current.x)
+    } else {
+        (0.0, 0.0)
+    };
+    let (min_y, max_y) = if can_y_scroll {
+        (min.y, max.y)
+    } else if !include_hidden && overflow_y == Overflow::Hidden {
+        (current.y, current.y)
+    } else {
+        (0.0, 0.0)
+    };
+    (Point { x: min_x, y: min_y }, Point { x: max_x, y: max_y })
+}
+
+fn viewport_axis_scrollable(overflow: Overflow, include_hidden: bool) -> bool {
+    match overflow {
+        Overflow::Visible | Overflow::Auto | Overflow::Scroll => true,
+        Overflow::Hidden | Overflow::Clip => include_hidden,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -203,7 +214,7 @@ impl BaseDocument {
     }
 
     pub(crate) fn clamp_viewport_scroll(&mut self) {
-        let (current, min, max) = self.scroll_state(ScrollTarget::Viewport, false);
+        let (current, min, max) = self.scroll_state(ScrollTarget::Viewport, true);
         let clamped = Point {
             x: current.x.clamp(min.x, max.x),
             y: current.y.clamp(min.y, max.y),
@@ -385,17 +396,22 @@ impl BaseDocument {
             .map_or(Point { x: false, y: false }, Node::contains_overscroll)
     }
 
-    /// The scroller which unconsumed scroll is transferred to: the node's parent, or the
-    /// viewport once the chain runs out of nodes.
+    /// The scroller which unconsumed scroll is transferred to: the node's containing block,
+    /// or the viewport once the chain reaches the root element or runs out of nodes.
     fn next_scroller_in_chain(&self, target: ScrollTarget) -> Option<ScrollTarget> {
         match target {
             ScrollTarget::Viewport => None,
-            ScrollTarget::Node(node_id) => Some(
-                self.nodes
+            ScrollTarget::Node(node_id) => {
+                let root_id = self.try_root_element().map(|root| root.id);
+                let doc_root_id = self.root_node().id;
+                let next = self
+                    .nodes
                     .get(node_id)
-                    .and_then(|node| node.parent)
-                    .map_or(ScrollTarget::Viewport, ScrollTarget::Node),
-            ),
+                    .and_then(|node| node.containing_block().or(node.parent))
+                    .filter(|&cb_id| Some(cb_id) != root_id && cb_id != doc_root_id)
+                    .map_or(ScrollTarget::Viewport, ScrollTarget::Node);
+                Some(next)
+            }
         }
     }
 
@@ -533,6 +549,25 @@ impl BaseDocument {
     /// Duration (in milliseconds) of an animated scroll.
     const SMOOTH_SCROLL_DURATION_MS: f64 = 300.0;
 
+    fn viewport_overflow(&self) -> (Overflow, Overflow, bool) {
+        let Some(root) = self.try_root_element() else {
+            return (Overflow::Visible, Overflow::Visible, false);
+        };
+        let (root_x, root_y) = root
+            .primary_styles()
+            .map(|styles| (styles.clone_overflow_x(), styles.clone_overflow_y()))
+            .unwrap_or((Overflow::Visible, Overflow::Visible));
+        if root_x == Overflow::Visible
+            && root_y == Overflow::Visible
+            && let Some(body) = self.find_body_node()
+            && let Some(styles) = body.primary_styles()
+            && styles.clone_display().inside() != DisplayInside::None
+        {
+            return (styles.clone_overflow_x(), styles.clone_overflow_y(), true);
+        }
+        (root_x, root_y, false)
+    }
+
     /// Returns the current, minimum and maximum scroll offsets for the given
     /// scroll target. `include_hidden` controls whether
     /// `overflow: hidden` axes count as scrollable (they do for programmatic scrolls,
@@ -544,11 +579,15 @@ impl BaseDocument {
     ) -> (Point<f64>, Point<f64>, Point<f64>) {
         match self.canonical_scroll_target(target) {
             ScrollTarget::Viewport => {
+                let (overflow_x, overflow_y, propagated_from_body) = self.viewport_overflow();
+                let can_x_scroll = viewport_axis_scrollable(overflow_x, include_hidden);
+                let can_y_scroll = viewport_axis_scrollable(overflow_y, include_hidden);
+
                 // The viewport scrolls the root element's scrollable overflow, which includes
                 // both the root element itself and any content which overflows it (e.g. when
                 // the root element has a fixed height but its content is taller). A document
                 // without a root element has no scrollable content.
-                let (content_width, content_height) = match self.try_root_element() {
+                let (mut content_width, mut content_height) = match self.try_root_element() {
                     Some(root) => {
                         let layout = root.final_layout();
                         (
@@ -558,14 +597,45 @@ impl BaseDocument {
                     }
                     None => (0.0, 0.0),
                 };
+                if propagated_from_body && let Some(body) = self.find_body_node() {
+                    let body_layout = body.final_layout();
+                    content_width = content_width.max(
+                        (body_layout.location.x + body_layout.size.width.max(body.scroll_width()))
+                            as f64,
+                    );
+                    content_height = content_height.max(
+                        (body_layout.location.y + body_layout.size.height.max(body.scroll_height()))
+                            as f64,
+                    );
+                }
                 let scale = self.viewport.scale() as f64;
                 let window_width = self.viewport.window_size.0 as f64 / scale;
                 let window_height = self.viewport.window_size.1 as f64 / scale;
-                let max = Point {
-                    x: (content_width - window_width).max(0.0),
-                    y: (content_height - window_height).max(0.0),
+                let current = self.viewport_scroll();
+                let raw_max_x = (content_width - window_width).max(0.0);
+                let raw_max_y = (content_height - window_height).max(0.0);
+
+                let (min_x, max_x) = if can_x_scroll {
+                    (0.0, raw_max_x)
+                } else if !include_hidden && matches!(overflow_x, Overflow::Hidden | Overflow::Clip)
+                {
+                    (current.x, current.x)
+                } else {
+                    (0.0, 0.0)
                 };
-                (self.viewport_scroll(), Point::ZERO, max)
+                let (min_y, max_y) = if can_y_scroll {
+                    (0.0, raw_max_y)
+                } else if !include_hidden && matches!(overflow_y, Overflow::Hidden | Overflow::Clip)
+                {
+                    (current.y, current.y)
+                } else {
+                    (0.0, 0.0)
+                };
+                (
+                    current,
+                    Point { x: min_x, y: min_y },
+                    Point { x: max_x, y: max_y },
+                )
             }
             ScrollTarget::Node(node_id) => {
                 let Some(node) = self.nodes.get(node_id) else {
