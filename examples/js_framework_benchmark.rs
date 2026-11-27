@@ -4,7 +4,7 @@
 //! Labels have independent signals and selection uses per-row memos, so neither
 //! operation needs to render the entire list again.
 
-use dioxus::prelude::*;
+use dioxus_native::prelude::*;
 use rand::prelude::*;
 use std::rc::Rc;
 

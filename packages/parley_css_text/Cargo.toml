@@ -4,7 +4,6 @@ description = "CSS text-transform and white space collapsing for Parley, with a 
 documentation = "https://docs.rs/parley_css_text"
 version.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true

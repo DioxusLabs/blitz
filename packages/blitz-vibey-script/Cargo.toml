@@ -4,7 +4,6 @@ description = "JavaScript execution for Blitz using the Boa engine"
 documentation = "https://docs.rs/blitz-vibey-script"
 version.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true
