@@ -331,19 +331,33 @@ pub(crate) fn build_table_context(
             }
         };
 
-        for column in column_sizes.iter_mut() {
-            if column.max.is_auto() {
-                *column = remaining_column;
-            } else if column.max.into_raw().tag() == taffy::CompactLength::PERCENT_TAG {
-                *column = percent_track(column.max.into_raw().value(), 0.0);
+        // Each column's percentage, with the padding and border to add to it
+        // (percentage widths on cells apply to the cell's content box)
+        let mut percent_of = vec![None; column_sizes.len()];
+        for (i, column) in column_sizes.iter().enumerate() {
+            if column.max.into_raw().tag() == taffy::CompactLength::PERCENT_TAG {
+                percent_of[i] = Some((column.max.into_raw().value(), 0.0));
             }
         }
-
-        // Percentage widths on cells apply to the cell's content box, so the
-        // cell's horizontal padding and border must be added to the column width.
         for (col_idx, percent, extra) in percent_columns {
-            if let Some(column) = column_sizes.get_mut(col_idx as usize) {
-                *column = percent_track(percent, extra);
+            if let Some(slot) = percent_of.get_mut(col_idx as usize) {
+                *slot = Some((percent, extra));
+            }
+        }
+        // Percentages adding up to more than 100% are scaled down to share the
+        // table, as browsers do
+        let total: f32 = percent_of.iter().flatten().map(|(p, _)| *p).sum();
+        let overfull = total > 1.0;
+
+        for (i, column) in column_sizes.iter_mut().enumerate() {
+            if let Some((percent, extra)) = percent_of[i] {
+                *column = if overfull {
+                    percent_track(percent / total, 0.0)
+                } else {
+                    percent_track(percent, extra)
+                };
+            } else if column.max.is_auto() {
+                *column = remaining_column;
             }
         }
     }
