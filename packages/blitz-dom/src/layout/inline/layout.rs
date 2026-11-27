@@ -811,10 +811,19 @@ impl LayoutPassState<'_> {
         let (alignment, last_line_alignment) = self.nodes[node_id]
             .primary_styles()
             .map(|s| {
-                (
-                    stylo_to_parley::text_align(s.clone_text_align()),
-                    stylo_to_parley::text_align_last(s.clone_text_align_last()),
-                )
+                use parley::layout::Alignment;
+                let mut alignment = stylo_to_parley::text_align(s.clone_text_align());
+                let mut last_line = stylo_to_parley::text_align_last(s.clone_text_align_last());
+                if s.get_inherited_text().text_justify == style::values::computed::TextJustify::None
+                {
+                    if alignment == Alignment::Justify {
+                        alignment = Alignment::Start;
+                    }
+                    if last_line == Some(Alignment::Justify) {
+                        last_line = Some(Alignment::Start);
+                    }
+                }
+                (alignment, last_line)
             })
             .unwrap_or((parley::layout::Alignment::Start, None));
 
