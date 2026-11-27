@@ -526,10 +526,15 @@ impl ElementCx<'_, '_> {
         let image_rendering = self.style.clone_image_rendering();
         let quality = to_image_quality(image_rendering);
 
-        let (origin_rect, base_transform) = if self.layer_is_fixed(layer) {
-            self.fixed_positioning_area()
+        let (origin_rect, base_transform, clip_rect) = if self.layer_is_fixed(layer) {
+            let (origin, transform) = self.fixed_positioning_area();
+            (origin, transform, origin)
         } else {
-            (self.box_rect(layer.origin), self.transform)
+            (
+                self.box_rect(layer.origin),
+                self.transform,
+                self.box_rect(layer.clip),
+            )
         };
 
         let image_width = image_data.width as f64;
@@ -552,8 +557,8 @@ impl ElementCx<'_, '_> {
 
         let x = raster_axis_tiling(
             *repeat_x,
-            origin_rect.x0,
-            origin_rect.width(),
+            (origin_rect.x0, origin_rect.width()),
+            (clip_rect.x0, clip_rect.width()),
             bg_pos.x,
             bg_size.width,
             image_width,
@@ -561,8 +566,8 @@ impl ElementCx<'_, '_> {
         );
         let y = raster_axis_tiling(
             *repeat_y,
-            origin_rect.y0,
-            origin_rect.height(),
+            (origin_rect.y0, origin_rect.height()),
+            (clip_rect.y0, clip_rect.height()),
             bg_pos.y,
             bg_size.height,
             image_height,
@@ -903,8 +908,8 @@ struct AxisTiling {
 /// pre-scaled by `ratio`), while translations are in device pixels.
 fn raster_axis_tiling(
     repeat: BackgroundRepeatKeyword,
-    origin_start: f64,
-    origin_len: f64,
+    (origin_start, origin_len): (f64, f64),
+    (clip_start, clip_len): (f64, f64),
     bg_pos: f64,
     tile_len: f64,
     image_len: f64,
@@ -914,18 +919,27 @@ fn raster_axis_tiling(
 
     match repeat {
         Repeat | Round => {
-            let extend_len = extend(bg_pos, tile_len);
+            let area_start = clip_start.min(origin_start);
+            let area_end = (clip_start + clip_len).max(origin_start + origin_len);
+            let extend_len = extend(origin_start - area_start + bg_pos, tile_len);
             AxisTiling {
-                translate: origin_start - extend_len,
-                rect_len: (origin_len + extend_len) / ratio,
+                translate: area_start - extend_len,
+                rect_len: (area_end - area_start + extend_len) / ratio,
                 count: 1,
                 stride: 0.0,
             }
         }
         Space => {
-            let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            let (translate, count, stride) = space_tiles(
+                origin_start,
+                origin_len,
+                clip_start,
+                clip_len,
+                bg_pos,
+                tile_len,
+            );
             AxisTiling {
-                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                translate,
                 rect_len: image_len,
                 count,
                 stride,
@@ -976,9 +990,16 @@ fn gradient_axis_tiling(
             }
         }
         Space => {
-            let (count, stride) = compute_space_count_and_stride(origin_len, tile_len);
+            let (translate, count, stride) = space_tiles(
+                origin_start,
+                origin_len,
+                clip_start,
+                clip_len,
+                bg_pos,
+                tile_len,
+            );
             AxisTiling {
-                translate: origin_start + if count == 1 { bg_pos } else { 0.0 },
+                translate,
                 rect_len: tile_len,
                 count,
                 stride,
@@ -991,6 +1012,25 @@ fn gradient_axis_tiling(
             stride: 0.0,
         },
     }
+}
+
+fn space_tiles(
+    origin: f64,
+    origin_len: f64,
+    clip: f64,
+    clip_len: f64,
+    position: f64,
+    tile: f64,
+) -> (f64, u32, f64) {
+    let (count, stride) = compute_space_count_and_stride(origin_len, tile);
+    if count == 1 {
+        return (origin + position, count, stride);
+    }
+    let first = ((clip - origin) / stride).floor().min(0.0);
+    let end = ((clip - origin + clip_len) / stride)
+        .ceil()
+        .max(f64::from(count));
+    (origin + first * stride, (end - first) as u32, stride)
 }
 
 fn compute_space_count_and_stride(bg_size: f64, size: f64) -> (u32, f64) {
