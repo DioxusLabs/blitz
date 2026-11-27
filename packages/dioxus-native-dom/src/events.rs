@@ -211,6 +211,21 @@ impl NodeHandle {
         let err = MountedError::OperationFailed(Box::new(NodeNotExistErr(node_id)));
         Box::pin(async move { Err(err) })
     }
+
+    fn pointer_capture_op(
+        &self,
+        pointer_id: i32,
+        op: impl FnOnce(BlitzPointerId) -> bool,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
+            let err = MountedError::OperationFailed(Box::new(InvalidPointerIdErr(pointer_id)));
+            return Box::pin(async move { Err(err) });
+        };
+        if !op(pointer_id) {
+            return self.node_not_exist_err();
+        }
+        Box::pin(async { Ok(()) })
+    }
 }
 
 #[derive(Debug)]
@@ -348,34 +363,22 @@ impl RenderedElementBacking for NodeHandle {
         &self,
         pointer_id: i32,
     ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
-            return invalid_pointer_id_err(pointer_id);
-        };
-        if !NodeHandle::set_pointer_capture(self, pointer_id) {
-            return self.node_not_exist_err();
-        }
-        Box::pin(async { Ok(()) })
+        self.pointer_capture_op(pointer_id, |id| NodeHandle::set_pointer_capture(self, id))
     }
 
     fn release_pointer_capture(
         &self,
         pointer_id: i32,
     ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
-            return invalid_pointer_id_err(pointer_id);
-        };
-        if self.doc().get_node(self.node_id).is_none() {
-            return self.node_not_exist_err();
-        }
-        // Releasing a pointer that this node has not captured does nothing, as on the web
-        NodeHandle::release_pointer_capture(self, pointer_id);
-        Box::pin(async { Ok(()) })
+        self.pointer_capture_op(pointer_id, |id| {
+            if self.doc().get_node(self.node_id).is_none() {
+                return false;
+            }
+            // Releasing a pointer that this node has not captured does nothing, as on the web
+            NodeHandle::release_pointer_capture(self, id);
+            true
+        })
     }
-}
-
-fn invalid_pointer_id_err(pointer_id: i32) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-    let err = MountedError::OperationFailed(Box::new(InvalidPointerIdErr(pointer_id)));
-    Box::pin(async move { Err(err) })
 }
 
 #[derive(Clone, Debug)]
@@ -1010,6 +1013,21 @@ mod tests {
     }
 
     #[test]
+    fn pointer_data_uses_blitz_ids_and_kinds() {
+        let mut event = finger_event(7, 1.0, 2.0);
+        for (id, kind) in [
+            (BlitzPointerId::mouse(), "mouse"),
+            (BlitzPointerId::pen(), "pen"),
+            (event.id, "touch"),
+        ] {
+            event.id = id;
+            let data = NativePointerData(event.clone());
+            assert_eq!(data.pointer_id(), id.as_i32());
+            assert_eq!(data.pointer_type(), kind);
+        }
+    }
+
+    #[test]
     fn touches_reports_all_active_pointers() {
         let f0 = finger_event(0, 10.0, 20.0);
         let f1 = finger_event(1, 30.0, 40.0);
@@ -1041,6 +1059,8 @@ mod tests {
         // ... while `changed_touches` reports only the triggering touch.
         assert_eq!(data.touches_changed().len(), 1);
         let changed = data.touches_changed();
+        let changed_touch = changed[0].downcast::<NativeTouchPointData>().unwrap();
+        assert_eq!(changed_touch.identifier(), f1.id.as_i32());
         let changed_coords = changed[0].client_coordinates();
         assert_eq!((changed_coords.x, changed_coords.y), (30.0, 40.0));
     }
