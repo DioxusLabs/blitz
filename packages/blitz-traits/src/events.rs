@@ -156,6 +156,8 @@ pub enum DomEventKind {
     PointerDown,
     PointerUp,
     PointerCancel,
+    GotPointerCapture,
+    LostPointerCapture,
     PointerEnter,
     PointerLeave,
     PointerOver,
@@ -176,6 +178,7 @@ pub enum DomEventKind {
 
     Scroll,
     Wheel,
+    Resize,
 
     Click,
     ContextMenu,
@@ -212,6 +215,8 @@ impl FromStr for DomEventKind {
             "pointerdown" => Ok(Self::PointerDown),
             "pointerup" => Ok(Self::PointerUp),
             "pointercancel" => Ok(Self::PointerCancel),
+            "gotpointercapture" => Ok(Self::GotPointerCapture),
+            "lostpointercapture" => Ok(Self::LostPointerCapture),
             "pointerenter" => Ok(Self::PointerEnter),
             "pointerleave" => Ok(Self::PointerLeave),
             "pointerover" => Ok(Self::PointerOver),
@@ -232,6 +237,7 @@ impl FromStr for DomEventKind {
 
             "scroll" => Ok(Self::Scroll),
             "wheel" => Ok(Self::Wheel),
+            "resize" => Ok(Self::Resize),
 
             "click" => Ok(Self::Click),
             "contextmenu" => Ok(Self::ContextMenu),
@@ -263,6 +269,10 @@ pub enum DomEventData {
     PointerDown(BlitzPointerEvent),
     PointerUp(BlitzPointerEvent),
     PointerCancel(BlitzPointerEvent),
+    /// The target has started capturing the event's pointer
+    GotPointerCapture(BlitzPointerEvent),
+    /// The target has stopped capturing the event's pointer
+    LostPointerCapture(BlitzPointerEvent),
     PointerEnter(BlitzPointerEvent),
     PointerLeave(BlitzPointerEvent),
     PointerOver(BlitzPointerEvent),
@@ -283,6 +293,7 @@ pub enum DomEventData {
 
     Scroll(BlitzScrollEvent),
     Wheel(BlitzWheelEvent),
+    Resize(BlitzResizeEvent),
 
     Click(BlitzPointerEvent),
     ContextMenu(BlitzPointerEvent),
@@ -323,6 +334,8 @@ impl DomEventData {
             Self::PointerDown { .. } => "pointerdown",
             Self::PointerUp { .. } => "pointerup",
             Self::PointerCancel { .. } => "pointercancel",
+            Self::GotPointerCapture { .. } => "gotpointercapture",
+            Self::LostPointerCapture { .. } => "lostpointercapture",
             Self::PointerEnter { .. } => "pointerenter",
             Self::PointerLeave { .. } => "pointerleave",
             Self::PointerOver { .. } => "pointerover",
@@ -343,6 +356,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => "scroll",
             Self::Wheel { .. } => "wheel",
+            Self::Resize { .. } => "resize",
 
             Self::Click { .. } => "click",
             Self::ContextMenu { .. } => "contextmenu",
@@ -374,6 +388,8 @@ impl DomEventData {
             Self::PointerDown { .. } => DomEventKind::PointerDown,
             Self::PointerUp { .. } => DomEventKind::PointerUp,
             Self::PointerCancel { .. } => DomEventKind::PointerCancel,
+            Self::GotPointerCapture { .. } => DomEventKind::GotPointerCapture,
+            Self::LostPointerCapture { .. } => DomEventKind::LostPointerCapture,
             Self::PointerEnter { .. } => DomEventKind::PointerEnter,
             Self::PointerLeave { .. } => DomEventKind::PointerLeave,
             Self::PointerOver { .. } => DomEventKind::PointerOver,
@@ -394,6 +410,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => DomEventKind::Scroll,
             Self::Wheel { .. } => DomEventKind::Wheel,
+            Self::Resize { .. } => DomEventKind::Resize,
 
             Self::Click { .. } => DomEventKind::Click,
             Self::ContextMenu { .. } => DomEventKind::ContextMenu,
@@ -425,6 +442,8 @@ impl DomEventData {
             Self::PointerDown { .. } => true,
             Self::PointerUp { .. } => true,
             Self::PointerCancel { .. } => false,
+            Self::GotPointerCapture { .. } => false,
+            Self::LostPointerCapture { .. } => false,
             Self::PointerEnter { .. } => false,
             Self::PointerLeave { .. } => false,
             Self::PointerOver { .. } => true,
@@ -445,6 +464,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+            Self::Resize { .. } => false,
 
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
@@ -476,6 +496,8 @@ impl DomEventData {
             Self::PointerDown { .. } => true,
             Self::PointerUp { .. } => true,
             Self::PointerCancel { .. } => true,
+            Self::GotPointerCapture { .. } => true,
+            Self::LostPointerCapture { .. } => true,
             Self::PointerEnter { .. } => false,
             Self::PointerLeave { .. } => false,
             Self::PointerOver { .. } => true,
@@ -496,6 +518,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+            Self::Resize { .. } => false,
 
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
@@ -602,11 +625,89 @@ pub struct HitResult {
     pub y: f32,
 }
 
+/// The kind of device a [`BlitzPointerId`] belongs to
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum BlitzPointerId {
+pub enum PointerKind {
     Mouse,
     Pen,
-    Finger(u64),
+    Finger,
+}
+
+/// A pointer's DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BlitzPointerId(i32);
+
+impl BlitzPointerId {
+    const FIRST_FINGER_ID: i32 = 2;
+
+    pub const MOUSE: Self = Self(0);
+    pub const PEN: Self = Self(1);
+
+    /// The largest finger index [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
+    pub const MAX_INDEX: u64 = (i32::MAX - Self::FIRST_FINGER_ID) as u64;
+
+    #[inline(always)]
+    pub const fn mouse() -> Self {
+        Self::MOUSE
+    }
+
+    #[inline(always)]
+    pub const fn pen() -> Self {
+        Self::PEN
+    }
+
+    /// The ID of the finger with the given index, placed after the mouse and pen IDs
+    #[inline(always)]
+    pub const fn finger(index: u64) -> Self {
+        debug_assert!(index <= Self::MAX_INDEX);
+        Self(index as i32 + Self::FIRST_FINGER_ID)
+    }
+
+    /// The pointer with the given DOM `pointerId` (the inverse of [`Self::as_i32`])
+    #[inline(always)]
+    pub const fn from_i32(id: i32) -> Option<Self> {
+        if id >= 0 { Some(Self(id)) } else { None }
+    }
+
+    /// The DOM `pointerId`
+    #[inline(always)]
+    pub const fn as_i32(self) -> i32 {
+        self.0
+    }
+
+    #[inline(always)]
+    pub const fn kind(self) -> PointerKind {
+        match self.0 {
+            0 => PointerKind::Mouse,
+            1 => PointerKind::Pen,
+            _ => PointerKind::Finger,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn is_mouse(self) -> bool {
+        self.0 == Self::MOUSE.0
+    }
+
+    #[inline(always)]
+    pub const fn is_pen(self) -> bool {
+        self.0 == Self::PEN.0
+    }
+
+    #[inline(always)]
+    pub const fn is_finger(self) -> bool {
+        self.0 >= Self::FIRST_FINGER_ID
+    }
+
+    /// The index passed to [`Self::finger`], or `None` for the mouse and pen
+    #[inline(always)]
+    pub const fn finger_index(self) -> Option<u64> {
+        if self.is_finger() {
+            Some((self.0 - Self::FIRST_FINGER_ID) as u64)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -662,15 +763,15 @@ pub struct BlitzPointerEvent {
 impl BlitzPointerEvent {
     #[inline(always)]
     pub fn is_mouse(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Mouse)
+        self.id.is_mouse()
     }
     #[inline(always)]
     pub fn is_pen(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Pen)
+        self.id.is_pen()
     }
     #[inline(always)]
     pub fn is_finger(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Finger(_))
+        self.id.is_finger()
     }
 
     #[inline(always)]
@@ -811,6 +912,18 @@ pub struct BlitzScrollEvent {
     pub scroll_height: i32,
     pub client_width: i32,
     pub client_height: i32,
+}
+
+/// Element size reported by a resize observer after layout.
+///
+/// Sizes are in CSS pixels along the element's inline (`*_width`) and block
+/// (`*_height`) axes, matching `ResizeObserverSize` (`inlineSize`, `blockSize`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlitzResizeEvent {
+    pub border_box_width: f32,
+    pub border_box_height: f32,
+    pub content_box_width: f32,
+    pub content_box_height: f32,
 }
 
 // struct PointerInputState {

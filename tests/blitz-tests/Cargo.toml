@@ -22,8 +22,8 @@ anyrender = { workspace = true }
 anyrender_vello_cpu = { workspace = true }
 
 # DioxusLabs dependencies
-dioxus = { workspace = true }
 dioxus-core = { workspace = true }
+dioxus-vdom = { workspace = true }
 
 # Other dependencies
 style = { workspace = true }

@@ -1,5 +1,5 @@
 use crate::NodeTree;
-use crate::events::{DragMode, WheelGesture, handle_dom_event};
+use crate::events::{DragMode, EventQueue, WheelGesture, handle_dom_event};
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
@@ -23,7 +23,10 @@ use crate::{
 use bitflags::bitflags;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::EventDispatchSource;
-use blitz_traits::events::{BlitzFocusEvent, DomEvent, DomEventData, HitResult, UiEvent};
+use blitz_traits::events::{
+    BlitzFocusEvent, BlitzPointerEvent, BlitzPointerId, BlitzResizeEvent, DomEvent, DomEventData,
+    HitResult, MouseEventButtons, PointerCoords, UiEvent,
+};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::node_id::NodeId;
@@ -36,7 +39,7 @@ use selectors::matching::QuirksMode;
 use smallvec::SmallVec;
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -141,10 +144,57 @@ pub trait Document: Any + 'static {
     }
 
     /// Poll any pending async operations, and flush changes to the underlying [`BaseDocument`]
+    ///
+    /// The default implementation dispatches the events queued on the document (running
+    /// their default actions) and returns whether there were any.
     fn poll(&mut self, task_context: Option<TaskContext>) -> bool {
-        // Default implementation does nothing
         let _ = task_context;
-        false
+        let mut doc = self.inner_mut();
+        if !doc.has_pending_events() {
+            return false;
+        }
+        EventDriver::new(&mut *doc, NoopEventHandler).flush_pending_events();
+        true
+    }
+
+    /// Resolve style and layout, then dispatch any events that resolving queued (such as
+    /// resize observer notifications) and resolve again, so that changes made by their
+    /// handlers are painted in the same frame.
+    ///
+    /// The loop is capped. If events are still pending when the cap is reached, `waker` is
+    /// woken so that they are dispatched by a later [`poll`](Self::poll).
+    fn resolve_and_settle(&mut self, animation_time: f64, waker: Option<&Waker>) {
+        const MAX_SETTLE_PASSES: usize = 3;
+
+        for pass in 0..=MAX_SETTLE_PASSES {
+            let has_pending_events = {
+                let mut inner = self.inner_mut();
+                inner.resolve(animation_time);
+                inner.has_pending_events()
+            };
+            // Settled: resolving queued no events
+            if !has_pending_events {
+                break;
+            }
+            if pass == MAX_SETTLE_PASSES {
+                if let Some(waker) = waker {
+                    waker.wake_by_ref();
+                }
+                break;
+            }
+
+            // Dispatch the queued events, then loop to resolve again: their handlers and
+            // default actions may have changed the document, even if `poll` returns false.
+            let changed = self.poll(waker.map(TaskContext::from_waker));
+
+            // The exception is a `poll` that left the events in the queue and changed
+            // nothing (an implementation that doesn't dispatch queued events). Resolving
+            // again would give the same result, so stop rather than spin until the cap.
+            let events_not_dispatched = !changed && self.inner().has_pending_events();
+            if events_not_dispatched {
+                break;
+            }
+        }
     }
 
     /// Get the [`Document`]'s id
@@ -190,6 +240,12 @@ pub enum DocumentEvent {
         node_id: NodeId,
         url: Url,
     },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ResizeObserverEntry {
+    pub(crate) count: u32,
+    pub(crate) last_size: Option<BlitzResizeEvent>,
 }
 
 pub struct BaseDocument {
@@ -268,6 +324,8 @@ pub struct BaseDocument {
     pub(crate) hover_node_is_text: bool,
     /// The last known pointer position in client coordinates (viewport-relative, unscrolled).
     pub(crate) last_client_pointer_position: Option<taffy::Point<f32>>,
+    /// The node each captured pointer's events are sent to, instead of the node under it
+    pub(crate) pointer_captures: SmallVec<[(BlitzPointerId, NodeId); 2]>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<NodeId>,
     /// The node which is currently active (if any)
@@ -291,7 +349,9 @@ pub struct BaseDocument {
     pub(crate) scroll_animation: ScrollAnimationState,
     /// Events which have been generated but not yet dispatched. Drained by the
     /// [`EventDriver`](crate::EventDriver).
-    pub(crate) pending_events: VecDeque<DomEvent>,
+    pub(crate) pending_events: EventQueue,
+    /// Nodes being observed for layout size changes, refcounted per node.
+    pub(crate) resize_observers: HashMap<NodeId, ResizeObserverEntry>,
     /// The trackpad scroll gesture under way, locked to its main axis
     pub(crate) wheel_gesture: WheelGesture,
 
@@ -531,10 +591,12 @@ impl BaseDocument {
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
             drag_mode: DragMode::None,
+            pointer_captures: SmallVec::new(),
             hovered_scrollbar: None,
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
-            pending_events: VecDeque::new(),
+            pending_events: EventQueue::default(),
+            resize_observers: HashMap::new(),
             wheel_gesture: WheelGesture::default(),
             text_selection: TextSelection::default(),
             scratch: DocumentScratch::default(),
@@ -717,32 +779,17 @@ impl BaseDocument {
     /// [`set_focus_to`](Self::set_focus_to), embedder code) can generate them without
     /// access to a driver.
     ///
-    /// A `scroll` event replaces a `scroll` event for the same target at the back of the
-    /// queue, so scrolling a node several times before the queue is drained dispatches
-    /// one event with the latest scroll position. Only the back of the queue is
-    /// considered, which keeps `scroll` events in order relative to other events.
+    /// A `scroll` or `resize` event replaces an event of the same kind for the same target
+    /// at the back of the queue, so several of them queued before the queue is drained
+    /// dispatch one event with the latest data. Only the back of the queue is considered,
+    /// which keeps these events in order relative to other events.
     pub fn queue_event(&mut self, event: DomEvent) {
-        if matches!(event.data, DomEventData::Scroll(_))
-            && let Some(last) = self.pending_events.back_mut()
-            && matches!(last.data, DomEventData::Scroll(_))
-            && last.target == event.target
-            && last.source == event.source
-        {
-            *last = event;
-            return;
-        }
-
-        // Bound the queue in case the embedder never drains it
-        const MAX_PENDING_EVENTS: usize = 1024;
-        if self.pending_events.len() >= MAX_PENDING_EVENTS {
-            self.pending_events.pop_front();
-        }
-        self.pending_events.push_back(event);
+        self.pending_events.push(event);
     }
 
     /// [Queue](Self::queue_event) an event generated by the engine itself
     pub(crate) fn queue_ua_event(&mut self, target: NodeId, data: DomEventData) {
-        self.queue_event(DomEvent::new(target, data, EventDispatchSource::UserAgent));
+        self.pending_events.push_ua_event(target, data);
     }
 
     /// Take the next queued event (see [`queue_event`](Self::queue_event)), discarding
@@ -752,7 +799,7 @@ impl BaseDocument {
     /// as an event can be dispatched to a node that is not in the document.
     pub fn pop_pending_event(&mut self) -> Option<DomEvent> {
         loop {
-            let event = self.pending_events.pop_front()?;
+            let event = self.pending_events.pop()?;
             if self.nodes.contains_key(event.target) {
                 return Some(event);
             }
@@ -762,6 +809,91 @@ impl BaseDocument {
     /// Whether there are queued events waiting to be dispatched
     pub fn has_pending_events(&self) -> bool {
         !self.pending_events.is_empty()
+    }
+
+    /// Observe `node_id` for layout size changes. Observations are reference-counted per node:
+    /// each call to `observe_resize` should be paired with a matching [`unobserve_resize`](Self::unobserve_resize).
+    /// A node stays observed while detached from the document, and is automatically unobserved
+    /// when it is dropped.
+    pub fn observe_resize(&mut self, node_id: NodeId) {
+        self.resize_observers
+            .entry(node_id)
+            .and_modify(|entry| entry.count = entry.count.saturating_add(1))
+            .or_insert(ResizeObserverEntry {
+                count: 1,
+                last_size: None,
+            });
+    }
+
+    /// Stop observing `node_id` for layout size changes (decrements its observer count and
+    /// removes the entry once the count reaches zero).
+    pub fn unobserve_resize(&mut self, node_id: NodeId) {
+        if let std::collections::hash_map::Entry::Occupied(mut entry) =
+            self.resize_observers.entry(node_id)
+        {
+            if entry.get().count <= 1 {
+                entry.remove();
+            } else {
+                entry.get_mut().count -= 1;
+            }
+        }
+    }
+
+    /// Check all resize-observed nodes against their latest resolved layout and queue
+    /// `DomEventData::Resize` events for any whose size changed (or which have not yet reported).
+    pub(crate) fn check_resize_observers(&mut self) {
+        if self.resize_observers.is_empty() {
+            return;
+        }
+
+        let nodes = &self.nodes;
+        let pending_events = &mut self.pending_events;
+        self.resize_observers.retain(|&node_id, entry| {
+            // The node was dropped: stop observing it
+            let Some(node) = nodes.get(node_id) else {
+                return false;
+            };
+            // A detached node stays observed, as it may be re-attached
+            if !node.flags.is_in_document() {
+                return true;
+            }
+
+            let layout = node.final_layout();
+            #[cfg(feature = "writing-mode")]
+            let vertical = node.layout_data().writing_mode.is_vertical();
+            #[cfg(not(feature = "writing-mode"))]
+            let vertical = false;
+
+            let (border_box_width, border_box_height, content_box_width, content_box_height) =
+                if vertical {
+                    (
+                        layout.size.height,
+                        layout.size.width,
+                        layout.content_box_height(),
+                        layout.content_box_width(),
+                    )
+                } else {
+                    (
+                        layout.size.width,
+                        layout.size.height,
+                        layout.content_box_width(),
+                        layout.content_box_height(),
+                    )
+                };
+
+            let current = BlitzResizeEvent {
+                border_box_width,
+                border_box_height,
+                content_box_width,
+                content_box_height,
+            };
+
+            if entry.last_size != Some(current) {
+                entry.last_size = Some(current);
+                pending_events.push_ua_event(node_id, DomEventData::Resize(current));
+            }
+            true
+        });
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -1075,6 +1207,8 @@ impl BaseDocument {
         if self.mousedown_node_id == Some(node_id) {
             self.mousedown_node_id = None;
         }
+        self.pointer_captures
+            .retain(|(_, target)| *target != node_id);
         if self.text_selection.anchor.node_or_parent == Some(node_id)
             || self.text_selection.focus.node_or_parent == Some(node_id)
         {
@@ -1273,8 +1407,9 @@ impl BaseDocument {
     }
 
     pub fn process_style_element(&mut self, target_id: NodeId) {
+        // The document parser already supplies the style element's text.
+        // HTML raw text and XML CDATA must retain literal entity spellings.
         let css = self.nodes[target_id].text_content();
-        let css = html_escape::decode_html_entities(&css);
         let sheet = self.make_stylesheet(&css, Origin::Author);
         self.add_stylesheet_for_node(sheet, target_id);
     }
@@ -2101,15 +2236,35 @@ impl BaseDocument {
         // not reference layout-generated nodes, whose ids die on box-tree
         // reconstruction).
         let hit_node_id = hit.map(|hit| hit.node_id);
-        let hover_node_id = hit_node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
         let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
 
+        self.set_hover_node(hit_node_id, new_is_text) || scrollbar_changed
+    }
+
+    /// Like [`Self::set_hover_to`], except that a captured pointer hovers its capture
+    /// target wherever it is, so the target keeps `:hover` and its cursor during a drag.
+    pub fn set_pointer_hover_to(&mut self, pointer_id: BlitzPointerId, x: f32, y: f32) -> bool {
+        let Some(target) = self.pointer_capture_target(pointer_id) else {
+            return self.set_hover_to(x, y);
+        };
+
+        self.last_client_pointer_position = Some(taffy::Point {
+            x: x - self.viewport_scroll().x as f32,
+            y: y - self.viewport_scroll().y as f32,
+        });
+        self.set_hover_node(Some(target), false)
+    }
+
+    /// Hover the given (possibly anonymous) node, returning whether the hovered node changed
+    fn set_hover_node(&mut self, hit_node_id: Option<NodeId>, is_text: bool) -> bool {
+        let hover_node_id = hit_node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
+
         self.hover_hit_node_id = hit_node_id;
-        self.hover_node_is_text = new_is_text;
+        self.hover_node_is_text = is_text;
 
         // Return early if the new node is the same as the already-hovered node
         if hover_node_id == self.hover_node_id {
-            return scrollbar_changed;
+            return false;
         }
 
         let old_node_path = self.maybe_node_element_ancestors(self.hover_node_id);
@@ -2167,6 +2322,10 @@ impl BaseDocument {
         let Some(pos) = self.last_client_pointer_position else {
             return false;
         };
+        // A captured pointer hovers its capture target, whatever is under it
+        if !self.pointer_captures.is_empty() {
+            return false;
+        }
         let x = pos.x + self.viewport_scroll().x as f32;
         let y = pos.y + self.viewport_scroll().y as f32;
         let prev_hover = self.hover_state();
@@ -2193,6 +2352,91 @@ impl BaseDocument {
     /// sub-document is only known once the sub-document has handled the event.
     pub(crate) fn update_cursor(&self) {
         self.shell_provider.set_cursor(self.get_cursor());
+    }
+
+    /// The node that the given pointer is captured by (if any)
+    pub fn pointer_capture_target(&self, pointer_id: BlitzPointerId) -> Option<NodeId> {
+        self.pointer_captures
+            .iter()
+            .find(|(id, _)| *id == pointer_id)
+            .map(|(_, target)| *target)
+    }
+
+    /// Whether the given node has captured the given pointer
+    pub fn has_pointer_capture(&self, node_id: NodeId, pointer_id: BlitzPointerId) -> bool {
+        self.pointer_capture_target(pointer_id) == Some(node_id)
+    }
+
+    /// Send the given pointer's events to the given node instead of the node under the
+    /// pointer, until the pointer is released or cancelled or the capture is released.
+    ///
+    /// This replaces any other node's capture of the pointer. Returns `false` if the node
+    /// is not in the document.
+    pub fn set_pointer_capture(&mut self, node_id: NodeId, pointer_id: BlitzPointerId) -> bool {
+        if !self
+            .get_node(node_id)
+            .is_some_and(|node| node.flags.is_in_document())
+        {
+            return false;
+        }
+        if self.has_pointer_capture(node_id, pointer_id) {
+            return true;
+        }
+
+        self.release_pointer_capture(pointer_id, None);
+        self.pointer_captures.push((pointer_id, node_id));
+        self.queue_event(DomEvent::new(
+            node_id,
+            DomEventData::GotPointerCapture(self.pointer_capture_event(pointer_id)),
+            EventDispatchSource::UserAgent,
+        ));
+        true
+    }
+
+    /// Stop capturing the given pointer, returning whether it was captured. If `node_id`
+    /// is given then the capture is only released if that node holds it.
+    pub fn release_pointer_capture(
+        &mut self,
+        pointer_id: BlitzPointerId,
+        node_id: Option<NodeId>,
+    ) -> bool {
+        let Some(idx) = self.pointer_captures.iter().position(|(id, target)| {
+            *id == pointer_id && node_id.is_none_or(|node_id| node_id == *target)
+        }) else {
+            return false;
+        };
+
+        let (_, target) = self.pointer_captures.remove(idx);
+        self.queue_event(DomEvent::new(
+            target,
+            DomEventData::LostPointerCapture(self.pointer_capture_event(pointer_id)),
+            EventDispatchSource::UserAgent,
+        ));
+        true
+    }
+
+    /// The data of a got/lost pointer capture event, which no input event stands behind
+    fn pointer_capture_event(&self, pointer_id: BlitzPointerId) -> BlitzPointerEvent {
+        let client = self.last_client_pointer_position.unwrap_or_default();
+        let scroll = self.viewport_scroll();
+        BlitzPointerEvent {
+            id: pointer_id,
+            is_primary: true,
+            coords: PointerCoords {
+                page_x: client.x + scroll.x as f32,
+                page_y: client.y + scroll.y as f32,
+                screen_x: client.x,
+                screen_y: client.y,
+                client_x: client.x,
+                client_y: client.y,
+            },
+            button: Default::default(),
+            buttons: MouseEventButtons::None,
+            mods: Default::default(),
+            details: Default::default(),
+            element: Default::default(),
+            active_pointers: Default::default(),
+        }
     }
 
     pub fn get_hover_node_id(&self) -> Option<NodeId> {
@@ -2459,22 +2703,24 @@ impl BaseDocument {
             return Some(CursorIcon::Text);
         }
 
-        // Use "pointer" cursor if any ancestor is a link. Walk DOM parents: an atomic
-        // inline's layout parent is its inline root, which skips the inline elements
-        // (such as `<a>`) between them.
-        let mut maybe_node = Some(node);
-        while let Some(node) = maybe_node {
-            if node.data.is_element_with_tag_name(&local_name!("a")) {
-                return Some(CursorIcon::Pointer);
-            }
-
-            maybe_node = node.parent.map(|node_id| node.with(node_id));
-        }
-
         // Return text cursor for text nodes
         if self.hover_node_is_text {
             return Some(match user_select {
-                UserSelect::Text | UserSelect::All | UserSelect::Auto | UserSelect::Contain => {
+                UserSelect::Text | UserSelect::All | UserSelect::Contain => CursorIcon::Text,
+                UserSelect::Auto => {
+                    // `cursor: auto; user-select: auto` over button text resolves to the
+                    // default arrow cursor rather than an I-beam, matching browsers.
+                    let mut maybe_node = Some(node);
+                    while let Some(node) = maybe_node {
+                        if node
+                            .data
+                            .downcast_element()
+                            .is_some_and(|el| el.is_button())
+                        {
+                            return Some(CursorIcon::Default);
+                        }
+                        maybe_node = node.parent.map(|node_id| node.with(node_id));
+                    }
                     CursorIcon::Text
                 }
                 UserSelect::None => CursorIcon::Default,
