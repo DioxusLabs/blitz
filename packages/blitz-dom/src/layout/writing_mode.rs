@@ -545,8 +545,14 @@ impl BaseDocument {
         let mut current = Some(node_id);
         while let Some(id) = current {
             let node = &self.nodes[id];
-            pos.x += node.unrounded_layout().location.x - node.scroll_offset().x as f32;
-            pos.y += node.unrounded_layout().location.y - node.scroll_offset().y as f32;
+            // A scroll offset moves the node's contents, not its own border box.
+            let (scroll_x, scroll_y) = if id == node_id {
+                (0.0, 0.0)
+            } else {
+                (node.scroll_offset().x as f32, node.scroll_offset().y as f32)
+            };
+            pos.x += node.unrounded_layout().location.x - scroll_x;
+            pos.y += node.unrounded_layout().location.y - scroll_y;
             has_vertical |= node.layout_data().writing_mode.is_vertical();
             current = node.containing_block();
         }
@@ -564,8 +570,10 @@ impl BaseDocument {
             placer_size,
             overflow.x.is_scroll_container() || overflow.y.is_scroll_container(),
         );
-        pos.x += layout.location.x - node.scroll_offset().x as f32;
-        pos.y += layout.location.y - node.scroll_offset().y as f32;
+        // `placer_geometry` already applied the ancestors' scroll offsets, and the
+        // node's own scroll offset moves its contents, not its border box.
+        pos.x += layout.location.x;
+        pos.y += layout.location.y;
         (pos, layout)
     }
 
