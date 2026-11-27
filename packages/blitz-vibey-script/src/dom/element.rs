@@ -29,6 +29,13 @@ pub(crate) fn init_element_proto(proto: &JsObject, context: &mut Context) {
     );
     define_accessor(
         proto,
+        "media",
+        Some(attributes::get_media),
+        Some(attributes::set_media),
+        context,
+    );
+    define_accessor(
+        proto,
         "className",
         Some(attributes::get_class_name),
         Some(attributes::set_class_name),

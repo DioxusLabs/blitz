@@ -1475,7 +1475,44 @@ impl BaseDocument {
         self.add_stylesheet_for_node(sheet, node_id);
     }
 
+    fn set_stylesheet_media(&self, stylesheet: &DocumentStyleSheet, media: &str) {
+        use cssparser::Parser;
+        use style::parser::ParserContext;
+        use style::stylesheets::CssRuleType;
+        use style_traits::ParsingMode;
+
+        let url_data = self.url.url_extra_data();
+        let mut context = ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(CssRuleType::Media),
+            ParsingMode::DEFAULT,
+            self.stylist.quirks_mode(),
+            Default::default(),
+            None,
+            None,
+            Default::default(),
+        );
+        let list = MediaList::parse(&mut context, &mut Parser::new(media));
+        *stylesheet.0.media.write_with(&mut self.guard.write()) = list;
+    }
+
+    pub(crate) fn update_stylesheet_media(&mut self, node_id: NodeId, media: &str) {
+        if let Some(sheet) = self.nodes_to_stylesheet.get(&node_id) {
+            self.set_stylesheet_media(sheet, media);
+            self.stylist
+                .force_stylesheet_origins_dirty(Origin::Author.into());
+        }
+    }
+
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: NodeId) {
+        if let Some(media) = self.nodes[node_id].element_data().and_then(|element| {
+            element.attrs.iter().find(|attr| {
+                attr.name.ns == markup5ever::ns!() && attr.name.local == local_name!("media")
+            })
+        }) {
+            self.set_stylesheet_media(&stylesheet, &media.value);
+        }
         let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
         self.stylesheet_generation += 1;
 
