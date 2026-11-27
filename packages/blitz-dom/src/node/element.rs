@@ -557,6 +557,18 @@ impl ElementData {
         self.element_state.set(ElementState::OPEN, is_open);
     }
 
+    pub(crate) fn is_html_video(&self) -> bool {
+        self.name.ns == ns!(html) && self.name.local == local_name!("video")
+    }
+
+    pub(crate) fn video_poster(&self) -> Option<&str> {
+        self.attrs
+            .iter()
+            .find(|attr| attr.name.ns == ns!() && attr.name.local == local_name!("poster"))
+            .map(|attr| attr.value.trim())
+            .filter(|value| !value.is_empty())
+    }
+
     pub fn image_data(&self) -> Option<&ImageData> {
         match &self.special_data {
             SpecialElementData::Image(data) => Some(&**data),
