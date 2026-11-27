@@ -3,6 +3,7 @@
 use blitz_dom::{Document, EventDriver, EventHandler, NodeId};
 use blitz_test_harness::Harness;
 use blitz_traits::events::{BlitzResizeEvent, DomEvent, DomEventData, EventState};
+use blitz_traits::shell::Viewport;
 use dioxus_core::prelude::*;
 use std::{cell::RefCell, rc::Rc};
 
@@ -27,6 +28,18 @@ fn drain_resizes(doc: &mut blitz_dom::BaseDocument) -> Vec<(NodeId, BlitzResizeE
     let recorder = ResizeRecorder::default();
     EventDriver::new(doc, recorder.clone()).flush_pending_events();
     recorder.0.borrow().clone()
+}
+
+/// Resize the viewport and resolve without polling, so that queued events stay queued
+fn resize_viewport(doc: &mut blitz_dom::BaseDocument, width: u32, height: u32) {
+    let viewport = doc.get_viewport();
+    doc.set_viewport(Viewport::new(
+        width,
+        height,
+        viewport.hidpi_scale,
+        viewport.color_scheme,
+    ));
+    doc.resolve(0.0);
 }
 
 #[test]
@@ -66,9 +79,9 @@ fn observe_resize_reports_initial_and_changed_sizes_with_refcounting() {
 
     // One unobserve leaves refcount at 1, so viewport resize still fires
     harness.base_mut().unobserve_resize(box_id);
-    harness.set_viewport_size(600, 400);
     {
         let mut doc = harness.base_mut();
+        resize_viewport(&mut doc, 600, 400);
         let events = drain_resizes(&mut doc);
         assert_eq!(
             events,
@@ -86,7 +99,7 @@ fn observe_resize_reports_initial_and_changed_sizes_with_refcounting() {
 
     // Second unobserve drops refcount to 0, so further resizes fire nothing
     harness.base_mut().unobserve_resize(box_id);
-    harness.set_viewport_size(500, 400);
+    resize_viewport(&mut harness.base_mut(), 500, 400);
     assert!(!harness.base().has_pending_events());
 }
 
