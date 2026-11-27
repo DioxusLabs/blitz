@@ -302,6 +302,22 @@ vello_gpu = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 
+# Stylo main, which has the remaining SVG properties (stop-color, marker-*, paint-order, ...) available to
+# Servo builds behind the `layout.css.svg-properties.enabled` pref.
+# Remove once a Stylo release includes them.
+[patch.crates-io]
+stylo = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+stylo_traits = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+stylo_atoms = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+stylo_static_prefs = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+stylo_dom = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+stylo_derive = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+stylo_malloc_size_of = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+selectors = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+servo_arc = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+to_shmem = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+to_shmem_derive = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
