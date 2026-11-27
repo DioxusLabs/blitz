@@ -1863,11 +1863,7 @@ impl BaseDocument {
     /// before this method to ensure layout is up to date.
     pub fn element_from_point(&self, x: f32, y: f32) -> Option<NodeId> {
         let viewport = self.viewport();
-        let scale = viewport.scale();
-        let (viewport_width, viewport_height) = (
-            viewport.window_size.0 as f32 / scale,
-            viewport.window_size.1 as f32 / scale,
-        );
+        let (viewport_width, viewport_height) = viewport.logical_size();
         if x < 0.0 || y < 0.0 || x > viewport_width || y > viewport_height {
             return None;
         }
