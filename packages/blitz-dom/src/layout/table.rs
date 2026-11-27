@@ -22,7 +22,8 @@ use style::{
 };
 use style_traits::values::specified::AllowedNumericType;
 use taffy::{
-    DetailedGridInfo, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction, style_helpers,
+    CalcHandle, DetailedGridInfo, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction,
+    style_helpers,
 };
 
 use crate::BaseDocument;
@@ -191,7 +192,9 @@ fn percent_plus_length(
             let ptr = calc as *const CalcLengthPercentage as *const ();
             // SAFETY: the pointer targets the heap allocation owned by `value`, which
             // is kept alive by `calc_values` for as long as the TableContext exists.
-            unsafe { taffy::Dimension::from_raw(taffy::CompactLength::calc(ptr)) }
+            unsafe {
+                taffy::Dimension::from_raw(taffy::CompactLength::calc(CalcHandle::from_ptr(ptr)))
+            }
         }
         UnpackedLengthPercentage::Length(len) => style_helpers::length(len.px()),
         UnpackedLengthPercentage::Percentage(p) => style_helpers::percent(p.0),
@@ -804,8 +807,8 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_, '_> {
         &self.ctx.style
     }
 
-    fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
-        resolve_calc_value(calc_ptr, parent_size)
+    fn resolve_calc_value(&self, calc: CalcHandle, parent_size: f32) -> f32 {
+        resolve_calc_value(calc, parent_size)
     }
 
     fn set_unrounded_layout(&mut self, node_id: taffy::NodeId, layout: &taffy::Layout) {

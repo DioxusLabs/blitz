@@ -7,17 +7,17 @@ flowchart TB
     anyrender[**AnyRender**
     vello_cpu
     vello
-    vello_hybrid
+    vello_gpu
     skia]
     %% anyrender --> vello_cpu
     %% anyrender --> vello
-    %% anyrender --> vello_hybrid
+    %% anyrender --> vello_gpu
     %% anyrender --> skia
 
     anyrender -.-> wgpu
 
     %% vello --> wgpu
-    %% vello_hybrid --> wgpu
+    %% vello_gpu --> wgpu
 
     blitz-html --> blitz-dom
 

@@ -1,6 +1,6 @@
 # Building Blitz Examples for WASM
 
-Blitz runs in the browser on `wasm32-unknown-unknown` via [trunk]. The renderer is `anyrender_vello_hybrid` with the `webgl` feature; system fonts aren't available in the browser, so wasm examples bundle a font (DejaVu Sans) at compile time.
+Blitz runs in the browser on `wasm32-unknown-unknown` via [trunk]. The renderer is `anyrender_vello_gpu` with the `webgl` feature; system fonts aren't available in the browser, so wasm examples bundle a font (DejaVu Sans) at compile time.
 
 ## Examples that target wasm
 
@@ -51,4 +51,4 @@ This typically cuts the over-the-wire size by 3–4×.
 
 ## Renderer selection
 
-Examples that support multiple renderers (`seven_guis`, `todomvc`) pin the wasm build to `vello-hybrid` via trunk's `data-cargo-features="hybrid"` plus `data-cargo-no-default-features`. The native default (`vello`) stays untouched.
+Examples that support multiple renderers (`seven_guis`, `todomvc`) pin the wasm build to `vello-gpu` via trunk's `data-cargo-features="vello-gpu"` plus `data-cargo-no-default-features`. The native default (`vello`) stays untouched.

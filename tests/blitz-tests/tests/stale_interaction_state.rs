@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 fn pointer_event(x: f32, y: f32, buttons: MouseEventButtons) -> BlitzPointerEvent {
     BlitzPointerEvent {
-        id: BlitzPointerId::Mouse,
+        id: BlitzPointerId::MOUSE,
         is_primary: true,
         coords: PointerCoords {
             page_x: x,

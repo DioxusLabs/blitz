@@ -2,6 +2,7 @@
 
 use blitz_dom::{Document, DocumentConfig};
 use blitz_traits::events::DomEvent;
+use blitz_traits::events::EventDispatchSource;
 use blitz_vibey_script::ScriptDocument;
 use keyboard_types::Modifiers;
 
@@ -185,6 +186,7 @@ fn click_event_listeners() {
                 .get_node(btn_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event.clone());
@@ -232,6 +234,7 @@ fn click_events_bubble_and_stop_propagation() {
                 .get_node(btn_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -353,6 +356,7 @@ fn checkbox_click_fires_input_and_change_events() {
                 .get_node(check_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -404,6 +408,7 @@ fn on_event_idl_properties_are_dispatched() {
                 .get_node(btn_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::empty()),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -515,6 +520,7 @@ fn event_get_modifier_state() {
                 .get_node(btn_id)
                 .unwrap()
                 .synthetic_click_event(Modifiers::SHIFT),
+            EventDispatchSource::UserAgent,
         )
     };
     doc.dispatch_dom_event(click_event);
@@ -947,4 +953,36 @@ fn file_document_can_load_sibling_file_urls() {
     assert_eq!(text_of_selector(&doc, "#fetch"), "secret");
 
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn class_list_replace() {
+    let doc = doc_from_html(
+        r#"
+        <html><body>
+            <div id="el" class="a b c"></div>
+            <div id="out"></div>
+            <script>
+                const el = document.getElementById("el");
+                const r1 = el.classList.replace("b", "x");
+                const c1 = el.className;
+                const r2 = el.classList.replace("missing", "y");
+                const c2 = el.className;
+                // Replacing when newToken is already present collapses at the earlier position.
+                const r3 = el.classList.replace("c", "a");
+                const c3 = el.className;
+                el.className = "a b c";
+                const r4 = el.classList.replace("a", "c");
+                const c4 = el.className;
+                document.getElementById("out").textContent = [
+                    r1, c1, r2, c2, r3, c3, r4, c4,
+                ].join("|");
+            </script>
+        </body></html>
+        "#,
+    );
+    assert_eq!(
+        text_of_selector(&doc, "#out"),
+        "true|a x c|false|a x c|true|a x|true|c b"
+    );
 }

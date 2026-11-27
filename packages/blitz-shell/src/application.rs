@@ -241,7 +241,7 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         }
 
         if let Some(window) = self.windows.get_mut(&window_id) {
-            window.handle_winit_event(event);
+            window.handle_winit_event(event_loop, event);
         }
         self.proxy.send_event(BlitzShellEvent::Poll { window_id });
     }

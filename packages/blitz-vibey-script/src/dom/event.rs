@@ -235,10 +235,14 @@ pub(crate) fn create_event_for_dom_event(
     data: &DomEventData,
     bubbles: bool,
     cancelable: bool,
+    is_trusted: bool,
     target: &JsValue,
     context: &mut Context,
 ) -> JsObject {
     let event = create_event(ctx, data.name(), bubbles, cancelable, target, context);
+    if !is_trusted {
+        define_value(&event, "isTrusted", JsValue::from(false), context);
+    }
 
     match data {
         DomEventData::PointerMove(pointer)
