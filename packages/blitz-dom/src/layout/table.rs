@@ -203,6 +203,37 @@ fn percent_plus_length(
     dim.into()
 }
 
+/// A table is never shorter than its rows (CSS 2.1 §17.5.3): its `height`
+/// (capped by a length `max-height`) is a minimum, and `max-height` can't make
+/// it shorter than its content.
+fn table_height_is_a_minimum(style: &mut taffy::Style<Atom>) {
+    use taffy::CompactLength;
+    let height = style.size.height.into_raw();
+    let max = style.max_size.height.into_raw();
+    let min = style.min_size.height.into_raw();
+    if height.tag() != CompactLength::AUTO_TAG {
+        let mut floor = height;
+        if height.tag() == CompactLength::LENGTH_TAG && max.tag() == CompactLength::LENGTH_TAG {
+            floor = CompactLength::length(height.value().min(max.value()));
+        }
+        let floor = if min.tag() == CompactLength::AUTO_TAG {
+            Some(floor)
+        } else if min.tag() == CompactLength::LENGTH_TAG && floor.tag() == CompactLength::LENGTH_TAG
+        {
+            Some(CompactLength::length(min.value().max(floor.value())))
+        } else {
+            None
+        };
+        if let Some(floor) = floor {
+            // SAFETY: `floor` is a length, percentage or calc() taken from a
+            // `height`, all of which are valid min-heights
+            style.min_size.height = unsafe { taffy::LengthPercentageAuto::from_raw(floor) };
+        }
+        style.size.height = taffy::Dimension::auto();
+    }
+    style.max_size.height = taffy::LengthPercentageAuto::auto();
+}
+
 pub(crate) fn build_table_context(
     doc: &mut BaseDocument,
     table_root_node_id: NodeId,
@@ -224,6 +255,7 @@ pub(crate) fn build_table_context(
 
     let mut style = table_taffy_style(&stylo_styles, wm);
     style.item_is_table = true;
+    table_height_is_a_minimum(&mut style);
     // Use `dense` row-flow so that each cell scans the row from its
     // leftmost column for the first free track. Without `dense`,
     // `place_definite_secondary_axis_item` keeps a per-item secondary
