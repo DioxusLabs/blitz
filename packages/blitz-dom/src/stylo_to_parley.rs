@@ -308,11 +308,40 @@ pub(crate) fn font_variant_east_asian(
 /// high-level `font-variant-*` properties are applied first, and the low-level
 /// `font-feature-settings` property is applied last so that it takes precedence.
 ///
-/// Parley stably sorts the feature list by tag and HarfBuzz applies the last of any
-/// duplicate tags, so appending `font-feature-settings` after the `font-variant-*`
-/// features gives it the higher precedence required by the spec.
-pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeature> {
+pub(crate) fn font_features(font_styles: &stylo::Font, vertical: bool) -> Vec<parley::FontFeature> {
     let mut features = Vec::new();
+
+    use style::computed_values::font_kerning::T as FontKerning;
+    let japanese = font_styles
+        ._x_lang
+        .0
+        .split('-')
+        .next()
+        .is_some_and(|language| language.eq_ignore_ascii_case("ja"));
+    let kerning = match font_styles.font_kerning {
+        // Automatic kerning keeps full-width Japanese text on its grid.
+        FontKerning::Auto if japanese => Some(0),
+        FontKerning::Auto => None,
+        FontKerning::Normal => Some(1),
+        FontKerning::None => Some(0),
+    };
+    if let Some(value) = kerning {
+        let tag = if vertical { b"vkrn" } else { b"kern" };
+        features.push(feature(tag, value));
+    }
+
+    if japanese && font_styles.font_kerning == FontKerning::Normal {
+        // For Japanese, normal kerning first enables the proportional
+        // alternate metrics. Explicit font-feature-settings still win below.
+        let tags = if vertical {
+            [b"vpal", b"vapk"]
+        } else {
+            [b"palt", b"apkn"]
+        };
+        for tag in tags {
+            features.push(feature(tag, 1));
+        }
+    }
 
     self::font_variant_ligatures(font_styles.font_variant_ligatures, &mut features);
     self::font_variant_caps(font_styles.font_variant_caps, &mut features);
@@ -322,6 +351,9 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
 
     self::font_feature_settings(&font_styles.font_feature_settings, &mut features);
 
+    // Keep the last setting for each tag. The stable sort preserves reverse
+    // precedence within a tag, and deduplication keeps the first entry.
+    features.reverse();
     features.sort_by_key(|feature| feature.tag);
     features.dedup_by_key(|feature| feature.tag);
 
@@ -470,7 +502,7 @@ pub(crate) fn style(
     let font_style = self::font_style(font_styles.font_style);
     let font_width = self::font_width(font_styles.font_width);
     let font_variations = self::font_variations(font_styles, font_size);
-    let font_features = self::font_features(font_styles);
+    let font_features = self::font_features(font_styles, style.writing_mode.is_vertical());
 
     // Convert font family
     let mut families: Vec<_> = font_styles
