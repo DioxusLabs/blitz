@@ -404,6 +404,12 @@ impl Node {
     pub fn after(&self) -> Option<NodeId> {
         self.element_data().and_then(|data| data.after)
     }
+
+    /// The node holding this element's `::first-letter` style, if it has one.
+    #[inline]
+    pub fn first_letter(&self) -> Option<NodeId> {
+        self.element_data().and_then(|data| data.first_letter)
+    }
 }
 
 impl Node {

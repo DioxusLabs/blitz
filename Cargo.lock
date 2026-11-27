@@ -1143,6 +1143,7 @@ dependencies = [
  "dioxus-vdom",
  "keyboard-types",
  "markup5ever",
+ "parley",
  "stylo",
  "taffy",
  "test-that",
