@@ -439,10 +439,12 @@ table[rules] {
       A border with a given value should, of course, pass that value
       as the border-width in pixels -> attr mapping */
 
-/* :-moz-table-border-nonzero is like [border]:not([border="0"]) except it
-     also checks for other zero-like values according to HTML attribute
-     parsing rules */
-table:-moz-table-border-nonzero {
+/* Gecko's :-moz-table-border-nonzero, which Servo's selector parser does not
+     know, is like [border]:not([border="0"]) except it also checks for other
+     zero-like values according to HTML attribute parsing rules. The :where()
+     keeps the specificity of the Gecko rule, which 'frame' and 'rules' below
+     must beat. */
+table[border]:where(:not([border="0"])) {
     border-width: thin;
     border-style: outset;
 }
@@ -451,7 +453,7 @@ table[frame] {
     border: thin hidden;
 }
 
-/* specificity must beat table:-moz-table-border-nonzero rule above */
+/* specificity must beat the table[border] rule above */
 table[frame="void"] {
     border-style: hidden;
 }
@@ -490,12 +492,12 @@ table[frame="border"] {
 
 /* 'border' cell borders first */
 
-table:-moz-table-border-nonzero>*>tr>td,
-table:-moz-table-border-nonzero>*>tr>th,
-table:-moz-table-border-nonzero>*>td,
-table:-moz-table-border-nonzero>*>th,
-table:-moz-table-border-nonzero>td,
-table:-moz-table-border-nonzero>th {
+table[border]:where(:not([border="0"]))>*>tr>td,
+table[border]:where(:not([border="0"]))>*>tr>th,
+table[border]:where(:not([border="0"]))>*>td,
+table[border]:where(:not([border="0"]))>*>th,
+table[border]:where(:not([border="0"]))>td,
+table[border]:where(:not([border="0"]))>th {
     border-width: thin;
     border-style: inset;
 }
