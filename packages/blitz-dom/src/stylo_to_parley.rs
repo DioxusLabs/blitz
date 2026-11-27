@@ -308,7 +308,7 @@ pub(crate) fn font_variant_east_asian(
 /// high-level `font-variant-*` properties are applied first, and the low-level
 /// `font-feature-settings` property is applied last so that it takes precedence.
 ///
-pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeature> {
+pub(crate) fn font_features(font_styles: &stylo::Font, vertical: bool) -> Vec<parley::FontFeature> {
     let mut features = Vec::new();
 
     use style::computed_values::font_kerning::T as FontKerning;
@@ -326,14 +326,19 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
         FontKerning::None => Some(0),
     };
     if let Some(value) = kerning {
-        features.push(feature(b"kern", value));
-        features.push(feature(b"vkrn", value));
+        let tag = if vertical { b"vkrn" } else { b"kern" };
+        features.push(feature(tag, value));
     }
 
     if japanese && font_styles.font_kerning == FontKerning::Normal {
         // For Japanese, normal kerning first enables the proportional
         // alternate metrics. Explicit font-feature-settings still win below.
-        for tag in [b"palt", b"apkn", b"vpal", b"vapk"] {
+        let tags = if vertical {
+            [b"vpal", b"vapk"]
+        } else {
+            [b"palt", b"apkn"]
+        };
+        for tag in tags {
             features.push(feature(tag, 1));
         }
     }
@@ -497,7 +502,7 @@ pub(crate) fn style(
     let font_style = self::font_style(font_styles.font_style);
     let font_width = self::font_width(font_styles.font_width);
     let font_variations = self::font_variations(font_styles, font_size);
-    let font_features = self::font_features(font_styles);
+    let font_features = self::font_features(font_styles, style.writing_mode.is_vertical());
 
     // Convert font family
     let mut families: Vec<_> = font_styles
