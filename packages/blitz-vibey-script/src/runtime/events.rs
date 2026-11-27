@@ -161,6 +161,7 @@ impl ScriptRuntime {
                     &event.data,
                     event.bubbles,
                     event.cancelable,
+                    event.is_trusted(),
                     target,
                     context,
                 )

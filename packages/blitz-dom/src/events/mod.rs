@@ -1,19 +1,25 @@
 mod driver;
-mod focus;
 mod ime;
 mod keyboard;
 mod pointer;
+mod queue;
+mod wheel;
 
 use crate::util::Point;
-use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
+use blitz_traits::events::{BlitzDragOperation, DomEvent, DomEventData, PointerCoords, UiEvent};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
-use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
 pub(crate) use pointer::DragMode;
-use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
+use pointer::{
+    handle_click, handle_pointerdown, handle_pointermove, handle_pointerup, record_pointerdown,
+};
+pub(crate) use queue::EventQueue;
+pub(crate) use wheel::WheelGesture;
 
-use crate::{BaseDocument, events::pointer::handle_wheel};
+use wheel::handle_wheel;
+
+use crate::BaseDocument;
 
 fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
@@ -60,6 +66,8 @@ fn map_dom_event_to_ui_event(
         // Enter/over/out events will be recreated by sub-document's event driver
         // based move events
         DomEventData::PointerEnter(_) => None,
+        DomEventData::GotPointerCapture(_) => None,
+        DomEventData::LostPointerCapture(_) => None,
         DomEventData::PointerOver(_) => None,
         DomEventData::PointerOut(_) => None,
 
@@ -92,18 +100,68 @@ fn map_dom_event_to_ui_event(
         DomEventData::Input(_) => None,
         DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
         DomEventData::Scroll(_) => None,
+        DomEventData::Resize(_) => None,
         DomEventData::Focus(_) => None,
         DomEventData::Blur(_) => None,
         DomEventData::FocusIn(_) => None,
         DomEventData::FocusOut(_) => None,
+
+        // `dragenter` will be recreated by the sub-document's event driver from
+        // `DragOver` events
+        DomEventData::DragEnter(_) => None,
+        DomEventData::DragOver(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::DragOver(event))
+        }
+        // The sub-document receives no further drag events once the drag has left it,
+        // so the leave must be forwarded for it to end the drag
+        DomEventData::DragLeave(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::DragLeave(event))
+        }
+        DomEventData::Drop(mut event) => {
+            adjust_coords_for_subdocument(&mut event.coords, node_offset, viewport_scroll);
+            Some(UiEvent::Drop(event))
+        }
     }
 }
 
-pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
+pub(crate) fn handle_dom_event(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
-    mut dispatch_event: F,
+    default_prevented: bool,
 ) {
+    // `dragleave` can't be cancelled
+    let default_prevented = default_prevented && !matches!(event.data, DomEventData::DragLeave(_));
+
+    if default_prevented {
+        // What the document still has to do with an event whose default action was
+        // prevented: follow the input, without applying its effects.
+        match &event.data {
+            // A scroll gesture has to see each of its events to know where it starts and ends.
+            DomEventData::Wheel(data) => {
+                doc.wheel_gesture.track(data);
+            }
+            // The pointer has pressed or lifted whether or not the page wanted the default
+            // action.
+            DomEventData::PointerDown(data) => {
+                record_pointerdown(doc, data.page_x(), data.page_y());
+            }
+            DomEventData::PointerUp(data) => {
+                handle_pointerup(doc, event.target, data, true);
+            }
+            // Cancelling `dragover` accepts the drop, with the `dropEffect` the event
+            // was left with if that is an operation the source allows
+            DomEventData::DragOver(data) => {
+                let mut data_transfer = data.data_transfer_mut();
+                let drop_effect = data_transfer.allowed_drop_effect();
+                data_transfer.set_drop_effect(drop_effect);
+            }
+            _ => {}
+        }
+        return;
+    }
+
     let target_node_id = event.target;
     let node = &mut doc.nodes[target_node_id];
     let pos = node.absolute_position(0.0, 0.0);
@@ -136,13 +194,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
 
         if set_focus {
-            generate_focus_events(
-                doc,
-                &mut |doc| {
-                    doc.set_focus_to(target_node_id);
-                },
-                &mut dispatch_event,
-            );
+            doc.set_focus_to(target_node_id);
         }
 
         return;
@@ -161,18 +213,25 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         let viewport_scroll = Point { x: 0.0, y: 0.0 };
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
-        if let Some(ui_event) = ui_event {
-            widget_data.widget.handle_event(&ui_event);
+        // A widget accepts a drop by setting the `dropEffect` of a `DragOver` event
+        if let Some(UiEvent::DragOver(event)) = &ui_event {
+            event
+                .data_transfer_mut()
+                .set_drop_effect(BlitzDragOperation::None);
+        }
+
+        if let Some(ui_event) = &ui_event {
+            widget_data.widget.handle_event(ui_event);
+        }
+
+        if let Some(UiEvent::DragOver(event)) = &ui_event {
+            let mut data_transfer = event.data_transfer_mut();
+            let drop_effect = data_transfer.allowed_drop_effect();
+            data_transfer.set_drop_effect(drop_effect);
         }
 
         if set_focus {
-            generate_focus_events(
-                doc,
-                &mut |doc| {
-                    doc.set_focus_to(target_node_id);
-                },
-                &mut dispatch_event,
-            );
+            doc.set_focus_to(target_node_id);
         }
 
         return;
@@ -180,7 +239,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
     match &event.data {
         DomEventData::PointerMove(event) => {
-            let changed = handle_pointermove(doc, target_node_id, event, dispatch_event);
+            let changed = handle_pointermove(doc, target_node_id, event);
             if changed {
                 doc.shell_provider.request_redraw();
             }
@@ -189,6 +248,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (handled in PointerMove)
         }
         DomEventData::PointerDown(event) => {
+            record_pointerdown(doc, event.page_x(), event.page_y());
             handle_pointerdown(
                 doc,
                 target_node_id,
@@ -196,14 +256,13 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 event.page_y(),
                 event.button,
                 event.mods,
-                &mut dispatch_event,
             );
         }
         DomEventData::MouseDown(_) => {
             // Do nothing (handled in PointerDown)
         }
         DomEventData::PointerUp(event) => {
-            handle_pointerup(doc, target_node_id, event, dispatch_event);
+            handle_pointerup(doc, target_node_id, event, false);
         }
         DomEventData::MouseUp(_) => {
             // Do nothing (handled in PointerUp)
@@ -212,14 +271,13 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (active state is reset in the event driver)
         }
         DomEventData::Click(event) => {
-            handle_click(doc, target_node_id, event, &mut dispatch_event);
+            handle_click(doc, target_node_id, event);
         }
         DomEventData::KeyDown(event) => {
             handle_key_or_input_event(
                 doc,
                 target_node_id,
                 KeyboardOrTextInputEvent::KeyPress(event.clone()),
-                dispatch_event,
             );
         }
         DomEventData::KeyPress(_) => {
@@ -233,11 +291,10 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 doc,
                 target_node_id,
                 KeyboardOrTextInputEvent::AppleStandardKeyBinding(event.clone()),
-                dispatch_event,
             );
         }
         DomEventData::Ime(event) => {
-            handle_ime_event(doc, event.clone(), dispatch_event);
+            handle_ime_event(doc, event.clone());
         }
         DomEventData::Input(_) => {
             // Do nothing (no default action)
@@ -247,6 +304,9 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
         DomEventData::DoubleClick(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::GotPointerCapture(_) | DomEventData::LostPointerCapture(_) => {
+            // Do nothing
         }
         DomEventData::PointerEnter(_) => {
             // Do nothing (no default action)
@@ -287,8 +347,11 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         DomEventData::Scroll(_) => {
             // Handled elsewhere
         }
+        DomEventData::Resize(_) => {
+            // Do nothing (no default action)
+        }
         DomEventData::Wheel(event) => {
-            handle_wheel(doc, target_node_id, event.clone(), dispatch_event);
+            handle_wheel(doc, target_node_id, event.clone());
         }
         DomEventData::Focus(_) => {
             // Do nothing (no default action)
@@ -301,6 +364,19 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
         DomEventData::FocusOut(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::DragEnter(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::DragLeave(_) => {
+            // Do nothing (no default action)
+        }
+        // A `dragover` or `drop` that no handler cancelled rejects the drop
+        // TODO: accept text dropped on a text input
+        DomEventData::DragOver(event) | DomEventData::Drop(event) => {
+            event
+                .data_transfer_mut()
+                .set_drop_effect(BlitzDragOperation::None);
         }
     }
 

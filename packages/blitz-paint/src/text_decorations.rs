@@ -1,5 +1,5 @@
-use anyrender::PaintScene;
 use anyrender::filters::{Filter, FilterEffect};
+use anyrender::{AntiAliasing, PaintScene};
 use blitz_dom::CopyStyleGetters;
 use blitz_dom::{BaseDocument, NodeId, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, BezPath, Cap, Circle, Rect, Stroke, Vec2};
@@ -87,6 +87,23 @@ pub(crate) struct ResolvedDecoration {
     underline_from_font: bool,
     /// `text-decoration-inset`. Resolved per run.
     inset: GenericTextDecorationInset<LengthPercentage>,
+}
+
+impl ResolvedDecoration {
+    /// The underline under the text an input method is composing: solid, `auto` thick, and in
+    /// the text's colour.
+    pub(crate) fn composition_underline(color: Color) -> Self {
+        Self {
+            line: TextDecorationLine::UNDERLINE,
+            style: TextDecorationStyle::Solid,
+            color,
+            thickness: GenericTextDecorationLength::Auto,
+            underline_offset: None,
+            underline_under: false,
+            underline_from_font: false,
+            inset: GenericTextDecorationInset::Auto,
+        }
+    }
 }
 
 /// An element on the current ancestor path (inline root -> run node), caching the
@@ -317,7 +334,14 @@ fn draw_decoration_line(
         // `solid`
         TextDecorationStyle::Solid => {
             let line = kurbo::Line::new((x, y), (x + w, y));
-            scene.stroke(&butt_stroke, transform, brush, None, &line);
+            scene.stroke(
+                &butt_stroke,
+                transform,
+                brush,
+                None,
+                &line,
+                AntiAliasing::Enabled,
+            );
         }
         // Two lines, each `size` thick, separated by a 1px (CSS) gap. This
         // matches Chrome, where the second line is offset by `thickness + 1px`
@@ -327,7 +351,14 @@ fn draw_decoration_line(
             let one_css_px = scale;
             for cy in [y, y + double_dir * (size + one_css_px)] {
                 let line = kurbo::Line::new((x, cy), (x + w, cy));
-                scene.stroke(&butt_stroke, transform, brush, None, &line);
+                scene.stroke(
+                    &butt_stroke,
+                    transform,
+                    brush,
+                    None,
+                    &line,
+                    AntiAliasing::Enabled,
+                );
             }
         }
         // Round dots (diameter = line thickness) spaced one dot apart.
@@ -337,7 +368,14 @@ fn draw_decoration_line(
             let mut cx = x + radius;
             while cx <= x + w - radius {
                 let dot = Circle::new((cx, y), radius);
-                scene.fill(Fill::NonZero, transform, brush, None, &dot);
+                scene.fill(
+                    Fill::NonZero,
+                    transform,
+                    brush,
+                    None,
+                    &dot,
+                    AntiAliasing::Enabled,
+                );
                 cx += step;
             }
         }
@@ -358,7 +396,14 @@ fn draw_decoration_line(
             while dx < x + w {
                 let end = (dx + dash).min(x + w);
                 let rect = Rect::new(dx, y - size / 2.0, end, y + size / 2.0);
-                scene.fill(Fill::NonZero, transform, brush, None, &rect);
+                scene.fill(
+                    Fill::NonZero,
+                    transform,
+                    brush,
+                    None,
+                    &rect,
+                    AntiAliasing::Enabled,
+                );
                 dx += dash + gap;
             }
         }
@@ -384,7 +429,14 @@ fn draw_decoration_line(
                 up = !up;
             }
             let stroke = Stroke::new(size).with_caps(Cap::Round);
-            scene.stroke(&stroke, transform, brush, None, &path);
+            scene.stroke(
+                &stroke,
+                transform,
+                brush,
+                None,
+                &path,
+                AntiAliasing::Enabled,
+            );
         }
     }
 }
@@ -661,7 +713,10 @@ pub(crate) fn draw_line_text_shadows(
                 continue;
             }
             if shadow.is_blurred() {
-                let filter = Arc::new(Filter::single(FilterEffect::blur(shadow.std_dev as f32)));
+                let filter = Arc::new(Filter::single(
+                    FilterEffect::blur(shadow.std_dev as f32),
+                    batch_bounds + shadow.offset,
+                ));
                 // Layer clip: the shadowed content's bounds, offset, plus room for the blur.
                 let margin = 3.0 * shadow.std_dev;
                 let clip = (batch_bounds + shadow.offset).inflate(margin, margin);

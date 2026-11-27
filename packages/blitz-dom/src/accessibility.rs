@@ -11,8 +11,8 @@ impl BaseDocument {
     ///
     /// The root is a window node with the ID `u64::MAX`, whose only child is the document node.
     /// The other node IDs are the raw IDs of the DOM nodes. Nodes hidden with CSS, by
-    /// `display: none` or `visibility: hidden`, are left out along with their descendants. Nodes
-    /// with `aria-hidden="true"` are included and flagged as hidden.
+    /// `display: none` or a `visibility` other than `visible`, are left out along with their
+    /// descendants. Nodes with `aria-hidden="true"` are included and flagged as hidden.
     ///
     /// The label and description of a node are its accessible name and description as computed by
     /// the W3C specification, except that `title` only provides the description and never the

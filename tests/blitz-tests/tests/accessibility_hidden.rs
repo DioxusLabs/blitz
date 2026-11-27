@@ -1,4 +1,4 @@
-use accesskit::{Node as AccessKitNode, Role};
+use accesskit::{Node as AccessKitNode, NodeId, Role};
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::shell::{ColorScheme, Viewport};
@@ -84,6 +84,20 @@ fn excludes_div_with_visibility_hidden() -> TestResult<()> {
             })
         )))
     )
+}
+
+#[test]
+fn excludes_button_with_visibility_collapse() -> TestResult<()> {
+    let mut document = HtmlDocument::from_html(
+        r#"<html><button id="target" style="visibility: collapse;"></button></html>"#,
+        default_document_config(),
+    );
+    document.resolve(0.0);
+
+    let tree_update = document.build_accessibility_tree();
+    let target = NodeId(document.get_element_by_id("target").unwrap().as_u64());
+
+    verify_that!(tree_update.nodes, not(contains((eq(target), anything()))))
 }
 
 #[test]
