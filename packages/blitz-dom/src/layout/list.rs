@@ -174,15 +174,19 @@ fn marker_for_style(list_style_type: &ListStyleType, index: i64) -> Option<Marke
     })
 }
 
-fn cjk_decimal_marker(ordinal: usize) -> String {
+fn cjk_decimal_marker(ordinal: i64) -> String {
     const DIGITS: [char; 10] = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
 
-    let exponent = ordinal.checked_ilog10().unwrap_or(0);
+    let magnitude = ordinal.unsigned_abs();
+    let exponent = magnitude.checked_ilog10().unwrap_or(0);
     // The digits and suffix each occupy three UTF-8 bytes.
-    let mut marker = String::with_capacity(3 * (exponent as usize + 2));
-    let mut divisor = 10usize.pow(exponent);
+    let mut marker = String::with_capacity(3 * (exponent as usize + 2) + usize::from(ordinal < 0));
+    if ordinal < 0 {
+        marker.push('-');
+    }
+    let mut divisor = 10u64.pow(exponent);
     while divisor != 0 {
-        marker.push(DIGITS[(ordinal / divisor) % 10]);
+        marker.push(DIGITS[((magnitude / divisor) % 10) as usize]);
         divisor /= 10;
     }
     marker.push('、');
