@@ -2668,11 +2668,21 @@ impl BaseDocument {
 
         // Use "pointer" cursor if any ancestor is a link. Walk DOM parents: an atomic
         // inline's layout parent is its inline root, which skips the inline elements
-        // (such as `<a>`) between them.
+        // (such as `<a>`) between them. Also track whether we are inside a button so
+        // `cursor: auto; user-select: auto` over button text resolves to the default
+        // arrow cursor rather than an I-beam, matching browsers.
+        let mut in_button = false;
         let mut maybe_node = Some(node);
         while let Some(node) = maybe_node {
             if node.data.is_element_with_tag_name(&local_name!("a")) {
                 return Some(CursorIcon::Pointer);
+            }
+            if node
+                .data
+                .downcast_element()
+                .is_some_and(|el| el.is_button())
+            {
+                in_button = true;
             }
 
             maybe_node = node.parent.map(|node_id| node.with(node_id));
@@ -2681,9 +2691,9 @@ impl BaseDocument {
         // Return text cursor for text nodes
         if self.hover_node_is_text {
             return Some(match user_select {
-                UserSelect::Text | UserSelect::All | UserSelect::Auto | UserSelect::Contain => {
-                    CursorIcon::Text
-                }
+                UserSelect::Text | UserSelect::All | UserSelect::Contain => CursorIcon::Text,
+                UserSelect::Auto if in_button => CursorIcon::Default,
+                UserSelect::Auto => CursorIcon::Text,
                 UserSelect::None => CursorIcon::Default,
             });
         }

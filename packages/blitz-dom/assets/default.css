@@ -138,6 +138,7 @@ input[type="button"] {
     background-color: #EFEFEF;
     text-align: center;
     display: inline-block;
+    cursor: default;
 }
 
 /* Button-flavored inputs clip their contents to the border box and never
