@@ -683,6 +683,38 @@ impl BaseDocument {
         }
     }
 
+    /// Scroll a focused text input back into view after the viewport shrank
+    /// (see `pending_focus_reveal`). Runs once, against the new layout, so later
+    /// frames don't undo the user's own scrolling.
+    pub(crate) fn reveal_focused_input_after_resize(&mut self) {
+        if !std::mem::take(&mut self.pending_focus_reveal) {
+            return;
+        }
+        let Some(id) = self.focus_node_id else {
+            return;
+        };
+        let Some(root_id) = self.try_root_element().map(|root| root.id) else {
+            return;
+        };
+        // A box fixed to the viewport moves with it, so scrolling can't reveal it.
+        let mut current = id;
+        while let Some(node) = self.nodes.get(current) {
+            let Some(parent) = node.containing_block() else {
+                break;
+            };
+            if parent == root_id && node.taffy_position() == taffy::Position::Fixed {
+                return;
+            }
+            current = parent;
+        }
+        self.scroll_into_view(
+            id,
+            ScrollBehavior::Instant,
+            ScrollLogicalPosition::Nearest,
+            ScrollLogicalPosition::Nearest,
+        );
+    }
+
     /// Scroll the viewport so that the given element has the requested alignment in each axis.
     pub fn scroll_into_view(
         &mut self,
