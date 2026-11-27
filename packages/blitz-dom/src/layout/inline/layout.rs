@@ -599,6 +599,20 @@ impl LayoutPassState<'_> {
                     } else {
                         (margin_box_height.max(0.0) * scale).min(f32::MAX)
                     };
+
+                    // `<img align=middle>`: lower the box until its middle is on the baseline.
+                    let node = &self.nodes[NodeId::from_u64(ibox.id)];
+                    if node.element_data().is_some_and(
+                        crate::stylo::presentational_hints::aligns_middle_with_baseline,
+                    ) && node.primary_styles().is_some_and(|style| {
+                        stylo_to_parley::vertical_align(&style) == parley::VerticalAlign::BASELINE
+                    }) {
+                        let ascent = ibox.baseline.unwrap_or(ibox.height);
+                        ibox.vertical_align = parley::VerticalAlign::new(
+                            parley::AlignmentBaseline::Baseline,
+                            parley::BaselineShift::Length(ibox.height / 2.0 - ascent),
+                        );
+                    }
                 }
             });
         }
