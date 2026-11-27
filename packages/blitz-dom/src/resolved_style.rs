@@ -378,8 +378,10 @@ impl BaseDocument {
                     || *tag == local_name!("textarea")
                     || *tag == local_name!("button"))
             });
-        let generates_box =
-            node.flags.is_in_document() && !display.is_none() && stored_styles.is_some();
+        let generates_box = node.flags.is_in_document()
+            && !display.is_none()
+            && !display.is_contents()
+            && stored_styles.is_some();
         let has_layout_box = generates_box && !is_non_atomic_inline;
 
         let Ok(property_id) = PropertyId::parse_enabled_for_all_content(property_name) else {
@@ -402,7 +404,7 @@ impl BaseDocument {
             // Shorthands of longhands that resolve to used values
             "margin" | "margin-block" | "margin-inline" | "padding" | "padding-block"
             | "padding-inline" | "inset" | "inset-block" | "inset-inline"
-                if has_layout_box =>
+                if has_layout_box || (generates_box && !property_name.starts_with("inset")) =>
             {
                 if let Ok(shorthand) = property_id.as_shorthand() {
                     let sides: Vec<String> = shorthand
@@ -488,6 +490,61 @@ impl BaseDocument {
                         - layout.padding.bottom
                 };
                 return format_used_px(size.max(0.0));
+            }
+            "margin-top" | "margin-right" | "margin-bottom" | "margin-left" | "padding-top"
+            | "padding-right" | "padding-bottom" | "padding-left"
+                if generates_box && is_non_atomic_inline =>
+            {
+                // Inline style spans have no separate Taffy box. Their percentage
+                // edges use the inline size of the block that lays out their line.
+                if let Some(root) = node.inline_root_ancestor() {
+                    let (_, layout) = self.physical_unrounded_geometry(root.id);
+                    let inline_size = if root
+                        .primary_styles()
+                        .is_some_and(|style| style.writing_mode.is_vertical())
+                    {
+                        layout.size.height
+                            - layout.border.top
+                            - layout.border.bottom
+                            - layout.padding.top
+                            - layout.padding.bottom
+                            - layout.scrollbar_size.height
+                    } else {
+                        layout.size.width
+                            - layout.border.left
+                            - layout.border.right
+                            - layout.padding.left
+                            - layout.padding.right
+                            - layout.scrollbar_size.width
+                    };
+                    let basis = CSSPixelLength::new(inline_size.max(0.0));
+                    let margin = styles.get_margin();
+                    let padding = styles.get_padding();
+                    let resolve_margin = |value: &style::values::computed::Margin| {
+                        use style::values::generics::length::GenericMargin;
+                        match value {
+                            GenericMargin::LengthPercentage(value) => {
+                                Some(value.resolve(basis).px())
+                            }
+                            GenericMargin::Auto => Some(0.0),
+                            _ => None,
+                        }
+                    };
+                    let used = match property_name {
+                        "margin-top" => resolve_margin(&margin.margin_top),
+                        "margin-right" => resolve_margin(&margin.margin_right),
+                        "margin-bottom" => resolve_margin(&margin.margin_bottom),
+                        "margin-left" => resolve_margin(&margin.margin_left),
+                        "padding-top" => Some(padding.padding_top.0.resolve(basis).px()),
+                        "padding-right" => Some(padding.padding_right.0.resolve(basis).px()),
+                        "padding-bottom" => Some(padding.padding_bottom.0.resolve(basis).px()),
+                        "padding-left" => Some(padding.padding_left.0.resolve(basis).px()),
+                        _ => unreachable!(),
+                    };
+                    if let Some(used) = used {
+                        return format_used_px(used);
+                    }
+                }
             }
             "margin-top" | "margin-right" | "margin-bottom" | "margin-left" if has_layout_box => {
                 // Used value: the margin resolved by layout (percentages and
