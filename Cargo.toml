@@ -80,23 +80,23 @@ smallvec = "1"
 thin-vec = "0.2"
 
 # DioxusLabs dependencies
-dioxus = { version = "0.8.0-alpha.3" }
-dioxus-core = { version = "0.8.0-alpha.3" }
-dioxus-html = { version = "0.8.0-alpha.3" }
-dioxus-hooks = { version = "0.8.0-alpha.3" }
-dioxus-signals = { version = "0.8.0-alpha.3" }
-dioxus-stores = { version = "0.8.0-alpha.3" }
-dioxus-asset-resolver = { version = "0.8.0-alpha.3" }
-manganis = { version = "0.8.0-alpha.3" }
-dioxus-document = { version = "0.8.0-alpha.3" }
-dioxus-history = { version = "0.8.0-alpha.3" }
+dioxus-core = { version = "0.8.0-alpha.4" }
+dioxus-vdom = { version = "0.8.0-alpha.4" }
+dioxus-html = { version = "0.8.0-alpha.4" }
+dioxus-hooks = { version = "0.8.0-alpha.4" }
+dioxus-signals = { version = "0.8.0-alpha.4" }
+dioxus-stores = { version = "0.8.0-alpha.4" }
+dioxus-asset-resolver = { version = "0.8.0-alpha.4" }
+manganis = { version = "0.8.0-alpha.4" }
+dioxus-document = { version = "0.8.0-alpha.4" }
+dioxus-history = { version = "0.8.0-alpha.4" }
 
 # Dioxus hot reload
-dioxus-devtools = { version = "0.8.0-alpha.3" }
-dioxus-cli-config = { version = "0.8.0-alpha.3" }
+dioxus-devtools = { version = "0.8.0-alpha.4" }
+dioxus-cli-config = { version = "0.8.0-alpha.4" }
 
 # Dioxus Prelude
-dioxus-core-macro = { version = "0.8.0-alpha.3" }
+dioxus-vdom-macro = { version = "0.8.0-alpha.4" }
 
 # Taffy + Parley + Fontations
 taffy = { version = "0.16.0", default-features = false, features = [
@@ -275,7 +275,6 @@ blitz-shell = { workspace = true }
 blitz-net = { workspace = true }
 blitz-vibey-script = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
-dioxus = { workspace = true }
 dioxus-native = { workspace = true, features = [
     "vello-gpu",
     "floats",
@@ -332,3 +331,4 @@ wgpu_context = { workspace = true }
 # [patch."https://github.com/linebender/parley"]
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
+

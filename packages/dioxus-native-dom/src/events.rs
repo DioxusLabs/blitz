@@ -7,7 +7,6 @@ use blitz_traits::events::{
     BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource, MouseEventButton,
 };
 use blitz_traits::net::Bytes;
-use dioxus_core::CapturedError;
 use dioxus_html::{
     AnimationData, BeforeInputData, CancelData, ClipboardData, CompositionData, DataTransfer,
     DragData, FileData, FocusData, FormData, FormValue, HasDataTransferData, HasDragData,
@@ -27,6 +26,7 @@ use dioxus_html::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
 };
+use dioxus_vdom::CapturedError;
 use futures_util::{Stream, stream};
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::{
