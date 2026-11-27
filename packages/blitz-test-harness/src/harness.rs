@@ -111,22 +111,10 @@ impl<D: Document> Harness<D> {
     }
 
     /// Poll pending async work (e.g. the Dioxus VirtualDom) and resolve style/layout,
-    /// settling any events generated during layout (e.g. resize observer events) in a
-    /// bounded loop matching `blitz-shell`.
+    /// dispatching any events queued by layout (e.g. resize observer events).
     pub fn pump(&mut self) {
-        const MAX_SETTLE_PASSES: usize = 3;
-
         self.doc.poll(None);
-        for pass in 0..=MAX_SETTLE_PASSES {
-            let has_pending_events = {
-                let mut inner = self.doc.inner_mut();
-                inner.resolve(self.time);
-                inner.has_pending_events()
-            };
-            if !has_pending_events || pass == MAX_SETTLE_PASSES || !self.doc.poll(None) {
-                break;
-            }
-        }
+        self.doc.resolve_and_settle(self.time, None);
     }
 
     /// Advance the animation clock by `dt_seconds` and [`pump`](Self::pump)

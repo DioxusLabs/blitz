@@ -157,6 +157,36 @@ pub trait Document: Any + 'static {
         true
     }
 
+    /// Resolve style and layout, then dispatch any events that resolving queued (such as
+    /// resize observer notifications) and resolve again, so that changes made by their
+    /// handlers are painted in the same frame.
+    ///
+    /// The loop is capped. If events are still pending when the cap is reached, `waker` is
+    /// woken so that they are dispatched by a later [`poll`](Self::poll).
+    fn resolve_and_settle(&mut self, animation_time: f64, waker: Option<&Waker>) {
+        const MAX_SETTLE_PASSES: usize = 3;
+
+        for pass in 0..=MAX_SETTLE_PASSES {
+            let has_pending_events = {
+                let mut inner = self.inner_mut();
+                inner.resolve(animation_time);
+                inner.has_pending_events()
+            };
+            if !has_pending_events {
+                break;
+            }
+            if pass == MAX_SETTLE_PASSES {
+                if let Some(waker) = waker {
+                    waker.wake_by_ref();
+                }
+                break;
+            }
+            if !self.poll(waker.map(TaskContext::from_waker)) {
+                break;
+            }
+        }
+    }
+
     /// Get the [`Document`]'s id
     fn id(&self) -> usize {
         self.inner().id
