@@ -618,41 +618,65 @@ pub struct HitResult {
     pub y: f32,
 }
 
+/// The kind of device a [`BlitzPointerId`] belongs to
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum BlitzPointerId {
+pub enum PointerKind {
     Mouse,
     Pen,
-    Finger(u64),
+    Finger,
 }
 
+/// A pointer's DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BlitzPointerId(i32);
+
 impl BlitzPointerId {
-    const FIRST_FINGER_ID: u64 = 2;
+    const FIRST_FINGER_ID: i32 = 2;
+
+    pub const MOUSE: Self = Self(0);
+    pub const PEN: Self = Self(1);
 
     /// How many finger indexes [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
-    pub const FINGER_INDEX_COUNT: u64 = i32::MAX as u64 - Self::FIRST_FINGER_ID + 1;
+    pub const FINGER_INDEX_COUNT: u64 = (i32::MAX - Self::FIRST_FINGER_ID) as u64 + 1;
+
+    pub const fn mouse() -> Self {
+        Self::MOUSE
+    }
+
+    pub const fn pen() -> Self {
+        Self::PEN
+    }
 
     /// The ID of the finger with the given index, placed after the mouse and pen IDs
     pub const fn finger(index: u64) -> Self {
         debug_assert!(index < Self::FINGER_INDEX_COUNT);
-        BlitzPointerId::Finger(index + Self::FIRST_FINGER_ID)
+        Self(index as i32 + Self::FIRST_FINGER_ID)
     }
 
-    /// The DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
-    pub fn as_i32(&self) -> i32 {
-        match self {
-            BlitzPointerId::Mouse => 0,
-            BlitzPointerId::Pen => 1,
-            BlitzPointerId::Finger(id) => *id as i32,
+    /// The pointer with the given DOM `pointerId` (the inverse of [`Self::id`])
+    pub const fn from_id(id: i32) -> Option<Self> {
+        if id >= 0 { Some(Self(id)) } else { None }
+    }
+
+    /// The DOM `pointerId`
+    pub const fn id(self) -> i32 {
+        self.0
+    }
+
+    pub const fn kind(self) -> PointerKind {
+        match self.0 {
+            0 => PointerKind::Mouse,
+            1 => PointerKind::Pen,
+            _ => PointerKind::Finger,
         }
     }
 
-    /// The pointer with the given DOM `pointerId` (the inverse of [`Self::as_i32`])
-    pub fn from_i32(id: i32) -> Option<Self> {
-        match id {
-            0 => Some(BlitzPointerId::Mouse),
-            1 => Some(BlitzPointerId::Pen),
-            id if id >= Self::FIRST_FINGER_ID as i32 => Some(BlitzPointerId::Finger(id as u64)),
-            _ => None,
+    /// The index passed to [`Self::finger`], or `None` for the mouse and pen
+    pub const fn finger_index(self) -> Option<u64> {
+        if self.0 >= Self::FIRST_FINGER_ID {
+            Some((self.0 - Self::FIRST_FINGER_ID) as u64)
+        } else {
+            None
         }
     }
 }
@@ -710,15 +734,15 @@ pub struct BlitzPointerEvent {
 impl BlitzPointerEvent {
     #[inline(always)]
     pub fn is_mouse(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Mouse)
+        self.id.kind() == PointerKind::Mouse
     }
     #[inline(always)]
     pub fn is_pen(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Pen)
+        self.id.kind() == PointerKind::Pen
     }
     #[inline(always)]
     pub fn is_finger(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Finger(_))
+        self.id.kind() == PointerKind::Finger
     }
 
     #[inline(always)]

@@ -5,6 +5,7 @@ use blitz_dom::{
 use blitz_traits::events::{
     BlitzDragEvent, BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent,
     BlitzWheelDelta, BlitzWheelEvent, BlitzWheelPhase, BlitzWheelSource, MouseEventButton,
+    PointerKind,
 };
 use blitz_traits::net::Bytes;
 use dioxus_html::{
@@ -346,7 +347,7 @@ impl RenderedElementBacking for NodeHandle {
         &self,
         pointer_id: i32,
     ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
+        let Some(pointer_id) = BlitzPointerId::from_id(pointer_id) else {
             return invalid_pointer_id_err(pointer_id);
         };
         if !NodeHandle::set_pointer_capture(self, pointer_id) {
@@ -359,7 +360,7 @@ impl RenderedElementBacking for NodeHandle {
         &self,
         pointer_id: i32,
     ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
+        let Some(pointer_id) = BlitzPointerId::from_id(pointer_id) else {
             return invalid_pointer_id_err(pointer_id);
         };
         if self.doc().get_node(self.node_id).is_none() {
@@ -505,14 +506,14 @@ impl HasPointerData for NativePointerData {
     }
 
     fn pointer_id(&self) -> i32 {
-        self.0.id.as_i32()
+        self.0.id.id()
     }
 
     fn pointer_type(&self) -> String {
-        match self.0.id {
-            BlitzPointerId::Mouse => String::from("mouse"),
-            BlitzPointerId::Pen => String::from("pen"),
-            BlitzPointerId::Finger(_) => String::from("touch"),
+        match self.0.id.kind() {
+            PointerKind::Mouse => String::from("mouse"),
+            PointerKind::Pen => String::from("pen"),
+            PointerKind::Finger => String::from("touch"),
         }
     }
 
@@ -608,9 +609,9 @@ impl InteractionLocation for NativeTouchPointData {
 
 impl HasTouchPointData for NativeTouchPointData {
     fn identifier(&self) -> i32 {
-        match self.0.id {
-            BlitzPointerId::Finger(id) => id as i32,
-            BlitzPointerId::Mouse | BlitzPointerId::Pen => 0,
+        match self.0.id.kind() {
+            PointerKind::Finger => self.0.id.id(),
+            PointerKind::Mouse | PointerKind::Pen => 0,
         }
     }
 
@@ -965,7 +966,7 @@ mod tests {
 
     fn finger_event(id: u64, x: f32, y: f32) -> BlitzPointerEvent {
         BlitzPointerEvent {
-            id: BlitzPointerId::Finger(id),
+            id: BlitzPointerId::finger(id),
             is_primary: id == 0,
             coords: PointerCoords {
                 page_x: x,

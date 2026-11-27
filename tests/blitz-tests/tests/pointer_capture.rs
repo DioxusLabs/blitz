@@ -9,7 +9,7 @@ use blitz_traits::events::{
 };
 use keyboard_types::Modifiers;
 
-const MOUSE: BlitzPointerId = BlitzPointerId::Mouse;
+const MOUSE: BlitzPointerId = BlitzPointerId::MOUSE;
 
 fn mouse_event(x: f32, y: f32) -> BlitzPointerEvent {
     pointer_event(

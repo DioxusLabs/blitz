@@ -94,16 +94,16 @@ pub(crate) fn pointer_source_to_blitz(
     pointer_ids: &mut PointerIds,
 ) -> BlitzPointerId {
     match source {
-        PointerSource::Mouse => BlitzPointerId::Mouse,
+        PointerSource::Mouse => BlitzPointerId::MOUSE,
         PointerSource::Touch { finger_id, .. } => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: TabletTool and Unknown events
-        PointerSource::TabletTool { .. } => BlitzPointerId::Pen,
-        PointerSource::Unknown => BlitzPointerId::Mouse,
+        PointerSource::TabletTool { .. } => BlitzPointerId::PEN,
+        PointerSource::Unknown => BlitzPointerId::MOUSE,
         _ => {
             #[cfg(feature = "tracing")]
             tracing::error!("unsupported PointerSource variant: {source:?}");
-            BlitzPointerId::Mouse
+            BlitzPointerId::MOUSE
         }
     }
 }
@@ -113,16 +113,16 @@ pub(crate) fn pointer_kind_to_blitz(
     pointer_ids: &mut PointerIds,
 ) -> BlitzPointerId {
     match kind {
-        PointerKind::Mouse => BlitzPointerId::Mouse,
+        PointerKind::Mouse => BlitzPointerId::MOUSE,
         PointerKind::Touch(finger_id) => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: TabletTool and Unknown events
-        PointerKind::TabletTool(_) => BlitzPointerId::Pen,
-        PointerKind::Unknown => BlitzPointerId::Mouse,
+        PointerKind::TabletTool(_) => BlitzPointerId::PEN,
+        PointerKind::Unknown => BlitzPointerId::MOUSE,
         _ => {
             #[cfg(feature = "tracing")]
             tracing::error!("unsupported PointerKind variant: {kind:?}");
-            BlitzPointerId::Mouse
+            BlitzPointerId::MOUSE
         }
     }
 }
@@ -132,16 +132,16 @@ pub(crate) fn button_source_to_blitz(
     pointer_ids: &mut PointerIds,
 ) -> BlitzPointerId {
     match source {
-        ButtonSource::Mouse(_) => BlitzPointerId::Mouse,
-        ButtonSource::TabletTool { .. } => BlitzPointerId::Pen,
+        ButtonSource::Mouse(_) => BlitzPointerId::MOUSE,
+        ButtonSource::TabletTool { .. } => BlitzPointerId::PEN,
         ButtonSource::Touch { finger_id, .. } => pointer_ids.get_or_assign(*finger_id),
 
         // TODO: Unknown events
-        ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
+        ButtonSource::Unknown(_) => BlitzPointerId::MOUSE,
         _ => {
             #[cfg(feature = "tracing")]
             tracing::error!("unsupported ButtonSource variant: {source:?}");
-            BlitzPointerId::Mouse
+            BlitzPointerId::MOUSE
         }
     }
 }
