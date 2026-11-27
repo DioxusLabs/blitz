@@ -38,7 +38,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/dioxuslabs/blitz"
 categories = ["gui"]
 edition = "2024"
-rust-version = "1.91.0"
+rust-version = "1.96.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
@@ -256,7 +256,7 @@ edition = "2024"
 description = "Top level crate for Blitz"
 license = "MIT OR Apache-2.0"
 keywords = ["dom", "ui", "gui", "react", "wasm"]
-rust-version = "1.91.0"
+rust-version = "1.96.0"
 publish = false
 
 [features]
@@ -334,3 +334,11 @@ wgpu_context = { workspace = true }
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
 
+# Upstream Parley main (includes linebender/parley#940, #976, #985)
+[patch.crates-io]
+parley = { git = "https://github.com/linebender/parley", rev = "ab8b8ed772a0572ab981b8ee480f603158b01ab1" }
+fontique = { git = "https://github.com/linebender/parley", rev = "ab8b8ed772a0572ab981b8ee480f603158b01ab1" }
+parlance = { git = "https://github.com/linebender/parley", rev = "ab8b8ed772a0572ab981b8ee480f603158b01ab1" }
+parley_data = { git = "https://github.com/linebender/parley", rev = "ab8b8ed772a0572ab981b8ee480f603158b01ab1" }
+parley_emoji = { git = "https://github.com/linebender/parley", rev = "ab8b8ed772a0572ab981b8ee480f603158b01ab1" }
+parley_engine = { git = "https://github.com/linebender/parley", rev = "ab8b8ed772a0572ab981b8ee480f603158b01ab1" }

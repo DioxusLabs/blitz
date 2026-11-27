@@ -330,7 +330,7 @@ dependencies = [
  "anyrender",
  "image",
  "peniko",
- "read-fonts",
+ "read-fonts 0.46.0",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -3316,8 +3316,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb17c03da08e75b2a84346a7548f34c038fa24d9d5cb12b1ed18c1ea8dbe86d8"
+source = "git+https://github.com/linebender/parley?rev=ab8b8ed772a0572ab981b8ee480f603158b01ab1#ab8b8ed772a0572ab981b8ee480f603158b01ab1"
 dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
@@ -3327,7 +3326,7 @@ dependencies = [
  "objc2-core-text",
  "objc2-foundation 0.3.2",
  "parlance",
- "read-fonts",
+ "read-fonts 0.47.0",
  "roxmltree 0.21.1",
  "smallvec",
  "windows",
@@ -3841,7 +3840,20 @@ checksum = "865dcc4105d51c323d8fedbb2d75b5e9c8ecddf5613f74c82f851d0afbc97114"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.46.0",
+ "smallvec",
+ "yoke",
+]
+
+[[package]]
+name = "harfrust"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0690f8c81dfeca8987d8518cf1c861d7b58d43ad0cedae9184d41af236effb9c"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytemuck",
+ "read-fonts 0.47.0",
  "smallvec",
  "yoke",
 ]
@@ -6224,8 +6236,7 @@ dependencies = [
 [[package]]
 name = "parlance"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73072a9470554c8e794778acece2312661218aaabb635600957d952cf01c716e"
+source = "git+https://github.com/linebender/parley?rev=ab8b8ed772a0572ab981b8ee480f603158b01ab1#ab8b8ed772a0572ab981b8ee480f603158b01ab1"
 dependencies = [
  "bytemuck",
 ]
@@ -6233,8 +6244,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f00d9e3b12cd601fbd38535b7a8dbc1f761bcc842c4be4803f7ac2d89bb78e01"
+source = "git+https://github.com/linebender/parley?rev=ab8b8ed772a0572ab981b8ee480f603158b01ab1#ab8b8ed772a0572ab981b8ee480f603158b01ab1"
 dependencies = [
  "fontique",
  "hashbrown 0.17.1",
@@ -6276,8 +6286,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcd6506d5b966f3324e191691325077cbac6e08ea1b828ba9cd86f660e10d9e5"
+source = "git+https://github.com/linebender/parley?rev=ab8b8ed772a0572ab981b8ee480f603158b01ab1#ab8b8ed772a0572ab981b8ee480f603158b01ab1"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6286,18 +6295,14 @@ dependencies = [
 [[package]]
 name = "parley_emoji"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66dbd709d00551ad2305b8a9479ca04d722a3d21276eba3d74596359b8a64eaa"
+source = "git+https://github.com/linebender/parley?rev=ab8b8ed772a0572ab981b8ee480f603158b01ab1#ab8b8ed772a0572ab981b8ee480f603158b01ab1"
 
 [[package]]
 name = "parley_engine"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd9c37658a7f75addef6fb3183cde6ed16fdf7757436dc64f073144f2b99879f"
+source = "git+https://github.com/linebender/parley?rev=ab8b8ed772a0572ab981b8ee480f603158b01ab1#ab8b8ed772a0572ab981b8ee480f603158b01ab1"
 dependencies = [
- "fontique",
- "harfrust",
- "hashbrown 0.17.1",
+ "harfrust 0.16.1",
  "icu_locale_core",
  "icu_normalizer",
  "icu_properties",
@@ -6307,7 +6312,6 @@ dependencies = [
  "parlance",
  "parley_data",
  "parley_emoji",
- "skrifa",
 ]
 
 [[package]]
@@ -7029,6 +7033,20 @@ name = "read-fonts"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdaa4fffe9ff3ca2c353fa9729792805b9b3e324695ff5a081f860612e81b330"
+dependencies = [
+ "bytemuck",
+ "foldhash 0.2.0",
+ "font-types",
+ "once_cell",
+ "smallvec",
+ "yoke",
+]
+
+[[package]]
+name = "read-fonts"
+version = "0.47.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a39d2f8f681030a7bcbbcf3e8568775ac2393afd51401a2e2133ee89e3953897"
 dependencies = [
  "bytemuck",
  "foldhash 0.2.0",
@@ -7813,7 +7831,7 @@ checksum = "1304685b8b275337200c0c138d8ca1b0b19be6185e4eb4013aebc9a1c270d761"
 dependencies = [
  "foldhash 0.2.0",
  "hashbrown 0.17.1",
- "read-fonts",
+ "read-fonts 0.46.0",
  "skrifa",
  "thiserror 2.0.21",
  "write-fonts",
@@ -7855,7 +7873,7 @@ checksum = "a7459fb60888ad9a5f367dd293fa2fb9df142cb451aa6bfd6cd66a7d6a9b739d"
 dependencies = [
  "bytemuck",
  "once_cell",
- "read-fonts",
+ "read-fonts 0.46.0",
  "smallvec",
  "yoke",
 ]
@@ -9175,7 +9193,7 @@ dependencies = [
  "data-url",
  "flate2",
  "fontdb",
- "harfrust",
+ "harfrust 0.15.0",
  "imagesize",
  "kurbo",
  "log",
@@ -10848,7 +10866,7 @@ checksum = "3e91ad74b39f48f456560ed1ccc75959efa19bf6f0817d1560751bb49db84f6c"
 dependencies = [
  "font-types",
  "log",
- "read-fonts",
+ "read-fonts 0.46.0",
 ]
 
 [[package]]

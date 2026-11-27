@@ -1,19 +1,12 @@
 //! White space collapsing for an inline formatting context.
 //!
-//! White space is collapsed here (CSS Text §4.1.1) rather than by Parley so that a
-//! [`TextOffsetMap`] can be recorded as it goes. The collapsed text is then pushed to Parley's [`TreeBuilder`],
-//! which keeps the span tree. Parley collapses white space too, but text that is already
-//! collapsed comes out unchanged, except that a space pending at the end of one text node is
-//! committed or dropped by what follows it, exactly as here.
-//!
-//! Each collapsible run still pushes a single space to Parley in the span it was found in, so
-//! that Parley can make the kept space a wrap opportunity when any span it collapsed from
-//! wraps. A builder that took final text and style runs (Parley's `StyleRunBuilder`, once its
-//! styles can have parents) would need that style variant from here instead.
+//! White space is collapsed here (CSS Text §4.1.1) while recording a [`TextOffsetMap`], and the
+//! final collapsed text and style runs are fed directly to Parley's [`StyleRunBuilder`] without
+//! Parley rescanning the text.
 
 use std::ops::Range;
 
-use parley::{Brush, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
+use parley::{Brush, InlineBox, StyleProperty, StyleRunBuilder, TextWrapMode, WhiteSpaceCollapse};
 
 use super::INLINE_BOX_CHAR;
 use super::offset_map::{TextOffsetMap, TextOffsetMapBuilder, UnitKind};
@@ -39,13 +32,23 @@ pub struct WhiteSpace {
     pub collapse: WhiteSpaceCollapse,
     /// The space a collapsible run collapses to: U+3000 under `text-transform: full-width`.
     pub collapsed_space: &'static str,
+    /// Whether `text-wrap-mode` is `wrap`.
+    pub wrap: bool,
 }
 
 /// A collapsible run that will collapse to one space if content follows it.
 struct Pending {
     /// The unit of the run's first character, which becomes the kept space.
     kept_unit: usize,
+    /// The style of the span where the collapsible run started.
+    style_index: u16,
+    /// The parent of `style_index`, so a wrappable copy can be pushed as its sibling.
+    parent_style_index: Option<u16>,
     space: &'static str,
+    /// Whether the span where the run started allows wrapping.
+    start_wrap: bool,
+    /// Whether any span contributing whitespace to this run allows wrapping.
+    wrap: bool,
 }
 
 /// A range of a text node's transformed text that `text-transform` made from source text of a
@@ -60,16 +63,14 @@ pub struct TextChange {
 }
 
 /// Collapses the white space of an inline formatting context's text and records where each
-/// part of each source node (identified by `Id`) ended up in the layout text, pushing the
-/// collapsed text to a Parley [`TreeBuilder`].
+/// part of each source node (identified by `Id`) ended up in the layout text, pushing style
+/// runs and inline boxes to a Parley [`StyleRunBuilder`].
 pub struct WhiteSpaceCollapser<Id> {
     map: TextOffsetMapBuilder<Id>,
-    /// Length of the text committed so far (pending white space isn't).
-    len: usize,
+    /// The collapsed text committed so far (pending white space isn't).
+    text: String,
     ends_with_break: bool,
     pending: Option<Pending>,
-    /// The current text node's collapsed text, as pushed to Parley.
-    out: String,
     /// The first of the current text node's changes not yet committed.
     next_change: usize,
 }
@@ -78,21 +79,43 @@ impl<Id> Default for WhiteSpaceCollapser<Id> {
     fn default() -> Self {
         Self {
             map: TextOffsetMapBuilder::default(),
-            len: 0,
+            text: String::new(),
             ends_with_break: false,
             pending: None,
-            out: String::new(),
             next_change: 0,
         }
     }
 }
 
 impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
-    /// Collapses and pushes the content of the text node `node`. `text` is `source` after
+    /// Creates a collapser that clears and reuses `text`'s allocation for the collapsed output.
+    pub fn with_text(mut text: String) -> Self {
+        text.clear();
+        Self {
+            text,
+            ..Self::default()
+        }
+    }
+
+    /// The collapsed text committed so far (not including pending collapsible white space).
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Whether the text so far is followed by pending collapsible white space.
+    pub fn has_pending_whitespace(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// Collapses and pushes the content of the text node `node` under `style_index` (whose parent
+    /// in `builder` is `parent_style_index`, or `None` for the root). `text` is `source` after
     /// `text-transform`, which reports where their lengths differ as `changes`, in order.
+    #[allow(clippy::too_many_arguments)]
     pub fn push_text<B: Brush>(
         &mut self,
-        builder: &mut TreeBuilder<'_, B>,
+        builder: &mut StyleRunBuilder<'_, B>,
+        style_index: u16,
+        parent_style_index: Option<u16>,
         node: Id,
         source: &str,
         text: &str,
@@ -102,18 +125,24 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
         self.map.begin_node(node);
         if !text.is_empty() {
             self.next_change = 0;
-            self.out.clear();
-            self.collapse(text, changes, white_space);
-            builder.push_text(&self.out);
-            debug_assert_eq!(builder.text().len(), self.len, "{:?}", self.out);
+            self.collapse(
+                builder,
+                style_index,
+                parent_style_index,
+                text,
+                changes,
+                white_space,
+            );
         }
-        self.map.end_node(source.len(), self.len);
+        self.map.end_node(source.len(), self.text.len());
     }
 
     /// Pushes text generated for `node` (e.g. a list marker), which has no source offsets.
     pub fn push_generated<B: Brush>(
         &mut self,
-        builder: &mut TreeBuilder<'_, B>,
+        builder: &mut StyleRunBuilder<'_, B>,
+        style_index: u16,
+        parent_style_index: Option<u16>,
         node: Id,
         text: &str,
         white_space: WhiteSpace,
@@ -122,56 +151,105 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
             source: 0..0,
             text: 0..text.len(),
         };
-        self.push_text(builder, node, "", text, &[generated], white_space);
+        self.push_text(
+            builder,
+            style_index,
+            parent_style_index,
+            node,
+            "",
+            text,
+            &[generated],
+            white_space,
+        );
     }
 
-    /// Pushes a forced line break element (`<br>`).
-    pub fn push_line_break<B: Brush>(&mut self, builder: &mut TreeBuilder<'_, B>, node: Id) {
+    /// Pushes a forced line break element (`<br>`) under `style_index`.
+    pub fn push_line_break<B: Brush>(
+        &mut self,
+        builder: &mut StyleRunBuilder<'_, B>,
+        style_index: u16,
+        node: Id,
+    ) {
         self.map.begin_node(node);
         self.pending = None;
-        self.map.push(UnitKind::Identity, 0, self.len);
-        self.len += 1;
+        let start = self.text.len();
+        self.map.push(UnitKind::Identity, 0, start);
+        self.text.push('\n');
+        builder.push_style_run(style_index, start..self.text.len());
         self.ends_with_break = true;
-        self.map.end_node(1, self.len);
-        builder.push_style_modification_span(&[StyleProperty::WhiteSpaceCollapse(
-            WhiteSpaceCollapse::Preserve,
-        )]);
-        builder.push_text("\n");
-        builder.pop_style_span();
+        self.map.end_node(1, self.text.len());
     }
 
-    /// Records the position of an inline box. Only in-flow boxes take up a character
-    /// (U+FFFC) of the text, and only they end a collapsible run.
+    /// Pushes an in-flow inline box under `style_index`.
+    ///
+    /// Flushes any pending collapsible white space, appends U+FFFC to the text, and pushes the
+    /// box to `builder` with its `index` set to that character's byte offset.
+    pub fn push_inline_box<B: Brush>(
+        &mut self,
+        builder: &mut StyleRunBuilder<'_, B>,
+        style_index: u16,
+        node: Id,
+        inline_box: InlineBox,
+    ) {
+        self.map.begin_node(node);
+        self.flush(builder);
+        let index = self.text.len();
+        self.map.push(UnitKind::Variable, 0, index);
+        self.text.push(INLINE_BOX_CHAR);
+        builder.push_style_run(style_index, index..self.text.len());
+        builder.push_inline_box(InlineBox {
+            index,
+            ..inline_box
+        });
+        self.ends_with_break = false;
+        self.map.end_node(1, self.text.len());
+    }
+
+    /// Records the position of an out-of-flow box (e.g. floated or absolutely positioned), which
+    /// takes up no character in the text and does not end a collapsible run.
     ///
     /// An out-of-flow box is recorded after any collapsible space before it, in document order,
     /// though Parley anchors it before that space (see [`TextOffsetMap::layout_range`]).
-    pub fn push_inline_box(&mut self, node: Id, in_flow: bool) {
+    ///
+    /// Returns its byte offset in the text committed so far.
+    pub fn push_out_of_flow_box(&mut self, node: Id) -> usize {
         self.map.begin_node(node);
-        if in_flow {
-            self.flush();
-        }
-        self.map.push(UnitKind::Variable, 0, self.len);
-        if in_flow {
-            self.len += INLINE_BOX_CHAR.len_utf8();
-            self.ends_with_break = false;
-        }
-        self.map.end_node(1, self.len);
+        let index = self.text.len();
+        self.map.push(UnitKind::Variable, 0, index);
+        self.map.end_node(1, index);
+        index
     }
 
-    /// Finishes the formatting context, dropping any white space at its end.
-    pub fn finish(self) -> TextOffsetMap<Id> {
-        self.map.finish()
+    /// Finishes the formatting context, dropping any white space at its end, and returns the
+    /// collapsed layout text and its offset map.
+    pub fn finish(self) -> (String, TextOffsetMap<Id>) {
+        (self.text, self.map.finish())
     }
 
-    fn collapse(&mut self, text: &str, changes: &[TextChange], white_space: WhiteSpace) {
+    fn collapse<B: Brush>(
+        &mut self,
+        builder: &mut StyleRunBuilder<'_, B>,
+        style_index: u16,
+        parent_style_index: Option<u16>,
+        text: &str,
+        changes: &[TextChange],
+        white_space: WhiteSpace,
+    ) {
         let mode = white_space.collapse;
         if !is_collapsible(mode, ' ') && !is_collapsible(mode, '\n') {
             // Preserved white space: only a preserved segment break drops a pending run.
             if text.starts_with(is_segment_break) {
                 self.pending = None;
             }
-            self.flush();
-            self.commit(text, changes, 0..text.len(), UnitKind::Identity);
+            self.flush(builder);
+            self.commit(
+                builder,
+                style_index,
+                text,
+                changes,
+                0..text.len(),
+                UnitKind::Identity,
+            );
             return;
         }
 
@@ -187,13 +265,21 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
                     pos,
                     c.len_utf8(),
                     run_len,
-                    white_space.collapsed_space,
+                    style_index,
+                    parent_style_index,
+                    white_space,
                 );
-                self.out.push(' ');
                 pos += run_len;
             } else if is_segment_break(c) {
                 self.pending = None;
-                self.commit(text, changes, pos..pos + c.len_utf8(), UnitKind::Identity);
+                self.commit(
+                    builder,
+                    style_index,
+                    text,
+                    changes,
+                    pos..pos + c.len_utf8(),
+                    UnitKind::Identity,
+                );
                 pos += c.len_utf8();
             } else {
                 let mut len = content_len(rest, mode);
@@ -207,52 +293,89 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
                         }
                     }
                 }
-                self.flush();
-                self.commit(text, changes, pos..pos + len, UnitKind::CollapsibleText);
+                self.flush(builder);
+                self.commit(
+                    builder,
+                    style_index,
+                    text,
+                    changes,
+                    pos..pos + len,
+                    UnitKind::CollapsibleText,
+                );
                 pos += len;
             }
         }
     }
 
     /// Records a collapsible run at `pos` whose first character is `first_len` bytes long.
+    #[allow(clippy::too_many_arguments)]
     fn collapse_run(
         &mut self,
         changes: &[TextChange],
         pos: usize,
         first_len: usize,
         run_len: usize,
-        space: &'static str,
+        style_index: u16,
+        parent_style_index: Option<u16>,
+        white_space: WhiteSpace,
     ) {
         let source = source_at(changes, pos);
-        if self.pending.is_some() {
-            self.map.push(UnitKind::Variable, source, self.len);
+        if let Some(pending) = &mut self.pending {
+            pending.wrap |= white_space.wrap;
+            self.map.push(UnitKind::Variable, source, self.text.len());
             return;
         }
-        let kept_unit = self.map.push(UnitKind::KeptSpace, source, self.len);
-        self.pending = Some(Pending { kept_unit, space });
+        let kept_unit = self.map.push(UnitKind::KeptSpace, source, self.text.len());
+        self.pending = Some(Pending {
+            kept_unit,
+            style_index,
+            parent_style_index,
+            space: white_space.collapsed_space,
+            start_wrap: white_space.wrap,
+            wrap: white_space.wrap,
+        });
         if first_len < run_len {
             let source = source_at(changes, pos + first_len);
-            self.map.push(UnitKind::Variable, source, self.len);
+            self.map.push(UnitKind::Variable, source, self.text.len());
         }
     }
 
     /// Resolves a pending run: it collapses to one space unless it is at the start of the
     /// formatting context or follows a preserved segment break, in which case it is removed.
-    fn flush(&mut self) {
+    fn flush<B: Brush>(&mut self, builder: &mut StyleRunBuilder<'_, B>) {
         let Some(pending) = self.pending.take() else {
             return;
         };
-        if self.len == 0 || self.ends_with_break {
+        if self.text.is_empty() || self.ends_with_break {
             return;
         }
+        let style_index = if pending.wrap && !pending.start_wrap {
+            builder.push_modified_style(
+                pending.style_index,
+                pending.parent_style_index,
+                [StyleProperty::TextWrapMode(TextWrapMode::Wrap)],
+            )
+        } else {
+            pending.style_index
+        };
+        let start = self.text.len();
+        self.text.push_str(pending.space);
+        builder.push_style_run(style_index, start..self.text.len());
         self.map.shift(pending.kept_unit + 1, pending.space.len());
-        self.len += pending.space.len();
         self.ends_with_break = false;
     }
 
     /// Commits `text[range]` unchanged, mapping the parts outside `changes` as `exact`.
-    fn commit(&mut self, text: &str, changes: &[TextChange], range: Range<usize>, exact: UnitKind) {
-        let (base, start) = (self.len, range.start);
+    fn commit<B: Brush>(
+        &mut self,
+        builder: &mut StyleRunBuilder<'_, B>,
+        style_index: u16,
+        text: &str,
+        changes: &[TextChange],
+        range: Range<usize>,
+        exact: UnitKind,
+    ) {
+        let (base, start) = (self.text.len(), range.start);
         let layout = |at: usize| base + at - start;
         // Changes before `range` were in collapsed white space.
         let mut next = self.next_change;
@@ -300,12 +423,18 @@ impl<Id: Copy + Ord> WhiteSpaceCollapser<Id> {
             }
         }
         self.next_change = next;
-        self.push_out(&text[range]);
+        self.push_out(builder, style_index, &text[range]);
     }
 
-    fn push_out(&mut self, text: &str) {
-        self.out.push_str(text);
-        self.len += text.len();
+    fn push_out<B: Brush>(
+        &mut self,
+        builder: &mut StyleRunBuilder<'_, B>,
+        style_index: u16,
+        text: &str,
+    ) {
+        let start = self.text.len();
+        self.text.push_str(text);
+        builder.push_style_run(style_index, start..self.text.len());
         self.ends_with_break = text.ends_with(is_segment_break);
     }
 }

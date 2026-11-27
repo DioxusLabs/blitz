@@ -205,7 +205,7 @@ impl InnerTextCollector {
             included
         };
 
-        let mut boxes = layout.layout.inline_boxes().peekable();
+        let mut boxes = layout.boxes_in_document_order().peekable();
         let mut runs = Vec::new();
         for line in layout.layout.lines() {
             // Runs are stored in visual order: restore logical order for bidi text
@@ -216,8 +216,8 @@ impl InnerTextCollector {
             for run in &runs {
                 for cluster in run.clusters() {
                     let range = cluster.text_range();
-                    while let Some(ibox) = boxes.next_if(|ibox| ibox.index <= range.start) {
-                        self.visit_inline_box(root, ibox.id, filter);
+                    while let Some((_, id)) = boxes.next_if(|(index, _)| *index <= range.start) {
+                        self.visit_inline_box(root, id, filter);
                     }
                     if range.start >= marker_len
                         && !layout.is_inline_box_char(range.start)
@@ -228,13 +228,13 @@ impl InnerTextCollector {
                 }
             }
         }
-        for ibox in boxes {
-            self.visit_inline_box(root, ibox.id, filter);
+        for (_, id) in boxes {
+            self.visit_inline_box(root, id, filter);
         }
     }
 
-    fn visit_inline_box(&mut self, root: &Node, id: u64, filter: Option<NodeId>) {
-        let node = root.with(NodeId::from_u64(id));
+    fn visit_inline_box(&mut self, root: &Node, id: NodeId, filter: Option<NodeId>) {
+        let node = root.with(id);
         if filter.is_none_or(|target| is_inclusive_descendant_of(node, target)) {
             self.visit(node, None);
         }
