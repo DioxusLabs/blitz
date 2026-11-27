@@ -202,7 +202,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
-    pub fn paint_scene(&self, scene: &mut impl PaintScene) {
+    pub fn paint_scene<S: PaintScene>(&self, scene: &mut S) {
         if self.dom.has_pending_critical_resources() {
             return;
         }
@@ -231,36 +231,61 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     .resolve_to_absolute(&current_color)
             });
 
-        if let Some(bg_color) = background_color {
-            let bg_color = bg_color.as_srgb_color();
-            let rect = Rect::from_origin_size(
-                (self.initial_x, self.initial_y),
-                (bg_width as f64, bg_height as f64),
-            );
-            scene.fill(
-                Fill::NonZero,
-                Affine::IDENTITY,
-                bg_color,
+        let root_parent_transform = Affine::translate(Vec2 {
+            x: self.initial_x - viewport_scroll.x * self.scale,
+            y: self.initial_y - viewport_scroll.y * self.scale,
+        });
+        let root_transform = self.node_transform(root_element, root_parent_transform);
+        let root_clip = root_element.primary_styles().and_then(|style| {
+            use style::values::computed::basic_shape::ClipPath;
+            if matches!(style.get_clip_path(), ClipPath::None | ClipPath::Url(_)) {
+                return None;
+            }
+            self.element_cx(
+                root_element,
+                *root_element.final_layout(),
+                root_transform,
                 None,
-                &rect,
-                AntiAliasing::Enabled,
-            );
-        }
-
-        // The root clip rectangle is the viewport (in screen coordinates, with the
-        // initial offset already subtracted). Elements outside of this are culled, and
-        // scrollports narrow this rectangle further for their descendants.
+            )
+            .clip_path_shape()
+        });
         let viewport_clip_rect = Rect::new(0.0, 0.0, self.width as f64, self.height as f64);
+        let draw_document = |scene: &mut S| {
+            if let Some(bg_color) = background_color {
+                let bg_color = bg_color.as_srgb_color();
+                let rect = Rect::from_origin_size(
+                    (self.initial_x, self.initial_y),
+                    (bg_width as f64, bg_height as f64),
+                );
+                scene.fill(
+                    Fill::NonZero,
+                    Affine::IDENTITY,
+                    bg_color,
+                    None,
+                    &rect,
+                    AntiAliasing::Enabled,
+                );
+            }
+            self.render_element(scene, root_id, root_parent_transform, viewport_clip_rect);
+        };
 
-        self.render_element(
-            scene,
-            root_id,
-            Affine::translate(Vec2 {
-                x: self.initial_x - (viewport_scroll.x * self.scale),
-                y: self.initial_y - (viewport_scroll.y * self.scale),
-            }),
-            viewport_clip_rect,
-        );
+        // The propagated canvas color and root content share one clip.
+        if let Some(mut path) = root_clip {
+            path.apply_affine(Affine::scale(self.scale));
+            self.layer_manager.maybe_with_layer(
+                scene,
+                true,
+                BlendMode::default(),
+                1.0,
+                root_transform,
+                &path,
+                None,
+                None,
+                draw_document,
+            );
+        } else {
+            draw_document(scene);
+        }
 
         // Render debug overlay
         if self.dom.devtools().highlight_hover {
@@ -591,7 +616,11 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         };
 
         // Compute clip-path (if any) and wrap all rendering in a clip layer
-        let clip_path_shape = cx.clip_path_shape();
+        let clip_path_shape = if self.root_element_id == Some(node_id) {
+            None
+        } else {
+            cx.clip_path_shape()
+        };
         let has_clip_path = clip_path_shape.is_some();
         let default_clip = cx.frame.border_box_path();
         let mut clip_path_for_layer = clip_path_shape.unwrap_or(default_clip);
