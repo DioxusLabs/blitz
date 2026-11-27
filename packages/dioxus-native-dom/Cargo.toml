@@ -13,7 +13,9 @@ keywords = ["dom", "ui", "gui", "react"]
 default = ["accessibility", "svg", "system-fonts", "text-transform-icu"]
 
 # DOM features
-svg = ["blitz-dom/svg"]
+svg = ["svg-usvg"]
+svg-usvg = ["blitz-dom/svg-usvg"]
+svg-native = ["blitz-dom/svg-native"]
 floats = ["blitz-dom/floats"]
 accessibility = ["blitz-dom/accessibility"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]

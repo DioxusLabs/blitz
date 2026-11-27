@@ -41,15 +41,25 @@ pub struct NodeTree {
     /// Scroll offset of the viewport (the root element scrolls the viewport,
     /// so its offset lives here rather than on the node).
     viewport_scroll: crate::Point<f64>,
+    /// Whether inline `<svg>` subtrees of this document are rendered natively
+    /// (see `DocumentConfig::native_svg`). Read during styling, which only has
+    /// the node tree at hand.
+    native_svg: bool,
 }
 
 impl NodeTree {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(native_svg: bool) -> Self {
         Self {
             map: SlotMap::with_key(),
             geometry_generation: AtomicU64::new(1),
             viewport_scroll: crate::Point::ZERO,
+            native_svg,
         }
+    }
+
+    /// Whether inline `<svg>` subtrees are rendered natively from the live DOM.
+    pub fn native_svg(&self) -> bool {
+        self.native_svg
     }
 
     pub fn viewport_scroll(&self) -> crate::Point<f64> {
