@@ -1395,6 +1395,14 @@ impl Node {
         }
 
         let box_style = style.get_box();
+        use style::values::specified::WillChangeBits;
+        if box_style
+            .will_change
+            .bits
+            .intersects(WillChangeBits::STACKING_CONTEXT_UNCONDITIONAL | WillChangeBits::OPACITY)
+        {
+            return true;
+        }
         if !box_style.transform.0.is_empty()
             || !matches!(box_style.rotate, Rotate::None)
             || !matches!(box_style.scale, Scale::None)
