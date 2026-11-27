@@ -443,9 +443,6 @@ fn resolve_color_stops<T>(
     let mut hint: Option<f32> = None;
     let hue_direction = gradient.hue_direction;
     let subdivide_directed_hue = matches!(
-        hue_direction,
-        HueDirection::Longer | HueDirection::Increasing | HueDirection::Decreasing
-    ) && matches!(
         gradient.interpolation_cs,
         ColorSpaceTag::Hsl | ColorSpaceTag::Hwb | ColorSpaceTag::Lch | ColorSpaceTag::Oklch
     );
