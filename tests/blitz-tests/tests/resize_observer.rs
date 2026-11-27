@@ -143,7 +143,22 @@ fn observe_resize_handles_display_none_and_node_removal() {
             )]
         );
 
-        // Removing the node cleans up its observer entry
+        // A detached node stays observed, and reports again once it is re-attached
+        let body_id = doc.query_selector("body").unwrap().unwrap();
+        let style =
+            markup5ever::QualName::new(None, markup5ever::ns!(), markup5ever::local_name!("style"));
+        doc.mutate().remove_node(box_id);
+        doc.resolve(0.0);
+        assert!(!doc.has_pending_events());
+        doc.mutate()
+            .set_attribute(box_id, style, "width: 200px; height: 80px;");
+        doc.mutate().append_children(body_id, &[box_id]);
+        doc.resolve(0.0);
+        let events = drain_resizes(&mut doc);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].1.border_box_width, 200.0);
+
+        // Dropping the node stops observing it
         doc.mutate().remove_and_drop_node(box_id);
         doc.resolve(0.0);
         assert!(!doc.has_pending_events());

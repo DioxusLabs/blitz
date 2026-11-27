@@ -813,7 +813,8 @@ impl BaseDocument {
 
     /// Observe `node_id` for layout size changes. Observations are reference-counted per node:
     /// each call to `observe_resize` should be paired with a matching [`unobserve_resize`](Self::unobserve_resize).
-    /// A node is also automatically unobserved when removed from the tree.
+    /// A node stays observed while detached from the document, and is automatically unobserved
+    /// when it is dropped.
     pub fn observe_resize(&mut self, node_id: NodeId) {
         self.resize_observers
             .entry(node_id)
@@ -845,12 +846,16 @@ impl BaseDocument {
             return;
         }
 
-        for (&node_id, entry) in self.resize_observers.iter_mut() {
-            let Some(node) = self.nodes.get(node_id) else {
-                continue;
+        let nodes = &self.nodes;
+        let pending_events = &mut self.pending_events;
+        self.resize_observers.retain(|&node_id, entry| {
+            // The node was dropped: stop observing it
+            let Some(node) = nodes.get(node_id) else {
+                return false;
             };
+            // A detached node stays observed, as it may be re-attached
             if !node.flags.is_in_document() {
-                continue;
+                return true;
             }
 
             let layout = node.final_layout();
@@ -885,10 +890,10 @@ impl BaseDocument {
 
             if entry.last_size != Some(current) {
                 entry.last_size = Some(current);
-                self.pending_events
-                    .push_ua_event(node_id, DomEventData::Resize(current));
+                pending_events.push_ua_event(node_id, DomEventData::Resize(current));
             }
-        }
+            true
+        });
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -1224,7 +1229,6 @@ impl BaseDocument {
             self.drag_mode = DragMode::None;
         }
         self.scrollbar_activity.remove(&node_id);
-        self.resize_observers.remove(&node_id);
     }
 
     pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: NodeId) -> Option<Node> {
