@@ -13,9 +13,9 @@ path = "src/main.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["hybrid"]
+default = ["vello-gpu"]
 vello = ["dioxus-native/vello"]
-hybrid = ["dioxus-native/vello-hybrid"]
+vello-gpu = ["dioxus-native/vello-gpu"]
 skia = ["dioxus-native/skia"]
 
 [dependencies]
@@ -33,7 +33,7 @@ dioxus-native = { workspace = true, features = ["system-fonts"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # WASM-only: additive wasm-bindgen feature on futures-timer
 futures-timer = { version = "3", features = ["wasm-bindgen"] }
-anyrender_vello_hybrid = { workspace = true, features = ["webgl"] }
+anyrender_vello_gpu = { workspace = true, features = ["webgl"] }
 dioxus-native = { workspace = true, features = ["woff"] }
 wasm-bindgen = { workspace = true }
 console_error_panic_hook = { workspace = true }

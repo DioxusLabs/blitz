@@ -1,4 +1,5 @@
 css/css-animations/Element-getAnimations.tentative.html animation-events
+css/css-animations/KeyframeEffect-getKeyframes-cross-document.html dynamic-load-events
 css/css-animations/animation-iteration-event-001.html animation-events
 css/css-animations/animation-iteration-event-002.html animation-events
 css/css-animations/animation-play-state-005.tentative.html animation-events
@@ -252,3 +253,6 @@ css/selectors/invalidation/fullscreen-pseudo-class-in-has.html testdriver
 css/selectors/invalidation/modal-pseudo-class-in-has.html testdriver
 css/selectors/old-tests/css3-modsel-21.xml unsupported-async-browser-behavior
 html/webappapis/scripting/processing-model-2/integration-with-the-javascript-agent-formalism/atomics-wait-async.https.any.js unbounded-job-execution
+svg/embedded/image-referrerpolicy.html dynamic-load-events
+svg/interact/scripted/script-crossorigin.html dynamic-load-events
+svg/interact/scripted/script-referrerpolicy.html dynamic-load-events

@@ -70,9 +70,9 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown
         working-directory: examples/wasm_hello
       - name: Build seven_guis (wasm)
-        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features vello-gpu
       - name: Build todomvc (wasm)
-        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features vello-gpu
 
   fmt:
     name: Rustfmt
@@ -111,7 +111,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo doc
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: cargo doc --workspace --no-deps
 
   matrix_test:
     runs-on: ${{ matrix.platform.os }}

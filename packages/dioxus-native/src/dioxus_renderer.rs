@@ -17,16 +17,16 @@ cfg_if::cfg_if! {
         use anyrender_skia::SkiaWindowRenderer as InnerRenderer;
     } else if #[cfg(feature = "skia-raster-base")] {
         use anyrender_skia::raster::SkiaRasterWindowRenderer as InnerRenderer;
-    } else if #[cfg(all(feature = "vello-hybrid", target_arch = "wasm32"))] {
+    } else if #[cfg(all(feature = "vello-gpu", target_arch = "wasm32"))] {
         // WebGL2 rather than WebGPU, so wasm builds render in every browser.
         // `features`/`limits` are ignored by this renderer.
-        use anyrender_vello_hybrid::{
-            VelloHybridRendererOptions as InnerRendererOptions,
-            VelloHybridWebGlWindowRenderer as InnerRenderer,
+        use anyrender_vello_gpu::{
+            VelloGpuRendererOptions as InnerRendererOptions,
+            VelloGpuWebGlWindowRenderer as InnerRenderer,
         };
-    } else if #[cfg(feature = "vello-hybrid")] {
-        use anyrender_vello_hybrid::{
-            VelloHybridRendererOptions as InnerRendererOptions, VelloHybridWindowRenderer as InnerRenderer,
+    } else if #[cfg(feature = "vello-gpu")] {
+        use anyrender_vello_gpu::{
+            VelloGpuRendererOptions as InnerRendererOptions, VelloGpuWindowRenderer as InnerRenderer,
         };
     } else {
         compile_error!("At least one renderer feature must be enabled");
@@ -37,12 +37,12 @@ cfg_if::cfg_if! {
 // a higher-precedence renderer is the active one.
 #[cfg(feature = "vello")]
 pub use anyrender_vello::wgpu::{Features, Limits};
-#[cfg(all(feature = "vello-hybrid", not(feature = "vello")))]
-pub use anyrender_vello_hybrid::wgpu::{Features, Limits};
+#[cfg(all(feature = "vello-gpu", not(feature = "vello")))]
+pub use anyrender_vello_gpu::wgpu::{Features, Limits};
 
 /// Renderer configuration for [`DioxusNativeWindowRenderer`].
 ///
-/// Fields that only apply to the GPU-backed `vello`/`vello-hybrid` renderers
+/// Fields that only apply to the GPU-backed `vello`/`vello-gpu` renderers
 /// (`features`/`limits`) are only present when one of those features is enabled.
 #[derive(Default)]
 pub struct RendererOptions {
@@ -51,10 +51,10 @@ pub struct RendererOptions {
     /// Alpha mode used when compositing the window surface.
     pub alpha_mode: Option<CompositeAlphaMode>,
     /// wgpu features to request from the GPU adapter.
-    #[cfg(any(feature = "vello", feature = "vello-hybrid"))]
+    #[cfg(any(feature = "vello", feature = "vello-gpu"))]
     pub features: Option<Features>,
     /// wgpu limits to request from the GPU adapter.
-    #[cfg(any(feature = "vello", feature = "vello-hybrid"))]
+    #[cfg(any(feature = "vello", feature = "vello-gpu"))]
     pub limits: Option<Limits>,
 }
 
@@ -74,7 +74,7 @@ impl DioxusNativeWindowRenderer {
         Self::with_options(RendererOptions::default())
     }
 
-    #[cfg(any(feature = "vello-hybrid", feature = "vello"))]
+    #[cfg(any(feature = "vello-gpu", feature = "vello"))]
     pub fn with_features_and_limits(features: Option<Features>, limits: Option<Limits>) -> Self {
         Self::with_options(RendererOptions {
             features,
@@ -88,7 +88,7 @@ impl DioxusNativeWindowRenderer {
     /// `base_color` and `alpha_mode` are forwarded to the active renderer via
     /// [`anyrender::RendererConfig`]; renderers that don't support a particular
     /// option simply ignore it. `features`/`limits` are only applied by the
-    /// GPU-backed `vello`/`vello-hybrid` renderers.
+    /// GPU-backed `vello`/`vello-gpu` renderers.
     pub fn with_options(options: RendererOptions) -> Self {
         let mut config = RendererConfig::default();
         config.base_color = options.base_color;
@@ -98,7 +98,7 @@ impl DioxusNativeWindowRenderer {
             if #[cfg(any(
                 feature = "vello",
                 all(
-                    feature = "vello-hybrid",
+                    feature = "vello-gpu",
                     not(any(feature = "vello-cpu-base", feature = "skia", feature = "skia-raster-base"))
                 )
             ))] {

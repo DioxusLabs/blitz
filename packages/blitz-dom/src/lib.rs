@@ -83,6 +83,7 @@ pub mod util;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
+pub use crate::layout::LayoutPassState;
 pub use crate::layout::paint_tree::{HoistedPaintChild, StackingContext, hoisted_child_position};
 pub use crate::layout::replaced::IntrinsicSizes;
 pub use crate::layout::text_transform::{full_size_kana, full_width};
