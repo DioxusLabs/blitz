@@ -456,19 +456,27 @@ fn collect_columns(
         return;
     };
 
-    match display.inside() {
-        DisplayInside::TableColumnGroup => {
-            let first_column = columns.len();
-            let children = std::mem::take(&mut doc.nodes[node_id].children);
-            for child_id in children.iter().copied() {
-                collect_columns(doc, child_id, wm, columns, column_sizes);
-            }
-            doc.nodes[node_id].children = children;
+    let inside = display.inside();
+    let is_group = inside == DisplayInside::TableColumnGroup;
+    if is_group {
+        let first_column = columns.len();
+        let children = std::mem::take(&mut doc.nodes[node_id].children);
+        for child_id in children.iter().copied() {
+            collect_columns(doc, child_id, wm, columns, column_sizes);
+        }
+        doc.nodes[node_id].children = children;
+        if columns.len() > first_column {
             for column in &mut columns[first_column..] {
                 column.group.get_or_insert(node_id);
             }
+            return;
         }
-        DisplayInside::TableColumn => {
+    }
+
+    // A column group without explicit columns supplies its own implicit tracks.
+    match inside {
+        DisplayInside::TableColumn | DisplayInside::TableColumnGroup => {
+            let node = &doc.nodes[node_id];
             let style = table_taffy_style(&node.primary_styles().unwrap(), wm);
             let span: u16 = node
                 .attr(local_name!("span"))
