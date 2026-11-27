@@ -9,12 +9,14 @@
 //! recomputing geometry every frame.
 
 mod clip_mask;
+mod filter;
 mod geometry;
 mod hit;
 mod paint_server;
 mod text;
 
 pub use clip_mask::{SvgClip, SvgClipChild, SvgMask, SvgReference, SvgReferenceState};
+pub use filter::{SvgFilter, SvgFilterInput, SvgFilterKind, SvgFilterPrimitive};
 pub use paint_server::{
     SvgGradient, SvgGradientShape, SvgGradientStop, SvgPaintServer, SvgSpreadMethod,
 };
@@ -101,6 +103,9 @@ pub struct SvgLayout {
     /// Whether this element or a rendered descendant has a non-normal
     /// `mix-blend-mode`, so the outermost `<svg>` must isolate its content.
     pub has_blending: bool,
+    /// Whether this element or a rendered descendant has a `filter`, whose
+    /// output can reach past `ink`.
+    pub has_filter: bool,
     /// The computed style of an element inside a `display: none` subtree
     /// (which Stylo does not style) that is laid out as part of a
     /// `<clipPath>` or `<mask>`, as those can still be referenced.
@@ -164,6 +169,7 @@ impl SvgLayout {
             ink: None,
             kind: SvgLayoutKind::NotRendered,
             has_blending: false,
+            has_filter: false,
             undisplayed_style: None,
         }
     }
@@ -381,6 +387,10 @@ impl BaseDocument {
         }
         let (bbox, has_blending) = self.layout_svg_children(root_id, viewport, force);
         let ink = self.svg_children_ink(root_id);
+        let has_filter = self.svg_children_filtered(root_id)
+            || self.nodes[root_id]
+                .primary_styles()
+                .is_some_and(|style| !style.get_effects().filter.0.is_empty());
 
         let root_layout = SvgLayout {
             transform: Affine::IDENTITY,
@@ -392,6 +402,7 @@ impl BaseDocument {
                 clip: None,
             },
             has_blending,
+            has_filter,
             undisplayed_style: None,
         };
         if let Some(SpecialElementData::SvgRoot(data)) = self.nodes[root_id]
@@ -564,6 +575,13 @@ impl BaseDocument {
             || self.nodes[id]
                 .svg_style()
                 .is_some_and(|style| style.get_effects().mix_blend_mode != MixBlendMode::Normal));
+        layout.has_filter = !matches!(
+            layout.kind,
+            SvgLayoutKind::NotRendered | SvgLayoutKind::Resource
+        ) && (self.svg_children_filtered(id)
+            || self.nodes[id]
+                .svg_style()
+                .is_some_and(|style| !style.get_effects().filter.0.is_empty()));
 
         let result = (layout.bbox_in_parent(), layout.has_blending);
         let element = self.nodes[id].element_data_mut().unwrap();
@@ -574,6 +592,16 @@ impl BaseDocument {
             element.special_data = SpecialElementData::SvgNode(Box::new(layout));
         }
         result
+    }
+
+    /// Whether a child of `id` has a `filter` or a filtered descendant.
+    fn svg_children_filtered(&self, id: NodeId) -> bool {
+        self.nodes[id].children.iter().any(|&child| {
+            self.nodes[child]
+                .element_data()
+                .and_then(|el| el.svg_layout())
+                .is_some_and(|layout| layout.has_filter)
+        })
     }
 
     /// The union of the ink of the children of `id`, in its children's user
@@ -603,7 +631,9 @@ impl BaseDocument {
             };
             let tag = &element.name.local;
             if element.name.ns == ns!(svg)
-                && (*tag == local_name!("clipPath") || *tag == local_name!("mask"))
+                && (*tag == local_name!("clipPath")
+                    || *tag == local_name!("mask")
+                    || *tag == local_name!("filter"))
             {
                 self.resolve_undisplayed_svg_styles(child);
                 self.layout_svg_node(child, viewport, true);
@@ -689,6 +719,7 @@ fn layout_own(
         ink: None,
         kind,
         has_blending: false,
+        has_filter: false,
         undisplayed_style: None,
     }
 }

@@ -302,21 +302,32 @@ vello_gpu = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 
-# Stylo main, which has the remaining SVG properties (stop-color, marker-*, paint-order, ...) and SVG
-# pointer-events keywords available to Servo builds behind the `layout.css.svg-properties.enabled` pref.
+# Stylo main has the remaining SVG properties (stop-color, marker-*, paint-order, ...) behind
+# `layout.css.svg-properties.enabled`, and SVG `url()` filters behind `layout.css.filter-urls.enabled`.
 # Remove once a Stylo release includes them.
 [patch.crates-io]
-stylo = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-stylo_traits = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-stylo_atoms = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-stylo_static_prefs = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-stylo_dom = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-stylo_derive = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-stylo_malloc_size_of = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-selectors = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-servo_arc = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-to_shmem = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
-to_shmem_derive = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
+stylo = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+stylo_traits = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+stylo_atoms = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+stylo_static_prefs = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+stylo_dom = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+stylo_derive = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+stylo_malloc_size_of = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+selectors = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+servo_arc = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+to_shmem = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+to_shmem_derive = { git = "https://github.com/servo/stylo", rev = "0ab78ce95162eca027c874b505b505ef17a85ac8" }
+
+# Filter fixes from anyrender#165. Remove once it is merged and released.
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
+anyrender_vello_gpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
+anyrender_tiny_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "45bf9bcaaec984f759eebc0805ea2f2b10fea4d8" }
 
 # [patch.crates-io]
 # anyrender = { path = "../anyrender/crates/anyrender" }
