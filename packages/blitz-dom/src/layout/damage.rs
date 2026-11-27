@@ -152,6 +152,12 @@ impl BaseDocument {
             damage_for_parent |= anonymous_damage;
         }
 
+        #[cfg(feature = "svg-native")]
+        let native_svg_descendant = self.native_svg
+            && self.nodes[node_id].element_data().is_some_and(|el| {
+                el.name.ns == markup5ever::ns!(svg) && el.svg_root_data().is_none()
+            });
+
         let node = &mut self.nodes[node_id];
 
         // If the node or any of it's children have been mutated or their layout styles
@@ -163,7 +169,15 @@ impl BaseDocument {
             damage.remove(ONLY_RELAYOUT);
         }
 
-        // Store damage for current node
+        // Store damage for current node. Inside a natively rendered `<svg>`
+        // (below its root) SVG layout needs each element's own damage, and
+        // finds damaged descendants through the damaged-descendants flag.
+        #[cfg(feature = "svg-native")]
+        let damage = if native_svg_descendant {
+            own_damage
+        } else {
+            damage
+        };
         node.set_damage(damage);
 
         // Anonymous boxes between this node and its nearest element ancestor
