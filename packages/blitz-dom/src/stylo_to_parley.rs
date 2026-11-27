@@ -308,9 +308,8 @@ pub(crate) fn font_variant_east_asian(
 /// high-level `font-variant-*` properties are applied first, and the low-level
 /// `font-feature-settings` property is applied last so that it takes precedence.
 ///
-/// Parley stably sorts the feature list by tag and HarfBuzz applies the last of any
-/// duplicate tags, so appending `font-feature-settings` after the `font-variant-*`
-/// features gives it the higher precedence required by the spec.
+/// Keep the final value for each tag, including repeated values in a single
+/// `font-feature-settings` declaration.
 pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeature> {
     let mut features = Vec::new();
 
@@ -322,6 +321,7 @@ pub(crate) fn font_features(font_styles: &stylo::Font) -> Vec<parley::FontFeatur
 
     self::font_feature_settings(&font_styles.font_feature_settings, &mut features);
 
+    features.reverse();
     features.sort_by_key(|feature| feature.tag);
     features.dedup_by_key(|feature| feature.tag);
 
