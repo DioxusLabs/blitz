@@ -168,6 +168,18 @@ pub(super) fn has_attribute(
 
 // === Reflected DOM properties ===
 
+pub(super) fn get_media(this: &JsValue, _: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    attr_getter("media", this, context)
+}
+
+pub(super) fn set_media(
+    this: &JsValue,
+    args: &[JsValue],
+    context: &mut Context,
+) -> JsResult<JsValue> {
+    attr_setter("media", this, args, context)
+}
+
 pub(super) fn get_id(this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
     let _ = args;
     attr_getter("id", this, context)
