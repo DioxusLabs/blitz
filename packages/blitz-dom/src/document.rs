@@ -181,7 +181,11 @@ pub trait Document: Any + 'static {
                 }
                 break;
             }
-            if !self.poll(waker.map(TaskContext::from_waker)) {
+            // Resolve again if the events were dispatched, even when `poll` reports no
+            // changes: handlers and default actions can modify the document directly.
+            // Stop if they are still queued (this document's `poll` doesn't dispatch them).
+            let changed = self.poll(waker.map(TaskContext::from_waker));
+            if !changed && self.inner().has_pending_events() {
                 break;
             }
         }
