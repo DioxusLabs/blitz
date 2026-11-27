@@ -302,8 +302,8 @@ vello_gpu = "0.4"
 wgpu = { workspace = true }
 wgpu_context = { workspace = true }
 
-# Stylo main, which has the remaining SVG properties (stop-color, marker-*, paint-order, ...) available to
-# Servo builds behind the `layout.css.svg-properties.enabled` pref.
+# Stylo main, which has the remaining SVG properties (stop-color, marker-*, paint-order, ...) and SVG
+# pointer-events keywords available to Servo builds behind the `layout.css.svg-properties.enabled` pref.
 # Remove once a Stylo release includes them.
 [patch.crates-io]
 stylo = { git = "https://github.com/servo/stylo", rev = "7129ad1f6b40d35aa3e99b5c74e74745f80e59ea" }
