@@ -131,6 +131,12 @@ impl crate::document::BaseDocument {
             style::driver::traverse_dom(&traverser, token, rayon_pool);
             nodes_needing_style_image_flush =
                 std::mem::take(traverser.nodes_needing_style_image_flush.get_mut().unwrap());
+            // A subtree that becomes `display: none` skips the out-of-flow pass.
+            // Clear its hoisted lists so rounding won't visit boxes from the
+            // last visible layout that have lost their styles or been removed.
+            for node_id in traverser.newly_hidden_nodes.into_inner().unwrap() {
+                self.clear_subtree_hoisted_children(node_id);
+            }
         }
         self.pending_style_image_nodes
             .extend(nodes_needing_style_image_flush);
@@ -250,6 +256,7 @@ pub struct RecalcStyle<'a> {
     /// dedicated storage on the node (see `flush_image_layers_from_style`)
     /// because their style changed during this traversal.
     nodes_needing_style_image_flush: Mutex<Vec<NodeId>>,
+    newly_hidden_nodes: Mutex<Vec<NodeId>>,
 }
 
 impl<'a> RecalcStyle<'a> {
@@ -257,6 +264,7 @@ impl<'a> RecalcStyle<'a> {
         RecalcStyle {
             context,
             nodes_needing_style_image_flush: Mutex::new(Vec::new()),
+            newly_hidden_nodes: Mutex::new(Vec::new()),
         }
     }
 }
@@ -272,9 +280,19 @@ impl<'dom> DomTraversal<BlitzNode<'dom>> for RecalcStyle<'_> {
         if let Some(el) = node.as_element() {
             // let mut data = el.mutate_data().unwrap();
             let mut data = unsafe { el.ensure_data() };
+            let was_displayed =
+                data.styles.get_primary().is_some() && !data.styles.is_display_none();
             recalc_style_at(self, context, el, &mut data, note_child);
 
-            sync_pseudo_element_styles(el.0, &data, &self.nodes_needing_style_image_flush);
+            if was_displayed && data.styles.is_display_none() {
+                self.newly_hidden_nodes.lock().unwrap().push(el.id);
+            }
+            sync_pseudo_element_styles(
+                el.0,
+                &data,
+                &self.nodes_needing_style_image_flush,
+                &self.newly_hidden_nodes,
+            );
             if let Some(style) = data.styles.get_primary() {
                 el.record_out_of_flow(style);
             }
@@ -346,6 +364,7 @@ fn sync_pseudo_element_styles(
     el: &Node,
     data: &style::data::ElementData,
     nodes_needing_style_image_flush: &Mutex<Vec<NodeId>>,
+    newly_hidden_nodes: &Mutex<Vec<NodeId>>,
 ) {
     let before_node_id = el.before();
     let after_node_id = el.after();
@@ -381,6 +400,11 @@ fn sync_pseudo_element_styles(
         }
 
         let diff = RestyleDamage::compute_style_difference::<BlitzNode>(&old_style, &pe_style);
+        if !old_style.get_box().get_display().is_none()
+            && pe_style.get_box().get_display().is_none()
+        {
+            newly_hidden_nodes.lock().unwrap().push(pe_node_id);
+        }
         if !diff.damage.is_empty() {
             pe_data.damage.insert(diff.damage);
             pe_node.mark_damaged();

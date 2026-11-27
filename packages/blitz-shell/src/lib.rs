@@ -10,6 +10,7 @@
 
 mod application;
 mod convert_events;
+mod dnd;
 mod event;
 mod net;
 mod window;

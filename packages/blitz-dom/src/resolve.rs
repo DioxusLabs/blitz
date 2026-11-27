@@ -106,6 +106,9 @@ impl BaseDocument {
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
+        self.clamp_viewport_scroll();
+        self.clamp_scroll_animation();
+        self.check_resize_observers();
         timer.record_time("layout");
         self.nodes.bump_geometry_generation();
 
@@ -173,7 +176,11 @@ impl BaseDocument {
 
         let scale = self.viewport.scale_f64();
 
+        // Anonymous boxes are never skipped: damage marking walks the DOM
+        // parent chain, which bypasses them, so a damaged descendant may be
+        // reachable only through an undamaged anonymous box.
         if !resolve_all
+            && !self.nodes[node_id].is_anonymous()
             && !self.nodes[node_id]
                 .damage()
                 .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))

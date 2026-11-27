@@ -4,7 +4,6 @@ description = "Headless test harness for Blitz documents"
 publish = false
 version.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -18,7 +17,7 @@ blitz-traits = { workspace = true }
 dioxus-native-dom = { workspace = true }
 
 # DioxusLabs dependencies
-dioxus-core = { workspace = true }
+dioxus-vdom = { workspace = true }
 
 # Other dependencies
 keyboard-types = { workspace = true }
