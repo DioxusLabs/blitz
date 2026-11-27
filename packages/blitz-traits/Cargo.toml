@@ -4,7 +4,6 @@ description = "Shared traits and types for Blitz"
 documentation = "https://docs.rs/blitz-traits"
 version.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true

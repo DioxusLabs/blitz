@@ -36,7 +36,7 @@ fn target_harness() -> Harness {
 #[test]
 fn finger_input_generates_touch_events() {
     let mut harness = target_harness();
-    let finger = BlitzPointerId::Finger(0);
+    let finger = BlitzPointerId::finger(0);
     let names = harness.dispatch_recorded([
         UiEvent::PointerDown(event(finger, 50.0, 50.0)),
         UiEvent::PointerMove(event(finger, 60.0, 60.0)),
@@ -71,7 +71,7 @@ fn finger_input_generates_touch_events() {
 #[test]
 fn pen_input_generates_touch_events() {
     let mut harness = target_harness();
-    let pen = BlitzPointerId::Pen;
+    let pen = BlitzPointerId::PEN;
     let names = harness.dispatch_recorded([
         UiEvent::PointerDown(event(pen, 50.0, 50.0)),
         UiEvent::PointerMove(event(pen, 60.0, 60.0)),
@@ -104,7 +104,7 @@ fn pen_input_generates_touch_events() {
 #[test]
 fn finger_cancel_generates_pointercancel_and_touchcancel() {
     let mut harness = target_harness();
-    let finger = BlitzPointerId::Finger(0);
+    let finger = BlitzPointerId::finger(0);
     let names = harness.dispatch_recorded([
         UiEvent::PointerDown(event(finger, 50.0, 50.0)),
         UiEvent::PointerCancel(event(finger, 50.0, 50.0)),
@@ -139,7 +139,7 @@ fn finger_cancel_generates_pointercancel_and_touchcancel() {
 #[test]
 fn pen_cancel_generates_pointercancel_and_touchcancel() {
     let mut harness = target_harness();
-    let pen = BlitzPointerId::Pen;
+    let pen = BlitzPointerId::PEN;
     let names = harness.dispatch_recorded([
         UiEvent::PointerDown(event(pen, 50.0, 50.0)),
         UiEvent::PointerCancel(event(pen, 50.0, 50.0)),
@@ -158,7 +158,7 @@ fn pen_cancel_generates_pointercancel_and_touchcancel() {
 #[test]
 fn mouse_cancel_generates_pointercancel_without_touch_or_mouse() {
     let mut harness = target_harness();
-    let mouse = BlitzPointerId::Mouse;
+    let mouse = BlitzPointerId::MOUSE;
     let names = harness.dispatch_recorded([
         UiEvent::PointerDown(event(mouse, 50.0, 50.0)),
         UiEvent::PointerCancel(event(mouse, 50.0, 50.0)),
@@ -182,7 +182,7 @@ fn mouse_cancel_generates_pointercancel_without_touch_or_mouse() {
 #[test]
 fn mouse_input_does_not_generate_touch_events() {
     let mut harness = target_harness();
-    let mouse = BlitzPointerId::Mouse;
+    let mouse = BlitzPointerId::MOUSE;
     let names = harness.dispatch_recorded([
         UiEvent::PointerDown(event(mouse, 50.0, 50.0)),
         UiEvent::PointerMove(event(mouse, 60.0, 60.0)),

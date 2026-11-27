@@ -132,18 +132,23 @@ class FormatLinesTest(unittest.TestCase):
 
 
 class RenderTest(unittest.TestCase):
-    def test_revision_mismatch_skips_results(self):
+    def test_revision_mismatch_includes_results(self):
+        areas = [
+            {"area": "css", "before": 100, "after": 104, "total": 200, "gained": 12, "lost": 8},
+        ]
         section = render(
             Diff(ENTRIES),
             run_url="https://example.com/run",
+            areas=areas,
             revision_mismatch={"pr": "pr-revision", "main": "main-revision"},
         )
-        self.assertIn("WPT comparison skipped", section)
+        self.assertIn("WPT revision mismatch", section)
         self.assertIn("`pr-revision`", section)
         self.assertIn("`main-revision`", section)
-        self.assertIn("Rebase on `main` for a meaningful comparison.", section)
-        self.assertNotIn("```diff", section)
-        self.assertNotIn("newly passing", section)
+        self.assertIn("Subtests: **254** newly passing, **12** newly failing (net +242).", section)
+        self.assertIn("<summary>Subtest changes by area (1 area)</summary>", section)
+        self.assertIn("<summary>Full diff (5 changed tests)</summary>", section)
+        self.assertLess(section.index("WPT revision mismatch"), section.index("Subtests:"))
         self.assertTrue(section.startswith("<!-- wpt-results-start -->"))
         self.assertTrue(section.endswith("<!-- wpt-results-end -->"))
         self.assertIn("https://example.com/run", section)
@@ -200,22 +205,48 @@ class MainTest(unittest.TestCase):
     def test_revision_mismatch_artifact_dry_run(self):
         with tempfile.TemporaryDirectory() as directory:
             diff_file = os.path.join(directory, "wptdiff.json")
+            areas_file = os.path.join(directory, "wptareas.json")
             summary_file = os.path.join(directory, "summary.md")
             with open(diff_file, "w") as file:
-                json.dump({"revision_mismatch": {"pr": "abc", "main": "def"}}, file)
+                json.dump(
+                    {"revision_mismatch": {"pr": "abc", "main": "def"}, "diff": ENTRIES},
+                    file,
+                )
+            with open(areas_file, "w") as file:
+                json.dump(
+                    [{"area": "css", "before": 100, "after": 104, "total": 200, "gained": 4, "lost": 0}],
+                    file,
+                )
             output = io.StringIO()
             with (
                 patch("sys.argv", ["wpt_diff_to_pr.py", "--dry-run", "--areas",
-                                   os.path.join(directory, "wptareas.json"), diff_file]),
+                                   areas_file, diff_file]),
                 patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": summary_file}),
                 contextlib.redirect_stdout(output),
             ):
                 self.assertEqual(main(), 0)
-            self.assertIn("WPT comparison skipped", output.getvalue())
+            self.assertIn("WPT revision mismatch", output.getvalue())
             self.assertIn("`abc`", output.getvalue())
             self.assertIn("`def`", output.getvalue())
+            self.assertIn("Subtests: **254** newly passing", output.getvalue())
+            self.assertIn("Subtest changes by area (1 area)", output.getvalue())
+            self.assertIn("Full diff (5 changed tests)", output.getvalue())
             with open(summary_file) as file:
                 self.assertEqual(file.read(), output.getvalue())
+
+    def test_legacy_revision_mismatch_without_diff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            diff_file = os.path.join(directory, "wptdiff.json")
+            with open(diff_file, "w") as file:
+                json.dump({"revision_mismatch": {"pr": "abc", "main": "def"}}, file)
+            output = io.StringIO()
+            with (
+                patch("sys.argv", ["wpt_diff_to_pr.py", "--dry-run", diff_file]),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(main(), 0)
+            self.assertIn("WPT revision mismatch", output.getvalue())
+            self.assertNotIn("No changes in test results", output.getvalue())
 
 
 if __name__ == "__main__":

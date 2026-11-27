@@ -4,7 +4,6 @@ description = "Blitz HTML parser"
 documentation = "https://docs.rs/blitz-html"
 version.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true

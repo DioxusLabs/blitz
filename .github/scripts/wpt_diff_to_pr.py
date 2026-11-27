@@ -190,37 +190,43 @@ def format_area_lines(areas):
 
 
 def render(diff, run_url, areas=None, revision_mismatch=None):
+    out = [START_MARKER, "## WPT results", ""]
+
     if revision_mismatch:
-        headline = (
-            f"⚠️ WPT comparison skipped: this PR was tested at WPT revision "
+        out.append(
+            f"⚠️ WPT revision mismatch: this PR was tested at WPT revision "
             f"`{revision_mismatch['pr']}`, but `main` was tested at "
-            f"`{revision_mismatch['main']}`. Rebase on `main` for a meaningful comparison."
+            f"`{revision_mismatch['main']}`. Changes below may reflect upstream "
+            f"WPT changes unless this PR updates the WPT pin."
         )
-    elif diff.is_empty:
-        headline = "No changes in test results compared to `main`."
-    else:
-        gained, lost = diff.subtests_gained, diff.subtests_lost
-        headline = (
-            f"Subtests: **{gained}** newly passing, **{lost}** newly failing "
-            f"(net {gained - lost:+})."
-        )
-        parts = []
-        for count, label in [
-            (diff.count(lambda c: c.kind == "added"), "added"),
-            (diff.count(lambda c: c.kind == "removed"), "removed"),
-        ]:
-            if count:
-                parts.append(f"**{count}** {label}")
-        if parts:
-            headline += " Tests: " + ", ".join(parts) + "."
-        for status, label in [("CRASH", "Crashes"), ("TIMEOUT", "Timeouts")]:
-            delta = diff.status_delta(status)
-            if delta:
-                headline += f" {label}: **{delta:+}**."
+        out.append("")
 
-    out = [START_MARKER, "## WPT results", "", headline, ""]
+    if diff is not None:
+        if diff.is_empty:
+            headline = "No changes in test results compared to `main`."
+        else:
+            gained, lost = diff.subtests_gained, diff.subtests_lost
+            headline = (
+                f"Subtests: **{gained}** newly passing, **{lost}** newly failing "
+                f"(net {gained - lost:+})."
+            )
+            parts = []
+            for count, label in [
+                (diff.count(lambda c: c.kind == "added"), "added"),
+                (diff.count(lambda c: c.kind == "removed"), "removed"),
+            ]:
+                if count:
+                    parts.append(f"**{count}** {label}")
+            if parts:
+                headline += " Tests: " + ", ".join(parts) + "."
+            for status, label in [("CRASH", "Crashes"), ("TIMEOUT", "Timeouts")]:
+                delta = diff.status_delta(status)
+                if delta:
+                    headline += f" {label}: **{delta:+}**."
+        out.append(headline)
+        out.append("")
 
-    if areas and not revision_mismatch:
+    if areas:
         noun = "area" if len(areas) == 1 else "areas"
         out.append("<details>")
         out.append(f"<summary>Subtest changes by area ({len(areas)} {noun})</summary>")
@@ -232,7 +238,7 @@ def render(diff, run_url, areas=None, revision_mismatch=None):
         out.append("</details>")
         out.append("")
 
-    if not revision_mismatch and not diff.is_empty:
+    if diff is not None and not diff.is_empty:
         lines = format_lines(diff)
         truncated = len(lines) > MAX_DIFF_LINES
         shown = lines[:MAX_DIFF_LINES]
@@ -288,8 +294,12 @@ def main():
 
     with open(args.diff_file, encoding="utf-8") as file:
         data = json.load(file)
-    revision_mismatch = data.get("revision_mismatch") if isinstance(data, dict) else None
-    diff = Diff([] if revision_mismatch else data)
+    if isinstance(data, dict):
+        revision_mismatch = data.get("revision_mismatch")
+        diff = Diff(data["diff"]) if "diff" in data else None
+    else:
+        revision_mismatch = None
+        diff = Diff(data)
 
     areas = None
     if args.areas and os.path.exists(args.areas):

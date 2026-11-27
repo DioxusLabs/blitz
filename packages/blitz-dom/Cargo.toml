@@ -4,7 +4,6 @@ description = "Blitz DOM implementation"
 documentation = "https://docs.rs/blitz-dom"
 version.workspace = true
 license.workspace = true
-homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -40,7 +39,7 @@ file-input = []
 # Overlay-scrollbar thumb interaction (drag + hover tracking). Normally
 # enabled through `blitz-paint/scrollbars`, which paints the thumbs.
 scrollbars = []
-parallel-construct = []
+parallel-construct = ["dep:thread_local"]
 log-phase-times = ["debug_timer/enable"]
 # Report DOM mutations to a `DevtoolsProvider` (e.g. for a remote inspector)
 devtools = []
@@ -105,7 +104,7 @@ url = { workspace = true }
 # Input
 keyboard-types = { workspace = true }
 cursor-icon = { workspace = true }
-thread_local = { workspace = true }
+thread_local = { workspace = true, optional = true }
 
 # WASM
 web-time = { workspace = true }

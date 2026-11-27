@@ -200,18 +200,26 @@ fn push_children_and_pseudos(layout_children: &mut ThinVec<NodeId>, node: &Node)
 struct WrapContext {
     /// The container whose style anonymous blocks inherit from.
     container_node_id: NodeId,
-    needs_wrap: fn(NodeKind, DisplayOutside) -> bool,
+    needs_wrap: fn(&Node, DisplayOutside, bool) -> bool,
 }
 
-fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
-    child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
+/// The wrap rules take the child, its outer display, and whether an anonymous
+/// block is open (the previous child was wrapped).
+fn block_item_needs_wrap(child: &Node, display_outside: DisplayOutside, _open: bool) -> bool {
+    child.data.kind() == NodeKind::Text || display_outside == DisplayOutside::Inline
 }
 
 /// Used for flex/grid containers, and for flow containers whose in-flow
 /// children are all out-of-flow (where inline elements are pushed raw, but
 /// bare text still cannot be laid out directly).
-fn text_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
-    child_node_kind == NodeKind::Text
+///
+/// A `<br>` after text goes into the text's anonymous block, so that it
+/// breaks the line as in browsers instead of becoming an item of its own
+/// that splits the text into separate items. (Chromium also wraps a `<br>`
+/// with no text before it; Firefox does not.)
+fn text_item_needs_wrap(child: &Node, _display_outside: DisplayOutside, open: bool) -> bool {
+    child.data.kind() == NodeKind::Text
+        || (open && child.data.is_element_with_tag_name(&local_name!("br")))
 }
 
 /// Push a single hoisted child, recursing through display:contents nodes and
@@ -229,13 +237,12 @@ fn push_hoisted_child(
         return;
     }
     if let Some(wrap_ctx) = wrap {
-        let child_node_kind = child.data.kind();
         let display_outside = if child.is_or_contains_block() {
             DisplayOutside::Block
         } else {
             child_display.outside()
         };
-        if (wrap_ctx.needs_wrap)(child_node_kind, display_outside) {
+        if (wrap_ctx.needs_wrap)(child, display_outside, out.anonymous_block_id.is_some()) {
             out.push_wrapped(wrap_ctx.container_node_id, child_id, doc);
             return;
         }
@@ -828,7 +835,7 @@ fn collect_complex_layout_children(
     container_node_id: NodeId,
     out: &mut LayoutChildren,
     child_flow: ChildFlow,
-    needs_wrap: fn(NodeKind, DisplayOutside) -> bool,
+    needs_wrap: fn(&Node, DisplayOutside, bool) -> bool,
 ) {
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
         // Get node kind (text, element, comment, etc)
@@ -875,7 +882,11 @@ fn collect_complex_layout_children(
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
-        else if needs_wrap(child_node_kind, display_outside) {
+        else if needs_wrap(
+            &doc.nodes[child_id],
+            display_outside,
+            out.anonymous_block_id.is_some(),
+        ) {
             out.push_wrapped(container_node_id, child_id, doc);
         }
         // Else push the child directly (and close any open "anonymous block container")

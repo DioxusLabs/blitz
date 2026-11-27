@@ -30,7 +30,7 @@ macro_rules! iter_children_and_pseudos {
 pub(crate) use iter_children_and_pseudos;
 
 #[derive(Clone)]
-/// An pre-order tree traverser for a [BaseDocument](crate::document::BaseDocument).
+/// An pre-order tree traverser for a [BaseDocument].
 pub struct TreeTraverser<'a> {
     doc: &'a BaseDocument,
     stack: Vec<NodeId>,
@@ -61,7 +61,7 @@ impl Iterator for TreeTraverser<'_> {
 }
 
 #[derive(Clone)]
-/// An ancestor traverser for a [BaseDocument](crate::document::BaseDocument).
+/// An ancestor traverser for a [BaseDocument].
 pub struct AncestorTraverser<'a> {
     doc: &'a BaseDocument,
     current: NodeId,

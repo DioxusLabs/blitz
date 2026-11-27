@@ -108,6 +108,10 @@ pub trait Widget {
     }
 
     /// Handle input events (mouse, keyboard, etc)
+    ///
+    /// A drag over the widget is refused unless the widget sets the `dropEffect` of the
+    /// data transfer of the [`UiEvent::DragOver`] event to the operation that a drop
+    /// would perform.
     fn handle_event(&mut self, event: &UiEvent) {
         let _ = event;
     }
