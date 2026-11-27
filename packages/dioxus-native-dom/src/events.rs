@@ -220,6 +220,15 @@ impl Display for NodeNotExistErr {
 }
 impl std::error::Error for NodeNotExistErr {}
 
+#[derive(Debug)]
+struct InvalidPointerIdErr(i32);
+impl Display for InvalidPointerIdErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} is not a valid pointer ID", self.0)
+    }
+}
+impl std::error::Error for InvalidPointerIdErr {}
+
 impl RenderedElementBacking for NodeHandle {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -332,6 +341,39 @@ impl RenderedElementBacking for NodeHandle {
 
         Box::pin(async { Ok(()) })
     }
+
+    fn set_pointer_capture(
+        &self,
+        pointer_id: i32,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
+            return invalid_pointer_id_err(pointer_id);
+        };
+        if !NodeHandle::set_pointer_capture(self, pointer_id) {
+            return self.node_not_exist_err();
+        }
+        Box::pin(async { Ok(()) })
+    }
+
+    fn release_pointer_capture(
+        &self,
+        pointer_id: i32,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        let Some(pointer_id) = BlitzPointerId::from_i32(pointer_id) else {
+            return invalid_pointer_id_err(pointer_id);
+        };
+        if self.doc().get_node(self.node_id).is_none() {
+            return self.node_not_exist_err();
+        }
+        // Releasing a pointer that this node has not captured does nothing, as on the web
+        NodeHandle::release_pointer_capture(self, pointer_id);
+        Box::pin(async { Ok(()) })
+    }
+}
+
+fn invalid_pointer_id_err(pointer_id: i32) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+    let err = MountedError::OperationFailed(Box::new(InvalidPointerIdErr(pointer_id)));
+    Box::pin(async move { Err(err) })
 }
 
 #[derive(Clone, Debug)]

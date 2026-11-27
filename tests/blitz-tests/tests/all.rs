@@ -55,6 +55,7 @@ mod lang_attribute;
 mod line_break;
 mod link_cursor;
 mod link_rel_attribute;
+mod native_pointer_capture;
 mod native_pointer_id;
 mod native_wheel_data;
 mod oof_dynamic_cb;
