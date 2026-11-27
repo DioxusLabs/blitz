@@ -406,7 +406,11 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_empty(&self) -> bool {
-        self.dom_children().next().is_none()
+        !self.dom_children().any(|child| match &child.data {
+            NodeData::Element(_) => true,
+            NodeData::Text(text) => !text.content.is_empty(),
+            _ => false,
+        })
     }
 
     fn is_root(&self) -> bool {

@@ -2,7 +2,8 @@
 use crate::NodeId;
 use crate::events::{
     BlitzKeyboardData, NativeConverter, NativeDragData, NativeFocusData, NativeFormData,
-    NativePointerData, NativeScrollData, NativeTouchData, NativeWheelData, NodeHandle,
+    NativePointerData, NativeResizeData, NativeScrollData, NativeTouchData, NativeWheelData,
+    NodeHandle,
 };
 use crate::mutation_writer::DioxusState;
 use crate::qual_name;
@@ -11,8 +12,8 @@ use blitz_dom::{
     EventHandler, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
-use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::{PlatformEventData, set_event_converter};
+use dioxus_vdom::{ElementId, Event, VirtualDom};
 use futures_util::task::noop_waker;
 use std::cell::RefCell;
 use std::future::Future;
@@ -36,14 +37,14 @@ fn get_dioxus_id(node: &Node) -> Option<ElementId> {
         .map(ElementId::from_raw)
 }
 
-/// Integrates [`BaseDocument`] from  [`blitz-dom`](blitz_dom)  with [`VirtualDom`] from [`dioxus-core`](dioxus_core)
+/// Integrates [`BaseDocument`] from  [`blitz-dom`](blitz_dom)  with [`VirtualDom`] from [`dioxus-vdom`](dioxus_vdom)
 ///
 /// ### Example
 ///
 /// ```rust
 /// use blitz_traits::shell::{Viewport, ColorScheme};
 /// use dioxus_native_dom::{DioxusDocument, DocumentConfig};
-/// use dioxus::prelude::*;
+/// use dioxus_core::prelude::*;
 ///
 /// // Example Dioxus app
 /// fn app() -> Element {
@@ -313,6 +314,8 @@ impl EventHandler for DioxusEventHandler<'_> {
             | DomEventData::PointerDown(mevent)
             | DomEventData::PointerUp(mevent)
             | DomEventData::PointerCancel(mevent)
+            | DomEventData::GotPointerCapture(mevent)
+            | DomEventData::LostPointerCapture(mevent)
             | DomEventData::PointerLeave(mevent)
             | DomEventData::PointerEnter(mevent)
             | DomEventData::PointerOver(mevent)
@@ -339,6 +342,7 @@ impl EventHandler for DioxusEventHandler<'_> {
 
             DomEventData::Scroll(sevent) => Some(wrap_event_data(NativeScrollData(sevent.clone()))),
             DomEventData::Wheel(wevent) => Some(wrap_event_data(NativeWheelData(wevent.clone()))),
+            DomEventData::Resize(revent) => Some(wrap_event_data(NativeResizeData(*revent))),
 
             DomEventData::Focus(_) => Some(wrap_event_data(NativeFocusData)),
             DomEventData::Blur(_) => Some(wrap_event_data(NativeFocusData)),
@@ -400,8 +404,8 @@ impl EventHandler for DioxusEventHandler<'_> {
 mod tests {
     use super::*;
     use blitz_dom::DocumentConfig;
-    use dioxus::prelude::*;
-    use dioxus_core::ScopeId;
+    use dioxus_core::prelude::*;
+    use dioxus_vdom::ScopeId;
     use std::cell::{Cell, RefCell};
     use std::collections::HashMap;
 
@@ -794,12 +798,12 @@ mod tests {
         #[component]
         fn Child() -> Element {
             let state = consume_context::<Rc<State>>();
-            state.child.set(Some(dioxus_core::current_scope_id()));
+            state.child.set(Some(dioxus_vdom::current_scope_id()));
             if !state.show.get() {
                 return rsx!(span {});
             }
             state.hide_child.set(true);
-            dioxus_core::schedule_update_any()(ScopeId::APP);
+            dioxus_vdom::schedule_update_any()(ScopeId::APP);
             rsx!(div {
                 onmounted: move |_| state.mounted.set(state.mounted.get() + 1),
             })

@@ -17,7 +17,7 @@ blitz-traits = { workspace = true }
 dioxus-native-dom = { workspace = true }
 
 # DioxusLabs dependencies
-dioxus-core = { workspace = true }
+dioxus-vdom = { workspace = true }
 
 # Other dependencies
 keyboard-types = { workspace = true }
