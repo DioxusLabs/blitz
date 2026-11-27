@@ -215,17 +215,8 @@ pub fn process_test_file(
 
     // Compute flags
     let mut flags = TestFlags::empty();
-    if ctx.float_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_FLOAT;
-    }
     if ctx.intrinsic_re.is_match(&file_contents) {
         flags |= TestFlags::USES_INTRINSIC_SIZE;
-    }
-    if ctx.calc_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_CALC;
-    }
-    if ctx.direction_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_DIRECTION;
     }
     if ctx.writing_mode_re.is_match(&file_contents) {
         flags |= TestFlags::USES_WRITING_MODE;

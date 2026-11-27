@@ -14,6 +14,10 @@ mod platform;
 #[path = "macos.rs"]
 mod platform;
 
+#[cfg(target_os = "ios")]
+#[path = "ios.rs"]
+mod platform;
+
 #[cfg(all(
     feature = "accesskit_unix",
     any(
@@ -34,6 +38,7 @@ mod platform;
 #[cfg(not(any(
     target_os = "windows",
     target_os = "macos",
+    target_os = "ios",
     all(
         feature = "accesskit_unix",
         any(

@@ -1,4 +1,4 @@
-use anyrender::PaintScene;
+use anyrender::{AntiAliasing, PaintScene};
 use floem_editor_core::buffer::rope_text::RopeText;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
 use parley::PositionedLayoutItem;
@@ -21,7 +21,14 @@ impl CodeEditor {
         let theme = self.theme.clone();
         let selection = self.selection();
 
-        scene.fill(Fill::NonZero, transform, theme.background, None, &bounds);
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            theme.background,
+            None,
+            &bounds,
+            AntiAliasing::Enabled,
+        );
         scene.push_clip_layer(Fill::NonZero, transform, &bounds);
 
         let last_line = self.buffer.last_line();
@@ -79,7 +86,14 @@ impl CodeEditor {
             for region in regions_on_line.clone().filter(|r| r.is_caret()) {
                 let row_y = caret_point(layout, region.end - range.start).y + y;
                 let rect = Rect::new(gutter_width, row_y, self.size.width, row_y + lh);
-                scene.fill(Fill::NonZero, transform, theme.current_line, None, &rect);
+                scene.fill(
+                    Fill::NonZero,
+                    transform,
+                    theme.current_line,
+                    None,
+                    &rect,
+                    AntiAliasing::Enabled,
+                );
             }
 
             // Selection highlights
@@ -88,14 +102,28 @@ impl CodeEditor {
                 let end = region.max().min(range.end) - range.start;
                 for rect in range_rects(layout, start..end) {
                     let rect = Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
-                    scene.fill(Fill::NonZero, line_transform, theme.selection, None, &rect);
+                    scene.fill(
+                        Fill::NonZero,
+                        line_transform,
+                        theme.selection,
+                        None,
+                        &rect,
+                        AntiAliasing::Enabled,
+                    );
                 }
                 // Show a selected line ending as a space-wide block
                 if region.max() >= next_line_start && next_line_start > range.end {
                     let origin = caret_point(layout, end);
                     let size = Size::new(self.metrics.char_width, lh);
                     let rect = Rect::from_origin_size(origin, size);
-                    scene.fill(Fill::NonZero, line_transform, theme.selection, None, &rect);
+                    scene.fill(
+                        Fill::NonZero,
+                        line_transform,
+                        theme.selection,
+                        None,
+                        &rect,
+                        AntiAliasing::Enabled,
+                    );
                 }
             }
 
@@ -105,14 +133,28 @@ impl CodeEditor {
                 let end = col + p.text.len();
                 for rect in range_rects(layout, *col..end) {
                     let rect = Rect::new(rect.x0, rect.y1 - 2.0, rect.x1, rect.y1 - 1.0);
-                    scene.fill(Fill::NonZero, line_transform, theme.foreground, None, &rect);
+                    scene.fill(
+                        Fill::NonZero,
+                        line_transform,
+                        theme.foreground,
+                        None,
+                        &rect,
+                        AntiAliasing::Enabled,
+                    );
                 }
             }
 
             if self.focused && self.caret_visible {
                 for origin in carets {
                     let rect = Rect::from_origin_size(origin, Size::new(CARET_WIDTH, lh));
-                    scene.fill(Fill::NonZero, line_transform, theme.caret, None, &rect);
+                    scene.fill(
+                        Fill::NonZero,
+                        line_transform,
+                        theme.caret,
+                        None,
+                        &rect,
+                        AntiAliasing::Enabled,
+                    );
                 }
             }
             visible.push((line, y, has_caret));
@@ -126,6 +168,7 @@ impl CodeEditor {
                 theme.gutter_background,
                 None,
                 &rect,
+                AntiAliasing::Enabled,
             );
             let right = gutter_width - 2.0 * self.metrics.char_width;
             for &(line, y, has_caret) in &visible {
@@ -171,7 +214,7 @@ fn draw_layout(
             let glyph_transform = run
                 .synthesis()
                 .skew()
-                .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+                .map(|angle| Affine::skew(-angle.to_radians().tan() as f64, 0.0));
             let normalized_coords: &[i16] = bytemuck::cast_slice(run.normalized_coords());
             scene.draw_glyphs(
                 run.font(),
@@ -189,6 +232,7 @@ fn draw_layout(
                     x: glyph.x,
                     y: glyph.y,
                 }),
+                AntiAliasing::Enabled,
             );
         }
     }

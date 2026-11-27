@@ -54,6 +54,9 @@ pub struct FontFaceOverrides {
     pub weight: Option<f32>,
     /// `font-style` descriptor mapped to fontique's `FontStyle`.
     pub style: Option<parley::fontique::FontStyle>,
+    /// `font-stretch` (`font-width`) descriptor as a single width. Like
+    /// `weight`, we record the lower bound of Stylo's range.
+    pub width: Option<parley::fontique::FontWidth>,
 }
 
 #[derive(Clone, Debug)]
@@ -205,7 +208,13 @@ impl ServoStylesheetLoader for StylesheetLoader {
         supports: Option<ImportSupportsCondition>,
         layer: ImportLayer,
     ) -> ServoArc<Locked<ImportRule>> {
-        if self.import_depth >= MAX_IMPORT_DEPTH || !supports.as_ref().is_none_or(|s| s.enabled) {
+        // An `@import` whose URL does not parse (`url("http://[::1")`) has
+        // nothing to fetch.
+        let resolved = url.url().cloned();
+        if self.import_depth >= MAX_IMPORT_DEPTH
+            || !supports.as_ref().is_none_or(|s| s.enabled)
+            || resolved.is_none()
+        {
             return ServoArc::new(lock.wrap(ImportRule {
                 url,
                 stylesheet: ImportSheet::new_refused(),
@@ -223,7 +232,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
             source_location: location,
         };
 
-        let url = import.url.url().unwrap().clone();
+        let url = resolved.expect("checked above");
         let import = ServoArc::new(lock.wrap(import));
         self.net_provider.fetch(
             self.doc_id,
@@ -428,6 +437,11 @@ pub(crate) fn fetch_font_face_rules<'a>(
                         .as_ref()
                         .and_then(|range| range.0.compute().map(|w| w.value())),
                     style: descriptor.font_style.as_ref().map(stylo_to_fontique_style),
+                    width: descriptor.font_width.as_ref().and_then(|range| {
+                        range
+                            .compute()
+                            .map(|w| parley::fontique::FontWidth::from_percentage(w.0.0.to_float()))
+                    }),
                 };
                 Some((src, overrides))
             }
@@ -622,8 +636,8 @@ impl ImageHandler {
 
         #[cfg(feature = "svg")]
         let svg_err = {
-            use crate::util::parse_svg_image;
-            match parse_svg_image(&bytes) {
+            use crate::util::parse_svg;
+            match parse_svg(&bytes, None) {
                 Ok(svg) => return Ok(Resource::Svg(self.kind, svg)),
                 Err(e) => e.to_string(),
             }
@@ -675,6 +689,48 @@ mod tests {
             })
             .map(|src| preferred_font_source(&src).map(|(url, format)| (url.to_string(), format)))
             .collect()
+    }
+
+    /// Counts the requests it is asked to make, and makes none.
+    #[derive(Default)]
+    struct CountingNetProvider(AtomicUsize);
+    impl NetProvider for CountingNetProvider {
+        fn fetch(&self, _doc_id: usize, _request: Request, _handler: Box<dyn NetHandler>) {
+            self.0.fetch_add(1, Ao::SeqCst);
+        }
+    }
+
+    #[test]
+    fn import_with_unparsable_url_is_refused() {
+        // `http://[::1` does not parse, so the rule has no resolved URL.
+        let net = Arc::new(CountingNetProvider::default());
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let loader = StylesheetLoader {
+            tx,
+            doc_id: 0,
+            net_provider: net.clone(),
+            shell_provider: Arc::new(blitz_traits::shell::DummyShellProvider),
+            abort_signal: None,
+            import_depth: 0,
+        };
+        let lock = SharedRwLock::new();
+        let base_url = Url::parse("https://example.com/style.css").unwrap();
+        Stylesheet::from_str(
+            r#"@import url("http://[::1"); @import "ok.css";"#,
+            UrlExtraData(ServoArc::new(base_url)),
+            Origin::Author,
+            ServoArc::new(lock.wrap(MediaList::empty())),
+            lock.clone(),
+            Some(&loader),
+            None,
+            QuirksMode::NoQuirks,
+            AllowImportRules::Yes,
+        );
+        assert_eq!(
+            net.0.load(Ao::SeqCst),
+            1,
+            "only the valid import is fetched"
+        );
     }
 
     #[test]

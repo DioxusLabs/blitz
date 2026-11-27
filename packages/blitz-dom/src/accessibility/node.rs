@@ -287,7 +287,7 @@ impl Node {
     }
 
     /// Whether the style of this node excludes it from the accessibility tree, with
-    /// `display: none` or `visibility: hidden`. This does not look at the ancestors.
+    /// `display: none` or a `visibility` other than `visible`. This does not look at the ancestors.
     /// [TreeBuilder](super::tree_builder::TreeBuilder) excludes the descendants of such nodes.
     ///
     /// Nodes with `aria-hidden="true"` stay in the tree, flagged as hidden. See
@@ -302,7 +302,7 @@ impl Node {
                 let style = s.styles.get_primary()?;
                 Some(
                     style.get_box().get_display().is_none()
-                        || style.clone_visibility() == visibility::computed_value::T::Hidden,
+                        || style.clone_visibility() != visibility::computed_value::T::Visible,
                 )
             })
             .unwrap_or(false)

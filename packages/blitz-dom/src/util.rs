@@ -67,7 +67,7 @@ impl ImageLayerKind {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ImageType {
     Image,
     Background(usize),
@@ -153,14 +153,66 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 }
 
-/// Parse an SVG image.
+/// Parse an SVG from its serialized `source`.
+///
+/// Pass `images` (the document URL and image cache) for an inline `<svg>` or
+/// the root of an SVG document. The mutator loads the hrefs of its `<image>`
+/// and `<feImage>` elements like `<img src>`, so usvg resolves them from the
+/// image cache. Images still loading are left out until they arrive and
+/// reconstruct the `<svg>`.
+///
+/// Pass `None` for SVG images (`<img src="x.svg">`, CSS images), which don't
+/// load external resources, as browsers render them in "secure animated mode".
+///
+/// Either way usvg never reads a local file.
 #[cfg(feature = "svg")]
-pub(crate) fn parse_svg_image(source: &[u8]) -> Result<crate::node::SvgImageData, usvg::Error> {
+pub(crate) fn parse_svg(
+    source: &[u8],
+    images: Option<(
+        &crate::url::DocumentUrl,
+        &std::collections::HashMap<String, crate::node::ImageData>,
+    )>,
+) -> Result<crate::node::SvgImageData, usvg::Error> {
     let options = usvg::Options {
         fontdb: Arc::clone(&*FONT_DB),
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_data: usvg::ImageHrefResolver::default_data_resolver(),
+            resolve_string: Box::new(move |href, _| {
+                let (base_url, image_cache) = images?;
+                svg_image_kind(image_cache.get(base_url.resolve_relative(href)?.as_str())?)
+            }),
+        },
         ..Default::default()
     };
     crate::node::SvgImageData::from_data(source, &options)
+}
+
+/// A loaded image as an image usvg can render
+#[cfg(feature = "svg")]
+fn svg_image_kind(image: &crate::node::ImageData) -> Option<usvg::ImageKind> {
+    use crate::node::ImageData;
+    match image {
+        // TODO: hand usvg the decoded pixels instead of re-encoding them once
+        // usvg supports that: https://github.com/linebender/resvg/issues/1096
+        ImageData::Raster(raster) => {
+            encode_png(raster).map(|png| usvg::ImageKind::PNG(Arc::new(png)))
+        }
+        ImageData::Svg(svg) => Some(usvg::ImageKind::SVG((*svg.tree).clone())),
+        ImageData::None => None,
+    }
+}
+
+#[cfg(feature = "svg")]
+fn encode_png(image: &crate::node::RasterImageData) -> Option<Vec<u8>> {
+    let mut png = Vec::new();
+    let mut encoder = png::Encoder::new(&mut png, image.width, image.height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(png::Compression::Fastest);
+    let mut writer = encoder.write_header().ok()?;
+    writer.write_image_data(image.data.data()).ok()?;
+    writer.finish().ok()?;
+    Some(png)
 }
 
 pub trait ToColorColor {
@@ -179,19 +231,19 @@ impl ToColorColor for AbsoluteColor {
 
 #[cfg(all(test, feature = "svg"))]
 mod svg_tests {
-    use super::parse_svg_image;
+    use super::parse_svg;
 
     #[test]
     fn svg_without_xmlns_parses() {
         let src = br#"<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>"#;
-        let svg = parse_svg_image(src).unwrap();
+        let svg = parse_svg(src, None).unwrap();
         assert!(!svg.tree.root().children().is_empty());
     }
 
     #[test]
     fn missing_height_is_computed_from_width_and_viewbox_ratio() {
         let src = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200"><rect width="100%" height="100%" fill="green"/></svg>"#;
-        let svg = parse_svg_image(src).unwrap();
+        let svg = parse_svg(src, None).unwrap();
         assert_eq!(svg.intrinsic_width(), Some(200.0));
         assert_eq!(svg.intrinsic_height(), None);
         assert_eq!(svg.viewbox_aspect_ratio(), Some(1.0));
@@ -202,7 +254,7 @@ mod svg_tests {
     #[test]
     fn viewbox_only_has_no_intrinsic_dimensions() {
         let src = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 485 58"></svg>"#;
-        let svg = parse_svg_image(src).unwrap();
+        let svg = parse_svg(src, None).unwrap();
         assert_eq!(svg.intrinsic_width(), None);
         assert_eq!(svg.intrinsic_height(), None);
         // The aspect ratio is still available from the viewBox.
@@ -212,7 +264,7 @@ mod svg_tests {
     #[test]
     fn absolute_dimensions_are_intrinsic() {
         let src = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16" viewBox="0 0 48 32"></svg>"#;
-        let svg = parse_svg_image(src).unwrap();
+        let svg = parse_svg(src, None).unwrap();
         assert_eq!(svg.intrinsic_width(), Some(24.0));
         assert_eq!(svg.intrinsic_height(), Some(16.0));
     }
@@ -220,7 +272,7 @@ mod svg_tests {
     #[test]
     fn percentage_dimensions_are_not_intrinsic() {
         let src = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="50%" viewBox="0 0 200 100"></svg>"#;
-        let svg = parse_svg_image(src).unwrap();
+        let svg = parse_svg(src, None).unwrap();
         assert_eq!(svg.intrinsic_width(), None);
         assert_eq!(svg.intrinsic_height(), None);
     }
@@ -228,7 +280,7 @@ mod svg_tests {
     #[test]
     fn unit_lengths_are_intrinsic() {
         let src = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24px" height="1.5em" viewBox="0 0 48 32"></svg>"#;
-        let svg = parse_svg_image(src).unwrap();
+        let svg = parse_svg(src, None).unwrap();
         assert!(svg.intrinsic_width().is_some());
         assert!(svg.intrinsic_height().is_some());
     }
@@ -236,7 +288,7 @@ mod svg_tests {
     #[test]
     fn non_numeric_dimensions_are_not_intrinsic() {
         let src = br#"<svg xmlns="http://www.w3.org/2000/svg" width="auto" height="foo" viewBox="0 0 200 100"></svg>"#;
-        let svg = parse_svg_image(src).unwrap();
+        let svg = parse_svg(src, None).unwrap();
         assert_eq!(svg.intrinsic_width(), None);
         assert_eq!(svg.intrinsic_height(), None);
     }

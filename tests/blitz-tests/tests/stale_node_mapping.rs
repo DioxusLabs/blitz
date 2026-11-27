@@ -11,9 +11,9 @@
 //! heavy template, keyed-list and `ElementId` churn renders without panicking.
 
 use blitz_test_harness::HarnessOptions;
-use dioxus::prelude::*;
-use dioxus_core::ScopeId;
+use dioxus_core::prelude::*;
 use dioxus_native_dom::DioxusDocument;
+use dioxus_vdom::ScopeId;
 use std::cell::Cell;
 use std::rc::Rc;
 
