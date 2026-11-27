@@ -919,10 +919,12 @@ fn raster_axis_tiling(
 
     match repeat {
         Repeat | Round => {
-            let extend_len = extend(bg_pos, tile_len);
+            let area_start = clip_start.min(origin_start);
+            let area_end = (clip_start + clip_len).max(origin_start + origin_len);
+            let extend_len = extend(origin_start - area_start + bg_pos, tile_len);
             AxisTiling {
-                translate: origin_start - extend_len,
-                rect_len: (origin_len + extend_len) / ratio,
+                translate: area_start - extend_len,
+                rect_len: (area_end - area_start + extend_len) / ratio,
                 count: 1,
                 stride: 0.0,
             }
