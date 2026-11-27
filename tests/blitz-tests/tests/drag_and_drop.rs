@@ -3,8 +3,8 @@
 //! part in a drag over its host.
 
 use blitz_dom::{
-    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver, EventHandler,
-    NodeId, UserAgentStylesheet, Widget,
+    BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventContext, EventDriver,
+    EventHandler, NodeId, UserAgentStylesheet, Widget,
 };
 use blitz_html::HtmlDocument;
 use blitz_test_harness::Harness;
@@ -35,10 +35,10 @@ impl Handler {
 
 impl EventHandler for Handler {
     fn handle_event(
-        &mut self,
+        &self,
         chain: &[NodeId],
         event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     ) {
         let (DomEventData::DragEnter(data)

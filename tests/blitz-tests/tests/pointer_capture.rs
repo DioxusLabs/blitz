@@ -1,13 +1,14 @@
 //! A captured pointer's events go to its capture target instead of the node under the
 //! pointer, and the target stays hovered, until the pointer is lifted or cancelled.
 
-use blitz_dom::{Document, EventDriver, EventHandler, NodeId};
+use blitz_dom::{EventContext, EventDriver, EventHandler, NodeId};
 use blitz_test_harness::{Harness, HarnessOptions, pointer_event};
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, MouseEventButton,
     MouseEventButtons, UiEvent,
 };
 use keyboard_types::Modifiers;
+use std::cell::RefCell;
 
 const MOUSE: BlitzPointerId = BlitzPointerId::MOUSE;
 
@@ -26,20 +27,22 @@ fn mouse_event(x: f32, y: f32) -> BlitzPointerEvent {
 /// when it is pressed
 struct CapturingHandler<'a> {
     capture: NodeId,
-    events: &'a mut Vec<(&'static str, NodeId)>,
+    events: &'a RefCell<Vec<(&'static str, NodeId)>>,
 }
 
 impl EventHandler for CapturingHandler<'_> {
     fn handle_event(
-        &mut self,
+        &self,
         _chain: &[NodeId],
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
-        self.events.push((event.name(), event.target));
+        self.events.borrow_mut().push((event.name(), event.target));
         if let DomEventData::PointerDown(data) = &event.data {
-            doc.inner_mut().set_pointer_capture(self.capture, data.id);
+            ctx.doc_mut()
+                .inner_mut()
+                .set_pointer_capture(self.capture, data.id);
         }
     }
 }
@@ -50,18 +53,18 @@ fn dispatch(
     capture: NodeId,
     events: impl IntoIterator<Item = UiEvent>,
 ) -> Vec<(&'static str, NodeId)> {
-    let mut recorded = Vec::new();
+    let recorded = RefCell::new(Vec::new());
     let mut doc = harness.base_mut();
     let handler = CapturingHandler {
         capture,
-        events: &mut recorded,
+        events: &recorded,
     };
     let mut driver = EventDriver::new(&mut *doc, handler);
     for event in events {
         driver.handle_ui_event(event);
     }
     drop(doc);
-    recorded
+    recorded.into_inner()
 }
 
 fn harness() -> Harness {

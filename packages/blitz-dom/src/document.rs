@@ -350,6 +350,9 @@ pub struct BaseDocument {
     /// Events which have been generated but not yet dispatched. Drained by the
     /// [`EventDriver`](crate::EventDriver).
     pub(crate) pending_events: EventQueue,
+    /// How deeply event dispatch is currently nested (see
+    /// [`EventContext::dispatch_event`](crate::EventContext::dispatch_event))
+    pub(crate) dispatch_depth: std::cell::Cell<u32>,
     /// Nodes being observed for layout size changes, refcounted per node.
     pub(crate) resize_observers: HashMap<NodeId, ResizeObserverEntry>,
     /// The trackpad scroll gesture under way, locked to its main axis
@@ -596,6 +599,7 @@ impl BaseDocument {
             scrollbar_activity: HashMap::new(),
             scroll_animation: ScrollAnimationState::None,
             pending_events: EventQueue::default(),
+            dispatch_depth: Default::default(),
             resize_observers: HashMap::new(),
             wheel_gesture: WheelGesture::default(),
             text_selection: TextSelection::default(),

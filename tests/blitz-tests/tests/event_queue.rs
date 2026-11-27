@@ -2,7 +2,7 @@
 //! dispatched even when the change does not come from an event driver (e.g. a
 //! programmatic focus change).
 
-use blitz_dom::{Document, EventDriver, EventHandler, NodeId};
+use blitz_dom::{Document, EventContext, EventDriver, EventHandler, NodeId};
 use blitz_test_harness::Harness;
 use blitz_traits::events::{DomEvent, DomEventData, EventDispatchSource, EventState};
 use dioxus_core::prelude::*;
@@ -13,10 +13,10 @@ struct RecordingHandler(Rc<RefCell<Vec<(NodeId, String)>>>);
 
 impl EventHandler for RecordingHandler {
     fn handle_event(
-        &mut self,
+        &self,
         _chain: &[NodeId],
         event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
         self.0
@@ -109,20 +109,26 @@ fn queued_events_for_dropped_nodes_are_discarded() {
 struct FocusPingPong {
     nodes: [NodeId; 2],
     focus_events: Rc<RefCell<usize>>,
+    /// Whether to dispatch the focus events from inside the handler, rather than queue them
+    nested: bool,
 }
 
 impl EventHandler for FocusPingPong {
     fn handle_event(
-        &mut self,
+        &self,
         _chain: &[NodeId],
         event: &mut DomEvent,
-        doc: &mut dyn Document,
+        ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
         if event.name() == "focus" {
             *self.focus_events.borrow_mut() += 1;
             let other = self.nodes[(event.target == self.nodes[0]) as usize];
-            doc.inner_mut().set_focus_to(other);
+            if self.nested {
+                ctx.set_focus(other);
+            } else {
+                ctx.doc_mut().inner_mut().set_focus_to(other);
+            }
         }
     }
 }
@@ -139,6 +145,7 @@ fn flush_stops_when_handlers_keep_queueing_events() {
     let handler = FocusPingPong {
         nodes,
         focus_events: focus_events.clone(),
+        nested: false,
     };
     EventDriver::new(&mut *doc, handler).flush_pending_events();
 
@@ -210,14 +217,105 @@ struct ScrollTopRecorder(Rc<RefCell<Vec<f64>>>);
 
 impl EventHandler for ScrollTopRecorder {
     fn handle_event(
-        &mut self,
+        &self,
         _chain: &[NodeId],
         event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
         if let DomEventData::Scroll(data) = &event.data {
             self.0.borrow_mut().push(data.scroll_top);
         }
     }
+}
+
+/// Records the name of each event when its handler starts and when it returns, and focuses
+/// `#b` from inside the `click` handler
+struct FocusOnClick {
+    b: NodeId,
+    log: RefCell<Vec<String>>,
+}
+
+impl EventHandler for FocusOnClick {
+    fn handle_event(
+        &self,
+        _chain: &[NodeId],
+        event: &mut DomEvent,
+        ctx: &mut EventContext<'_>,
+        _event_state: &mut EventState,
+    ) {
+        self.log
+            .borrow_mut()
+            .push(format!("{} start", event.name()));
+        if event.name() == "click" {
+            ctx.set_focus(self.b);
+        }
+        self.log.borrow_mut().push(format!("{} end", event.name()));
+    }
+}
+
+#[test]
+fn events_dispatched_from_a_handler_are_nested() {
+    let mut harness = Harness::from_html(HTML);
+    let a = node_id(&harness, "#a");
+    let b = node_id(&harness, "#b");
+
+    let mut doc = harness.base_mut();
+    let click = doc
+        .get_node(a)
+        .unwrap()
+        .synthetic_click_event(Default::default());
+    let handler = FocusOnClick {
+        b,
+        log: Default::default(),
+    };
+    let mut driver = EventDriver::new(&mut *doc, &handler);
+    let not_cancelled =
+        driver.dispatch_event(DomEvent::new(a, click, EventDispatchSource::UserAgent));
+    assert!(not_cancelled);
+
+    // The focus events are handled before the click handler returns
+    assert_eq!(
+        handler.log.borrow()[..6],
+        [
+            "click start",
+            "focus start",
+            "focus end",
+            "focusin start",
+            "focusin end",
+            "click end"
+        ]
+    );
+}
+
+impl EventHandler for &FocusOnClick {
+    fn handle_event(
+        &self,
+        chain: &[NodeId],
+        event: &mut DomEvent,
+        ctx: &mut EventContext<'_>,
+        event_state: &mut EventState,
+    ) {
+        (**self).handle_event(chain, event, ctx, event_state)
+    }
+}
+
+#[test]
+fn nested_dispatch_stops_at_the_depth_limit() {
+    let mut harness = Harness::from_html(HTML);
+    let nodes = [node_id(&harness, "#a"), node_id(&harness, "#b")];
+
+    let mut doc = harness.base_mut();
+    let focus_events = Rc::new(RefCell::new(0));
+    let handler = FocusPingPong {
+        nodes,
+        focus_events: focus_events.clone(),
+        nested: true,
+    };
+    // Each focus handler focuses the other node from inside itself. This returns rather
+    // than overflowing the stack.
+    EventDriver::new(&mut *doc, handler).set_focus(nodes[0]);
+
+    assert!(*focus_events.borrow() > 1);
+    assert!(*focus_events.borrow() <= EventContext::MAX_DISPATCH_DEPTH as usize);
 }

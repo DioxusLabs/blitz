@@ -50,4 +50,13 @@ impl EventQueue {
     pub(crate) fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
+
+    pub(crate) fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Remove and return the events from index `at` onwards
+    pub(crate) fn split_off(&mut self, at: usize) -> VecDeque<DomEvent> {
+        self.events.split_off(at.min(self.events.len()))
+    }
 }

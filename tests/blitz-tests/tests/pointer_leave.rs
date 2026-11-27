@@ -3,7 +3,7 @@
 //! leaves its host.
 
 use blitz_dom::{
-    BaseDocument, Document, DocumentConfig, EventDriver, EventHandler, LocalName, NodeId,
+    BaseDocument, DocumentConfig, EventContext, EventDriver, EventHandler, LocalName, NodeId,
     NoopEventHandler, PlainDocument, QualName, UserAgentStylesheet, ns,
 };
 use blitz_html::HtmlDocument;
@@ -170,10 +170,10 @@ struct PreventDefault;
 
 impl EventHandler for PreventDefault {
     fn handle_event(
-        &mut self,
+        &self,
         _chain: &[NodeId],
         _event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         event_state: &mut EventState,
     ) {
         event_state.prevent_default();

@@ -152,6 +152,8 @@ impl HtmlEventConverter for NativeConverter {
 #[derive(Clone)]
 pub struct NodeHandle {
     pub(crate) doc: Rc<RefCell<BaseDocument>>,
+    pub(crate) runtime: Rc<dioxus_vdom::Runtime>,
+    pub(crate) event_handler_counts: crate::mutation_writer::EventHandlerCounts,
     pub(crate) node_id: NodeId,
 }
 
@@ -331,14 +333,20 @@ impl RenderedElementBacking for NodeHandle {
     }
 
     fn set_focus(&self, focus: bool) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
-        let mut doc = self.doc_mut();
+        // Like `element.focus()` on the web, the focus events are dispatched to the vdom's
+        // event handlers before this returns
+        let is_focussed = self.doc().get_focussed_node_id() == Some(self.node_id);
+        let mut doc = Rc::clone(&self.doc);
+        let handler = crate::dioxus_document::DioxusEventHandler::new(
+            self.runtime.clone(),
+            self.event_handler_counts.clone(),
+        );
+        let mut driver = blitz_dom::EventDriver::new(&mut doc, handler);
         if focus {
-            // TODO: queue focus events somehow
-            doc.set_focus_to(self.node_id);
-        } else if doc.get_focussed_node_id() == Some(self.node_id) {
+            driver.set_focus(self.node_id);
+        } else if is_focussed {
             // Q: Should this only clear focus if the node is focussed?
-            // TODO: queue blur events somehow
-            doc.clear_focus();
+            driver.clear_focus();
         }
 
         Box::pin(async { Ok(()) })

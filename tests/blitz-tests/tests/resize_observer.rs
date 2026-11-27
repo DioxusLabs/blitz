@@ -1,6 +1,6 @@
 //! Resize observer notifications in `blitz-dom` and `onresize` in `dioxus-native-dom`.
 
-use blitz_dom::{Document, EventDriver, EventHandler, NodeId};
+use blitz_dom::{Document, EventContext, EventDriver, EventHandler, NodeId};
 use blitz_test_harness::Harness;
 use blitz_traits::events::{BlitzResizeEvent, DomEvent, DomEventData, EventState};
 use blitz_traits::shell::Viewport;
@@ -12,10 +12,10 @@ struct ResizeRecorder(Rc<RefCell<Vec<(NodeId, BlitzResizeEvent)>>>);
 
 impl EventHandler for ResizeRecorder {
     fn handle_event(
-        &mut self,
+        &self,
         _chain: &[NodeId],
         event: &mut DomEvent,
-        _doc: &mut dyn Document,
+        _ctx: &mut EventContext<'_>,
         _event_state: &mut EventState,
     ) {
         if let DomEventData::Resize(data) = event.data {
