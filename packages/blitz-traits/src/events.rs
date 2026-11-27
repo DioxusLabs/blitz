@@ -178,6 +178,7 @@ pub enum DomEventKind {
 
     Scroll,
     Wheel,
+    Resize,
 
     Click,
     ContextMenu,
@@ -236,6 +237,7 @@ impl FromStr for DomEventKind {
 
             "scroll" => Ok(Self::Scroll),
             "wheel" => Ok(Self::Wheel),
+            "resize" => Ok(Self::Resize),
 
             "click" => Ok(Self::Click),
             "contextmenu" => Ok(Self::ContextMenu),
@@ -291,6 +293,7 @@ pub enum DomEventData {
 
     Scroll(BlitzScrollEvent),
     Wheel(BlitzWheelEvent),
+    Resize(BlitzResizeEvent),
 
     Click(BlitzPointerEvent),
     ContextMenu(BlitzPointerEvent),
@@ -353,6 +356,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => "scroll",
             Self::Wheel { .. } => "wheel",
+            Self::Resize { .. } => "resize",
 
             Self::Click { .. } => "click",
             Self::ContextMenu { .. } => "contextmenu",
@@ -406,6 +410,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => DomEventKind::Scroll,
             Self::Wheel { .. } => DomEventKind::Wheel,
+            Self::Resize { .. } => DomEventKind::Resize,
 
             Self::Click { .. } => DomEventKind::Click,
             Self::ContextMenu { .. } => DomEventKind::ContextMenu,
@@ -459,6 +464,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+            Self::Resize { .. } => false,
 
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
@@ -512,6 +518,7 @@ impl DomEventData {
 
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+            Self::Resize { .. } => false,
 
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
@@ -618,41 +625,87 @@ pub struct HitResult {
     pub y: f32,
 }
 
+/// The kind of device a [`BlitzPointerId`] belongs to
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum BlitzPointerId {
+pub enum PointerKind {
     Mouse,
     Pen,
-    Finger(u64),
+    Finger,
 }
 
+/// A pointer's DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BlitzPointerId(i32);
+
 impl BlitzPointerId {
-    const FIRST_FINGER_ID: u64 = 2;
+    const FIRST_FINGER_ID: i32 = 2;
 
-    /// How many finger indexes [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
-    pub const FINGER_INDEX_COUNT: u64 = i32::MAX as u64 - Self::FIRST_FINGER_ID + 1;
+    pub const MOUSE: Self = Self(0);
+    pub const PEN: Self = Self(1);
 
-    /// The ID of the finger with the given index, placed after the mouse and pen IDs
-    pub const fn finger(index: u64) -> Self {
-        debug_assert!(index < Self::FINGER_INDEX_COUNT);
-        BlitzPointerId::Finger(index + Self::FIRST_FINGER_ID)
+    /// The largest finger index [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
+    pub const MAX_INDEX: u64 = (i32::MAX - Self::FIRST_FINGER_ID) as u64;
+
+    #[inline(always)]
+    pub const fn mouse() -> Self {
+        Self::MOUSE
     }
 
-    /// The DOM `pointerId`: 0 for the mouse, 1 for the pen and 2 or more for fingers
-    pub fn as_i32(&self) -> i32 {
-        match self {
-            BlitzPointerId::Mouse => 0,
-            BlitzPointerId::Pen => 1,
-            BlitzPointerId::Finger(id) => *id as i32,
-        }
+    #[inline(always)]
+    pub const fn pen() -> Self {
+        Self::PEN
+    }
+
+    /// The ID of the finger with the given index, placed after the mouse and pen IDs
+    #[inline(always)]
+    pub const fn finger(index: u64) -> Self {
+        debug_assert!(index <= Self::MAX_INDEX);
+        Self(index as i32 + Self::FIRST_FINGER_ID)
     }
 
     /// The pointer with the given DOM `pointerId` (the inverse of [`Self::as_i32`])
-    pub fn from_i32(id: i32) -> Option<Self> {
-        match id {
-            0 => Some(BlitzPointerId::Mouse),
-            1 => Some(BlitzPointerId::Pen),
-            id if id >= Self::FIRST_FINGER_ID as i32 => Some(BlitzPointerId::Finger(id as u64)),
-            _ => None,
+    #[inline(always)]
+    pub const fn from_i32(id: i32) -> Option<Self> {
+        if id >= 0 { Some(Self(id)) } else { None }
+    }
+
+    /// The DOM `pointerId`
+    #[inline(always)]
+    pub const fn as_i32(self) -> i32 {
+        self.0
+    }
+
+    #[inline(always)]
+    pub const fn kind(self) -> PointerKind {
+        match self.0 {
+            0 => PointerKind::Mouse,
+            1 => PointerKind::Pen,
+            _ => PointerKind::Finger,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn is_mouse(self) -> bool {
+        self.0 == Self::MOUSE.0
+    }
+
+    #[inline(always)]
+    pub const fn is_pen(self) -> bool {
+        self.0 == Self::PEN.0
+    }
+
+    #[inline(always)]
+    pub const fn is_finger(self) -> bool {
+        self.0 >= Self::FIRST_FINGER_ID
+    }
+
+    /// The index passed to [`Self::finger`], or `None` for the mouse and pen
+    #[inline(always)]
+    pub const fn finger_index(self) -> Option<u64> {
+        if self.is_finger() {
+            Some((self.0 - Self::FIRST_FINGER_ID) as u64)
+        } else {
+            None
         }
     }
 }
@@ -710,15 +763,15 @@ pub struct BlitzPointerEvent {
 impl BlitzPointerEvent {
     #[inline(always)]
     pub fn is_mouse(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Mouse)
+        self.id.is_mouse()
     }
     #[inline(always)]
     pub fn is_pen(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Pen)
+        self.id.is_pen()
     }
     #[inline(always)]
     pub fn is_finger(&self) -> bool {
-        matches!(self.id, BlitzPointerId::Finger(_))
+        self.id.is_finger()
     }
 
     #[inline(always)]
@@ -859,6 +912,18 @@ pub struct BlitzScrollEvent {
     pub scroll_height: i32,
     pub client_width: i32,
     pub client_height: i32,
+}
+
+/// Element size reported by a resize observer after layout.
+///
+/// Sizes are in CSS pixels along the element's inline (`*_width`) and block
+/// (`*_height`) axes, matching `ResizeObserverSize` (`inlineSize`, `blockSize`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlitzResizeEvent {
+    pub border_box_width: f32,
+    pub border_box_height: f32,
+    pub content_box_width: f32,
+    pub content_box_height: f32,
 }
 
 // struct PointerInputState {

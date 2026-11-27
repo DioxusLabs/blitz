@@ -51,7 +51,7 @@ pub fn pointer_event(
 /// Construct a main-button mouse [`BlitzPointerEvent`] at page coordinates `(x, y)`
 pub fn mouse_pointer_event(x: f32, y: f32) -> BlitzPointerEvent {
     pointer_event(
-        BlitzPointerId::Mouse,
+        BlitzPointerId::MOUSE,
         x,
         y,
         MouseEventButton::Main,
@@ -122,7 +122,7 @@ impl<D: Document> Harness<D> {
     /// Move the mouse (no buttons pressed) to page coordinates `(x, y)`
     pub fn move_mouse_to(&mut self, x: f32, y: f32) {
         let event = pointer_event(
-            BlitzPointerId::Mouse,
+            BlitzPointerId::MOUSE,
             x,
             y,
             MouseEventButton::Main,

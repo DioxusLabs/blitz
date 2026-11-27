@@ -51,6 +51,10 @@ a[href] {
     text-decoration: underline;
 }
 
+*|*:any-link {
+    cursor: pointer;
+}
+
 /* https://html.spec.whatwg.org/#bidi-rendering */
 input[type=tel]:dir(ltr) {
     direction: ltr;
@@ -138,6 +142,7 @@ input[type="button"] {
     background-color: #EFEFEF;
     text-align: center;
     display: inline-block;
+    cursor: default;
 }
 
 /* Button-flavored inputs clip their contents to the border box and never

@@ -321,7 +321,7 @@ impl DocumentMutator<'_> {
             self.restyle_for_attribute_change(node_id, &name.local);
         }
 
-        if name.local == local_name!("id") && node_is_in_document {
+        if name.ns == ns!() && name.local == local_name!("id") && node_is_in_document {
             if let Some(old_id) = self.doc.nodes[node_id]
                 .element_data()
                 .map(|element| element.id.clone())
@@ -391,11 +391,11 @@ impl DocumentMutator<'_> {
             return;
         }
 
-        if *attr == local_name!("id") {
+        if name.ns == ns!() && *attr == local_name!("id") {
             element.id = Some(Atom::from(value))
         }
 
-        if *attr == local_name!("class") {
+        if name.ns == ns!() && *attr == local_name!("class") {
             element.classes = crate::node::parse_classes(value);
         }
 
@@ -470,7 +470,7 @@ impl DocumentMutator<'_> {
             self.restyle_for_attribute_change(node_id, &name.local);
         }
 
-        if name.local == local_name!("id") && node_is_in_document {
+        if name.ns == ns!() && name.local == local_name!("id") && node_is_in_document {
             if let Some(old_id) = self.doc.nodes[node_id]
                 .element_data()
                 .and_then(|element| element.id.clone())
@@ -511,11 +511,11 @@ impl DocumentMutator<'_> {
                 .attribute_changed(&name.local, old_value, None);
         }
 
-        if name.local == local_name!("id") {
+        if name.ns == ns!() && name.local == local_name!("id") {
             element.id = None;
         }
 
-        if name.local == local_name!("class") {
+        if name.ns == ns!() && name.local == local_name!("class") {
             element.classes.clear();
         }
 

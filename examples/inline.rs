@@ -1,6 +1,6 @@
 //! https://www.w3schools.com/css/tryit.asp?filename=trycss_inline-block_span1
 
-use dioxus::prelude::*;
+use dioxus_native::prelude::*;
 
 fn main() {
     dioxus_native::launch(app);

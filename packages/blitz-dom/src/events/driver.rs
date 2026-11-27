@@ -1,7 +1,7 @@
 use crate::Document;
 use blitz_traits::events::{
-    BlitzDragDataStoreMode, BlitzDragEvent, BlitzDragOperation, BlitzPointerEvent, BlitzPointerId,
-    DomEvent, DomEventData, EventDispatchSource, EventState, Point, PointerCoords, UiEvent,
+    BlitzDragDataStoreMode, BlitzDragEvent, BlitzDragOperation, BlitzPointerEvent, DomEvent,
+    DomEventData, EventDispatchSource, EventState, Point, PointerCoords, UiEvent,
 };
 use blitz_traits::node_id::NodeId;
 
@@ -259,7 +259,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 doc.unactive_node();
                 capture_end_event = Some(event.clone());
 
-                if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
+                if event.is_primary && event.is_finger() {
                     hover_end_event = Some(event.clone());
                 }
             }
@@ -269,7 +269,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 doc.unactive_node();
                 capture_end_event = Some(event.clone());
 
-                if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
+                if event.is_primary && event.is_finger() {
                     hover_end_event = Some(event.clone());
                 }
             }
