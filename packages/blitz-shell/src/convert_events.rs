@@ -79,7 +79,11 @@ impl PointerIds {
             return *id;
         }
         let id = BlitzPointerId::finger(self.next_index);
-        self.next_index = (self.next_index + 1) % BlitzPointerId::FINGER_INDEX_COUNT;
+        self.next_index = if self.next_index == BlitzPointerId::MAX_INDEX {
+            0
+        } else {
+            self.next_index + 1
+        };
         self.active.push((finger_id, id));
         id
     }

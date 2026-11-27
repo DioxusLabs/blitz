@@ -636,8 +636,8 @@ impl BlitzPointerId {
     pub const MOUSE: Self = Self(0);
     pub const PEN: Self = Self(1);
 
-    /// How many finger indexes [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
-    pub const FINGER_INDEX_COUNT: u64 = (i32::MAX - Self::FIRST_FINGER_ID) as u64 + 1;
+    /// The largest finger index [`BlitzPointerId::finger`] accepts, so that every DOM `pointerId` fits in an `i32`
+    pub const MAX_INDEX: u64 = (i32::MAX - Self::FIRST_FINGER_ID) as u64;
 
     pub const fn mouse() -> Self {
         Self::MOUSE
@@ -649,7 +649,7 @@ impl BlitzPointerId {
 
     /// The ID of the finger with the given index, placed after the mouse and pen IDs
     pub const fn finger(index: u64) -> Self {
-        debug_assert!(index < Self::FINGER_INDEX_COUNT);
+        debug_assert!(index <= Self::MAX_INDEX);
         Self(index as i32 + Self::FIRST_FINGER_ID)
     }
 
