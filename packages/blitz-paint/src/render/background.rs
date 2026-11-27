@@ -698,35 +698,42 @@ fn compute_layer_position_and_size(
 ) -> (Point, Size) {
     use BackgroundRepeatKeyword::*;
 
-    let bg_size = compute_layer_size(layer, container_w as f32, container_h as f32, size_mode);
+    let intrinsic_ratio = match &size_mode {
+        BackgroundSizeComputeMode::Size(width, height) => {
+            Some(f64::from(*width) / f64::from(*height))
+        }
+        BackgroundSizeComputeMode::Intrinsic { ratio, .. } => ratio.map(f64::from),
+        BackgroundSizeComputeMode::Auto => None,
+    }
+    .filter(|ratio| ratio.is_finite() && *ratio > 0.0);
+    let mut bg_size = compute_layer_size(layer, container_w as f32, container_h as f32, size_mode);
+    let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
+    let round_x = matches!(repeat_x, Round);
+    let round_y = matches!(repeat_y, Round);
+    if round_x && bg_size.width > 0.0 {
+        bg_size.width = container_w / (container_w / bg_size.width).round().max(1.0);
+    }
+    if round_y && bg_size.height > 0.0 {
+        bg_size.height = container_h / (container_h / bg_size.height).round().max(1.0);
+    }
 
+    // With round on one axis, an auto size on the other preserves the
+    // image's natural aspect ratio after the rounded size is resolved.
+    if let Some(ratio) = intrinsic_ratio
+        && let BackgroundSize::ExplicitSize { width, height } = layer.size
+    {
+        if round_x && !round_y && height.is_auto() {
+            bg_size.height = bg_size.width / ratio;
+        }
+        if round_y && !round_x && width.is_auto() {
+            bg_size.width = bg_size.height * ratio;
+        }
+    }
     let bg_pos = compute_layer_position(
         layer,
         (container_w - bg_size.width) as f32,
         (container_h - bg_size.height) as f32,
     );
-
-    let BackgroundRepeat(repeat_x, repeat_y) = layer.repeat;
-
-    let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
-        let count = (container_w / bg_size.width).round();
-        let width = container_w / count;
-
-        let count = (container_h / bg_size.height).round();
-        let height = container_h / count;
-
-        Size::new(width, height)
-    } else if matches!(repeat_x, Round) {
-        let count = (container_w / bg_size.width).round();
-        let width = container_w / count;
-        Size::new(width, bg_size.height)
-    } else if matches!(repeat_y, Round) {
-        let count = (container_h / bg_size.height).round();
-        let height = container_h / count;
-        Size::new(bg_size.width, height)
-    } else {
-        bg_size
-    };
 
     (bg_pos, bg_size)
 }
