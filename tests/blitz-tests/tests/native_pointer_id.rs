@@ -22,8 +22,8 @@ fn app() -> Element {
 fn mouse_pen_and_fingers_get_distinct_pointer_ids() {
     let mut harness = Harness::from_component(app);
     for id in [
-        BlitzPointerId::Mouse,
-        BlitzPointerId::Pen,
+        BlitzPointerId::MOUSE,
+        BlitzPointerId::PEN,
         BlitzPointerId::finger(0),
         BlitzPointerId::finger(1),
     ] {

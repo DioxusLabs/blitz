@@ -762,7 +762,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // Remove from the active list first so the cancelled pointer is
                 // excluded from this event's `touches`. `remove_active_pointer`
                 // reports whether the pointer was actually active.
-                if id != BlitzPointerId::Mouse && self.remove_active_pointer(id) {
+                if !id.is_mouse() && self.remove_active_pointer(id) {
                     let position = position.unwrap_or(self.pointer_pos);
                     self.pointer_pos = position;
 
@@ -819,7 +819,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     active_pointers: Arc::clone(&self.active_events),
                 };
                 // Keep multi-touch positions current (no-op for non-active pointers).
-                if id != BlitzPointerId::Mouse {
+                if !id.is_mouse() {
                     self.update_active_pointer(&event);
                 }
                 self.doc.handle_ui_event(UiEvent::PointerMove(event));
@@ -863,14 +863,14 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // `touches` includes it). A release is handled after the
                 // synthetic move below so the move still sees it, but before the
                 // pointerup so touchend's `touches` excludes it.
-                if id != BlitzPointerId::Mouse && state == ElementState::Pressed {
+                if !id.is_mouse() && state == ElementState::Pressed {
                     self.set_active_pointer(&pointer_event);
                 }
 
                 // Touch input doesn't emit a `PointerMoved` before the button
                 // event the way a mouse does, so synthesise a move to update the
                 // hover/hit position to the touch location.
-                if id != BlitzPointerId::Mouse {
+                if !id.is_mouse() {
                     let event = BlitzPointerEvent {
                         id,
                         is_primary: primary,
@@ -885,7 +885,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     self.doc.handle_ui_event(UiEvent::PointerMove(event));
                 }
 
-                if id != BlitzPointerId::Mouse && state == ElementState::Released {
+                if !id.is_mouse() && state == ElementState::Released {
                     self.remove_active_pointer(id);
                 }
 

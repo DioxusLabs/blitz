@@ -28,7 +28,7 @@ fn doc(html: &str) -> HtmlDocument {
 
 fn finger_event(x: f32, y: f32) -> BlitzPointerEvent {
     BlitzPointerEvent {
-        id: BlitzPointerId::Finger(0),
+        id: BlitzPointerId::finger(0),
         is_primary: true,
         coords: PointerCoords {
             page_x: x,
