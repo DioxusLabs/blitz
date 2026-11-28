@@ -361,6 +361,10 @@ pub struct BaseDocument {
     // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
     pub(crate) has_active_animations: bool,
+    pub(crate) active_animation_nodes: HashSet<NodeId>,
+    pub(crate) active_transition_nodes: HashSet<NodeId>,
+    pub(crate) last_animation_time: f64,
+    pub(crate) resolve_generation: u64,
     /// Whether there is a `<canvas>` element in the DOM (so we should re-render every frame)
     pub(crate) has_canvas: bool,
     /// Whether there are subdocuments that are animating (so we should re-render every frame)
@@ -561,6 +565,10 @@ impl BaseDocument {
             active_node_id: None,
             mousedown_node_id: None,
             has_active_animations: false,
+            active_animation_nodes: HashSet::new(),
+            active_transition_nodes: HashSet::new(),
+            last_animation_time: 0.0,
+            resolve_generation: 0,
             subdoc_is_animating: false,
             has_canvas: false,
             sub_document_nodes: HashSet::new(),
@@ -2507,6 +2515,50 @@ impl BaseDocument {
             | custom_widget_is_animating
             | (self.scroll_animation != ScrollAnimationState::None)
             | self.scrollbars_animating()
+    }
+
+    pub fn node_or_ancestor_has_display_none(&self, node_id: NodeId) -> Option<bool> {
+        let mut node = self.get_node(node_id)?;
+        if !node.flags.is_in_document() {
+            return None;
+        }
+
+        let mut fully_resolved = true;
+        loop {
+            if node
+                .primary_styles()
+                .is_some_and(|styles| styles.clone_display().is_none())
+            {
+                return Some(true);
+            }
+            if node.primary_styles().is_none() {
+                fully_resolved = false;
+            }
+            let Some(parent_id) = node.parent else {
+                return fully_resolved.then_some(false);
+            };
+            let parent = self.get_node(parent_id)?;
+            node = parent;
+            if !node.is_element() {
+                return fully_resolved.then_some(false);
+            }
+        }
+    }
+
+    pub fn node_has_active_animations(&self, node_id: NodeId) -> bool {
+        self.active_animation_nodes.contains(&node_id)
+    }
+
+    pub fn node_has_active_transitions(&self, node_id: NodeId) -> bool {
+        self.active_transition_nodes.contains(&node_id)
+    }
+
+    pub fn last_animation_time(&self) -> f64 {
+        self.last_animation_time
+    }
+
+    pub fn resolve_generation(&self) -> u64 {
+        self.resolve_generation
     }
 
     /// Record pending [`DeviceChanges`] and request a redraw so that they are
