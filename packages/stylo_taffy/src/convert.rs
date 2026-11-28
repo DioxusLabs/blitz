@@ -256,6 +256,7 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         stylo::DisplayOutside::Block => {}
         stylo::DisplayOutside::TableCaption => {}
         stylo::DisplayOutside::InternalTable => {}
+        stylo::DisplayOutside::InternalRuby => {}
     };
 
     display

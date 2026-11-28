@@ -4,6 +4,7 @@
 //! [`resolve`](crate::BaseDocument::resolve), no matter how many changes
 //! occurred since the last resolve.
 
+use std::hash::BuildHasher;
 use std::sync::{Arc, Mutex};
 
 use bitflags::bitflags;
@@ -15,7 +16,9 @@ use style::device::servo::MediaData;
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
-use style::queries::values::PrefersColorScheme;
+use style::queries::values::{
+    PrefersColorScheme, PrefersContrast, PrefersReducedMotion, PrefersReducedTransparency,
+};
 use style::servo::media_features::PointerCapabilities;
 
 use crate::font_metrics::BlitzFontMetricsProvider;
@@ -70,8 +73,16 @@ pub(crate) fn make_device(
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
         Box::new(BlitzFontMetricsProvider { font_ctx }),
         "Submit Query".into(),
+        document_random_hasher_key(),
         make_media_data(viewport, media_type),
     )
+}
+
+/// A random per-document key for hashing the inputs of CSS `random()` functions, so that
+/// their values differ between documents.
+fn document_random_hasher_key() -> (u64, u64) {
+    let state = std::collections::hash_map::RandomState::new();
+    (state.hash_one(0u8), state.hash_one(1u8))
 }
 
 /// The [`MediaData`] (the media-query-visible state of the [`Device`]) for the given viewport
@@ -90,6 +101,9 @@ pub(crate) fn make_media_data(viewport: &Viewport, media_type: MediaType) -> Med
             ColorScheme::Light => PrefersColorScheme::Light,
             ColorScheme::Dark => PrefersColorScheme::Dark,
         },
+        prefers_contrast: PrefersContrast::NoPreference,
+        prefers_reduced_motion: PrefersReducedMotion::NoPreference,
+        prefers_reduced_transparency: PrefersReducedTransparency::NoPreference,
         primary_pointer_capabilities: PointerCapabilities::default(),
         all_pointer_capabilities: PointerCapabilities::default(),
     }

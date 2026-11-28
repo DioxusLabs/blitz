@@ -332,3 +332,16 @@ wgpu_context = { workspace = true }
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
 
+# Stylo main for servo/stylo#532 (keep finished fill-forwards animations), until it is released
+[patch.crates-io]
+stylo = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+stylo_traits = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+stylo_atoms = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+stylo_static_prefs = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+stylo_dom = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+stylo_derive = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+stylo_malloc_size_of = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+selectors = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+servo_arc = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+to_shmem = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }
+to_shmem_derive = { git = "https://github.com/servo/stylo", rev = "f1e7c6bb3cf4c4e68ce7f374a894057bb8f2f95a" }

@@ -73,7 +73,11 @@ impl crate::document::BaseDocument {
                 continue;
             }
 
-            self.nodes[node_id].set_restyle_hint(RestyleHint::RESTYLE_SELF);
+            // Finished `animation-fill-mode: forwards` animations stay in the set
+            // but their values no longer change, so they don't need restyling.
+            if set.needs_animation_ticks() {
+                self.nodes[node_id].set_restyle_hint(RestyleHint::RESTYLE_SELF);
+            }
 
             for animation in set.animations.iter_mut() {
                 if animation.state == AnimationState::Pending && animation.started_at <= now {
