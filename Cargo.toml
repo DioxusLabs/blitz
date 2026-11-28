@@ -332,11 +332,11 @@ wgpu_context = { workspace = true }
 # parley = { path = "../parley/parley" }
 # fontique = { path = "../parley/fontique" }
 
-# Stylo with finished fill-forwards animations kept (servo/servo#47536), until it is released
+# Stylo 0.24 + servo/stylo#532 (keep finished fill-forwards animations), until it is released
 [patch.crates-io]
-stylo = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-keep-0.24" }
-stylo_traits = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-keep-0.24" }
-stylo_atoms = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-keep-0.24" }
-stylo_dom = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-keep-0.24" }
-stylo_static_prefs = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-keep-0.24" }
-selectors = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-keep-0.24" }
+stylo = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-upstream-0.24" }
+stylo_traits = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-upstream-0.24" }
+stylo_atoms = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-upstream-0.24" }
+stylo_dom = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-upstream-0.24" }
+stylo_static_prefs = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-upstream-0.24" }
+selectors = { git = "https://github.com/nicoburns/stylo", branch = "fill-forwards-upstream-0.24" }
