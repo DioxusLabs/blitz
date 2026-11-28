@@ -385,7 +385,7 @@ fn classify_flow_children(
                 DisplayOutside::Block
                 | DisplayOutside::TableCaption
                 | DisplayOutside::InternalTable => classification.all_inline = false,
-                DisplayOutside::Inline => {
+                DisplayOutside::Inline | DisplayOutside::InternalRuby => {
                     classification.all_block = false;
 
                     // We need the "complex" tree fixing when an inline contains a block

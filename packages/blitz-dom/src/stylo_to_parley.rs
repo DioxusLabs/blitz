@@ -398,6 +398,14 @@ pub(crate) fn vertical_align(style: &stylo::ComputedValues) -> parley::VerticalA
         stylo::AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
         stylo::AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
         stylo::AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
+        // TODO: Parley has no modern baseline metrics yet (these values are behind
+        // Stylo's `layout.css.baseline-metric.modern.enabled` pref). Approximate them.
+        stylo::AlignmentBaseline::Alphabetic | stylo::AlignmentBaseline::Mathematical => {
+            parley::AlignmentBaseline::Baseline
+        }
+        stylo::AlignmentBaseline::Ideographic => parley::AlignmentBaseline::TextBottom,
+        stylo::AlignmentBaseline::Central => parley::AlignmentBaseline::Middle,
+        stylo::AlignmentBaseline::Hanging => parley::AlignmentBaseline::TextTop,
     };
     let shift = match box_styles.get_baseline_shift() {
         stylo::BaselineShift::Keyword(stylo::BaselineShiftKeyword::Sub) => {

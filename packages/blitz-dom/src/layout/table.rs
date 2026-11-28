@@ -743,7 +743,13 @@ fn collect_table_cells(
         | DisplayInside::FlowRoot
         | DisplayInside::Flex
         | DisplayInside::Grid
-        | DisplayInside::GridLanes => {
+        | DisplayInside::GridLanes
+        | DisplayInside::Ruby
+        | DisplayInside::RubyBase
+        | DisplayInside::RubyBaseContainer
+        | DisplayInside::RubyText
+        | DisplayInside::RubyTextContainer
+        | DisplayInside::WebkitBox => {
             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             // Probably a table caption: ignore
             // println!(
